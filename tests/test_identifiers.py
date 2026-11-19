@@ -40,6 +40,12 @@ DECLARED: list[dict[str, Any]] = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _own_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Identifiers declared by this module's applications never reach other tests' masking."""
+    monkeypatch.setattr(pii, "_DECLARED", {})
+
+
 def _ids(raw: list[dict[str, Any]] | None = None) -> tuple[pii.Identifier, ...]:
     return tuple(s.compiled() for s in identifiers.parse(raw or DECLARED))
 
