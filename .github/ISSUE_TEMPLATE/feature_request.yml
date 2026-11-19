@@ -1,0 +1,23 @@
+name: Feature request
+description: A change or an addition to discuss before a pull request.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do, and what stops you today. Describe the need, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: How you would solve it, what it changes for existing deployments, the alternatives you considered.
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: How it would be tested
+      description: What would prove that it works.

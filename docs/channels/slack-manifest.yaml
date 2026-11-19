@@ -1,0 +1,34 @@
+# Slack app manifest for an Evokai channel: api.slack.com/apps → Create New App → From an app manifest.
+# Replace {{EVOKAI_PUBLIC_URL}}, {{APP_SLUG}} and {{CHANNEL_NAME}} with the values the console's Channels page shows.
+display_information:
+  name: Assistant
+  description: Ask the assistant in a direct message or mention it in a channel.
+  background_color: "#2f5d50"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Assistant
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read   # mentions in channels the app is in
+      - chat:write          # replies in threads
+      - im:history          # direct messages to the app
+      - im:read
+      - im:write
+settings:
+  event_subscriptions:
+    request_url: "{{EVOKAI_PUBLIC_URL}}/v1/channels/{{APP_SLUG}}/slack/{{CHANNEL_NAME}}/events"
+    bot_events:
+      - app_mention
+      - message.im
+  interactivity:
+    is_enabled: true
+    request_url: "{{EVOKAI_PUBLIC_URL}}/v1/channels/{{APP_SLUG}}/slack/{{CHANNEL_NAME}}/interactions"
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

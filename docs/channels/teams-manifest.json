@@ -1,0 +1,39 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "{{BOT_APP_ID}}",
+  "developer": {
+    "name": "{{COMPANY_NAME}}",
+    "websiteUrl": "{{COMPANY_WEBSITE}}",
+    "privacyUrl": "{{PRIVACY_URL}}",
+    "termsOfUseUrl": "{{TERMS_URL}}"
+  },
+  "name": {
+    "short": "{{ASSISTANT_NAME}}",
+    "full": "{{ASSISTANT_NAME}}, powered by Evokai"
+  },
+  "description": {
+    "short": "Ask the assistant in chat.",
+    "full": "Ask the assistant in a chat or mention it in a channel. It answers with your permissions and asks before it changes anything."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#2F5D50",
+  "bots": [
+    {
+      "botId": "{{BOT_APP_ID}}",
+      "scopes": ["personal", "team", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": ["{{EVOKAI_PUBLIC_HOST}}"],
+  "webApplicationInfo": {
+    "id": "{{BOT_APP_ID}}",
+    "resource": "api://botid-{{BOT_APP_ID}}"
+  }
+}

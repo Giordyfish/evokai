@@ -1,0 +1,117 @@
+# The same gates as scripts/ci.sh, one job per part. The release workflow calls this one first.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_COLOR: "1"
+
+jobs:
+  service:
+    name: service (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: evokai
+          POSTGRES_PASSWORD: evokai-ci
+          POSTGRES_DB: evokai_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U evokai -d evokai_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+      # scripts/ci.sh runs the suite on SQLite, then again on this Postgres.
+      EVOKAI_TEST_DATABASE_URL: postgresql://evokai:evokai-ci@localhost:5432/evokai_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.8"
+          enable-cache: true
+      # The em dash check, the secret scan of the tree (gitleaks), ruff, ty, pytest and the OpenAPI check.
+      - run: scripts/ci.sh service
+
+  python-client:
+    name: Python client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.8"
+          enable-cache: true
+      - run: scripts/ci.sh python
+
+  client:
+    name: TypeScript client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+      - run: scripts/ci.sh client
+
+  ui:
+    name: UI components
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            clients/typescript/package-lock.json
+            clients/ui/package-lock.json
+      - run: scripts/ci.sh ui
+
+  console:
+    name: Admin console
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - run: scripts/ci.sh console
+
+  worker:
+    name: Capability worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.8"
+          enable-cache: true
+      - run: scripts/ci.sh worker

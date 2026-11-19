@@ -1,0 +1,74 @@
+# A production-like local setup: Postgres, the one-off database setup (as the owner), and Evokai (as the runtime
+# role) on http://localhost:18787/agent with the example application of config/bookshop.yaml. Read-only root and
+# tmpfs /tmp, as in production. (The quick start is docker-compose.yml.)
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#   EVOKAI_VOICE=1 docker compose -f docker-compose.dev.yml up --build      # with the voice extra
+#   eval "$(aws configure export-credentials --profile <profile> --format env)"   # for Bedrock
+#
+# Development keys only: generate real ones with `evokai keygen signing|encryption|srv|adm`.
+x-evokai: &evokai
+  build:
+    context: .
+    target: runtime
+    args:
+      VOICE: ${EVOKAI_VOICE:-0}
+  image: evokai:dev
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  user: "1001:1001"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: owner
+      POSTGRES_PASSWORD: owner
+      POSTGRES_DB: evokai
+    ports: ["55433:5432"]
+    volumes: [evokai-pg:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "owner", "-d", "evokai"]
+      interval: 2s
+      retries: 30
+
+  db-setup:
+    <<: *evokai
+    command: ["db-setup"]
+    environment:
+      EVOKAI_DATABASE_URL: postgres://owner:owner@postgres:5432/evokai
+      EVOKAI_DATABASE_SCHEMA: evokai
+      EVOKAI_APP_DB_PASSWORD: evokai-dev
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  evokai:
+    <<: *evokai
+    ports: ["${EVOKAI_HOST_PORT:-18787}:8787"]
+    environment:
+      EVOKAI_DATABASE_URL: postgres://evokai_app:evokai-dev@postgres:5432/evokai
+      EVOKAI_DATABASE_SCHEMA: evokai
+      EVOKAI_PRODUCTION: "true"
+      EVOKAI_SIGNING_KEY: dev-signing-key-change-me-0123456789abcdef0123456789
+      EVOKAI_ENCRYPTION_KEY: 3Xa9Q2v8yq0pW1rT7uE5iO4pA6sD8fG0hJ2kL4zX6cV=  # gitleaks:allow
+      EVOKAI_CONFIG_FILE: /app/config/bookshop.yaml
+      EVOKAI_BOOTSTRAP_APPS: >-
+        [{"id": "bookshop",
+          "serverKey": "evk_srv_devlocal_0000000000000000000000000000000000000000",
+          "origins": ["http://localhost:3000"]}]
+      BOOKSHOP_PUBLIC_ORIGIN: http://localhost:3000
+      BOOKSHOP_MCP_URL: http://host.docker.internal:3000/api/agent/mcp
+      EVOKAI_VOICE_ENABLED: ${EVOKAI_VOICE:-0}
+      # Bedrock: short-lived credentials from the host, e.g.
+      #   eval "$(aws configure export-credentials --profile <profile> --format env)"
+      AWS_REGION: ${EVOKAI_AWS_REGION:-eu-north-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      db-setup: {condition: service_completed_successfully}
+
+volumes:
+  evokai-pg:

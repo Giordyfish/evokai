@@ -1,0 +1,71 @@
+# Evokai in five minutes: the service with its console and its own Postgres.
+#
+#   docker compose up -d --build        # first start: builds the image (a few minutes, once)
+#   docker compose logs evokai          # the console address and the operator key (shown once)
+#   open http://localhost:8787/agent/admin/
+#
+# Keys are generated on the first start into the evokai-data volume and reused afterwards; nothing
+# secret lives in this file. Models: the test model works with no account; for a real one, pass the
+# provider's credentials through the environment (see docs/quickstart.md):
+#
+#   OPENAI_API_KEY=... docker compose up -d
+#   OLLAMA_BASE_URL=http://host.docker.internal:11434/v1 docker compose up -d   # models on this machine
+#
+# A production-like setup with a separate database role and the example application: docker-compose.dev.yml.
+name: evokai
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: evokai
+      POSTGRES_PASSWORD: ${EVOKAI_POSTGRES_PASSWORD:-evokai-local}
+      POSTGRES_DB: evokai
+    volumes: [evokai-pg:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "evokai", "-d", "evokai"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  evokai:
+    build:
+      context: .
+      target: runtime
+    image: ${EVOKAI_IMAGE:-evokai:local}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    user: "1001:1001"
+    ports: ["${EVOKAI_HOST_PORT:-8787}:8787"]
+    environment:
+      EVOKAI_DATABASE_URL: postgres://evokai:${EVOKAI_POSTGRES_PASSWORD:-evokai-local}@postgres:5432/evokai
+      EVOKAI_STATE_DIR: /data
+      EVOKAI_AUTO_MIGRATE: "true"
+      EVOKAI_PUBLIC_URL: ${EVOKAI_PUBLIC_URL:-http://localhost:8787/agent}
+      EVOKAI_MODEL_ALLOW: >-
+        ${EVOKAI_MODEL_ALLOW:-["bedrock:eu.*","openai:*","mistral:*","ollama:*","test:*"]}
+      # Model providers: only what you pass is used. Bedrock reads the usual AWS variables.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      EVOKAI_AWS_REGION: ${EVOKAI_AWS_REGION:-eu-north-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    volumes: [evokai-data:/data]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u;u.urlopen('http://127.0.0.1:8787/agent/health',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  evokai-pg:
+  evokai-data:

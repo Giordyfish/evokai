@@ -1,0 +1,12 @@
+.git
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+*.db
+.env
+clients/typescript/node_modules
+clients/typescript/dist
+docs
+admin/node_modules
+admin/dist

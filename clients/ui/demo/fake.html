@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Evokai UI, offline</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; background: Canvas; color: CanvasText; }
+      header { padding: 16px 24px; border-bottom: 1px solid color-mix(in oklab, CanvasText 12%, transparent); }
+      header h1 { font-size: 18px; margin: 0; }
+      main { max-width: 48rem; padding: 24px; line-height: 1.6; }
+      table { border-collapse: collapse; } td, th { padding: 4px 12px; border-bottom: 1px solid color-mix(in oklab, CanvasText 12%, transparent); text-align: left; }
+    </style>
+  </head>
+  <body>
+    <header><h1>Inkwell Books (offline: a fake Evokai, a fake recogniser)</h1></header>
+    <main>
+      <h2>Open orders this week</h2>
+      <p>The components run against a scripted Evokai in the page: e2e/voice-panel.mjs drives them for screenshots.</p>
+      <table>
+        <thead><tr><th>Order</th><th>Title</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1042</td><td>The Lighthouse Keeper</td><td>Return requested</td></tr>
+          <tr><td>1043</td><td>A Field Guide to Moss</td><td>Shipped</td></tr>
+          <tr><td>1047</td><td>Winter Recipes</td><td>New</td></tr>
+        </tbody>
+      </table>
+    </main>
+    <evokai-chat id="chat" base-url="https://evokai.invalid/agent" token-url="/api/agent/token" title="Ada" app-name="Inkwell Books" storage-key=""></evokai-chat>
+    <script type="module" src="./fake.ts"></script>
+  </body>
+</html>

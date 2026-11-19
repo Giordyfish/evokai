@@ -1,0 +1,22 @@
+# Seed of tests/cassettes/test_recorded/test_bedrock_fallback_after_a_throttled_primary.yaml,
+# written by hand: Bedrock cannot be made to throttle on demand. The primary's call gets this
+# ThrottlingException (the shape Bedrock Runtime sends); recording then adds the fallback's real
+# answer after it (the test copies the seed into place before it records).
+interactions:
+- request:
+    body: null
+    headers: {}
+    method: POST
+    uri: https://bedrock-runtime.eu-north-1.amazonaws.com/model/eu.anthropic.claude-sonnet-4-6/converse-stream
+  response:
+    body:
+      string: '{"message":"Too many tokens, please wait before trying again."}'
+    headers:
+      Content-Type:
+      - application/json
+      x-amzn-ErrorType:
+      - ThrottlingException:http://internal.amazon.com/coral/com.amazon.bedrock/
+    status:
+      code: 429
+      message: Too Many Requests
+version: 1

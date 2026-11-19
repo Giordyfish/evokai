@@ -1,0 +1,183 @@
+interactions:
+- request:
+    body: '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"evokai","version":"0.1.0"}},"id":1}'
+    headers:
+      accept:
+      - application/json, text/event-stream
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '155'
+      content-type:
+      - application/json
+      host:
+      - 127.0.0.1:8765
+    method: POST
+    uri: http://127.0.0.1:8765/mcp
+  response:
+    body:
+      string: "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"\
+        protocolVersion\":\"2025-06-18\",\"capabilities\":{\"experimental\":{},\"\
+        prompts\":{\"listChanged\":false},\"resources\":{\"subscribe\":false,\"listChanged\"\
+        :false},\"tools\":{\"listChanged\":false}},\"serverInfo\":{\"name\":\"evokai-cassettes\"\
+        ,\"version\":\"1.30.0\"}}}\r\n\r\n"
+    headers:
+      cache-control:
+      - no-cache, no-transform
+      connection:
+      - keep-alive
+      content-type:
+      - text/event-stream
+      date:
+      - Tue, 17 Nov 2026 12:12:55 GMT
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+      server:
+      - uvicorn
+      transfer-encoding:
+      - chunked
+      x-accel-buffering:
+      - 'no'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+    headers:
+      accept:
+      - application/json, text/event-stream
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '54'
+      content-type:
+      - application/json
+      host:
+      - 127.0.0.1:8765
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+    method: POST
+    uri: http://127.0.0.1:8765/mcp
+  response:
+    body:
+      string: ''
+    headers:
+      content-length:
+      - '0'
+      content-type:
+      - application/json
+      date:
+      - Tue, 17 Nov 2026 12:12:55 GMT
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+      server:
+      - uvicorn
+    status:
+      code: 202
+      message: Accepted
+- request:
+    body: '{"jsonrpc":"2.0","method":"tools/list","id":2}'
+    headers:
+      accept:
+      - application/json, text/event-stream
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '46'
+      content-type:
+      - application/json
+      host:
+      - 127.0.0.1:8765
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+    method: POST
+    uri: http://127.0.0.1:8765/mcp
+  response:
+    body:
+      string: "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"\
+        tools\":[{\"name\":\"orders_month\",\"description\":\"Orders of a month (YYYY-MM).\"\
+        ,\"inputSchema\":{\"properties\":{\"period\":{\"title\":\"Period\",\"type\"\
+        :\"string\"}},\"required\":[\"period\"],\"title\":\"orders_monthArguments\"\
+        ,\"type\":\"object\"},\"outputSchema\":{\"additionalProperties\":true,\"title\"\
+        :\"orders_monthDictOutput\",\"type\":\"object\"},\"annotations\":{\"readOnlyHint\"\
+        :true}},{\"name\":\"order_refund\",\"description\":\"Refund the orders of\
+        \ a month.\",\"inputSchema\":{\"properties\":{\"period\":{\"title\":\"Period\"\
+        ,\"type\":\"string\"},\"reason\":{\"title\":\"Reason\",\"type\":\"string\"\
+        }},\"required\":[\"period\",\"reason\"],\"title\":\"order_refundArguments\"\
+        ,\"type\":\"object\"},\"outputSchema\":{\"properties\":{\"result\":{\"title\"\
+        :\"Result\",\"type\":\"string\"}},\"required\":[\"result\"],\"title\":\"order_refundOutput\"\
+        ,\"type\":\"object\"},\"annotations\":{\"readOnlyHint\":false,\"destructiveHint\"\
+        :true}}]}}\r\n\r\n"
+    headers:
+      cache-control:
+      - no-cache, no-transform
+      connection:
+      - keep-alive
+      content-type:
+      - text/event-stream
+      date:
+      - Tue, 17 Nov 2026 12:12:55 GMT
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+      server:
+      - uvicorn
+      transfer-encoding:
+      - chunked
+      x-accel-buffering:
+      - 'no'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"orders_month","arguments":{"period":"2026-10"}},"id":3}'
+    headers:
+      accept:
+      - application/json, text/event-stream
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '112'
+      content-type:
+      - application/json
+      host:
+      - 127.0.0.1:8765
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+    method: POST
+    uri: http://127.0.0.1:8765/mcp
+  response:
+    body:
+      string: "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"\
+        content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"period\\\": \\\"2026-10\\\
+        \",\\n  \\\"orders\\\": 24,\\n  \\\"open\\\": 3\\n}\"}],\"structuredContent\"\
+        :{\"period\":\"2026-10\",\"orders\":24,\"open\":3},\"isError\":false}}\r\n\
+        \r\n"
+    headers:
+      cache-control:
+      - no-cache, no-transform
+      connection:
+      - keep-alive
+      content-type:
+      - text/event-stream
+      date:
+      - Tue, 17 Nov 2026 12:12:56 GMT
+      mcp-session-id:
+      - 85a33a488dca45068edb9ee867fb2758
+      server:
+      - uvicorn
+      transfer-encoding:
+      - chunked
+      x-accel-buffering:
+      - 'no'
+    status:
+      code: 200
+      message: OK
+version: 1

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Evokai UI demo</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; background: Canvas; color: CanvasText; }
+      header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px 24px; border-bottom: 1px solid color-mix(in oklab, CanvasText 12%, transparent); }
+      header h1 { font-size: 18px; margin: 0 auto 0 0; }
+      label { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+      main { max-width: 48rem; padding: 24px; line-height: 1.6; }
+      table { border-collapse: collapse; } td, th { padding: 4px 12px; border-bottom: 1px solid color-mix(in oklab, CanvasText 12%, transparent); text-align: left; }
+      button.voice { padding: 8px 14px; border-radius: 999px; border: 1px solid color-mix(in oklab, CanvasText 20%, transparent); background: none; color: inherit; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Inkwell Books (a sample page)</h1>
+      <label>Theme <select id="theme"><option value="evokai">Evokai</option><option value="custom">Custom object</option></select></label>
+      <label>Language <select id="locale"><option value="en">English</option><option value="it">Italiano</option></select></label>
+      <label>Scheme <select id="scheme"><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <button class="voice" id="voice" type="button">Talk (voice stage alone)</button>
+    </header>
+    <main>
+      <h2>Open orders this week</h2>
+      <p>The agent reads this page's text with every message: ask it about what you see.</p>
+      <table>
+        <thead><tr><th>Order</th><th>Title</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1042</td><td>The Lighthouse Keeper</td><td>Return requested</td></tr>
+          <tr><td>1043</td><td>A Field Guide to Moss</td><td>Shipped</td></tr>
+          <tr><td>1047</td><td>Winter Recipes</td><td>New</td></tr>
+        </tbody>
+      </table>
+    </main>
+    <evokai-chat
+      id="chat"
+      base-url="http://localhost:8787/agent"
+      token-url="/api/agent/token"
+      conversations-url="/api/agent/conversations"
+      title="Ada"
+      app-name="Inkwell Books"
+      storage-key="evokai-demo"
+    ></evokai-chat>
+    <evokai-voice id="stage" for="chat" title="Ada" app-name="Inkwell Books"></evokai-voice>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

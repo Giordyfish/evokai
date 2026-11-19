@@ -1,0 +1,2624 @@
+# Evokai's provider catalog: who processes data, where, under whose control (evokai.llm.providers).
+# Every fact was read on the official page in its `sources` on its `checked` date; null means nobody could
+# verify it, and an unknown fact never satisfies a data protection rule. `unknowns` says what is missing.
+# A deployment adds or overrides entries with EVOKAI_PROVIDERS_FILE (the same shape).
+version: 1
+checked: '2026-11-19'
+providers:
+- id: bedrock
+  title: Amazon Bedrock
+  entity:
+    name: Amazon Web Services, Inc.
+    country: US
+    controlled_from: US
+    eu_contracting_entity: 'Amazon Web Services EMEA SARL, Luxembourg (AWS Customer Agreement contracting-party
+      table: any country in Europe, the Middle East or Africa except South Africa)'
+    sources:
+    - https://aws.amazon.com/agreement/
+  terms:
+    training: false
+    retention: none
+    zero_retention: default
+    notes: 'FAQ: inputs/outputs are not used to train AWS or third-party models and are not shared with model providers;
+      model providers have no access to the Model Deployment Accounts. Retention is per model and per Region (data_retention_mode
+      none/default/aws_review/provider_data_share, set per account-Region or per bedrock-mantle project). Exceptions
+      on the abuse-detection page: Claude Fable 5/5.1/5.2 retain all traffic up to 30 days (human review by AWS
+      possible; requires aws_review mode; ZDR only via Enterprise Frontier Safeguards); OpenAI models other than
+      gpt-oss/Safeguard retain classifier-flagged traffic up to 30 days (ZDR on request). Retained data is stored
+      in the destination Region of a cross-Region profile. Claude models released before Fable 5 have no retention
+      change (e.g. Opus 4.8 allows mode none). CSAM detection may store flagged image content.'
+    sources:
+    - https://aws.amazon.com/bedrock/faqs/
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/data-protection.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/abuse-detection.html
+  caching:
+    style: implicit_and_explicit
+    reports_usage: true
+    notes: 'Anthropic Claude: explicit only (cachePoint in Converse, cache_control in InvokeModel/Messages; also
+      a top-level automatic cache_control on Haiku 4.5, Sonnet 4.6, Opus 4.7/4.8/5/5.5, Sonnet 5/5.5, Haiku 5.5);
+      up to 4 checkpoints; TTL 5 min default and 1 h (''ttl'':''1h''); min tokens per checkpoint 512 (Claude 5.x),
+      1,024 (Sonnet 4.6, Sonnet 5, Opus 4.8), 4,096 (Haiku 4.5, Opus 4.5/4.6/4.7). Claude Sonnet 4.5 is not in the
+      explicit-caching table. Amazon Nova (Micro/Lite/Pro, Nova 2 Lite): implicit caching for all text prompts (not
+      reported or billed as cache reads) plus explicit checkpoints, min 1K tokens, max 20K tokens cached, 5 min
+      TTL. OpenAI GPT on Bedrock: implicit (GPT-5.5 and earlier, min 1,024, no write fee); GPT-5.6+ also explicit
+      prompt_cache_breakpoint, 30 min TTL, writes 1.25x. Converse reports cacheReadInputTokens/cacheWriteInputTokens;
+      Responses API reports cached_tokens/cache_write_tokens. On-demand only, not batch.'
+    sources:
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html
+  genai_prices: aws
+  checked: '2026-11-19'
+  unknowns:
+  - 'prices: the Bedrock pricing page renders per-model token prices with JavaScript; no Claude, Nova or Titan Text
+    Embeddings V2 numbers were readable, so none are filled'
+  - 'endpoints: Claude Sonnet 4.5, Nova Micro, Nova Pro and Titan Text Embeddings V2 model cards not read (their
+    profile ids and EU destinations unverified)'
+  - 'caching: Claude Sonnet 4.5 is absent from the explicit caching table; whether it still supports caching is
+    unverified'
+  endpoints:
+  - id: bedrock-eu-profile
+    kind: cross-region inference profile (geo)
+    how_to_select: model id prefix eu. on bedrock-runtime in an EU source Region
+    models:
+    - bedrock:eu.*
+    offered:
+    - eu.anthropic.claude-haiku-4-5-20251001-v1:0
+    - eu.anthropic.claude-sonnet-4-6
+    - eu.anthropic.claude-opus-5-5
+    - eu.amazon.nova-lite-v1:0
+    place:
+      geography: eu
+      countries:
+      - DE
+      - SE
+      - IT
+      - ES
+      - IE
+      - FR
+      regions:
+      - eu-central-1
+      - eu-north-1
+      - eu-south-1
+      - eu-south-2
+      - eu-west-1
+      - eu-west-3
+    data_at_rest: eu
+    notes: 'Destination Regions for Claude Haiku 4.5, Sonnet 4.6 and Opus 5.5 from eu-central-1/eu-north-1/eu-south-1/eu-south-2/eu-west-1/eu-west-3:
+      Frankfurt, Stockholm, Milan, Spain, Ireland, Paris. Calling from eu-central-2 (Zurich, CH) adds eu-central-2;
+      calling from eu-west-2 (London, GB) adds eu-west-2. Nova Lite EU profile from eu-central-1/eu-north-1 routes
+      only to eu-central-1, eu-north-1, eu-west-1, eu-west-3 (adds the source for eu-south-1/eu-south-2; from il-central-1
+      it adds il-central-1, outside the EU). Destinations vary by source Region and model: AWS says verify with
+      GetInferenceProfile from each source Region. Geo-tied profiles'' destination lists never change. Retained
+      abuse data, when any, is stored in the destination Region.'
+    sources:
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-5-5.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+    checked: '2026-11-19'
+  - id: bedrock-us-profile
+    kind: cross-region inference profile (geo)
+    how_to_select: model id prefix us.
+    models:
+    - bedrock:us.*
+    offered:
+    - us.anthropic.claude-haiku-4-5-20251001-v1:0
+    - us.anthropic.claude-sonnet-4-6
+    - us.anthropic.claude-opus-5-5
+    - us.amazon.nova-lite-v1:0
+    place:
+      geography: us
+      countries:
+      - US
+      regions:
+      - us-east-1
+      - us-east-2
+      - us-west-1
+      - us-west-2
+    notes: 'Claude: from us-east-1/us-east-2/us-west-2 routes to us-east-1, us-east-2, us-west-2; from us-west-1
+      adds us-west-1; from ca-central-1 / ca-west-1 adds that Canadian Region.'
+    sources:
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+    checked: '2026-11-19'
+  - id: bedrock-apac-profile
+    kind: cross-region inference profile (geo)
+    how_to_select: model id prefix apac. (Nova); Claude Haiku 4.5 / Sonnet 4.6 / Opus 5.5 use au., jp. (and in.
+      for Haiku 4.5) instead
+    models:
+    - bedrock:apac.*
+    offered:
+    - apac.amazon.nova-lite-v1:0
+    place:
+      geography: apac
+      regions:
+      - ap-northeast-1
+      - ap-northeast-2
+      - ap-northeast-3
+      - ap-south-1
+      - ap-southeast-1
+      - ap-southeast-2
+    notes: Regions listed are Nova Lite's destinations from Tokyo/Seoul/Mumbai/Singapore/Sydney; other sources add
+      more APAC Regions. Claude au. = Sydney, Melbourne; jp. = Tokyo, Osaka; in. = Mumbai, Hyderabad.
+    sources:
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html
+    checked: '2026-11-19'
+  - id: bedrock-global-profile
+    kind: global cross-region inference profile
+    how_to_select: model id prefix global.
+    models:
+    - bedrock:global.*
+    offered:
+    - global.anthropic.claude-haiku-4-5-20251001-v1:0
+    - global.anthropic.claude-sonnet-4-6
+    - global.anthropic.claude-opus-5-5
+    place:
+      geography: global
+    notes: Destinations include all commercial AWS Regions (Americas, EMEA incl. il-central-1, me-central-1, me-south-1,
+      af-south-1, and Asia Pacific) and can grow over time; may include opt-in Regions not enabled in the account.
+      Not offered for Nova Lite.
+    sources:
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html
+    checked: '2026-11-19'
+  - id: bedrock-in-region
+    kind: in-region
+    how_to_select: bare model id on bedrock-runtime.{region}.amazonaws.com, or bare id on bedrock-mantle.{region}.api.aws
+      where the model card lists in-Region mantle support
+    models:
+    - bedrock:*
+    exclude:
+    - bedrock:eu.*
+    - bedrock:us.*
+    - bedrock:apac.*
+    - bedrock:global.*
+    - bedrock:au.*
+    - bedrock:jp.*
+    - bedrock:ca.*
+    - bedrock:us-gov.*
+    offered:
+    - 'amazon.nova-lite-v1:0 (runtime in-Region: eu-north-1, eu-west-2)'
+    - 'anthropic.claude-sonnet-4-6 (runtime in-Region: eu-west-2 only)'
+    - 'anthropic.claude-opus-5-5 (runtime in-Region: eu-west-2 only)'
+    - 'anthropic.claude-haiku-4-5 (mantle in-Region: eu-north-1, eu-west-1; no runtime in-Region)'
+    place:
+      from_deployment_region: true
+    notes: 'In-Region keeps processing in one Region. For Claude Haiku 4.5 the runtime endpoint requires a geo/global
+      profile; single-Region inference is via bedrock-mantle (https://bedrock-mantle.{region}.api.aws/anthropic/v1/messages).
+      Opus 5.5 mantle in-Region only us-east-1, ap-southeast-4, us-gov-west-1. Availability is per model: check
+      each model card. Base URL: https://bedrock-runtime.{region}.amazonaws.com.'
+    sources:
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-5-5.html
+    - https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - bedrock:eu.anthropic.claude-haiku-4-5-20251001-v1:0
+    currency: USD
+    input: 1.1
+    output: 5.5
+    notes: Bedrock EU (Stockholm) list price, as Evokai priced it before the catalog.
+    sources:
+    - https://aws.amazon.com/bedrock/pricing/
+    checked: '2026-11-14'
+  - models:
+    - bedrock:eu.anthropic.claude-haiku-5-5
+    currency: USD
+    input: 0.11
+    output: 0.55
+    notes: Bedrock EU (Stockholm) list price, as Evokai priced it before the catalog.
+    sources:
+    - https://aws.amazon.com/bedrock/pricing/
+    checked: '2026-11-14'
+  - models:
+    - bedrock:eu.anthropic.claude-sonnet-5-5
+    currency: USD
+    input: 2.2
+    output: 11.0
+    notes: Bedrock EU (Stockholm) list price, as Evokai priced it before the catalog.
+    sources:
+    - https://aws.amazon.com/bedrock/pricing/
+    checked: '2026-11-14'
+  - models:
+    - bedrock:eu.anthropic.claude-sonnet-4-6
+    currency: USD
+    input: 3.3
+    output: 16.5
+    notes: Bedrock EU (Stockholm) list price, as Evokai priced it before the catalog.
+    sources:
+    - https://aws.amazon.com/bedrock/pricing/
+    checked: '2026-11-14'
+  - models:
+    - bedrock:eu.amazon.nova-2-lite-v1:0
+    currency: USD
+    input: 0.363
+    output: 2.992
+    notes: Bedrock EU (Stockholm) list price, as Evokai priced it before the catalog.
+    sources:
+    - https://aws.amazon.com/bedrock/pricing/
+    checked: '2026-11-14'
+- id: azure
+  title: Azure OpenAI / Microsoft Foundry Models sold by Azure
+  entity:
+    name: Microsoft Corporation
+    country: US
+    controlled_from: US
+    eu_contracting_entity: Microsoft Ireland Operations Limited (MIOL) is the billing entity for EMEA under the
+      Microsoft Customer Agreement; in Limited Risk Distributor countries (e.g. FR, DE, AT, BE, DK, FI, IT, NL,
+      SE, ES) the seller is the local subsidiary with MIOL as licensor
+    sources:
+    - https://learn.microsoft.com/en-us/azure/cost-management-billing/understand/mca-understand-your-invoice
+  terms:
+    training: false
+    retention: abuse_monitoring
+    zero_retention: on_request
+    notes: 'Prompts, completions, embeddings are not available to OpenAI or other model providers, not used to train
+      foundation models without permission; Microsoft hosts the models and they do not call OpenAI services. Abuse
+      monitoring: flagged prompts/completions may be sampled; automated (LLM) review stores nothing; data for human
+      review is kept in an abuse-monitoring store in the resource''s Azure geography (EEA deployments: reviewers
+      located in the EEA). Retention period of that store is not stated on the current pages. Modified abuse monitoring
+      (no storage, no human review) by Limited Access application; per the 17 Nov 2026 update it will not be available
+      for models released on or after 1 Nov 2026 from a date to be announced. Stateful features (Responses API store,
+      Assistants threads, stored completions, files, batch) store data at rest in the resource''s geography.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/openai/data-privacy
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/abuse-monitoring
+  caching:
+    style: automatic
+    reports_usage: true
+    notes: 'Automatic for supported models (GPT-4o or newer, in-memory retention, typically cleared after 5-10 min
+      idle, always within 1 h; extended 24h retention for gpt-4.1, gpt-5, gpt-5.1/5.2/5.4/5.5 families). Min 1,024
+      identical prefix tokens; hits in 128-token increments (GPT-5.5 and earlier). Usage: prompt_tokens_details.cached_tokens
+      (and cache_write_tokens on GPT-5.6+). GPT-5.6+ also accept explicit prompt_cache_breakpoint and prompt_cache_options
+      (ttl 30m or 12h), cache writes may be charged. Cache reads discounted on Standard types; on provisioned (pre
+      GPT-6) cached tokens don''t consume PTU. Extended caching keeps data within the data zone (Data Zone types)
+      or region (Regional types); caches not shared between subscriptions.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/prompt-caching
+  genai_prices: azure
+  checked: '2026-11-19'
+  unknowns:
+  - 'terms.retention_days: the current data-privacy and abuse-monitoring pages do not state how long the human-review
+    store keeps prompts/completions (older docs said 30 days; not confirmed today)'
+  - 'endpoints: per-region model availability for the EU data zone not read (models-sold-directly-by-azure region
+    tables)'
+  - 'prices: the Azure OpenAI pricing web page renders prices with JavaScript; prices above come from Microsoft''s
+    official Retail Prices API for swedencentral and were converted from per-1K where needed; GPT-5 / GPT-5.5 standard
+    meters were not identified'
+  - 'entity: exact contracting entity under an Enterprise Agreement not checked'
+  endpoints:
+  - id: azure-datazone-eu
+    kind: data zone
+    how_to_select: deployment SKU DataZoneStandard (or DataZoneProvisionedManaged, DataZoneBatch) in a Foundry resource
+      located in an EU member state
+    place:
+      geography: eu
+    data_at_rest: resource's Azure geography
+    notes: 'Data-privacy page: processing in that or any other EU member nation. Deployment-types page: the EU Data
+      Zone follows the Azure EU Data Boundary, which can include EFTA countries such as Norway and Switzerland;
+      Microsoft can add regions without prior notice. EUDB change log (Dec 2024) lists data zone deployments as
+      an optional capability that may cause Customer Data to be stored outside the EUDB. Base URL: https://{resource}.openai.azure.com.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/deployment-types
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/openai/data-privacy
+    - https://learn.microsoft.com/en-us/privacy/eudb/change-log
+    checked: '2026-11-19'
+    price_factor: 1.1
+  - id: azure-regional-standard
+    kind: regional (Azure geography)
+    how_to_select: deployment SKU Standard (or ProvisionedManaged for Regional Provisioned)
+    place: {}
+    data_at_rest: resource's Azure geography
+    notes: 'Prompts and responses processed within the customer-specified Azure geography, possibly between regions
+      of that geography for operational purposes. Geography-based types launch last and have the narrowest model
+      availability. Base URL: https://{resource}.openai.azure.com.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/deployment-types
+    checked: '2026-11-19'
+    price_factor: 1.21
+  - id: azure-global-standard
+    kind: global
+    how_to_select: deployment SKU GlobalStandard (also GlobalProvisionedManaged, GlobalBatch)
+    place:
+      geography: global
+    data_at_rest: resource's Azure geography
+    notes: 'Prompts and responses may be processed in any geography where the model is deployed; data at rest (incl.
+      the abuse-monitoring store) stays in the customer-designated geography. Listed in the EU Data Boundary docs
+      as an optional capability that may process Customer Data outside the EUDB. Base URL: https://{resource}.openai.azure.com.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/deployment-types
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/openai/data-privacy
+    - https://learn.microsoft.com/en-us/privacy/eudb/change-log
+    checked: '2026-11-19'
+  - id: azure-datazone-us
+    kind: data zone
+    how_to_select: deployment SKU DataZoneStandard in a Foundry resource located in the US
+    place:
+      geography: us
+      countries:
+      - US
+    data_at_rest: resource's Azure geography
+    notes: 'Processing anywhere within the United States. An APAC data zone also exists. Base URL: https://{resource}.openai.azure.com.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/deployment-types
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - azure:gpt-5.4
+    endpoints:
+    - azure-global-standard
+    currency: USD
+    input: 2.5
+    output: 15.0
+    cache_read: 0.25
+    sources:
+    - https://prices.azure.com/api/retail/prices (productName 'Azure OpenAI GPT5', armRegionName swedencentral,
+      meters '5.4 inp/opt/cd inp Gl')
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-5.4
+    endpoints:
+    - azure-datazone-eu
+    currency: USD
+    input: 2.75
+    output: 16.5
+    cache_read: 0.275
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, '5.4 ... Dz')
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-5.4-mini
+    endpoints:
+    - azure-global-standard
+    currency: USD
+    input: 0.75
+    output: 4.5
+    cache_read: 0.075
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, '5.4 mini ... Gl')
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-5.4-mini
+    endpoints:
+    - azure-datazone-eu
+    currency: USD
+    input: 0.825
+    output: 4.95
+    cache_read: 0.0825
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, '5.4 mini ... Dz')
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-5.4-nano
+    endpoints:
+    - azure-global-standard
+    currency: USD
+    input: 0.2
+    output: 1.25
+    cache_read: 0.02
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, '5.4 nano ... Gl')
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-5.4-nano
+    endpoints:
+    - azure-datazone-eu
+    currency: USD
+    input: 0.22
+    output: 1.375
+    cache_read: 0.022
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, '5.4 nano ... Dz')
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-4.1
+    endpoints:
+    - azure-global-standard
+    currency: USD
+    input: 2.0
+    output: 8.0
+    cache_read: 0.5
+    sources:
+    - https://prices.azure.com/api/retail/prices (productName 'Azure OpenAI', swedencentral, per-1K meters converted
+      to per 1M)
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-4.1
+    endpoints:
+    - azure-datazone-eu
+    currency: USD
+    input: 2.2
+    output: 8.8
+    cache_read: 0.55
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, per-1K meters converted)
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-4.1
+    endpoints:
+    - azure-regional-standard
+    currency: USD
+    input: 2.42
+    output: 9.68
+    cache_read: 0.605
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral regional, per-1K meters converted)
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-4.1-mini
+    endpoints:
+    - azure-datazone-eu
+    currency: USD
+    input: 0.44
+    output: 1.76
+    cache_read: 0.11
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, per-1K meters converted)
+    checked: '2026-11-19'
+  - models:
+    - azure:gpt-4o-mini
+    endpoints:
+    - azure-datazone-eu
+    currency: USD
+    input: 0.165
+    output: 0.66
+    cache_read: 0.083
+    sources:
+    - https://prices.azure.com/api/retail/prices (swedencentral, per-1K meters converted)
+    checked: '2026-11-19'
+- id: google-vertex
+  title: Google Vertex AI generative AI (docs now titled Gemini Enterprise Agent Platform)
+  entity:
+    name: Google LLC
+    country: US
+    controlled_from: US
+    eu_contracting_entity: Google Cloud EMEA Limited, Dublin, Ireland, for EMEA except France (Google Cloud France),
+      Italy (Google Cloud Italy S.r.l.) and Poland (local entity); read from the search excerpt of the official
+      contracting-entity page, page body did not render
+    sources:
+    - https://cloud.google.com/terms/google-entity
+  terms:
+    training: false
+    retention: abuse_monitoring
+    retention_days: 90
+    zero_retention: on_request
+    notes: 'Google won''t use customer data to train or fine-tune models without prior permission. Abuse monitoring:
+      for standard Google models prompts are logged only when classifiers flag activity, kept up to 90 days; frontier
+      models up to 30 days (stored inside the customer''s environment); ''Advanced AI'' models log all prompts and
+      responses up to 30 days and opt-out may not be possible. Customers with a Cloud Master Agreement are exempt
+      from standard prompt logging by default. Data caching (in-memory and durable, deleted within 24 h) is on by
+      default and can be disabled per project (cacheConfig). ZDR needs: request-response logging off, caching off,
+      store=false in the Interactions API, no Live API session resumption, no Search/Maps grounding (Search query
+      logs kept 3 days, Maps 30 days, not disableable), Deep Research retains 7 days.'
+    sources:
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/data-governance
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/abuse-monitoring
+  caching:
+    style: implicit_and_explicit
+    reports_usage: true
+    notes: Implicit caching on by default for all projects (many Gemini 2.5, 3.x and 4 models), 90% discount on
+      cached tokens. Explicit caches created via the API, default TTL 60 min (extendable), plus storage cost per
+      hour; 90% discount on Gemini 2.5+ (75% on 2.0). Min tokens 4,096 for Gemini 3 and 4 (6,144 for some 3.x preview
+      models), 2,048 for Gemini 2. Usage field cachedContentTokenCount.
+    sources:
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-overview
+  genai_prices: google
+  checked: '2026-11-19'
+  unknowns:
+  - 'prices: the Vertex AI generative AI pricing page did not render (78 characters of text)'
+  - 'entity: contracting-entity page body did not render; mapping taken from the official page''s search excerpt'
+  - 'endpoints: regional base_url pattern and exact model ids per EU region not verified'
+  endpoints:
+  - id: vertex-eu-multiregion
+    kind: multi-region
+    how_to_select: location eu
+    offered:
+    - Gemini 4 Argon
+    - Gemini 3.5 Flash
+    - Gemini 2.5 Pro
+    place:
+      geography: eu
+    data_at_rest: customer-selected location
+    notes: 'Covers data residency within EU member states only; UK and Switzerland excluded. Model list is partial
+      (display names as summarised from the page, not API ids). Base URL: https://aiplatform.eu.rep.googleapis.com.'
+    sources:
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/data-residency
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/locations
+    checked: '2026-11-19'
+  - id: vertex-us-multiregion
+    kind: multi-region
+    how_to_select: location us
+    place:
+      geography: us
+      countries:
+      - US
+    data_at_rest: customer-selected location
+    notes: 'Base URL: https://aiplatform.us.rep.googleapis.com.'
+    sources:
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/locations
+    checked: '2026-11-19'
+  - id: vertex-regional-eu
+    kind: regional endpoint
+    how_to_select: location = region id (e.g. europe-west3)
+    offered:
+    - Gemini 2.5 Flash (128k) in europe-west9 and europe-west3
+    - Gemini 3.5 Flash in europe-west3
+    place:
+      geography: eu
+      countries:
+      - FR
+      - DE
+      regions:
+      - europe-west9
+      - europe-west3
+    data_at_rest: customer-selected location
+    notes: 'Only these EU regions are listed with in-region ML processing for Gemini on the data-residency page;
+      europe-west2 (London, GB, non-EU) also has 2.5 Flash, 3.5 Flash, Gemini 4 Argon. Other European regions listed
+      for generative AI: europe-west1, europe-west4, europe-west6, europe-north1, europe-central2, europe-west8,
+      europe-southwest1, but without in-region ML processing guarantees for Gemini per the data-residency tables.
+      base_url pattern not verified today. Base URL: https://{region}-aiplatform.googleapis.com.'
+    sources:
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/data-residency
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/locations
+    checked: '2026-11-19'
+  - id: vertex-global
+    kind: global
+    how_to_select: location global
+    place:
+      geography: global
+    data_at_rest: customer-selected location
+    notes: 'May be processed in any Google Cloud location; no regional isolation or residency guarantees. Data at
+      rest stays in the selected location regardless of endpoint. Base URL: https://aiplatform.googleapis.com.'
+    sources:
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/data-residency
+    - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/locations
+    checked: '2026-11-19'
+- id: google-gla
+  title: Google Gemini API (Google AI Studio / Generative Language API)
+  entity:
+    name: Google LLC
+    country: US
+    controlled_from: US
+    eu_contracting_entity: For Paid Services 'Google' has the meaning at cloud.google.com/terms/google-entity (Google
+      Cloud EMEA Limited for most of EMEA per that page's excerpt)
+    sources:
+    - https://aistudio.google.com/docs/terms
+    - https://cloud.google.com/terms/google-entity
+  terms:
+    retention: abuse_monitoring
+    retention_days: 55
+    notes: 'Unpaid Services: Google uses content to provide and improve products; human reviewers may read API input/output.
+      Paid Services: prompts/responses not used to improve products; logged for a limited period solely to detect
+      violations. Usage policies: prompts, context and outputs retained 55 days for policy enforcement, not used
+      to train models other than enforcement ones. In the EEA, Switzerland and UK the Paid Services data-use terms
+      apply to all Services incl. AI Studio and unpaid quota, and API clients offered to users there may use only
+      Paid Services. Paid data may be stored transiently or cached in any country where Google or its agents have
+      facilities. training_on_api_data is null because it depends on tier (true for unpaid outside EEA/CH/UK, false
+      for paid).'
+    sources:
+    - https://aistudio.google.com/docs/terms
+    - https://aistudio.google.com/docs/usage-policies
+  caching:
+    style: implicit_and_explicit
+    reports_usage: true
+    notes: Implicit caching on by default for Gemini 2.5 and newer; min 2,048 tokens (2.5) / 4,096 (3.x, 4); savings
+      passed on automatically; usage field usage.total_cached_tokens (SDK naming on the page). Explicit caching
+      via generateContent for supported Gemini 3 and 2.5 models; not supported in the Interactions API or for Gemini
+      4 models. Pricing page lists context-caching and storage-per-hour prices.
+    sources:
+    - https://aistudio.google.com/docs/caching
+    - https://aistudio.google.com/docs/pricing
+  genai_prices: google
+  checked: '2026-11-19'
+  unknowns:
+  - 'prices: paid Standard tier, prompts <=200K; gemini-4-carbon doubles from 2026-12-01 (4.00/20.00/0.20) and gemini-3.8/3.6-flash
+    double from 2027-01-01 (1.50/7.50/0.15) per the page; cache storage per hour not recorded; values read through
+    a page summariser, re-check before relying on them'
+  - 'terms.zero_retention: no ZDR option found on the usage-policies or terms page'
+  - 'endpoints: base URL (generativelanguage.googleapis.com) not confirmed on a page read today'
+  endpoints:
+  - id: gla-global
+    kind: global
+    how_to_select: Gemini API key
+    models:
+    - google-gla:*
+    offered:
+    - gemini-4-carbon
+    - gemini-3.8-flash
+    - gemini-3.6-flash
+    - gemini-3.5-flash-lite
+    - gemini-3.1-flash-lite
+    - gemini-3.1-pro-preview
+    place:
+      geography: global
+    notes: No region selection documented; terms say data may be stored transiently or cached in any country where
+      Google has facilities.
+    sources:
+    - https://aistudio.google.com/docs/terms
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - google-gla:gemini-4-carbon
+    currency: USD
+    input: 2.0
+    output: 10.0
+    cache_read: 0.1
+    sources:
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - google-gla:gemini-3.1-pro-preview
+    currency: USD
+    input: 2.0
+    output: 12.0
+    cache_read: 0.2
+    sources:
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - google-gla:gemini-3.8-flash
+    currency: USD
+    input: 0.75
+    output: 3.75
+    cache_read: 0.075
+    sources:
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - google-gla:gemini-3.6-flash
+    currency: USD
+    input: 0.75
+    output: 3.75
+    cache_read: 0.075
+    sources:
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - google-gla:gemini-3.5-flash-lite
+    currency: USD
+    input: 0.3
+    output: 2.5
+    cache_read: 0.03
+    sources:
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - google-gla:gemini-3.1-flash-lite
+    currency: USD
+    input: 0.25
+    output: 1.5
+    cache_read: 0.025
+    sources:
+    - https://aistudio.google.com/docs/pricing
+    checked: '2026-11-19'
+- id: openai
+  title: OpenAI API
+  aliases:
+  - openai-chat
+  - openai-responses
+  - openai-eu
+  entity:
+    name: OpenAI OpCo, LLC
+    country: US
+    controlled_from: US
+    eu_contracting_entity: OpenAI Ireland Ltd., Dublin, for customers located in the EEA or Switzerland (OpenAI
+      Services Agreement ONLINE v.010126); governing law Ireland for EEA, CH and UK customers
+    sources:
+    - https://cdn.openai.com/osa/openai-services-agreement.pdf
+  terms:
+    training: false
+    retention: abuse_monitoring
+    retention_days: 30
+    zero_retention: on_request
+    notes: API data not used to train or improve models unless the customer opts in. Abuse monitoring logs generated
+      for all API usage, kept up to 30 days (longer if legally required or to prevent harm). Zero Data Retention
+      and Modified Abuse Monitoring exclude content from those logs, subject to prior approval by OpenAI; ZDR treats
+      store as false on /v1/responses and /v1/chat/completions; some endpoints (conversations, assistants, files,
+      fine-tuning) still store application state.
+    sources:
+    - https://developers.openai.com/api/docs/guides/your-data
+  caching:
+    style: automatic
+    reports_usage: true
+    notes: 'Enabled by default on supported models; usage.input_tokens_details.cached_tokens (rounded down to 128
+      on earlier models). Earlier models: in_memory ~5-10 min idle or 24h option, prompt_cache_key for routing,
+      no write fee. GPT-5.6 and later: min 1,024 tokens, explicit breakpoints optional, writes billed 1.25x input
+      (30-min default) or 2.5x (12-hour).'
+    sources:
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+  genai_prices: openai
+  checked: '2026-11-19'
+  unknowns:
+  - 'prices: Standard tier, short context (<=272K input); cache_write for GPT-5.6+ models derived from the caching
+    guide rule (1.25x input for the default 30-min write), not printed on the pricing page; EU residency adds 10%
+    for models released on/after 2026-03-05'
+  - 'endpoints: full list of models available with EU residency not read; whether ZDR/MAM is required for EU residency
+    not stated on the page'
+  - 'entity: the services-agreement web page returned 403; the definition was read from the official PDF'
+  endpoints:
+  - id: openai-eu-residency
+    kind: regional endpoint (data residency)
+    how_to_select: project created with data residency Europe (eligible organizations, contact sales); call the
+      eu. domain prefix
+    models:
+    - openai-eu:*
+    offered:
+    - gpt-6.2-astra
+    - gpt-6.2-sol
+    place:
+      geography: eu
+      regions:
+      - Europe (EEA + Switzerland)
+    data_at_rest: eu
+    notes: Region fixed at project creation. Europe offers regional processing (inference in region where supported)
+      and storage at rest when an endpoint needs persistence; support varies by endpoint and model (Batches, Chat
+      Completions, Responses, Embeddings, Images, Audio, Realtime, Moderation listed as examples). System data (account,
+      billing, usage metadata) may be processed elsewhere. Chat Completions cannot use store=true outside the US.
+      10% price uplift for eligible models released on or after 2026-03-05. Model list is only the examples named
+      on the page. The '/v1' path suffix is not confirmed on the page.
+    sources:
+    - https://developers.openai.com/api/docs/guides/data-residency
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+    api: openai-compatible
+    api_key_env: OPENAI_API_KEY
+    price_factor: 1.1
+    base_url: https://eu.api.openai.com/v1
+  - id: openai-global
+    kind: global
+    how_to_select: default base URL
+    models:
+    - openai:*
+    - openai-chat:*
+    - openai-responses:*
+    place:
+      geography: global
+    data_at_rest: us
+    notes: 'data_at_rest ''us'' is not stated explicitly; the data-residency guide lists US as one of the regions,
+      default project location not confirmed. Base URL: https://api.openai.com/v1.'
+    sources:
+    - https://developers.openai.com/api/docs/guides/data-residency
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - openai:gpt-6.2-astra
+    currency: USD
+    input: 8.0
+    output: 40.0
+    cache_read: 0.4
+    cache_write: 10.0
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-6.2-sol
+    currency: USD
+    input: 2.0
+    output: 10.0
+    cache_read: 0.1
+    cache_write: 2.5
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-5.6-sol
+    currency: USD
+    input: 4.0
+    output: 20.0
+    cache_read: 0.4
+    cache_write: 5.0
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-5.5
+    currency: USD
+    input: 5.0
+    output: 30.0
+    cache_read: 0.5
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-5.4-mini
+    currency: USD
+    input: 0.75
+    output: 4.5
+    cache_read: 0.075
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-5.4-nano
+    currency: USD
+    input: 0.2
+    output: 1.25
+    cache_read: 0.02
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-4.1
+    currency: USD
+    input: 2.0
+    output: 8.0
+    cache_read: 0.5
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+  - models:
+    - openai:gpt-4o-mini
+    currency: USD
+    input: 0.15
+    output: 0.6
+    cache_read: 0.075
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+- id: anthropic
+  title: Anthropic Claude API
+  entity:
+    name: Anthropic, PBC
+    country: US
+    controlled_from: US
+    eu_contracting_entity: Anthropic Ireland, Limited if the customer resides in the EEA, Switzerland or UK (Commercial
+      Terms)
+    sources:
+    - https://www.anthropic.com/legal/commercial-terms
+  terms:
+    training: false
+    zero_retention: on_request
+    notes: 'Commercial Terms: Anthropic may not train models on Customer Content from Services. Retention sources
+      disagree: the API data-retention doc says conversation content (prompts and outputs) is not retained by default,
+      except Covered Models (Claude Fable 5/5.1/5.2, Mythos 5/5.1/5.2) which require 30-day retention and are not
+      available under ZDR unless expressly authorized; the privacy-center article for organizations says inputs
+      and outputs are deleted on the backend within 30 days. Usage-policy-flagged content: inputs/outputs up to
+      2 years, classifier scores up to 7 years. ZDR per organization via sales (Messages and Token Counting APIs;
+      not Console, code execution, Managed Agents). Some features retain data by design (code execution containers
+      up to 30 days).'
+    sources:
+    - https://www.anthropic.com/legal/commercial-terms
+    - https://platform.claude.com/docs/en/manage-claude/api-and-data-retention
+    - https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data
+  caching:
+    style: explicit
+    reports_usage: true
+    notes: 'cache_control on content blocks (up to 4 breakpoints) or a single top-level cache_control (automatic
+      placement; not on bedrock-runtime). TTL 5 min default (refreshed on use) or ''ttl'':''1h''. Writes 1.25x (5m)
+      / 2x (1h) base input; reads 0.1x on most models (0.05x Opus 5.5 and Sonnet 5.5, 0.025x Fable/Mythos 5.2).
+      Min cacheable: 512 tokens (Claude 5.x incl. Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5), 1,024 (Opus 4.8, Sonnet
+      5, Sonnet 4.6, Sonnet 4.5), 2,048 (Opus 4.7), 4,096 (Opus 4.6, Opus 4.5, Haiku 4.5). Usage: cache_creation_input_tokens,
+      cache_read_input_tokens.'
+    sources:
+    - https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+    - https://platform.claude.com/docs/en/about-claude/pricing
+  genai_prices: anthropic
+  checked: '2026-11-19'
+  unknowns:
+  - 'terms.retention / retention_days: the API data-retention doc (not retained by default) and the privacy-center
+    article (deleted within 30 days) disagree, so both are left null'
+  - 'prices: cache_write is the 5-minute write price (1h write = 2x input); Haiku 5.5 price is for prompts up to
+    100,000 tokens (over: 0.50/2.50); Sonnet 5 input/output carry a footnote not read; Claude Haiku 4.5 API id not
+    confirmed on a page read today; inference_geo us adds 1.1x'
+  - 'prices: ''Claude Haiku 4.5'' is a display name, not an API id: not priced by name'
+  endpoints:
+  - id: anthropic-global
+    kind: global
+    how_to_select: inference_geo "global" (default) on POST /v1/messages
+    models:
+    - anthropic:*
+    offered:
+    - claude-opus-5-5
+    - claude-sonnet-5-5
+    - claude-haiku-5-5
+    - claude-opus-5
+    - claude-sonnet-5
+    - claude-opus-4-8
+    - claude-sonnet-4-6
+    place:
+      geography: global
+    data_at_rest: us
+    notes: 'Inference may run in any available geography. Workspace geo (storage at rest, endpoint processing such
+      as image transcoding and code execution) currently only ''us''. Base URL: https://api.anthropic.com.'
+    sources:
+    - https://platform.claude.com/docs/en/build-with-claude/data-residency
+    checked: '2026-11-19'
+  - id: anthropic-us
+    kind: inference geo
+    how_to_select: inference_geo "us" per request or workspace default_inference_geo / allowed_inference_geos
+    offered:
+    - claude-opus-5-5
+    - claude-sonnet-5-5
+    - claude-haiku-5-5
+    - claude-opus-5
+    - claude-sonnet-5
+    - claude-opus-4-8
+    - claude-opus-4-7
+    - claude-opus-4-6
+    - claude-sonnet-4-6
+    place:
+      geography: us
+      countries:
+      - US
+    data_at_rest: us
+    notes: 'Claude 4.6 and later only (Opus 4.5, Sonnet 4.5, Haiku 4.5 return 400). Priced at 1.1x on all token
+      categories. Response usage.inference_geo reports where inference ran. Only ''us'' and ''global'' exist: there
+      is no EU inference geo on the first-party API. Base URL: https://api.anthropic.com.'
+    sources:
+    - https://platform.claude.com/docs/en/build-with-claude/data-residency
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - anthropic:claude-opus-5-5
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 4.0
+    output: 20.0
+    cache_read: 0.2
+    cache_write: 5.0
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  - models:
+    - anthropic:claude-opus-5
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 5.0
+    output: 25.0
+    cache_read: 0.5
+    cache_write: 6.25
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  - models:
+    - anthropic:claude-opus-4-8
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 5.0
+    output: 25.0
+    cache_read: 0.5
+    cache_write: 6.25
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  - models:
+    - anthropic:claude-sonnet-5-5
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 2.0
+    output: 10.0
+    cache_read: 0.1
+    cache_write: 2.5
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  - models:
+    - anthropic:claude-sonnet-5
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 2.0
+    output: 10.0
+    cache_read: 0.2
+    cache_write: 2.5
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  - models:
+    - anthropic:claude-sonnet-4-6
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 3.0
+    output: 15.0
+    cache_read: 0.3
+    cache_write: 3.75
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+  - models:
+    - anthropic:claude-haiku-5-5
+    endpoints:
+    - anthropic-global
+    currency: USD
+    input: 0.1
+    output: 0.5
+    cache_read: 0.01
+    cache_write: 0.125
+    sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    checked: '2026-11-19'
+- id: cohere
+  title: Cohere API
+  entity:
+    name: Cohere Inc.
+    country: CA
+    controlled_from: CA
+    sources:
+    - https://cohere.com/terms-of-use
+  terms:
+    retention: abuse_monitoring
+    retention_days: 30
+    zero_retention: on_request
+    notes: Logged prompts and generations deleted automatically after 30 days, unless law, contract or flagged violations
+      require longer. Customers can opt out of prompts/generations being used to train Cohere models (dashboard
+      toggle); the default is not stated. ZDR only for approved enterprise customers (no logging of prompts/generations,
+      usage data still collected), request via support. Model Vault (dedicated hosting) has ZDR on by default. Terms
+      governed by Ontario and Canadian federal law.
+    sources:
+    - https://cohere.com/enterprise-data-commitments
+    - https://cohere.com/terms-of-use
+  caching:
+    notes: No caching documentation read.
+  genai_prices: cohere
+  checked: '2026-11-19'
+  unknowns:
+  - 'terms.training_on_api_data: opt-out exists but default not stated'
+  - 'endpoints/regions: SaaS hosting location not stated; Model Vault Encrypted runs in the US with EU and Canada
+    ''coming soon'' (search excerpt of official docs, not read directly)'
+  - 'entity.eu_contracting_entity: not stated'
+  - 'caching and prices: not researched (page budget)'
+- id: groq
+  title: GroqCloud API
+  entity:
+    name: Groq LLC (contracting party outside EEA/CH/KSA)
+    country: US
+    controlled_from: US
+    eu_contracting_entity: Groq UK Limited (United Kingdom) for customers domiciled in the EEA or Switzerland (Services
+      Agreement)
+    sources:
+    - https://console.groq.com/docs/legal/services-agreement
+  terms:
+    training: false
+    retention: none
+    retention_days: 30
+    zero_retention: default
+    notes: 'By default Groq does not retain customer data for inference requests; it may temporarily log data for
+      reliability or abuse investigations, kept up to 30 days. Any customer can enable ZDR in Data Controls (disables
+      batch and fine-tuning). Batch files kept up to 30 days. Retained customer data is stored in GCP buckets in
+      the United States. Services Agreement 4.2: Groq may not use Inputs or Outputs to train or fine-tune models
+      without permission. DPA allows processing in the US and other countries (EU SCCs). zero_retention ''default''
+      reflects no retention by default; the 30-day logging is conditional.'
+    sources:
+    - https://console.groq.com/docs/your-data
+    - https://console.groq.com/docs/legal/services-agreement
+    - https://console.groq.com/docs/legal/customer-data-processing-addendum
+  caching:
+    style: automatic
+    reports_usage: true
+    notes: Automatic, no extra fee, 50% discount on cached input tokens; supported models openai/gpt-oss-20b, openai/gpt-oss-120b,
+      openai/gpt-oss-safeguard-20b; usage.prompt_tokens_details.cached_tokens; cache expires after 2 hours without
+      use.
+    sources:
+    - https://console.groq.com/docs/prompt-caching
+  genai_prices: groq
+  checked: '2026-11-19'
+  unknowns:
+  - 'prices: groq.com/pricing showed no token prices'
+  - 'endpoints: base URL and EU routing not documented on pages read; Helsinki/Vantaa site facts come from search
+    excerpts of official pages'
+  - 'entity.name: Services Agreement names Groq LLC; parent company not checked'
+  endpoints:
+  - id: groq-global
+    kind: global
+    how_to_select: default API
+    models:
+    - groq:*
+    offered:
+    - openai/gpt-oss-120b
+    - openai/gpt-oss-20b
+    place:
+      geography: global
+    data_at_rest: us
+    notes: Groq announced a Helsinki (Equinix) European footprint and lists EU-1 Vantaa (FI) and EU-2 London sites
+      (newsroom/platform pages, seen only as search excerpts); no documented way to pin inference to the EU, and
+      stored data is in US GCP buckets.
+    sources:
+    - https://console.groq.com/docs/your-data
+    - https://groq.com/newsroom/groq-launches-european-data-center-footprint-in-helsinki-finland
+    checked: '2026-11-19'
+- id: deepseek
+  title: DeepSeek API (Open Platform)
+  entity:
+    name: Hangzhou DeepSeek Artificial Intelligence Co., Ltd.
+    country: CN
+    controlled_from: CN
+    sources:
+    - https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html
+    - https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html
+  terms:
+    retention: stored
+    zero_retention: 'no'
+    notes: 'Privacy policy: personal data collected, processed and stored in the People''s Republic of China; inputs
+      (prompts, uploads, chat history) may be used to train and improve models, with a right to opt out; data kept
+      as long as the account exists. The policy covers paid open-platform services but says end-user data of developer-built
+      apps is not covered (developer is controller). Open Platform terms: governed by PRC law, do not state whether
+      API inputs/outputs are used for training. No ZDR option found.'
+    sources:
+    - https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html
+    - https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html
+  caching:
+    style: automatic
+    reports_usage: true
+    notes: Context caching on disk enabled by default for all users, no code changes; usage.prompt_cache_hit_tokens
+      / prompt_cache_miss_tokens; caches cleared when unused, usually within a few hours to a few days.
+    sources:
+    - https://api-docs.deepseek.com/guides/kv_cache
+  genai_prices: deepseek
+  checked: '2026-11-19'
+  unknowns:
+  - 'prices: off-peak rates; peak (01:00-04:00 and 06:00-10:00 UTC Mon-Fri, excl. Chinese holidays) doubles them
+    (flash 0.3/1.2/0.006, v4-pro 1.32/3.96/0.044); currency shown only as ''$'''
+  - 'terms.training_on_api_data: privacy policy allows training on inputs with opt-out, but whether it applies to
+    API traffic is not stated'
+  - 'endpoints: API base URL not confirmed on a page read today'
+  endpoints:
+  - id: deepseek-cn
+    kind: global
+    how_to_select: default API
+    models:
+    - deepseek:*
+    offered:
+    - deepseek-flash
+    - deepseek-v4-pro
+    place:
+      geography: cn
+      countries:
+      - CN
+    data_at_rest: cn
+    notes: Processing location for API traffic inferred from the privacy policy (data stored in PRC), not stated
+      in the API docs.
+    sources:
+    - https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html
+    - https://api-docs.deepseek.com/quick_start/pricing
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - deepseek:deepseek-flash
+    currency: USD
+    input: 0.15
+    output: 0.6
+    cache_read: 0.003
+    sources:
+    - https://api-docs.deepseek.com/quick_start/pricing
+    checked: '2026-11-19'
+  - models:
+    - deepseek:deepseek-v4-pro
+    currency: USD
+    input: 0.66
+    output: 1.98
+    cache_read: 0.022
+    sources:
+    - https://api-docs.deepseek.com/quick_start/pricing
+    checked: '2026-11-19'
+- id: openrouter
+  title: OpenRouter (router)
+  entity:
+    name: OpenRouter, Inc.
+    country: US
+    controlled_from: US
+    sources:
+    - https://openrouter.ai/terms
+  terms:
+    training: false
+    retention: none
+    zero_retention: on_request
+    notes: 'OpenRouter itself does not store prompts or responses unless the user opts in to Private Input & Output
+      Logging or product-improvement use (off by default); it stores request metadata (token counts, latency). Upstream
+      providers have their own policies; OpenRouter documents which may train or retain. ZDR enforcement: account
+      privacy setting (global or per model group) or per request "provider": {"zdr": true}; ZDR providers may not
+      train and do not routinely store; implicit-caching endpoints still allowed under ZDR. CSAM screening of all
+      traffic in flight. Terms governed by New York law. training_on_api_data false refers to OpenRouter by default,
+      not to every upstream provider; zero_retention ''on_request'' means a self-serve routing filter, not an approval.'
+    sources:
+    - https://openrouter.ai/docs/guides/privacy/data-collection
+    - https://openrouter.ai/docs/guides/features/zdr
+    - https://openrouter.ai/terms
+  caching:
+    notes: Depends on the upstream provider; OpenRouter caching docs not read.
+  genai_prices: openrouter
+  checked: '2026-11-19'
+  unknowns:
+  - 'entity: state of incorporation not stated on the terms page'
+  - 'prices: not researched (pass-through of provider prices)'
+  - 'endpoints: default base URL not confirmed on a page read today'
+  endpoints:
+  - id: openrouter-global
+    kind: router (global)
+    how_to_select: default base URL
+    models:
+    - openrouter:*
+    place:
+      geography: global
+    notes: Routes to many third-party providers worldwide.
+    sources:
+    - https://openrouter.ai/docs/guides/privacy/data-collection
+    checked: '2026-11-19'
+  - id: openrouter-eu
+    kind: regional endpoint (in-region routing)
+    how_to_select: send requests to the EU base URL (Business plan self-serve, or Enterprise); a workspace guardrail
+      data-region Europe can force it
+    place:
+      geography: eu
+    notes: 'Prompts/completions decrypted in the EU and routed only to provider endpoints in Europe (EU/EEA, UK,
+      Switzerland, so not EU-only); fails closed if no in-region endpoint; features needing out-of-region processing
+      are rejected. Account, billing and operational records may be stored or processed in the US (per search excerpt
+      of official docs). DPA EU-only processing addendum (Exhibit A) applies when elected in writing (search excerpt,
+      not read). Base URL: https://eu.openrouter.ai.'
+    sources:
+    - https://openrouter.ai/docs/guides/features/sovereign-ai
+    checked: '2026-11-19'
+- id: huggingface
+  title: Hugging Face Inference Providers / Inference Endpoints
+  entity:
+    name: Hugging Face, Inc. (Delaware corporation)
+    country: US
+    controlled_from: US
+    sources:
+    - https://huggingface.co/terms-of-service
+  terms:
+    training: false
+    retention: none
+    retention_days: 30
+    notes: 'Inference Providers: Hugging Face does not store user data for training and does not store request bodies
+      or responses when routing; debugging logs kept up to 30 days without user data or tokens; inference is done
+      by third-party providers under their own data policies. Inference Endpoints: no payloads or tokens stored,
+      logs kept 30 days; GDPR DPA available through an Enterprise Hub subscription; SOC2 Type 2. Terms governed
+      by New York law. retention_days refers to logs.'
+    sources:
+    - https://huggingface.co/docs/inference-providers/security
+    - https://huggingface.co/docs/inference-endpoints/security
+    - https://huggingface.co/terms-of-service
+  caching:
+    notes: Not documented on the pages read; depends on provider/engine.
+  checked: '2026-11-19'
+  unknowns:
+  - 'entity.eu_contracting_entity: no French or EU entity named in the terms of service'
+  - 'terms.zero_retention: no ZDR statement; payloads are not stored but logs are kept 30 days'
+  - 'prices: not researched'
+  endpoints:
+  - id: hf-inference-providers
+    kind: router to third-party providers
+    how_to_select: Inference Providers API with a provider choice
+    models:
+    - huggingface:*
+    place:
+      geography: global
+    notes: Processing happens at the chosen third-party provider; see each provider's data security policy.
+    sources:
+    - https://huggingface.co/docs/inference-providers/security
+    checked: '2026-11-19'
+  - id: hf-endpoints-aws-eu-west-1
+    kind: in-region (dedicated endpoint)
+    how_to_select: Inference Endpoints vendor aws, region eu-west-1
+    place:
+      geography: eu
+      countries:
+      - IE
+      regions:
+      - eu-west-1
+    notes: 'FAQ: available on AWS us-east-1 and eu-west-1, Azure eastus, GCP us-east4; other regions on request.
+      eu-west-1 is the only EU region listed.'
+    sources:
+    - https://huggingface.co/docs/inference-endpoints/en/faq
+    checked: '2026-11-19'
+- id: mistral
+  title: Mistral AI Studio API (La Plateforme)
+  aliases:
+  - mistral-eu
+  - mistral-us
+  entity:
+    name: Mistral AI
+    country: FR
+    controlled_from: EU
+    eu_contracting_entity: Mistral AI, a French limited joint-stock corporation, incorporated in Paris under number
+      952 418 325, 15 rue des Halles, 75001 Paris, France (or its affiliate as specified in an Order Form)
+    sources:
+    - https://legal.mistral.ai/terms/commercial-terms-of-service
+    - https://legal.mistral.ai/terms/data-processing-addendum
+  terms:
+    retention: abuse_monitoring
+    retention_days: 30
+    zero_retention: on_request
+    notes: 'Privacy Policy (effective 3 Sep 2026): ''Except for specific APIs, we keep your Input and Output for
+      the period necessary to generate the Output and then for thirty (30) rolling days to monitor abuse (unless
+      zero data retention is activated).'' Agents API kept until account termination; fine-tuning data until deleted.
+      ZDR: ''available on pay-as-you-go for supported stateless API calls'', by support request, reviewed and may
+      be denied; covers /v1/chat/completions, /v1/fim/completions, /v1/embeddings, /v1/moderations, /v1/chat/moderations,
+      /v1/classifications, /v1/chat/classifications, /v1/ocr, /v1/audio/speech, /v1/audio/transcriptions, except
+      Labs and Public Preview models; not Agents, Batch files, Conversations, Libraries, /v1/files. Training: Commercial
+      Terms 4.2 say no training on Customer Data except when the customer has not opted out of a product set to
+      opt-in by default, feedback, Order Form, or Labs/Preview models. Help Center (updated 2026-11-19): Studio
+      Free mode ''we may use your data (input and output) to train''; Pay-as-you-go ''Customers retain full control
+      over this processing and have the right to opt out at any time'' (default not stated). Opt-out toggle in admin.mistral.ai
+      > Privacy. Labs/Preview models always may be used for training. DPA: abuse monitoring as controller excluded
+      when ZDR is active.'
+    sources:
+    - https://legal.mistral.ai/terms/privacy-policy
+    - https://legal.mistral.ai/terms/commercial-terms-of-service
+    - https://legal.mistral.ai/terms/data-processing-addendum
+    - https://docs.mistral.ai/admin/monitor-comply/zero-data-retention
+    - https://help.mistral.ai/en/articles/347617-do-you-use-my-user-data-to-train-your-artificial-intelligence-models
+    - https://help.mistral.ai/en/articles/455207-can-i-opt-out-of-my-input-or-output-data-being-used-for-training
+  caching:
+    reports_usage: true
+    notes: 'Prefix caching. Docs: ''Set the same prompt_cache_key on requests that are likely to share a prefix'';
+      the key ''increases the chance of a cache hit, but it doesn''t guarantee one''. No breakpoints. Cache blocks
+      of 64 tokens (no hits under 64 prompt tokens). Reported in usage.prompt_tokens_details.cached_tokens. Cached
+      tokens billed at 10% of input price. TTL and whether caching happens without prompt_cache_key not stated.'
+    sources:
+    - https://docs.mistral.ai/studio-api/conversations/advanced/prompt-caching
+  genai_prices: mistral
+  checked: '2026-11-19'
+  unknowns:
+  - 'terms.training_on_api_data: default for pay-as-you-go API not stated (Free mode trains by default; pay-as-you-go
+    text only says customers can opt out at any time; Commercial Terms 4.2 depend on each product''s default).'
+  - 'prices: mistral-medium has no current price; Mistral Medium 3.5 (mistral-medium-3-5) is listed as deprecated
+    31/10/2026, retirement 30/04/2027, replacement Mistral Large 4.'
+  - 'prices: docs pricing page shows a USD/EUR toggle; only the default USD figures were readable; EUR figures not
+    captured.'
+  - 'prices: marketing page mistral.ai/pricing says ''Mistral Large costs $0.5 /M tokens in and $1.5 /M tokens out'',
+    which conflicts with docs pricing for Mistral Large 4 ($0.7/$2.1); docs figures used.'
+  - 'prices: regional (EU/US) prices not listed per model; the docs state a 1.1x multiplier on list prices.'
+  - 'endpoints: model availability per regional endpoint not listed on the pages read.'
+  - 'endpoints: alias ids (e.g. *-latest) for each model not captured; model cards show ''+1''/''+2'' aliases not
+    expanded.'
+  - 'caching.style: whether caching applies without prompt_cache_key, TTL, and regional support not stated.'
+  endpoints:
+  - id: mistral-eu
+    kind: regional endpoint
+    how_to_select: endpoint URL (host api.eu.mistral.ai)
+    models:
+    - mistral-eu:*
+    place:
+      geography: eu
+    notes: '''Multiple data centers in EU and EFTA countries.'' Billed at 1.1x list price (input, output, cached
+      reads, cache writes). Only models hosted in that region are served (list not given on the page). Only function
+      calling is supported as a tool; Agents, Batch and Files API not available; if a workload uses unsupported
+      features, regional guarantees do not apply. Control-plane data (account, keys, billing, usage analytics) may
+      be handled outside the geography. Docs give the host only; the /v1 path is assumed to match the global API.'
+    sources:
+    - https://docs.mistral.ai/studio-api/regional-inference
+    checked: '2026-11-19'
+    api: mistral
+    api_key_env: MISTRAL_API_KEY
+    price_factor: 1.1
+    base_url: https://api.eu.mistral.ai
+  - id: mistral-us
+    kind: regional endpoint
+    how_to_select: endpoint URL (host api.us.mistral.ai)
+    models:
+    - mistral-us:*
+    place:
+      geography: us
+      countries:
+      - US
+    notes: 'Multiple data centers in the US; 1.1x list price; same feature limits as the EU endpoint. Help Center:
+      requests sent through the US endpoint are processed in the United States.'
+    sources:
+    - https://docs.mistral.ai/studio-api/regional-inference
+    - https://help.mistral.ai/en/articles/347629-where-do-you-store-my-data-or-my-organization-s-data
+    checked: '2026-11-19'
+    api: mistral
+    api_key_env: MISTRAL_API_KEY
+    price_factor: 1.1
+    base_url: https://api.us.mistral.ai
+  - id: mistral-global
+    kind: global
+    how_to_select: endpoint URL
+    models:
+    - mistral:*
+    offered:
+    - mistral-large-4
+    - mistral-small-2603
+    - ministral-14b-2512
+    - ministral-8b-2512
+    - ministral-3b-2512
+    - codestral-2508
+    - mistral-embed-2312
+    - codestral-embed-2505
+    - mistral-moderation-2603
+    place:
+      geography: global
+    data_at_rest: eu
+    notes: 'Mistral ''does not commit to a specific inference location'' for the global endpoint; no regional upcharge.
+      Help Center: ''By default, your data is hosted in the European Economic Area (EEA)''; data may be temporarily
+      transferred outside the EU depending on the feature, to Trust Center subprocessor locations (SCCs). data_at_rest
+      ''eu'' = EEA default hosting per Help Center. Base URL: https://api.mistral.ai/v1.'
+    sources:
+    - https://docs.mistral.ai/studio-api/regional-inference
+    - https://help.mistral.ai/en/articles/347629-where-do-you-store-my-data-or-my-organization-s-data
+    - https://docs.mistral.ai/inference/pricing
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - mistral:mistral-large-4
+    currency: USD
+    input: 0.7
+    output: 2.1
+    cache_read: 0.07
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/mistral-large-4-0
+    checked: '2026-11-19'
+  - models:
+    - mistral:mistral-small-2603
+    currency: USD
+    input: 0.15
+    output: 0.6
+    cache_read: 0.015
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/mistral-small-4-0-26-03
+    checked: '2026-11-19'
+  - models:
+    - mistral:ministral-14b-2512
+    currency: USD
+    input: 0.2
+    output: 0.2
+    cache_read: 0.02
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/ministral-3-14b-25-12
+    checked: '2026-11-19'
+  - models:
+    - mistral:ministral-8b-2512
+    currency: USD
+    input: 0.15
+    output: 0.15
+    cache_read: 0.015
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/ministral-3-8b-25-12
+    checked: '2026-11-19'
+  - models:
+    - mistral:ministral-3b-2512
+    currency: USD
+    input: 0.1
+    output: 0.1
+    cache_read: 0.01
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/ministral-3-3b-25-12
+    checked: '2026-11-19'
+  - models:
+    - mistral:codestral-2508
+    currency: USD
+    input: 0.3
+    output: 0.9
+    cache_read: 0.03
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/codestral-25-08
+    checked: '2026-11-19'
+  - models:
+    - mistral:mistral-embed-2312
+    currency: USD
+    input: 0.1
+    output: 0
+    cache_read: 0.01
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/mistral-embed-23-12
+    checked: '2026-11-19'
+  - models:
+    - mistral:codestral-embed-2505
+    currency: USD
+    input: 0.15
+    output: 0
+    cache_read: 0.015
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/codestral-embed-25-05
+    checked: '2026-11-19'
+  - models:
+    - mistral:mistral-moderation-2603
+    currency: USD
+    input: 0
+    output: 0
+    cache_read: 0
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/mistral-moderation-26-03
+    checked: '2026-11-19'
+- id: scaleway
+  title: Scaleway Generative APIs (Serverless)
+  entity:
+    name: Scaleway SAS
+    country: FR
+    controlled_from: EU
+    eu_contracting_entity: Scaleway, S.A.S. au capital de 142 050 euros, R.C.S. Paris 433 115 904, 8 rue de la Ville
+      l'Evêque, 75008 Paris
+    sources:
+    - https://www-uploads.scaleway.com/Conditions_Generales_de_Services_General_Terms_of_Services_07042026_f7d4a2f613.pdf
+    - https://www.scaleway.com/en/docs/generative-apis/reference-content/data-privacy/
+    - https://commission.europa.eu/news-and-media/news/commission-advances-cloud-sovereignty-through-strategic-procurement-2026-04-17_en
+  terms:
+    training: false
+    retention: none
+    zero_retention: default
+    notes: 'Privacy page (reviewed 3 Oct 2025): ''By default we apply a Zero Data Retention Policy''; ''We do not
+      collect, read, reuse, or analyze the content of your inputs, prompts, or outputs''; ''not used for training,
+      retraining, or improving the base models''; not accessible to model creators. Exception (Serverless only):
+      on misuse harming the service (e.g. HTTP 500 errors, malicious activity) full HTTP request content may be
+      stored temporarily, up to two weeks, to fix the issue. Anonymized API usage data kept up to 6 months. Scaleway
+      is the data processor. Commission news (17/04/2026) describes Scaleway as ''The French company Scaleway (Iliad
+      Group)''.'
+    sources:
+    - https://www.scaleway.com/en/docs/generative-apis/reference-content/data-privacy/
+    - https://commission.europa.eu/news-and-media/news/commission-advances-cloud-sovereignty-through-strategic-procurement-2026-04-17_en
+  caching:
+    style: automatic
+    notes: '''Caching is automatic, isolated per project, and cannot be disabled''; stores only intermediate values
+      (prefix hashes or KV values) in ephemeral storage. FAQ: cache evicted based on request frequency; cached input
+      billed at a discounted rate (pricing page shows cached prices only for some models). Consumption visible in
+      Scaleway Cockpit; whether the API usage object reports cached tokens is not stated.'
+    sources:
+    - https://www.scaleway.com/en/docs/generative-apis/reference-content/data-privacy/
+    - https://www.scaleway.com/en/docs/generative-apis/faq/
+  checked: '2026-11-19'
+  unknowns:
+  - 'entity: Scaleway legal-notice page returned 403; legal form and RCS taken from the General Terms of Services
+    PDF (07/04/2026). Iliad Group parentage taken from the Commission news item, not a Scaleway page.'
+  - 'caching.reports_usage: not stated whether the API usage object reports cached tokens.'
+  - 'endpoints.regions: Serverless region code (fr-par) not stated; only ''Paris, France''.'
+  - 'prices: prices are ''before tax''; Batches API -50%; free tier first 1,000,000 tokens. Cached prices shown
+    only for deepseek-v4.1-flash-1017, qwen3.8-27b, deepseek-v4-flash-0731.'
+  endpoints:
+  - id: scaleway-serverless-par
+    kind: in-region
+    how_to_select: endpoint URL; per-project URL api.scaleway.ai/{project_id}/v1/... also supported
+    models:
+    - scaleway:*
+    offered:
+    - glm-5.3
+    - deepseek-v4.1-flash-1017
+    - qwen3.8-27b
+    - gemma-4-26b-a4b-it
+    - mistral-medium-3.5-128b
+    - llama-3.3-70b-instruct
+    - qwen3-235b-a22b-instruct-2507
+    - qwen3.6-35b-a3b
+    - qwen3.5-397b-a17b
+    - mistral-small-3.2-24b-instruct-2506
+    - gpt-oss-120b
+    - deepseek-v4-flash-0731
+    - qwen3-embedding-8b
+    - bge-multilingual-gemma2
+    - whisper-large-v3
+    - lightonocr-3-0.8b
+    place:
+      geography: eu
+      countries:
+      - FR
+      regions:
+      - Paris
+    data_at_rest: eu
+    notes: 'FAQ: ''All Serverless models are currently hosted in a secure data center located in Paris, France,
+      operated by OPCORE''; Scaleway may add other European locations and will notify customers; for single-region
+      guarantees it recommends Dedicated Deployment. Privacy page: personal data may be stored in Paris, France.
+      Base URL taken from the FAQ curl example (https://api.scaleway.ai/v1/audio/transcriptions). The pricing page
+      region selector shows only ''Paris''; the region code (e.g. fr-par) is not stated for Serverless.'
+    sources:
+    - https://www.scaleway.com/en/docs/generative-apis/faq/
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    - https://www.scaleway.com/en/docs/generative-apis/reference-content/data-privacy/
+    checked: '2026-11-19'
+    api: openai-compatible
+    api_key_env: SCALEWAY_API_KEY
+    base_url: https://api.scaleway.ai/v1
+  prices:
+  - models:
+    - scaleway:glm-5.3
+    currency: EUR
+    input: 1.8
+    output: 5.5
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:deepseek-v4.1-flash-1017
+    currency: EUR
+    input: 0.6
+    output: 1.8
+    cache_read: 0.12
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:qwen3.8-27b
+    currency: EUR
+    input: 0.6
+    output: 3.3
+    cache_read: 0.12
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:mistral-medium-3.5-128b
+    currency: EUR
+    input: 1.5
+    output: 7.5
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:qwen3.5-397b-a17b
+    currency: EUR
+    input: 0.6
+    output: 3.6
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:llama-3.3-70b-instruct
+    currency: EUR
+    input: 0.9
+    output: 0.9
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:gemma-4-26b-a4b-it
+    currency: EUR
+    input: 0.25
+    output: 0.5
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:mistral-small-3.2-24b-instruct-2506
+    currency: EUR
+    input: 0.15
+    output: 0.35
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:gpt-oss-120b
+    currency: EUR
+    input: 0.15
+    output: 0.6
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+  - models:
+    - scaleway:qwen3-embedding-8b
+    currency: EUR
+    input: 0.1
+    output: 0
+    sources:
+    - https://www.scaleway.com/en/pricing/model-as-a-service/
+    checked: '2026-11-19'
+- id: ovhcloud
+  title: OVHcloud AI Endpoints
+  entity:
+    name: OVH SAS
+    country: FR
+    controlled_from: EU
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    - https://www.ovhcloud.com/en/public-cloud/ai-endpoints/
+  terms:
+    training: false
+    retention: none
+    zero_retention: default
+    notes: 'Docs: ''Data is not stored or shared during or after model use''; infrastructure ''hosted in Europe''.
+      Product page: ''Our AI Endpoints services are hosted and run in the European Union. Your data is never used
+      to train our models, and we only keep what is strictly necessary for billing.'' Covered by the OVHcloud Public
+      Cloud Special Conditions, Appendix 10 ''Specific Conditions - AI Endpoints'' (not read). Site footer: ''©
+      1999-2026 OVH SAS''; offers are issued by OVH Groupe SA affiliates (537 407 926 RCS Lille Métropole, 2 rue
+      Kellermann, 59100 Roubaix) depending on the customer''s country.'
+    sources:
+    - https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities
+    - https://www.ovhcloud.com/en/public-cloud/ai-endpoints/
+  caching:
+    notes: No caching statement found on the pages read.
+  genai_prices: ovhcloud
+  checked: '2026-11-19'
+  unknowns:
+  - 'entity.eu_contracting_entity: depends on the customer''s country (OVH Groupe SA affiliates); not stated for
+    AI Endpoints.'
+  - 'endpoints.countries/regions: Gravelines not confirmed; current pages say only ''hosted in Europe'' / ''in the
+    European Union''.'
+  - 'SecNumCloud: no SecNumCloud statement for AI Endpoints on the pages read.'
+  - 'caching: not stated.'
+  - 'terms: Appendix 10 ''Specific Conditions - AI Endpoints'' not read; retention of request metadata beyond ''what
+    is strictly necessary for billing'' not quantified.'
+  - 'prices: catalog prices read from the en-ie (EUR) locale; the /en/ locale shows USD; VAT treatment not stated.
+    API model ids may differ from catalog display names.'
+  endpoints:
+  - id: ovhcloud-ai-endpoints
+    kind: in-region
+    how_to_select: endpoint URL (unified OpenAI-compatible endpoint; per-model hosts *.endpoints.kepler.ai.cloud.ovh.net
+      also exist)
+    models:
+    - ovhcloud:*
+    offered:
+    - qwen3-vl-30b-a3b
+    - nemotron3-omni-30b
+    - nemotron3-nano-30b
+    - qwen3.6-35b-a3b
+    - laguna-xs-2.1
+    - gemma-4-26b-a4b
+    - DeepSeek-V4.1-Flash-1017
+    - Qwen3.8-27B
+    - Qwen3.5-397B-A17B
+    - Qwen3.5-9B
+    - gpt-oss-20b
+    - gpt-oss-120b
+    - Mistral-Small-3.2-24B-Instruct-2506
+    - Meta-Llama-3_3-70B-Instruct
+    - Qwen3-Embedding-8B
+    - bge-m3
+    - bge-multilingual-gemma2
+    - Qwen3Guard-Gen-8B
+    - Qwen3Guard-Gen-0.6B
+    - whisper-large-v3
+    - whisper-large-v3-turbo
+    place:
+      geography: eu
+    notes: 'Catalog lists 33 models; names are as displayed in the catalog and may differ from the API model id.
+      Rate limits: 400 requests/min per Public Cloud project per model with a key; 2 req/min anonymous. Payload
+      2 MB (10 MB for VLM). Location stated only as ''hosted in Europe'' (docs) / ''hosted and run in the European
+      Union'' (product page). Base URL: https://oai.endpoints.kepler.ai.cloud.ovh.net/v1.'
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    - https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities
+    checked: '2026-11-19'
+  prices:
+  - models:
+    - ovhcloud:Qwen3.5-397B-A17B
+    currency: EUR
+    input: 0.6
+    output: 3.6
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:DeepSeek-V4.1-Flash-1017
+    currency: EUR
+    input: 0.27
+    output: 1.08
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:Qwen3.8-27B
+    currency: EUR
+    input: 0.4
+    output: 2.7
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:gpt-oss-120b
+    currency: EUR
+    input: 0.08
+    output: 0.4
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:gpt-oss-20b
+    currency: EUR
+    input: 0.04
+    output: 0.15
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:Mistral-Small-3.2-24B-Instruct-2506
+    currency: EUR
+    input: 0.09
+    output: 0.28
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:Meta-Llama-3_3-70B-Instruct
+    currency: EUR
+    input: 0.67
+    output: 0.67
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:gemma-4-26b-a4b
+    currency: EUR
+    input: 0.09
+    output: 0.35
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:Qwen3.5-9B
+    currency: EUR
+    input: 0.1
+    output: 0.15
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+  - models:
+    - ovhcloud:Qwen3-Embedding-8B
+    currency: EUR
+    input: 0.1
+    output: 0
+    sources:
+    - https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/
+    checked: '2026-11-19'
+- id: ionos
+  title: IONOS Cloud AI Model Hub
+  entity:
+    name: IONOS Cloud GmbH
+    country: DE
+    controlled_from: EU
+    eu_contracting_entity: IONOS Cloud GmbH (Germany); also IONOS Cloud Solutions Spain SLU, IONOS Cloud France
+      SAS, IONOS Cloud UK Ltd. depending on the contracting company
+    sources:
+    - https://docs.ionos.com/cloud/ai/ai-model-hub/governance-and-compliance/data-handling
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+  terms:
+    training: false
+    retention: none
+    zero_retention: default
+    notes: 'Data Handling: prompts and outputs are ''never logged'', not written to any log or persistent storage,
+      not used to train, fine-tune or improve any model, not disclosed to third parties including model developers.
+      API is stateless per request. Metadata (timestamp, model, token count) recorded for billing; operational logs
+      kept per internal retention policy, access only by personnel in the EU. No third-party sub-processors for
+      AI Model Hub. Data centers ISO 27001; AI Model Hub in scope of BSI C5. DPA applies as part of the contract.'
+    sources:
+    - https://docs.ionos.com/cloud/ai/ai-model-hub/governance-and-compliance/data-handling
+  caching:
+    notes: No caching statement found on the pages read; the price list has no cached-token prices.
+  checked: '2026-11-19'
+  unknowns:
+  - 'entity: parent IONOS SE and its relation to IONOS Cloud GmbH not read on an official page today.'
+  - 'endpoints.regions: Berlin not stated on the pages read; only ''Germany'' and the hostname label de-txl.'
+  - 'caching: not stated.'
+  - 'terms: operational log retention period not quantified (''internal retention policy'').'
+  - 'prices: from the IONOS Cloud GmbH (DE) price list, net prices excluding VAT; price-list names mapped to API
+    ids by matching the model pages (e.g. ''Qwen3.8-27'' -> Qwen/Qwen3.8-27B, ''Qwen3-Coder-Next (80B)'' -> Qwen/Qwen3-Coder-Next).'
+  endpoints:
+  - id: ionos-de-txl
+    kind: in-region
+    how_to_select: endpoint URL
+    models:
+    - ionos:*
+    offered:
+    - Qwen/Qwen3.5-9B
+    - mistralai/Mistral-Small-24B-Instruct
+    - Qwen/Qwen3.8-27B
+    - meta-llama/Llama-3.3-70B-Instruct
+    - openai/gpt-oss-120b
+    - Qwen/Qwen3.5-397B-A17B
+    - Qwen/Qwen3-Coder-Next
+    - BAAI/bge-m3
+    place:
+      geography: eu
+      countries:
+      - DE
+      regions:
+      - de-txl
+    notes: '''All inference is performed in IONOS Cloud data centers in Germany''. ''de-txl'' is the label in the
+      hostname; the docs read do not name the city. Model list partial (also LightOnOCR 2, FLUX models, Whisper
+      large-v3, Qwen3-VL-Embedding-8B, Qwen3-VL-Reranker-8B, paraphrase-multilingual-mpnet-base-v2, ids not captured).'
+    sources:
+    - https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/opencode-integration
+    - https://docs.ionos.com/cloud/ai/ai-model-hub/governance-and-compliance/data-handling
+    - https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms
+    checked: '2026-11-19'
+    api: openai-compatible
+    api_key_env: IONOS_API_KEY
+    base_url: https://openai.inference.de-txl.ionos.com/v1
+  prices:
+  - models:
+    - ionos:Qwen/Qwen3.5-9B
+    currency: EUR
+    input: 0.1
+    output: 0.15
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:mistralai/Mistral-Small-24B-Instruct
+    currency: EUR
+    input: 0.1
+    output: 0.3
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:openai/gpt-oss-120b
+    currency: EUR
+    input: 0.15
+    output: 0.65
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:meta-llama/Llama-3.3-70B-Instruct
+    currency: EUR
+    input: 0.65
+    output: 0.65
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:Qwen/Qwen3.8-27B
+    currency: EUR
+    input: 0.4
+    output: 2.7
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:Qwen/Qwen3.5-397B-A17B
+    currency: EUR
+    input: 0.6
+    output: 3.6
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:Qwen/Qwen3-Coder-Next
+    currency: EUR
+    input: 0.15
+    output: 0.8
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+  - models:
+    - ionos:BAAI/bge-m3
+    currency: EUR
+    input: 0.02
+    output: 0
+    sources:
+    - https://docs.ionos.com/cloud/support/general-information/price-list/ionos-cloud-gmbh-de
+    checked: '2026-11-19'
+- id: stackit
+  title: STACKIT AI Model Serving
+  entity:
+    name: Schwarz Digits Cloud GmbH & Co. KG (STACKIT)
+    country: DE
+    controlled_from: EU
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    - https://commission.europa.eu/news-and-media/news/commission-advances-cloud-sovereignty-through-strategic-procurement-2026-04-17_en
+  terms:
+    training: false
+    retention: none
+    zero_retention: default
+    notes: 'FAQ: ''We do not store any customer data from the requests... We do not train any models using your
+      data.'' Product page: ''Your data and queries are neither stored nor used to train models.'' Service certificate
+      v1.4 (valid from 2026-11-06): ''Customer data is not stored permanently. The e-mail and subject ID are stored
+      temporarily (30 days) in the logs of the service'' (identity metadata, not prompt content). Billing per up
+      to 1M tokens per the STACKIT price list; embeddings charged on input tokens only. Product page address: Schwarz
+      Digits Cloud GmbH & Co. KG, Am Campus 1, 74177 Bad Friedrichshall; ''a European hyperscaler from Schwarz Digits''.
+      Commission news calls it ''The German company STACKIT (Schwarz Group)''.'
+    sources:
+    - https://docs.stackit.cloud/products/data-and-ai/ai-model-serving/faq/
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    - https://stackit.com/en/asset/download/61500/file/Service_Certificate_STACKIT_AI_Model_Serving_1-4.pdf?version=10
+  caching:
+    notes: No caching statement found on the pages read.
+  checked: '2026-11-19'
+  unknowns:
+  - 'entity: the name ''STACKIT GmbH & Co. KG'' was not found; the product page gives Schwarz Digits Cloud GmbH
+    & Co. KG as the address. Contracting entity for AI Model Serving not stated.'
+  - 'endpoints.countries: the country/data center of region eu01 (Germany/Austria) is not stated on the pages read.'
+  - 'caching: not stated.'
+  - 'prices: product page price table mapped to API ids by display name (e.g. ''Meta Llama 3.3 70B Instruct FP8''
+    -> cortecs/Llama-3.3-70B-Instruct-FP8-Dynamic); VAT treatment not stated.'
+  endpoints:
+  - id: stackit-eu01
+    kind: in-region
+    how_to_select: endpoint URL
+    models:
+    - stackit:*
+    offered:
+    - Qwen/Qwen3-VL-235B-A22B-Instruct-FP8
+    - Qwen/Qwen3.8-27B
+    - Qwen/Qwen3.6-27B
+    - cortecs/Llama-3.3-70B-Instruct-FP8-Dynamic
+    - openai/gpt-oss-120b
+    - google/gemma-4-31B-it
+    - openai/gpt-oss-20b
+    - intfloat/e5-mistral-7b-instruct
+    - Qwen/Qwen3-VL-Embedding-8B
+    place:
+      geography: eu
+      regions:
+      - eu01
+    notes: 'Endpoints: POST /chat/completions, POST /completions, POST /embeddings, GET /models. TPM limit counts
+      output tokens with weight 5.'
+    sources:
+    - https://docs.stackit.cloud/products/data-and-ai/ai-model-serving/basics/available-shared-models
+    - https://docs.stackit.cloud/products/data-and-ai/ai-model-serving/faq/
+    checked: '2026-11-19'
+    api: openai-compatible
+    api_key_env: STACKIT_API_KEY
+    base_url: https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1
+  prices:
+  - models:
+    - stackit:Qwen/Qwen3-VL-235B-A22B-Instruct-FP8
+    currency: EUR
+    input: 1.5
+    output: 1.75
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:openai/gpt-oss-120b
+    currency: EUR
+    input: 0.45
+    output: 0.65
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:openai/gpt-oss-20b
+    currency: EUR
+    input: 0.15
+    output: 0.25
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:cortecs/Llama-3.3-70B-Instruct-FP8-Dynamic
+    currency: EUR
+    input: 0.45
+    output: 0.65
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:google/gemma-4-31B-it
+    currency: EUR
+    input: 0.45
+    output: 0.65
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:Qwen/Qwen3.8-27B
+    currency: EUR
+    input: 0.45
+    output: 0.65
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:Qwen/Qwen3.6-27B
+    currency: EUR
+    input: 0.45
+    output: 0.65
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:intfloat/e5-mistral-7b-instruct
+    currency: EUR
+    input: 0.02
+    output: 0
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+  - models:
+    - stackit:Qwen/Qwen3-VL-Embedding-8B
+    currency: EUR
+    input: 0.08
+    output: 0
+    sources:
+    - https://stackit.com/en/products/data-ai/stackit-ai-model-serving
+    checked: '2026-11-19'
+- id: aleph-alpha
+  title: Aleph Alpha (Kolibri API / PhariaAI)
+  entity:
+    name: Aleph Alpha GmbH
+    country: DE
+    controlled_from: EU
+    eu_contracting_entity: Aleph Alpha GmbH, Speyerer Straße 14, 69115 Heidelberg; Amtsgericht Mannheim HRB 732804
+    sources:
+    - https://aleph-alpha.com/en/imprint/
+    - https://aleph-alpha.com/en/news/cohere-agreement-transatlantic-sovereign-ai/
+  terms:
+    notes: 'Public API status: NOT confirmed discontinued. On 2026-11-19 the homepage says of the new model Kolibri
+      ''Jetzt per API'' and links a sign-up form (/signup-kolibri-api/: ''Sign up and use it directly via API'');
+      access is by registration, no self-serve pricing shown. api.aleph-alpha.com answers HTTP 401 ''No client token
+      provided'' (host alive). docs.aleph-alpha.com redirects to PhariaAI docs (on-premise/enterprise platform).
+      Ownership change pending: on 16/09/2026 Cohere (Canada) and Aleph Alpha signed a definitive business combination
+      agreement, company to operate globally as Cohere, dual HQ Berlin and Toronto, subject to regulatory approval;
+      Kolibri news (05/10/2026): ''Until closing, Aleph Alpha continues to operate independently.'' controlled_from
+      ''EU'' holds only until that closing.'
+    sources:
+    - https://aleph-alpha.com/
+    - https://aleph-alpha.com/en/signup-kolibri-api/
+    - https://aleph-alpha.com/en/news/kolibri-sovereign-ai-made-in-germany/
+    - https://aleph-alpha.com/en/news/cohere-agreement-transatlantic-sovereign-ai/
+  caching:
+    notes: 'Not researched: no public API documentation for Kolibri found.'
+  checked: '2026-11-19'
+  unknowns:
+  - 'Whether the legacy public API at api.aleph-alpha.com (Luminous) is still sold to new customers or discontinued:
+    no official notice found either way; the host only returns 401 without a token.'
+  - 'Kolibri API: base URL, OpenAI compatibility, hosting location, retention, training terms and prices not published
+    on the pages read (sign-up form only).'
+  - 'Hosting location of any Aleph Alpha hosted API: not stated.'
+  - 'Post-closing control (Cohere, Canada) and closing date: pending regulatory approval as of the last official
+    news read.'
+- id: ollama
+  title: Ollama (self-hosted)
+  self_hosted: true
+  entity: {}
+  terms: {}
+  caching: {}
+  checked: '2026-11-19'
+  notes: 'Runs on the operator''s own machines: residency, jurisdiction and terms are what the deployment declares
+    for its endpoint in EVOKAI_PROVIDERS_FILE (declared_by: operator). No per-token charge.'
+  endpoints:
+  - id: ollama-local
+    kind: self-hosted
+    models:
+    - ollama:*
+    how_to_select: OLLAMA_BASE_URL (pydantic-ai's Ollama provider)
+    declared_by: operator
+- id: vllm
+  title: vLLM (self-hosted)
+  self_hosted: true
+  entity: {}
+  terms: {}
+  caching: {}
+  checked: '2026-11-19'
+  notes: 'Runs on the operator''s own machines: residency, jurisdiction and terms are what the deployment declares
+    for its endpoint in EVOKAI_PROVIDERS_FILE (declared_by: operator). No per-token charge.'
+  endpoints:
+  - id: vllm-local
+    kind: self-hosted
+    models:
+    - vllm:*
+    api: openai-compatible
+    how_to_select: base_url of the server's OpenAI-compatible API
+    declared_by: operator
+- id: lmstudio
+  title: LM Studio (self-hosted)
+  self_hosted: true
+  entity: {}
+  terms: {}
+  caching: {}
+  checked: '2026-11-19'
+  notes: 'Runs on the operator''s own machines: residency, jurisdiction and terms are what the deployment declares
+    for its endpoint in EVOKAI_PROVIDERS_FILE (declared_by: operator). No per-token charge.'
+  endpoints:
+  - id: lmstudio-local
+    kind: self-hosted
+    models:
+    - lmstudio:*
+    api: openai-compatible
+    how_to_select: base_url of the server's OpenAI-compatible API
+    declared_by: operator
+processors:
+- id: bedrock-guardrails
+  kind: classifier
+  title: Amazon Bedrock Guardrails (ApplyGuardrail prompt attack filter / InvokeGuardrailChecks)
+  provider: bedrock
+  detects: injection
+  api: 'ApplyGuardrail: POST /guardrail/{guardrailIdentifier}/version/{guardrailVersion}/apply on bedrock-runtime,
+    body {source: INPUT|OUTPUT, content: [GuardrailContentBlock], outputScope?: INTERVENTIONS|FULL}; response {action:
+    NONE|GUARDRAIL_INTERVENED, actionReason, outputs:[{text}], assessments:[{contentPolicy:{filters:[{type, confidence,
+    filterStrength, detected, action}]}, topicPolicy, wordPolicy, sensitiveInformationPolicy, contextualGroundingPolicy,
+    automatedReasoningPolicy, invocationMetrics}], guardrailCoverage, usage:{contentPolicyUnits, topicPolicyUnits,
+    ...}}. Prompt attack is a content filter of type PROMPT_ATTACK configured on the guardrail (CreateGuardrail
+    contentPolicyConfig.filtersConfig, inputStrength NONE|LOW|MEDIUM|HIGH, inputAction BLOCK|NONE, tier CLASSIC|STANDARD);
+    categories jailbreak, prompt injection, prompt leakage (Standard tier only). InvokeGuardrailChecks (detect-only,
+    no guardrail resource): POST /guardrail-checks/invoke body {checks:{promptAttack:{categories:[{category: JAILBREAK|PROMPT_INJECTION|PROMPT_LEAKAGE}]},
+    contentFilter:{categories:[...]}, sensitiveInformation:{entities:[{type}]}}, messages:[{role, content:[...]}]};
+    response {results:{promptAttack:{results:[{category, severityScore 0-1}]}, contentFilter:{results:[...]}, sensitiveInformation:{results:[...],
+    truncated}}, usage:{promptAttack:{textUnits}, ...}}.'
+  place:
+    from_deployment_region: true
+  terms:
+    training: false
+    sources:
+    - https://aws.amazon.com/bedrock/faqs/
+  prices:
+  - currency: USD
+    unit: per_1000_text_units
+    input: 0.15
+    notes: 'ApplyGuardrail/inline guardrails: content filters (which include prompt attack) $0.15 per 1,000 text
+      units, same for standard and classic tier; denied topics $0.15; sensitive information filters $0.10 (regex
+      free); word filters free; contextual grounding $0.10. InvokeGuardrailChecks: prompt attack $0.08, content
+      filters $0.07, sensitive information $0.10 per 1,000 text units. No Region stated for these prices.'
+    sources:
+    - https://aws.amazon.com/bedrock/pricing/
+    checked: '2026-11-19'
+  notes: Evokai uses the PROMPT_ATTACK content filter only, through ApplyGuardrail, in EVOKAI_GUARDRAIL_REGION (default
+    EVOKAI_AWS_REGION). Text unit = up to 1,000 characters; longer inputs count as multiple units. With InvokeModel/Converse,
+    user input must be wrapped in guardrail input tags or prompt attacks are not filtered; tool results and tool
+    definitions are not evaluated for prompt attacks.
+  sources:
+  - https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-prompt-attack.html
+  - https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ApplyGuardrail.html
+  - https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_InvokeGuardrailChecks.html
+  - https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-use-invoke-guardrail-checks.html
+  checked: '2026-11-19'
+  unknowns:
+  - 'regions: the listed Regions are for InvokeGuardrailChecks only; the Region list for ApplyGuardrail was not
+    found on the guardrails-supported page'
+  - 'price: the content-filter price is assumed to cover PROMPT_ATTACK in ApplyGuardrail because prompt attack is
+    part of content filters there; the pricing page does not name ApplyGuardrail'
+- id: prompt-guard
+  kind: classifier
+  title: Llama Prompt Guard 2 86M (local)
+  detects: injection
+  place:
+    geography: in_process
+  checked: '2026-11-19'
+  notes: 'Runs on the service''s own CPU (ONNX): no text leaves the process.'
+  sources:
+  - https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-86M
+- id: custom-classifier
+  kind: classifier
+  title: Custom classifier (EVOKAI_GUARD_CLASSIFIER)
+  detects: injection
+  declared_by: operator
+  checked: '2026-11-19'
+  notes: 'A third-party factory: its facts are what the deployment declares here.'
+- id: azure-prompt-shields
+  kind: classifier
+  title: Azure AI Content Safety Prompt Shields
+  provider: azure
+  detects: injection
+  api: 'POST {endpoint}/contentsafety/text:shieldPrompt?api-version=2024-09-01, headers Ocp-Apim-Subscription-Key,
+    Content-Type: application/json; body {"userPrompt": string, "documents": [string]} (both listed as required
+    in the quickstart table); response {"userPromptAnalysis": {"attackDetected": bool}, "documentsAnalysis": [{"attackDetected":
+    bool}]}. userPrompt = user prompt attack (jailbreak); documents = indirect/document attack (injected instructions).'
+  place:
+    regions:
+    - francecentral
+    - polandcentral
+    - swedencentral
+    - switzerlandnorth
+    - switzerlandwest
+    - uksouth
+    - westeurope
+    - canadaeast
+    - centralus
+    - eastus
+    - eastus2
+    - northcentralus
+    - southcentralus
+    - westus
+    - westus2
+    - westus3
+    - australiaeast
+    - japaneast
+    - southindia
+    - uaenorth
+  prices:
+  - currency: USD
+    unit: per_1000_text_records
+    input: 0.375
+    notes: 'Pricing page lists Prompt Shields as a Text feature with no separate price (amounts rendered as ''$-'');
+      the Retail Prices API gives ''Standard Text Records'' at 0.375 USD per 1K in swedencentral. Text record =
+      up to 1,000 Unicode code points. Free tier: 5,000 text records/month. Inside Foundry guardrails the first
+      1,000 characters are moderated free.'
+    sources:
+    - https://azure.microsoft.com/en-us/pricing/details/content-safety/
+    - https://prices.azure.com/api/retail/prices (productName 'Content Safety', swedencentral)
+    - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/overview
+    checked: '2026-11-19'
+  notes: 'Prompt max 10K characters; up to five documents with a total of 10K characters. S0: 1000 requests per
+    10 s; F0: 5 RPS. Primarily trained and evaluated on English. Auth: Ocp-Apim-Subscription-Key header or Microsoft
+    Entra ID token (scope https://cognitiveservices.azure.com/.default)'
+  sources:
+  - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/quickstart-jailbreak
+  - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/region-availability
+  - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/overview
+  checked: '2026-11-19'
+  unknowns:
+  - 'price: that Prompt Shields is billed on the ''Standard Text Records'' meter is inferred from the pricing page
+    listing it under Text; no dedicated meter found'
+  - 'terms: data retention / training statement for standalone Content Safety not read'
+  - 'regions: Content Safety standalone regions listed; in EU Prompt Shields is not available in germanywestcentral,
+    italynorth, norwayeast, spaincentral for the standalone resource (it is via Foundry guardrails)'
+- id: azure-content-safety-text
+  kind: classifier
+  title: Azure AI Content Safety Analyze Text
+  provider: azure
+  detects: moderation
+  api: 'POST {endpoint}/contentsafety/text:analyze?api-version=2024-09-01, body {"text": string (max 10000 code
+    points), "categories"?: ["Hate"|"SelfHarm"|"Sexual"|"Violence"], "blocklistNames"?: [string], "haltOnBlocklistHit"?:
+    bool, "outputType"?: "FourSeverityLevels"|"EightSeverityLevels"}; response {"blocklistsMatch": [{blocklistName,
+    blocklistItemId, blocklistItemText}], "categoriesAnalysis": [{"category": "Hate"|"SelfHarm"|"Sexual"|"Violence",
+    "severity": 0,2,4,6 (or 0-7)}]}'
+  place:
+    regions:
+    - francecentral
+    - polandcentral
+    - swedencentral
+    - switzerlandnorth
+    - switzerlandwest
+    - uksouth
+    - westeurope
+    - canadaeast
+    - centralus
+    - eastus
+    - eastus2
+    - northcentralus
+    - southcentralus
+    - westus
+    - westus2
+    - westus3
+    - australiaeast
+    - japaneast
+    - southindia
+    - uaenorth
+  prices:
+  - currency: USD
+    unit: per_1000_text_records
+    input: 0.375
+    notes: Retail Prices API 'Standard Text Records' swedencentral; text record = up to 1,000 characters; free tier
+      5,000 records/month; commitment tiers exist.
+    sources:
+    - https://prices.azure.com/api/retail/prices (productName 'Content Safety', swedencentral)
+    - https://azure.microsoft.com/en-us/pricing/details/content-safety/
+    checked: '2026-11-19'
+  notes: 'Max 10K characters per request; S0 1000 requests per 10 s, F0 5 RPS. Trained/tested on zh, en, fr, de,
+    it, ja, pt, es. Auth: Ocp-Apim-Subscription-Key header or Microsoft Entra ID OAuth2 token'
+  sources:
+  - https://learn.microsoft.com/en-us/rest/api/contentsafety/text-operations/analyze-text
+  - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/region-availability
+  checked: '2026-11-19'
+  unknowns:
+  - 'terms: retention/training for standalone Content Safety not read'
+- id: google-model-armor
+  kind: classifier
+  title: Google Cloud Model Armor
+  provider: google-vertex
+  detects: both
+  api: 'POST https://modelarmor.googleapis.com/v1/{name=projects/*/locations/*/templates/*}:sanitizeUserPrompt (reference
+    page host; regional host pattern not confirmed), body {"userPromptData": DataItem (required), "multiLanguageDetectionMetadata"?:
+    {...}, "streamingMode"?: enum}; response {"sanitizationResult": {"filterMatchState": "NO_MATCH_FOUND"|"MATCH_FOUND",
+    "filterResults": {"pi_and_jailbreak": {"piAndJailbreakFilterResult": {matchState, confidenceLevel}}, "rai":
+    {...}, "sdp": {...}, "malicious_uris": {...}, "csam": {...}}, ...}}. Filters configured on a template; sanitizeModelResponse
+    exists for outputs.'
+  place:
+    regions:
+    - eu
+    - us
+    - europe-southwest1
+    - europe-west1
+    - europe-west2
+    - europe-west3
+    - europe-west4
+    - europe-west9
+    - us-central1
+    - us-east1
+    - us-east4
+    - us-west1
+    - northamerica-northeast2
+    - southamerica-east1
+    - asia-northeast1
+    - asia-northeast3
+    - asia-south1
+    - asia-southeast1
+    - australia-southeast2
+  terms:
+    retention: none
+    sources:
+    - https://docs.cloud.google.com/model-armor/overview
+  notes: 'Malicious URL filter scans up to 256 URLs per prompt/response; files up to 4 MB; image screening only
+    in us and eu multi-regions; token limits on the quotas page (not read). Auth: Google Cloud OAuth2 / service
+    account'
+  sources:
+  - https://docs.cloud.google.com/model-armor/overview
+  - https://docs.cloud.google.com/model-armor/reference/rest/v1/projects.locations.templates/sanitizeUserPrompt
+  - https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult
+  - https://docs.cloud.google.com/model-armor/locations
+  checked: '2026-11-19'
+  unknowns:
+  - 'price: free tier and per-million-token rate not readable'
+  - 'regions: the locations page says 21 regions; only the listed ones were extracted'
+  - 'api: DataItem sub-fields (text / byteItem) not confirmed; regional endpoint hostname not documented on the
+    pages read'
+  - terms.retention 'none' means content is not stored unless platform logging is enabled (page statement)
+- id: openai-moderation
+  kind: classifier
+  title: OpenAI Moderation endpoint
+  provider: openai
+  detects: moderation
+  api: 'POST https://api.openai.com/v1/moderations, body {"input": string | [string] | [{"type":"text","text":...}
+    | {"type":"image_url","image_url":{"url":...}}], "model"?: "omni-moderation-latest" (default) | "omni-moderation-2024-09-26"
+    | "text-moderation-latest" | "text-moderation-stable" | "omni-moderation-csam-latest" (approved orgs only)};
+    response {"id", "model", "results": [{"flagged": bool, "categories": {name: bool}, "category_scores": {name:
+    float}, "category_applied_input_types": {name: ["text"|"image"]}}]}. Categories: harassment, harassment/threatening,
+    hate, hate/threatening, illicit, illicit/violent, self-harm, self-harm/instructions, self-harm/intent, sexual,
+    sexual/minors, violence, violence/graphic. Moderation only: it does not detect prompt injection.'
+  place: {}
+  terms:
+    retention: abuse_monitoring
+    training: false
+    sources:
+    - https://developers.openai.com/api/docs/guides/your-data
+  prices:
+  - currency: USD
+    unit: per_request
+    input: 0
+    notes: omni-moderation-latest is free per the pricing page.
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-19'
+  notes: ' Auth: Authorization: Bearer API key'
+  sources:
+  - https://developers.openai.com/api/reference/resources/moderations/methods/create
+  - https://developers.openai.com/api/docs/pricing
+  checked: '2026-11-19'
+  unknowns:
+  - 'limits: input size limits not read'
+  - 'regions: Moderation is listed among endpoints with data-residency support examples, eu.api.openai.com availability
+    for it not confirmed'
+- id: mistral-moderation
+  kind: classifier
+  title: Mistral Moderation API (mistral-moderation-2603)
+  provider: mistral
+  detects: both
+  api: 'POST https://api.mistral.ai/v1/moderations body {"model": "mistral-moderation-latest" | "mistral-moderation-2603",
+    "input": string | string[], "metadata"?: map}; POST https://api.mistral.ai/v1/chat/moderations body {"model":
+    ..., "input": Message[] | Message[][]} (System/User/Assistant/Tool messages). Response {"id", "model", "usage"?,
+    "results": [{"categories": {<category>: bool}, "category_scores": {<category>: float}}]} with one result per
+    input. The documented /v1/moderations examples (including one labelled mistral-moderation-2603) show 9 keys:
+    sexual, hate_and_discrimination, violence_and_threats, dangerous_and_criminal_content, selfharm, health, financial,
+    law, pii. The guide says mistral-moderation-2603 ''classifies text across policy categories including a jailbreaking
+    category'', and the custom guardrails output (moderation_llm_v2, backed by mistral-moderation-2603) shows 11
+    keys with {score, violated}: sexual, hate_and_discrimination, violence_and_threats, dangerous, criminal, selfharm,
+    health, financial, law, pii, jailbreaking. Custom guardrails: a ''guardrails'' array on POST /v1/chat/completions
+    or /v1/conversations with moderation_llm_v2 {custom_category_thresholds, ignore_other_categories, action: ''block'',
+    block_on_error, model_name?}; input only, blocked requests return HTTP 403.'
+  place: {}
+  terms:
+    retention: abuse_monitoring
+    sources:
+    - https://legal.mistral.ai/terms/privacy-policy
+    - https://docs.mistral.ai/admin/monitor-comply/zero-data-retention
+  prices:
+  - currency: USD
+    unit: per_million_tokens
+    input: 0
+    notes: Listed as 'Free' for input, cached input and output on the pricing page and model card.
+    sources:
+    - https://docs.mistral.ai/inference/pricing
+    - https://docs.mistral.ai/models/mistral-moderation-26-03
+    checked: '2026-11-19'
+  notes: '128k context window (mistral-moderation-2603). mistral-moderation-2411 deprecated on 31 March 2026. Auth:
+    Authorization: Bearer <MISTRAL_API_KEY>'
+  sources:
+  - https://docs.mistral.ai/api/endpoint/classifiers
+  - https://docs.mistral.ai/capabilities/guardrailing
+  - https://docs.mistral.ai/models/mistral-moderation-26-03
+  checked: '2026-11-19'
+  unknowns:
+  - 'Exact response keys of /v1/moderations for mistral-moderation-2603: the API reference examples show 9 keys
+    without jailbreaking, while the guide and the guardrails output show 11 keys including ''jailbreaking'' (and
+    dangerous/criminal split). Check with a live call.'
+  - Availability on the EU/US regional endpoints not stated (the ZDR page lists /v1/moderations and /v1/chat/moderations
+    as ZDR-eligible).
+  - Max inputs per batched request not stated ('small batched requests').
+- id: llama-guard
+  kind: classifier
+  title: Llama Guard (self-hosted, OpenAI-compatible)
+  detects: moderation
+  declared_by: operator
+  checked: '2026-11-19'
+  notes: A safety model served by the deployment (vLLM, Ollama...) through an OpenAI-compatible chat endpoint; it
+    classifies harmful content (its hazard categories), it is not a prompt injection detector. Facts as the deployment
+    declares.
+  sources:
+  - https://huggingface.co/meta-llama/Llama-Guard-4-12B
+- id: agentcore-code-interpreter
+  kind: sandbox
+  title: Amazon Bedrock AgentCore Code Interpreter
+  provider: bedrock
+  place:
+    from_deployment_region: true
+  checked: '2026-11-19'
+  notes: 'code_run and skill_run, in EVOKAI_CODE_REGION (default EVOKAI_AWS_REGION; only EU regions accepted). Terms
+    are Amazon Bedrock''s: AgentCore''s own data terms were not read.'
+  unknowns:
+  - 'terms: AgentCore''s own retention terms were not read; Bedrock''s are shown'
+- id: observability-exporter
+  kind: observability
+  title: OpenTelemetry exporter (OTEL_*)
+  declared_by: operator
+  checked: '2026-11-19'
+  notes: 'Deployment-wide (EVOKAI_OTEL_ENABLED): traces with subjects as keyed hashes and content only as tracing_content
+    allows. Its facts are what the deployment declares here.'
+- id: connection:microsoft
+  kind: connection
+  title: Microsoft 365 and Graph (connections, delegated connector)
+  checked: '2026-11-19'
+  notes: 'A person''s own account at the provider: the data is already theirs there; residency and terms are the
+    provider''s own for that account and were not researched.'
+  unknowns:
+  - 'place, terms: not researched'
+  entity:
+    name: Microsoft Corporation
+    country: US
+    controlled_from: US
+    sources:
+    - https://learn.microsoft.com/en-us/azure/cost-management-billing/understand/mca-understand-your-invoice
+- id: connection:google
+  kind: connection
+  title: Google Workspace and Drive (connections, delegated connector)
+  checked: '2026-11-19'
+  notes: 'A person''s own account at the provider: the data is already theirs there; residency and terms are the
+    provider''s own for that account and were not researched.'
+  unknowns:
+  - 'place, terms: not researched'
+  entity:
+    name: Google LLC
+    country: US
+    controlled_from: US
+    sources:
+    - https://cloud.google.com/terms/google-entity
+- id: connection:github
+  kind: connection
+  title: GitHub (connection)
+  checked: '2026-11-19'
+  notes: 'A person''s own account at the provider: the data is already theirs there; residency and terms are the
+    provider''s own for that account and were not researched.'
+  unknowns:
+  - 'place, terms: not researched'
+  - 'entity: not researched'
+- id: connection:linear
+  kind: connection
+  title: Linear (connection)
+  checked: '2026-11-19'
+  notes: 'A person''s own account at the provider: the data is already theirs there; residency and terms are the
+    provider''s own for that account and were not researched.'
+  unknowns:
+  - 'place, terms: not researched'
+  - 'entity: not researched'
+- id: connection:notion
+  kind: connection
+  title: Notion (connection)
+  checked: '2026-11-19'
+  notes: 'A person''s own account at the provider: the data is already theirs there; residency and terms are the
+    provider''s own for that account and were not researched.'
+  unknowns:
+  - 'place, terms: not researched'
+  - 'entity: not researched'
+- id: connection:slack
+  kind: connection
+  title: Slack (connection)
+  checked: '2026-11-19'
+  notes: 'A person''s own account at the provider: the data is already theirs there; residency and terms are the
+    provider''s own for that account and were not researched.'
+  unknowns:
+  - 'place, terms: not researched'
+  - 'entity: not researched'
+- id: stt:fake
+  kind: stt
+  title: Test STT (in process)
+  place:
+    geography: in_process
+  checked: '2026-11-19'
+- id: tts:fake
+  kind: tts
+  title: Test TTS (in process)
+  place:
+    geography: in_process
+  checked: '2026-11-19'

@@ -1,0 +1,130 @@
+{
+  "messages": {
+    "limit.app": "The assistant's monthly limit for {appName} is reached: it resets {resets}.",
+    "limit.appWeek": "The assistant's weekly limit for {appName} is reached: it resets {resets}.",
+    "limit.appDay": "The assistant's daily limit for {appName} is reached: it resets {resets}.",
+    "limit.subjectMonth": "You have reached your monthly assistant limit: it resets {resets}.",
+    "limit.subjectWeek": "You have reached your weekly assistant limit: it resets {resets}.",
+    "limit.subjectDay": "You have reached today's assistant limit: it resets {resets}.",
+    "limit.agentBudget": "This agent has reached the budget it was given for now: try again later.",
+    "limit.resetsDay": "tomorrow at 00:00",
+    "limit.resetsWeek": "on {weekday} at 00:00",
+    "limit.resetsMonth": "on {day} {month} at 00:00",
+    "turn.failed": "Something went wrong.",
+    "turn.modelUnavailable": "The assistant is not answering. Try again shortly.",
+    "turn.confirmExpired": "This confirmation is no longer valid.",
+    "turn.empty": "Write something.",
+    "turn.refusal": "OK, I have not changed anything.",
+    "turn.confirmPrompt": "Before I go ahead, please confirm: {items}.",
+    "turn.maxSteps": "I've reached the maximum number of steps for this request. Tell me how to go on.",
+    "turn.guard": "I can't help with this request.",
+    "turn.guardStopped": "I've stopped this answer: it would have shown something it must not.",
+    "turn.rewriteNothing": "There is no message to edit yet.",
+    "turn.rewriteNotLast": "Only your last message can be edited.",
+    "turn.rewriteAfterWrite": "This message can no longer be edited: its answer already changed data.",
+    "turn.rewriteRunning": "Wait for the answer, or stop it, before editing your message.",
+    "voice.speechOff": "Voice is not available: I'll keep answering in writing.",
+    "confirm.default": "Run {tool}",
+    "chart.other": "Other",
+    "channel.confirmTitle": "Before I go ahead, please confirm:",
+    "channel.approve": "Confirm",
+    "channel.cancel": "Cancel",
+    "channel.whyRule": "asked by a rule of the assistant",
+    "channel.whyPolicy": "asked by the security policy",
+    "channel.approved": "Confirmed.",
+    "channel.cancelled": "Cancelled.",
+    "channel.connect": "Connect {provider}",
+    "channel.connectText": "To do this I need access to your {provider} account. Connect it, then ask me again.",
+    "channel.unknownUser": "I can't answer you here: your account is not enabled for this assistant.",
+    "channel.tooMany": "Too many messages in a short time. Try again later.",
+    "channel.notAvailable": "The assistant is not available on this channel."
+  },
+  "speech": {
+    "redactions": {
+      "taxCode": "the tax code",
+      "iban": "the IBAN",
+      "vat": "the VAT number",
+      "email": "the email address",
+      "phone": "the phone number"
+    },
+    "sourcesHeadings": [
+      "sources",
+      "source",
+      "references"
+    ],
+    "abbreviations": [
+      "e.g",
+      "i.e",
+      "etc",
+      "vs",
+      "mr",
+      "mrs",
+      "ms",
+      "dr",
+      "prof",
+      "st",
+      "no",
+      "fig",
+      "approx"
+    ],
+    "yes": [
+      "yes",
+      "sure",
+      "confirm",
+      "confirmed",
+      "ok",
+      "okay",
+      "go ahead",
+      "proceed",
+      "do it",
+      "right"
+    ],
+    "no": [
+      "no",
+      "cancel",
+      "never mind",
+      "stop",
+      "don't",
+      "do not",
+      "nothing"
+    ],
+    "ordinals": {
+      "one": 1,
+      "first": 1,
+      "two": 2,
+      "second": 2,
+      "three": 3,
+      "third": 3,
+      "four": 4,
+      "fourth": 4,
+      "five": 5,
+      "fifth": 5
+    }
+  },
+  "calendar": {
+    "weekdays": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday"
+    ],
+    "months": [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    ],
+    "firstDay": "1"
+  }
+}

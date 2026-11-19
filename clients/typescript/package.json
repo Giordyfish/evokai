@@ -1,0 +1,96 @@
+{
+  "name": "@evokai/evokai-client",
+  "version": "0.1.0",
+  "description": "Headless TypeScript client for Evokai: backend SDK, browser core (session, events, voice, audio signals) and React hooks.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Giordyfish/evokai.git",
+    "directory": "clients/typescript"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "API.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "exports": {
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "gen": "openapi-typescript openapi.json --default-non-nullable false --output src/generated/openapi.ts && node scripts/stamp-generated.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsup && node scripts/copy-assets.mjs && node scripts/copy-legal.mjs",
+    "prepack": "node scripts/copy-legal.mjs"
+  },
+  "peerDependencies": {
+    "@pipecat-ai/client-js": ">=1.0.0",
+    "@pipecat-ai/small-webrtc-transport": ">=1.0.0",
+    "onnxruntime-web": ">=1.17.0",
+    "phonemizer": ">=1.2.0",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "@pipecat-ai/client-js": {
+      "optional": true
+    },
+    "@pipecat-ai/small-webrtc-transport": {
+      "optional": true
+    },
+    "onnxruntime-web": {
+      "optional": true
+    },
+    "phonemizer": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^20.19.43",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "jsdom": "^26.1.0",
+    "openapi-typescript": "^7.13.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false
+}

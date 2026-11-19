@@ -1,0 +1,189 @@
+[project]
+name = "evokai"
+version = "0.1.0"
+description = "Agents runtime: any model provider, MCP tools, skills and voice sessions"
+authors = [
+    { name = "Giordano Pescetelli", email = "giordano.pescetelli@gmail.com" }
+]
+requires-python = ">=3.12,<4.0"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "cryptography>=50.0.2",
+    "fastapi>=0.162.7",
+    "httpx>=0.28.1",
+    "jsonschema>=4.26.0",
+    "packaging>=24.0",
+    "pydantic-ai-slim[bedrock,mistral,openai]==2.69.0",
+    "pydantic-ai-harness[codemode]==0.69.0",
+    "pydantic-settings>=2.16.3",
+    "pyjwt>=2.15.1",
+    "pypdf>=6.0",
+    "pyyaml>=6.0.3",
+    "redis>=8.1",
+    "sqlalchemy[asyncio]>=2.1.8",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.optional-dependencies]
+otel = [
+  "opentelemetry-api>=1.39.1",
+  "opentelemetry-sdk>=1.39.1",
+  "opentelemetry-exporter-otlp-proto-http>=1.39.1",
+  "opentelemetry-instrumentation-fastapi>=0.60b1",
+  "opentelemetry-instrumentation-httpx>=0.60b1",
+]
+voice = [
+    "pipecat-ai[silero,webrtc]>=1.16.0",
+]
+# Every pydantic-ai-harness capability's dependencies (the catalog, evokai.capabilities), in the
+# image: whether one is used stays the deployment's, the grant's and the agent's choice. Leaves out
+# browser-use (it drives a browser on the machine it runs on: a separate worker) and kubernetes (its
+# grpc needs protobuf 7, the voice extra's Pipecat needs protobuf below 7). See docs/capabilities.md.
+harness = [
+    "pydantic-ai-harness[absurd,acp,anthropic,aws-lambda,azure-durable-task,boxd,boxlite,cli,codemode,coder,day-ai,daytona,dbos,dynamic-workflow,e2b,exa,github,google-workspace,grain,ipython,linear,logfire,logfire-mcp,modal,mongodb,notion,opensandbox,ordinal,pgtask,pixeltable,playwright,posthog,prompt-injection-defender,prompt-injection-defender-ml,pylon,render,repair-tool-arguments,researcher,skills,slack,smol,sprites,stackone,temporal,youdotcom]==0.69.0",
+]
+# The lite image (the default, IMAGE=lite in the Dockerfile): the harness core with Code Mode,
+# compaction and subagents, and every extra under 30 MB installed. Left out (measured on
+# 17 November 2026, site-packages beyond Evokai's base): pixeltable 574 MB,
+# prompt-injection-defender-ml 186 MB, playwright 168 MB, boxlite 115 MB, smol 93 MB, temporal
+# 52 MB, ipython 49 MB, daytona 38 MB. See docs/capabilities.md.
+harness-lite = [
+    "pydantic-ai-harness[absurd,acp,anthropic,aws-lambda,azure-durable-task,boxd,cli,codemode,coder,day-ai,dbos,dynamic-workflow,e2b,exa,github,google-workspace,grain,linear,logfire,logfire-mcp,modal,mongodb,notion,opensandbox,ordinal,pgtask,posthog,prompt-injection-defender,pylon,render,repair-tool-arguments,researcher,skills,slack,sprites,stackone,youdotcom]==0.69.0",
+]
+prompt-guard = [
+    "numpy>=2.5",
+    "onnxruntime>=1.32.0",
+    "tokenizers>=0.22",
+]
+
+[project.scripts]
+evokai = "evokai.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.8,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-sdk>=1.39.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.39.1",
+    "opentelemetry-instrumentation-fastapi>=0.60b1",
+    "opentelemetry-instrumentation-httpx>=0.60b1",
+    "detect-secrets>=1.5.0",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.5",
+    "ty>=0.0.15",
+    "onnx>=1.19",
+    "fakeredis>=2.40",
+    "pytest-recording>=0.15",
+    "vcrpy>=9.4",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests (need docker or network)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+preview = true
+lint.select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "B",    # bugbear
+  "I",    # imports
+  "C4",   # comprehensions
+  "UP",   # pyupgrade
+  "S",    # security (bandit-like)
+  "ARG",  # unused arguments
+  "PIE",  # flake8-pie
+  "PERF", # performance
+  "LOG",  # logging best practices
+  "RUF",  # ruff-specific rules
+]
+lint.extend-select = ["D", "FAST", "DOC"] # Enable docstring checks (D-series)
+lint.ignore = [
+  "D100", # Missing docstring in public module
+  "D104", # Missing docstring in public package
+  "D203", # 1 blank line required before class docstring
+  "D213", # Multi-line docstring summary should start at the first line
+  "UP045" # Non PEP 604 optional syntax (use X | Y instead of Optional[X])
+]
+
+# Italian copy uses typographic quotes, dashes and ellipses on purpose.
+lint.allowed-confusables = ["’", "‘", "–", "−", "«", "»", "…", "×"]
+
+[tool.ruff.lint.per-file-ignores]
+"!src/**.py" = ["D"] # Ignore docstring checks in non-source files
+"tests/**" = [
+  "D", # Ignore all docstring checks
+  "DOC", # Ignore all other docstring related checks
+  "S101", # Ignore use of assert statements
+  "S105", # Ignore use of hardcoded secrets
+  "S106", # Ignore use of hardcoded passwords
+]
+"migrations/**" = ["D", "DOC"]
+# Detection rules are long regular expressions, one per line on purpose.
+"src/evokai/guard/{injection,secrets,text}.py" = ["E501"]
+# Bilingual texts of the compliance packs: one English and one Italian sentence per entry.
+"src/evokai/compliance/texts.py" = ["E501"]
+# One line of description per capability of the catalog.
+"src/evokai/capabilities/catalog.py" = ["E501"]
+# Attack samples: long lines, look-alike letters and template-like text on purpose.
+"tests/test_guard_*.py" = ["E501", "RUF001", "RUF027", "S311"]
+# The red team suite: attacks in nine languages and scripts, look-alike letters on purpose.
+"src/evokai/evals/redteam/attacks.py" = ["E501", "RUF001"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*", "*/.venv/*", "*/site-packages/*"]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
