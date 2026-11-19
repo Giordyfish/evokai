@@ -26,6 +26,7 @@ from evokai.core.caps import caps_of, currency_of
 from evokai.core.util import utcnow
 from evokai.db import models as m
 from evokai.grants import grants_of
+from evokai.guard import identifiers
 from evokai.guard.config import CONTROLS
 from evokai.llm.catalog import normalize
 from evokai.privacy import model_geography
@@ -480,6 +481,7 @@ async def collect(svc: Services, app: m.Application, profile: dict[str, Any]) ->
                 {"id": c.id, "owasp": list(c.owasp), "default": c.default} for c in CONTROLS
             ],
             "piiTypes": list(((app.security or {}).get("pii") or {}).get("types") or []) or None,
+            "piiDeclared": [i.name for i in identifiers.of_app(app)],
             "classifier": ((app.security or {}).get("injection") or {}).get("classifier")
             or st.guard_classifier
             or "none",

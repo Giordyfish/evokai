@@ -8,6 +8,24 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- **Application identifiers** (`application.identifiers` in the config file): an application declares its own codes
+  (an order number, a library card) with a pattern or a number of digits, an optional Luhn check and context, a
+  label for masks and tokens, and how speech says them (words, spelled, in groups, omitted or as written). They are
+  found, tokenised and masked like the built-in personal data types in every PII control, may be named in
+  `security.pii.types`, appear in security events and in the compliance packs' data categories
+  ([security](docs/security.md#application-identifiers)).
+
+### Changed
+
+- `security.pii.types` accepts the names of the application's own identifiers; a name that is neither built-in nor
+  declared stops the bootstrap, and `PUT /v1/admin/security` answers 400 `unknown_pii_types`.
+
+### Fixed
+
+- Quickstart: what to do when the service restarts with `password authentication failed for user "evokai"`.
+
 ## [0.1.0] - 2026-11-19
 
 The first public release. Evokai is experimental: see the [status](README.md#status).

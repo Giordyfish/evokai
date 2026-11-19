@@ -985,7 +985,10 @@ def _data_categories(facts: dict[str, Any], tx: Tx) -> list[str]:
         cats.append(tx("cat.conversationsTransit"))
     if facts["mcpServers"]:
         cats.append(tx("cat.toolData"))
-    pii_types = facts["security"].get("piiTypes") or list(PII_TYPES)
+    pii_types = facts["security"].get("piiTypes") or [
+        *PII_TYPES,
+        *facts["security"].get("piiDeclared", []),
+    ]
     cats.append(tx("cat.identifiers", types=", ".join(pii_types)))
     if app["memoryMode"] != "off" and grants.get("memory") and app["storageMode"] == "evokai":
         cats.append(tx("cat.memories"))

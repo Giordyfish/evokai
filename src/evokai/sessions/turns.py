@@ -77,7 +77,7 @@ from evokai.engine.subagents import EvokaiSubAgents
 from evokai.engine.tools import EvokaiToolset, GuardedToolset, ToolSpec
 from evokai.engine.workspace import NoLocalWorkspace
 from evokai.grants import Grants, NotGranted, grants_of
-from evokai.guard import Guard, TurnGuard
+from evokai.guard import Guard, TurnGuard, identifiers
 from evokai.guard.ask import REASON_WRITES
 from evokai.i18n import SpeechRules, locale_of, message, speech_rules
 from evokai.identity.models import SessionPrincipal
@@ -392,7 +392,7 @@ class TurnEngine:
             replaced_from=replaced_from,
             guard=guard,
             trace=guard.trace,
-            rules=speech_rules(locale_of(app)),
+            rules=speech_rules(locale_of(app), identifiers.of_app(app)),
             threads=threads,
             grants=grants,
             storage=storage,

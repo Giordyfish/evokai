@@ -11,8 +11,10 @@ start speaking sooner.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from functools import cache
 
+from evokai.guard import pii
 from evokai.i18n import SpeechRules, speech_rules
 
 REDACTIONS: list[tuple[re.Pattern[str], str]] = [
@@ -23,7 +25,8 @@ REDACTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?:\+39\s?)?\b3\d{2}[\s.]?\d{6,7}\b"), "phone"),
 ]
 """Identifier formats (tax code, IBAN, VAT, e-mail, mobile) and the redaction key whose
-words come from the locale."""
+words come from the locale. The application's own identifiers (``SpeechRules.identifiers``) are
+found first, with the guard's own detection, and said the way each one asks."""
 
 _CODE = re.compile(r"```[\s\S]*?```")
 _TABLE_LINE = re.compile(r"^\s*\|")
@@ -56,12 +59,63 @@ def redact(text: str, rules: SpeechRules | None = None) -> str:
     """Replace personal identifiers with neutral words.
 
     Returns:
-        The text without tax codes, IBANs, VAT numbers, e-mails and phones.
+        The text without tax codes, IBANs, VAT numbers, e-mails and phones, and with the
+        application's own identifiers said as they ask.
     """
-    words = (rules or speech_rules()).redactions
+    r = rules or speech_rules()
+    if r.identifiers:
+        text = _say_declared(text, r)
+    words = r.redactions
     for pattern, key in REDACTIONS:
         text = pattern.sub(words[key], text)
     return text
+
+
+def _say_declared(text: str, rules: SpeechRules) -> str:
+    """The application's own identifiers, said the way each one asks.
+
+    Returns:
+        The text.
+    """
+    spoken = _speech_identifiers(rules.identifiers)
+    by_name = {i.name: i for i in spoken}
+    spans = pii.find(text, set(by_name), spoken)
+    if not spans:
+        return text
+    out, at = [], 0
+    for s in spans:
+        out += [text[at : s.start], _spoken(s.value, by_name[s.type], rules.locale)]
+        at = s.end
+    out.append(text[at:])
+    return "".join(out)
+
+
+@cache
+def _speech_identifiers(identifiers: tuple[pii.Identifier, ...]) -> tuple[pii.Identifier, ...]:
+    """The identifiers with their speech-only matchers added.
+
+    Returns:
+        The identifiers speech looks for.
+    """
+    return tuple(
+        replace(i, matchers=i.matchers + i.speech_matchers) if i.speech_matchers else i
+        for i in identifiers
+    )
+
+
+def _spoken(value: str, ident: pii.Identifier, locale: str) -> str:
+    chars = [c for c in value if c.isalnum()]
+    if ident.read == "spell":
+        return " ".join(chars)
+    if ident.read == "group":
+        return " ".join(
+            "".join(chars[i : i + ident.size]) for i in range(0, len(chars), ident.size)
+        )
+    if ident.read == "omit":
+        return ""
+    if ident.read == "verbatim":
+        return value
+    return ident.spoken(locale)
 
 
 _CITATION = re.compile(r" ?\[\d{1,2}\](?!\()")

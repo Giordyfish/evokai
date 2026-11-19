@@ -10,9 +10,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, lru_cache
 from importlib import resources
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from evokai.guard.pii import Identifier
 
 DEFAULT_LOCALE = "en"
 
@@ -72,9 +75,12 @@ def message(app: Any, key: str, **params: Any) -> str:
 class SpeechRules:
     """Language rules of speech: redaction words, sources headings, abbreviations, replies.
 
-    ``locale`` is the language they were asked for (it picks how numbers are read aloud).
+    ``locale`` is the language they were asked for (it picks how numbers are read aloud);
+    ``identifiers`` are the application's own (``application.identifiers``), said the way each
+    one asks.
 
-    Compared and hashed by identity: one cached instance per locale (:func:`speech_rules`).
+    Compared and hashed by identity: one cached instance per locale and set of identifiers
+    (:func:`speech_rules`).
     """
 
     redactions: dict[str, str]
@@ -84,11 +90,14 @@ class SpeechRules:
     no: tuple[str, ...]
     ordinals: dict[str, int]
     locale: str = DEFAULT_LOCALE
+    identifiers: tuple[Identifier, ...] = ()
 
 
-@cache
-def speech_rules(locale: str = DEFAULT_LOCALE) -> SpeechRules:
-    """The speech rules of a locale.
+@lru_cache(maxsize=512)
+def speech_rules(
+    locale: str = DEFAULT_LOCALE, identifiers: tuple[Identifier, ...] = ()
+) -> SpeechRules:
+    """The speech rules of a locale, with an application's own identifiers.
 
     Returns:
         The rules.
@@ -102,4 +111,5 @@ def speech_rules(locale: str = DEFAULT_LOCALE) -> SpeechRules:
         no=tuple(s["no"]),
         ordinals=dict(s["ordinals"]),
         locale=locale,
+        identifiers=identifiers,
     )

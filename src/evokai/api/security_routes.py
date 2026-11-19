@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from evokai import audit
 from evokai.api.deps import admin_app, services
-from evokai.core.errors import NotFound
+from evokai.core.errors import BadRequest, NotFound
 from evokai.db import models as m
-from evokai.guard import SecurityPolicy, catalogue
+from evokai.guard import SecurityPolicy, catalogue, identifiers
+from evokai.guard.pii import PII_TYPES
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
 
@@ -88,8 +89,19 @@ async def put_security(
 
     Returns:
         The security view.
+
+    Raises:
+        BadRequest: ``pii.types`` names a type that is neither built-in nor declared.
     """
     app = await _app(svc, a)
+    types = body.pii.types if body.pii else None
+    declared = {i.name for i in identifiers.of_app(app)}
+    if bad := [t for t in types or [] if t not in PII_TYPES and t not in declared]:
+        raise BadRequest(
+            f"Unknown personal data types: {', '.join(bad)}. An application's own identifiers "
+            "are declared in its config file (application.identifiers).",
+            code="unknown_pii_types",
+        )
     await svc.store.applications.update(app.id, security=body.stored())
     await audit.record(request, a, "security.policy", before=app.security, after=body.stored())
     return await security_view(svc, await _app(svc, a))

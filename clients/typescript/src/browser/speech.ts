@@ -2,6 +2,8 @@
  * What gets spoken and how spoken replies are read: a port of the server's rules
  * (src/evokai/audio/speech/speakable.py and replies.py), with the word lists from a locale pack, so speech and spoken
  * answers mean the same whether the browser or the server does the work. The server's Python is the reference.
+ * `redact` knows the built-in formats only: an application's own identifiers (`application.identifiers`) are said
+ * the way they ask by the server, in the `say` events every voice engine speaks.
  */
 import { localePack, type LocaleCode, type LocalePack } from '../locales'
 

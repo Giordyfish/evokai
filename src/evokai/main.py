@@ -49,6 +49,7 @@ from evokai.api.hardening import Hardening, origin_cache
 from evokai.core.config import Settings, get_settings
 from evokai.core.errors import AppError
 from evokai.core.util import utcnow
+from evokai.guard import identifiers
 from evokai.observability.logging import logger
 from evokai.observability.middleware import CorrelationMiddleware
 from evokai.observability.telemetry import setup_telemetry
@@ -153,6 +154,10 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         if settings.bootstrap_apps:
             ids = await bootstrap_apps(svc.store, settings.bootstrap_apps)
             logger.info("bootstrapped_from_env", extra={"applications": len(ids)})
+        # Every application's own identifiers are masked in logs and traces from the start.
+        with contextlib.suppress(Exception):
+            for application in await svc.store.applications.all():
+                identifiers.of_app(application)
         # Runs left going by a process that stopped will never end: they are marked interrupted.
         with contextlib.suppress(Exception):
             await svc.store.evals.interrupt_stale(utcnow())

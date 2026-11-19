@@ -1864,6 +1864,9 @@ export interface paths {
          *
          *     Returns:
          *         The security view.
+         *
+         *     Raises:
+         *         BadRequest: ``pii.types`` names a type that is neither built-in nor declared.
          */
         put: operations["put_security_agent_v1_admin_security_put"];
         post?: never;

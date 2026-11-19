@@ -305,8 +305,8 @@ the person to connect a provider first: the client shows a card that starts the 
 
 `say` comes from a deterministic splitter over the streamed answer: markdown, tables, code and
 links are dropped, a «Fonti:» section is never spoken, numbers stay readable, and a redactor
-removes tax codes, IBANs, VAT numbers, e-mails and phone numbers first. Charts and
-schemas are never read aloud.
+removes tax codes, IBANs, VAT numbers, e-mails and phone numbers first, and says the application's
+own identifiers the way each one asks. Charts and schemas are never read aloud.
 
 A speech engine reads «1.000» as «uno punto zero zero zero», so a `say` also carries `spoken`, the
 same sentence with its numbers in words, whenever that differs from `text`

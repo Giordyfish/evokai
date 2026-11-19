@@ -538,6 +538,10 @@ application:
   locale: en
   timezone: Europe/Dublin
   messages: {limit.app: "..."}
+  identifiers:                  # optional: the application's own codes, protected like IBANs (docs/security.md)
+    - name: order_number
+      match: [{pattern: 'ORD-\d{6}'}]
+      speech: {words: {en: "the order number"}}
   ask_rules:                    # optional: calls that wait for the person's confirmation (docs/security.md)
     - {action: customer_get, argument: customer_code, resource: "VIP-*", label: {en: Key accounts, it: Clienti chiave}}
 mcp_servers:
@@ -569,6 +573,12 @@ workflows:                      # optional: durable workflows (docs/workflows.md
 
 A workflow of the file with problems stops the bootstrap with their paths (`workflow weekly-stock-report:
 steps[2].if: ...`); an unchanged one keeps its version.
+
+`identifiers` declares the application's own codes (an order number, a library card): found, masked, tokenised and
+spoken like the built-in personal data types, with a pattern or a number of digits, an optional checksum and context,
+and how speech says them. The keys, the precedence over built-in types and the speech modes are in
+[security](security.md#application-identifiers). An invalid declaration, or a `security.pii.types` entry that is
+neither built-in nor declared, stops the bootstrap.
 
 ### Prompt caching and preloaded skills
 

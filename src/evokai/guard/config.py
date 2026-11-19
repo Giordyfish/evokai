@@ -291,16 +291,21 @@ class PiiSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     types: list[str] | None = None
     """Which identifiers (default all): codice_fiscale, partita_iva, iban, email, phone,
-    card."""
+    card, and the names of the application's own identifiers (``application.identifiers``)."""
     model_action: Literal["tokenize", "mask"] | None = None
     """What ``pii.model: enforce`` does: reversible tokens (tools get the real value) or masks."""
 
     @field_validator("types")
     @classmethod
     def _types(cls, v: list[str] | None) -> list[str] | None:
+        from evokai.guard.identifiers import NAME
         from evokai.guard.pii import PII_TYPES
 
-        if v is not None and (bad := [t for t in v if t not in PII_TYPES]):
+        # A declared identifier's name is checked against the application's declarations where
+        # they are known (the config file, the console); here only its shape.
+        if v is not None and (
+            bad := [t for t in v if t not in PII_TYPES and not NAME.fullmatch(t)]
+        ):
             raise ValueError(f"unknown personal data types: {bad}")
         return v
 

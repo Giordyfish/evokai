@@ -24,7 +24,7 @@ from evokai.core.errors import AppError
 from evokai.core.shared import MemoryState, SharedState
 from evokai.core.util import new_id, utcnow
 from evokai.db import models as m
-from evokai.guard import content, injection, output, pii, secrets
+from evokai.guard import content, identifiers, injection, output, pii, secrets
 from evokai.guard import tools as tp
 from evokai.guard.ask import AskMatch, AskRules
 from evokai.guard.classifiers import STRONG, Classifiers, Result, Source
@@ -123,6 +123,8 @@ class TurnGuard:
     boundary: str
     origins: list[str] = field(default_factory=list)
     vault: pii.Vault | None = None
+    declared: tuple[pii.Identifier, ...] = ()
+    """The application's own identifiers (``application.identifiers``)."""
     instructions: str = ""
     tags: list[str] = field(default_factory=list)
     """The session's tags (for the usage records of a billed classifier)."""
@@ -648,6 +650,7 @@ class TurnGuard:
             return lambda t, _found: t
         enforce = p.enforced("pii.model")
         vault = self.vault
+        declared = self.declared
 
         def protect(text: str, found: dict[str, int]) -> str:
             if not text:
@@ -655,9 +658,9 @@ class TurnGuard:
             if enforce and vault is not None:
                 text, spans = vault.tokenize(text)
             else:
-                spans = pii.find(text, types)
+                spans = pii.find(text, types, declared)
                 if enforce and spans:
-                    text = pii.mask(text, types)
+                    text = pii.mask(text, types, declared)
             for t, n in pii.counts(spans).items():
                 found[t] = found.get(t, 0) + n
             return text
@@ -710,10 +713,10 @@ class TurnGuard:
         found: dict[str, int] = {}
 
         def scan(t: str) -> str:
-            spans = pii.find(t, types)
+            spans = pii.find(t, types, self.declared)
             for k, n in pii.counts(spans).items():
                 found[k] = found.get(k, 0) + n
-            return pii.mask(t, types) if spans and p.enforced("pii.history") else t
+            return pii.mask(t, types, self.declared) if spans and p.enforced("pii.history") else t
 
         blocks = [pii.transform_any(b, scan) for b in content_blocks]
         text = scan(text) if text else text
@@ -726,9 +729,9 @@ class TurnGuard:
         Returns:
             The stored copy.
         """
-        types = self._types()
+        types, declared = self._types(), self.declared
         if event.get("type") == "text":
-            return {**event, "delta": pii.mask(str(event.get("delta") or ""), types)}
+            return {**event, "delta": pii.mask(str(event.get("delta") or ""), types, declared)}
         chart = event.get("chart")
         if (
             event.get("type") == "chart"
@@ -738,10 +741,10 @@ class TurnGuard:
             # An image (``code_run``) is bytes in base64: masking would corrupt it, never protect.
             data = chart.get("data")
             masked = pii.transform_any(
-                {**event, "chart": {**chart, "data": ""}}, lambda t: pii.mask(t, types)
+                {**event, "chart": {**chart, "data": ""}}, lambda t: pii.mask(t, types, declared)
             )
             return {**masked, "chart": {**masked["chart"], "data": data}}
-        return pii.transform_any(event, lambda t: pii.mask(t, types))
+        return pii.transform_any(event, lambda t: pii.mask(t, types, declared))
 
     # output
 
@@ -759,6 +762,7 @@ class TurnGuard:
             links=p.enforced("output.links") and self.channel == "browser",
             leak=p.enforced("output.system_prompt"),
             pii_types=self._types(),
+            pii_declared=self.declared,
             link_domains=self._link_domains(),
             known_secrets=self.guard.known_secrets,
             prompt_shingles=self.prompt_shingles() if p.enforced("output.system_prompt") else set(),
@@ -837,7 +841,8 @@ class TurnGuard:
                 self._pii_event("pii.browser", c.pii, add=True)
             elif p.on("pii.browser"):
                 shown = self.vault.restore(f.raw) if self.vault else f.raw
-                self._pii_event("pii.browser", pii.counts(pii.find(shown, self._types())), add=True)
+                spans = pii.find(shown, self._types(), self.declared)
+                self._pii_event("pii.browser", pii.counts(spans), add=True)
 
     def check_final(self, value: Any) -> Any:
         """A server run's answer: tokens put back, secrets removed when enforced.
@@ -1021,7 +1026,7 @@ class TurnGuard:
             problems.append("instructions")
         if secrets.find(fact, self.guard.known_secrets):
             problems.append("secret")
-        if pii.find(fact, self._types()):
+        if pii.find(fact, self._types(), self.declared):
             problems.append("personal_data")
         if not problems:
             return True
@@ -1117,6 +1122,7 @@ class Guard:
         """
         policy = self.policy(app, agent)
         scope_id = session_id or turn_id or new_id()
+        declared = identifiers.of_app(app)
         vault = None
         if (
             policy.enforced("pii.model")
@@ -1124,7 +1130,7 @@ class Guard:
             and policy.settings.pii.model_action != "mask"
         ):
             types = frozenset(policy.settings.pii.types) if policy.settings.pii.types else None
-            vault = pii.Vault(bytes.fromhex(self.keyed("pii", app.id, scope_id)), types)
+            vault = pii.Vault(bytes.fromhex(self.keyed("pii", app.id, scope_id)), types, declared)
         log_masking.set(policy.enforced("pii.logs"))
         return TurnGuard(
             guard=self,
@@ -1138,6 +1144,7 @@ class Guard:
             boundary=self.keyed("boundary", app.id, scope_id)[:12],
             origins=list(app.allowed_origins or []),
             vault=vault,
+            declared=declared,
             instructions=instructions or getattr(agent, "instructions", "") or "",
             tags=list(tags or []),
             protection=_protection(app),

@@ -144,8 +144,9 @@ rule makes a tool that only reads, or a call with certain arguments, wait for th
   content is defused. Datamarking (rewriting every space) is not used: it degrades the reading of JSON tool output.
 - **Personal data** (`pii.py`): codice fiscale (check letter, omocodia), partita IVA (checksum), IBAN (mod 97, any
   country), e-mail, phones (Italian mobile, landline with a
-  separator, international), payment cards (Luhn and an issuer prefix). Tokens are `[CODICE_FISCALE_3f9a1c]`: a keyed
-  hash of the value per conversation, stable across turns. Masks are `[CODICE_FISCALE]`.
+  separator, international), payment cards (Luhn and an issuer prefix), and the application's
+  [own identifiers](#application-identifiers). Tokens are `[CODICE_FISCALE_3f9a1c]`: a keyed hash of the value per
+  conversation, stable across turns. Masks are `[CODICE_FISCALE]`.
 - **Secrets** (`secrets.py`): shapes only (Evokai keys, AWS keys, JWTs, GitHub, Slack, OpenAI, Anthropic, Google,
   Stripe, bearer tokens, private key blocks, passwords in URLs and assignments) plus the deployment's own signing,
   encryption and operator keys by value. No entropy guessing (it flags every id).
@@ -217,7 +218,7 @@ application:
     input: {max_chars: 8000, max_run_chars: 400000}
     untrusted: {input: auto}          # auto: server-run inputs are data, chat messages are not
     pii:
-      types: [codice_fiscale, partita_iva, iban, email, phone, card]
+      types: [codice_fiscale, partita_iva, iban, email, phone, card, order_number]   # default: all
       model_action: tokenize          # or mask (irreversible)
     links: {allow: [help.inkwell-books.example]}   # besides relative paths and the allowed origins
     scope:
@@ -251,6 +252,55 @@ control or setting), `GET /v1/admin/security/events` (filters `control` (a prefi
 Console: the **Security** page of an application: every control with its OWASP ids, the mode that applies and the
 application's choice; the settings as JSON; each agent's overrides (editable, saved as a new agent version); the
 events with filters, their counts by rule and a CSV export.
+
+### Application identifiers
+
+An application declares its own codes (an order number, a library card, a contract code) in `application.identifiers`
+of its config file. Each one is a type of personal data like `iban`: `pii.model` tokenises it (`[ORDER_NUMBER_3f9a1c]`,
+tools still get the real value), `pii.history`, `pii.logs` and `pii.browser` mask it (`[ORDER_NUMBER]`), its name may
+appear in `pii.types` and in security events, and speech says it the way it asks. Built-in types are unchanged.
+
+```yaml
+application:
+  identifiers:
+    - name: order_number            # its type: 2-40 lower case letters, digits, _; not a built-in type
+      label: ORDER_NUMBER           # in masks and tokens; default: the name in upper case
+      match:                        # any entry recognises a value
+        - pattern: 'ORD-\d{6}'      # a regular expression (Python), never inside a longer word or number
+      speech:
+        read: word                  # word (default), spell, group, omit or verbatim
+        words: {en: "the order number", it: "il numero d’ordine"}
+    - name: library_card
+      match:
+        - digits: 12                # a number: 12 digits (or [shortest, longest])
+          grouped: false            # written together only (default: groups with spaces or dashes too)
+        - digits: 14
+          context: 'library card|tessera'   # only with this text (any case) just before the value
+          context_chars: 30                 # how far before it is looked for (default 30)
+        - digits: 10
+          check: luhn               # only values whose digits pass the Luhn checksum
+      speech: {read: spell}
+```
+
+- **match**: a `pattern` (case-insensitive unless `ignore_case: false`; Evokai adds the word boundaries) or `digits`.
+  A number is found the way the built-in numbers are: written together or in groups separated by spaces or dashes,
+  never a piece of a longer number, a decimal or a number written after `IT`. `check` and `context` narrow either
+  kind.
+- **Precedence**: on the very same text a built-in type (IBAN, codice fiscale, e-mail, partita IVA, card) wins over a
+  declared identifier, unless the declared match was confirmed by its `context`; a declared identifier wins over a
+  phone number. Otherwise the earlier, then the longer, match wins, as for built-in types.
+- **speech**: `word` says `words` in its place (the locale's, else its language's, else English, else the name),
+  `spell` reads it character by character (`O R D 1 2 3 4 5 6`), `group` in groups of `size` characters (default 3:
+  `ORD 123 456`), `omit` says nothing, `verbatim` reads it as written. Speech uses the same `match`; `speech.match`
+  adds entries used when speaking only (a looser shape, so that nothing that looks like the code is ever read aloud).
+  The browser client speaks the server's `say` events, so this holds for every voice engine.
+- **Where it applies**: in the application's turns and server runs, the application's identifiers. Text masked
+  outside a turn (log lines, traces, memories, workflow records) is masked with the identifiers of every application
+  the service has loaded.
+- The file is the whole set: an identifier left out of it is no longer recognised at the next start. A `pii.types`
+  entry (application or agent) that is neither built-in nor declared stops the start; the console refuses it too
+  (`400 unknown_pii_types`). Patterns run on every text the guard reads: keep them simple and anchored to a literal
+  part.
 
 Deployment: `EVOKAI_GUARD_ENABLED=false` turns every control off at once (an emergency switch); the classifiers'
 settings are below; `EVOKAI_SECURITY_EVENT_TTL_DAYS` (180) is the default retention of events.

@@ -101,6 +101,9 @@ Put the variables in a `.env` file next to `docker-compose.yml` to keep them acr
 - **The operator key scrolled away**: `docker compose exec evokai evokai init --rotate-operator-key` prints a new one
   (the old one stops working when the service restarts: `docker compose restart evokai`).
 - **A model answers "not allowed"**: add its provider to `EVOKAI_MODEL_ALLOW`.
+- **The service restarts with `password authentication failed for user "evokai"`**: an `evokai-pg` volume from an
+  earlier run with a different password exists. `docker compose down -v` deletes it (and its data), or set
+  `EVOKAI_POSTGRES_PASSWORD` to the old password.
 - **Health**: `docker compose ps` shows both services healthy; the console's Health page shows the database, models
   and MCP servers.
 

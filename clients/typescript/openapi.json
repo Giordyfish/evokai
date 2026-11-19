@@ -9439,7 +9439,7 @@
         ]
       },
       "put": {
-        "description": "Replace the application's security policy (unset fields follow the defaults).\n\nAgents may override it in their own definition (``security``). Effective from the next turn.\n\nReturns:\n    The security view.",
+        "description": "Replace the application's security policy (unset fields follow the defaults).\n\nAgents may override it in their own definition (``security``). Effective from the next turn.\n\nReturns:\n    The security view.\n\nRaises:\n    BadRequest: ``pii.types`` names a type that is neither built-in nor declared.",
         "operationId": "put_security_agent_v1_admin_security_put",
         "requestBody": {
           "content": {

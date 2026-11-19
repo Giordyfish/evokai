@@ -58,6 +58,8 @@ class OutputRules:
     hold_pii: bool = False
     """Never split an identifier between two chunks (stored events are masked chunk by chunk)."""
     pii_types: frozenset[str] | None = None
+    pii_declared: tuple[identifiers.Identifier, ...] = ()
+    """The application's own identifiers."""
     link_domains: list[str] = field(default_factory=list)
     known_secrets: tuple[str, ...] = ()
     prompt_shingles: set[str] = field(default_factory=set)
@@ -105,10 +107,10 @@ def apply(text: str, rules: OutputRules, changes: Changes) -> str:
             changes.secrets[f.rule] = changes.secrets.get(f.rule, 0) + 1
         text = secrets.redact(text, found)
     if rules.pii:
-        spans = identifiers.find(text, rules.pii_types)
+        spans = identifiers.find(text, rules.pii_types, rules.pii_declared)
         for t, n in identifiers.counts(spans).items():
             changes.pii[t] = changes.pii.get(t, 0) + n
-        text = identifiers.mask(text, rules.pii_types) if spans else text
+        text = identifiers.mask(text, rules.pii_types, rules.pii_declared) if spans else text
     if rules.links:
         text, bad = content.defuse_links(text, rules.link_domains)
         changes.links += [x.url[:200] for x in bad]
@@ -230,7 +232,7 @@ class OutputFilter:
             if hint >= 0:
                 cut = min(cut, hint)
         if r.pii or r.hold_pii or r.vault is not None:
-            spans += [(s.start, s.end) for s in identifiers.find(buf, r.pii_types)]
+            spans += [(s.start, s.end) for s in identifiers.find(buf, r.pii_types, r.pii_declared)]
         if r.links:
             spans += [(x.start, x.end) for x in content.links(buf)]
         for start, end in spans:

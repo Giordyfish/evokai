@@ -161,8 +161,9 @@ The application lists these in its own records of processing and its privacy not
 
 ## Limits
 
-- Masking and the export find identifiers with a recognisable format (see [security](security.md)); names and free
-  text are erased with the conversation, not masked.
+- Masking and the export find identifiers with a recognisable format (see [security](security.md)), the built-in ones
+  and those the application declares ([application identifiers](security.md#application-identifiers)); names and
+  free text are erased with the conversation, not masked.
 - Backups of the database follow the deployment's backup retention: an erased person disappears from backups when they
   expire.
 - Usage rows of an erased person keep the agent, model, tags and time of each call (without the person).

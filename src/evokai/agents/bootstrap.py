@@ -32,6 +32,7 @@ from evokai.core.errors import AppError, ConfigError
 from evokai.core.security import Keyring, hash_secret, parse_key
 from evokai.db.repositories import Store
 from evokai.grants import explicit_client_tools, from_yaml, grants_of
+from evokai.guard import identifiers
 from evokai.guard.ask import check_rules
 from evokai.observability.tracing import CONTENT_MODES
 
@@ -139,8 +140,19 @@ async def bootstrap(
                 f"bootstrap: tracing.content must be one of {', '.join(CONTENT_MODES)}"
             )
         in_defaults["tracing_content"] = tracing["content"]
-    if in_defaults:
-        fields["defaults"] = {**(fields.get("defaults") or {}), **in_defaults}
+    # The file is the whole set: identifiers left out of it are no longer recognised.
+    declared = _identifiers(spec.get("identifiers"))
+    in_defaults["identifiers"] = identifiers.stored(declared) or None
+    _check_pii_types(spec.get("security"), declared, "application")
+    for raw in data.get("agents") or []:
+        if isinstance(raw, dict):
+            _check_pii_types(raw.get("security"), declared, f"agent {raw.get('name')}")
+    fields["defaults"] = {**(fields.get("defaults") or {}), **in_defaults}
+    if fields["defaults"].get("identifiers") is None:
+        fields["defaults"].pop("identifiers", None)
+        fields["defaults_removed"] = ["identifiers"]
+    if not fields["defaults"]:
+        fields.pop("defaults")
     app_id = await ensure_application(store, slug, name, fields)
     # Keys from the file (usually ``${ENV_VAR}``) come first; the settings' keys are a fallback.
     await register_keys(
@@ -222,6 +234,7 @@ async def bootstrap(
             raise ConfigError(f"bootstrap: capability_credentials: {e}") from e
 
     app = await store.applications.get(app_id)
+    identifiers.of_app(app)
     grants = await grants_of(store, app) if app else None
     for raw in data.get("agents") or []:
         agent = AgentDef.model_validate(raw).with_version()
@@ -362,6 +375,36 @@ def _security(raw: Any) -> dict[str, Any] | None:
         raise ConfigError(f"bootstrap: invalid security policy: {e.errors()[0]['msg']}") from e
 
 
+def _identifiers(raw: Any) -> list[identifiers.IdentifierSpec]:
+    """The application's own identifiers from a config file, validated.
+
+    Returns:
+        The declarations.
+
+    Raises:
+        ConfigError: An invalid declaration.
+    """
+    try:
+        return identifiers.parse(raw)
+    except ValueError as e:
+        raise ConfigError(f"bootstrap: application.identifiers: {e}") from e
+
+
+def _check_pii_types(security: Any, declared: list[identifiers.IdentifierSpec], where: str) -> None:
+    """``security.pii.types`` names only built-in or declared identifiers.
+
+    Raises:
+        ConfigError: An unknown name.
+    """
+    pii_settings = (security or {}).get("pii") if isinstance(security, dict) else None
+    types = pii_settings.get("types") if isinstance(pii_settings, dict) else None
+    if isinstance(types, list) and (bad := identifiers.unknown_types(types, declared)):
+        raise ConfigError(
+            f"bootstrap: {where}: unknown personal data types: {bad} "
+            "(declare them in application.identifiers)"
+        )
+
+
 def _ask_rules(raw: Any) -> list[dict[str, Any]] | None:
     """The application's ask rules from a config file, validated (``evokai.guard.ask``).
 
@@ -494,13 +537,16 @@ async def ensure_application(store: Store, slug: str, name: str, fields: dict[st
     Returns:
         Its id.
     """
+    fields = dict(fields)
+    removed = fields.pop("defaults_removed", [])
     app = await store.applications.by_slug(slug)
     if app is None:
         app = await store.applications.create(slug, name, **fields)
         log.info("application_created", extra={"application": slug})
         return app.id
-    if "defaults" in fields:
-        fields = {**fields, "defaults": {**(app.defaults or {}), **fields["defaults"]}}
+    if "defaults" in fields or any(k in (app.defaults or {}) for k in removed):
+        merged = {**(app.defaults or {}), **(fields.get("defaults") or {})}
+        fields = {**fields, "defaults": {k: v for k, v in merged.items() if k not in removed}}
     await store.applications.update(app.id, name=name, **fields)
     return app.id
 
