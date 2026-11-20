@@ -55,6 +55,7 @@ from evokai.observability.middleware import CorrelationMiddleware
 from evokai.observability.telemetry import setup_telemetry
 from evokai.privacy import purge_revocations
 from evokai.services import Services, build_services
+from evokai.version import __version__
 
 _STATUS_CODES = {
     400: "bad_request",
@@ -186,7 +187,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     base = settings.base_path.rstrip("/")
     app = FastAPI(
         title="Evokai",
-        version="0.1.0",
+        version=__version__,
         summary="Agents runtime: any model provider, MCP tools, skills and voice sessions.",
         lifespan=lifespan,
         docs_url=None,
