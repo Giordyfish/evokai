@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light dark;
+  --paper: #f7f3ec;
+  --ink: #1f1b16;
+  --muted: #6b6257;
+  --card: #fffdf9;
+  --line: #e4dccf;
+  --accent: #8a3b12;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #191714; --ink: #f1ece4; --muted: #a59b8e; --card: #221f1b; --line: #36312a; --accent: #e59a6b; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+header, main { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 48px; }
+h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 600; }
+h1 { margin: 0; font-size: 2.4rem; color: var(--accent); }
+header p { margin: 4px 0 0; color: var(--muted); }
+h2 { margin: 40px 0 16px; font-size: 1.3rem; }
+.books {
+  list-style: none;
+  margin: 0 0 96px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.books li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.books strong { font-family: Georgia, "Times New Roman", serif; font-size: 1.1rem; }
+.genre { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.author, .meta { color: var(--muted); font-size: 0.9rem; }
+.meta { margin-top: auto; padding-top: 8px; }

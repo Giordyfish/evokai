@@ -1,0 +1,4 @@
+node_modules/
+.env
+# The local file: references make the lock follow the clients; npm install writes it again.
+package-lock.json

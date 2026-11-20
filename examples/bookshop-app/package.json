@@ -1,0 +1,20 @@
+{
+  "name": "evokai-example-bookshop-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Inkwell Books: a tiny shop page whose assistant runs on Evokai.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "setup": "node setup.mjs",
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check setup.mjs && node --check catalogue.mjs"
+  },
+  "dependencies": {
+    "@evokai/evokai-client": "file:../../clients/typescript",
+    "@evokai/evokai-ui": "file:../../clients/ui"
+  },
+  "engines": {
+    "node": ">=20.12"
+  }
+}

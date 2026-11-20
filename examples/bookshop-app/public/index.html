@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inkwell Books</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <!-- The panel imports the headless client by its package name: map it to the file the server serves. -->
+  <script type="importmap">
+    { "imports": { "@evokai/evokai-client/browser": "/vendor/evokai-client/browser/index.js" } }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Inkwell Books</h1>
+    <p>A small bookshop. Ask Ada, bottom right, about any title.</p>
+  </header>
+
+  <!-- The panel sends the text of <main> with each message, so the agent sees what the reader sees. -->
+  <main>
+    <h2>On the shelves</h2>
+    <ul id="books" class="books"></ul>
+  </main>
+
+  <evokai-chat
+    base-url="{{EVOKAI_URL}}"
+    token-url="/api/agent/token"
+    conversations-url="/api/agent/conversations"
+    title="Ada"
+    app-name="Inkwell Books"
+    locale="en"
+  ></evokai-chat>
+
+  <script type="module">
+    import { defineElements } from '/vendor/evokai-ui/index.js'
+    defineElements()
+
+    const euros = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' })
+    const { items } = await fetch('/api/books').then((r) => r.json())
+    document.getElementById('books').replaceChildren(
+      ...items.map((b) => {
+        const li = document.createElement('li')
+        li.innerHTML = '<span class="genre"></span><strong></strong><span class="author"></span><span class="meta"></span>'
+        li.querySelector('.genre').textContent = b.genre
+        li.querySelector('strong').textContent = b.title
+        li.querySelector('.author').textContent = b.author
+        li.querySelector('.meta').textContent = `${euros.format(b.price)} · ${b.stock ? `${b.stock} in stock` : 'out of stock'}`
+        return li
+      }),
+    )
+  </script>
+</body>
+</html>
