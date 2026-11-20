@@ -25,7 +25,7 @@ browser ──(session token)──▶ Evokai ──(MCP, secret)──▶ this 
 
 ## Run it
 
-You need Node 20.12 or later and the [quick start](../../docs/quickstart.md) running (Docker, the test model, no
+You need Node 22 or later and the [quick start](../../docs/quickstart.md) running (Docker, the test model, no
 cloud account).
 
 **1. Start Evokai** at the repository root and note the operator key it prints:

@@ -3,7 +3,7 @@
 ## Run it
 
 ```bash
-uv sync --all-extras --dev          # Python 3.12 or newer (the image runs 3.14)
+uv sync --all-extras --dev          # Python 3.12 to 3.14 (the image runs 3.14)
 uv run evokai migrate               # SQLite ./evokai.db by default
 EVOKAI_CONFIG_FILE=config/bookshop.yaml uv run evokai serve   # http://localhost:8787/agent/health
 ```

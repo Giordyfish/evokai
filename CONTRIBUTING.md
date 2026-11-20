@@ -19,7 +19,7 @@ Agents working in this repository follow [AGENTS.md](AGENTS.md); its rules apply
 ## The gates
 
 Everything CI runs is in `scripts/ci.sh`, and it runs the same on your machine. You need
-[uv](https://docs.astral.sh/uv/) (Evokai supports Python 3.12 or newer; uv installs 3.14 from `.python-version`, and
+[uv](https://docs.astral.sh/uv/) (Evokai supports Python 3.12 to 3.14; uv installs 3.14 from `.python-version`, and
 `UV_PYTHON=3.12` runs the gates on the oldest supported version, as CI does) and Node.js 22 with npm.
 
 ```bash

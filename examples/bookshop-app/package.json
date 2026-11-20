@@ -15,6 +15,6 @@
     "@evokai/evokai-ui": "file:../../clients/ui"
   },
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22"
   }
 }

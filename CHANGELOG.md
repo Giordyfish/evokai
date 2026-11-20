@@ -14,7 +14,7 @@ The first public release. Evokai is experimental: see the [status](README.md#sta
 
 ### Added
 
-- **Agents runtime** (Python 3.12 or newer, FastAPI, pydantic-ai): applications with server, admin and session keys;
+- **Agents runtime** (Python 3.12 to 3.14, FastAPI, pydantic-ai): applications with server, admin and session keys;
   agents with versions, instructions, an ordered model fallback chain and per-agent prompt caching on Bedrock
   Anthropic models; any provider pydantic-ai supports, behind deployment and application allow-lists.
 - **Tools over MCP**, called as the signed-in user (`forward_user`) or with a service secret; ready connectors for

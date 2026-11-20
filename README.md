@@ -10,7 +10,7 @@ Any model provider, your app's tools over MCP, skills and voice, always acting a
 [![CI](https://img.shields.io/github/actions/workflow/status/Giordyfish/evokai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Giordyfish/evokai/actions/workflows/ci.yml)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-f59e0b?style=flat-square)](#status)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-7c3aed?style=flat-square)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Python 3.12 to 3.14](https://img.shields.io/badge/python-3.12%20to%203.14-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 
 [Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Docs](#documentation) · [Contributing](#contributing)
 

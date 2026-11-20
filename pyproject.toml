@@ -5,7 +5,7 @@ description = "Agents runtime: any model provider, MCP tools, skills and voice s
 authors = [
     { name = "Giordano Pescetelli", email = "giordano.pescetelli@gmail.com" }
 ]
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.12,<3.15"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 classifiers = ["Private :: Do Not Upload"]
