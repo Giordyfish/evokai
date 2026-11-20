@@ -8,6 +8,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Security
+
+- The browser capability worker image (`workers/capability`, `browser` extra) now installs Pillow 13.0.0, pypdf
+  6.21.4, mcp 2.3.0 and anyio 4.14.2 instead of the vulnerable versions browser-use 0.13.14 pins exactly.
+
 ## [0.1.1] - 2026-11-20
 
 ### Changed
