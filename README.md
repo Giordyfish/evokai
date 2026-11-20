@@ -11,17 +11,30 @@ Any model provider, your app's tools over MCP, skills and voice, always acting a
 [![Status: experimental](https://img.shields.io/badge/status-experimental-f59e0b?style=flat-square)](#status)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-7c3aed?style=flat-square)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
-[![TypeScript client](https://img.shields.io/badge/client-TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)](clients/typescript)
-[![pydantic-ai](https://img.shields.io/badge/agents-pydantic--ai-e92063?style=flat-square)](https://ai.pydantic.dev)
-[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![MCP](https://img.shields.io/badge/tools-MCP-4b32c3?style=flat-square)](https://modelcontextprotocol.io)
-[![Pipecat](https://img.shields.io/badge/voice-Pipecat-5b21b6?style=flat-square)](https://pipecat.ai)
-[![SQL](https://img.shields.io/badge/storage-any%20SQL-336791?style=flat-square&logo=postgresql&logoColor=white)](docs/configuration.md)
-[![OpenTelemetry](https://img.shields.io/badge/telemetry-OpenTelemetry%20(optional)-425cc7?style=flat-square&logo=opentelemetry&logoColor=white)](docs/configuration.md)
 
-[Why](#why-evokai) · [Status](#status) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Client](#the-typescript-client) · [Docs](#documentation) · [Contributing](#contributing) · [License](#license)
+[Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Docs](#documentation) · [Contributing](#contributing)
 
 </div>
+
+<p align="center"><img src="docs/assets/screenshot-chat.png" alt="An app's own page with the Evokai chat panel open: the agent answers from the app's catalogue" width="820" /></p>
+
+Your backend mints a short session token for the signed-in user; the page talks to the agent with it:
+
+```ts
+// Your backend, with the server key
+import { EvokaiServer } from '@evokai/evokai-client/server'
+
+const evokai = new EvokaiServer({ baseUrl: process.env.EVOKAI_URL!, serverKey: process.env.EVOKAI_SERVER_KEY! })
+app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessionToken({ subject: req.user.id, agent: 'assistant' })))
+```
+
+```html
+<!-- Your page: a launcher and a chat panel, with voice -->
+<evokai-chat base-url="http://localhost:8787/agent" token-url="/api/agent/token" title="Ada"></evokai-chat>
+```
+
+The agent calls your app's tools over MCP as that user, asks before it changes anything, and stays within the budgets
+you set. A complete app is in [examples/bookshop-app](examples/bookshop-app).
 
 ---
 
@@ -54,28 +67,19 @@ conditions of any kind, and without liability, as stated in sections 7 and 8 of 
 
 ## Features
 
-| | |
-| --- | --- |
-| 🧠 **Any model** | Bedrock, OpenAI, Azure, Mistral, Ollama and more through [pydantic-ai](https://ai.pydantic.dev), behind an allow-list, with an ordered **fallback chain** when a model has no capacity, and **prompt caching** per agent on Bedrock Anthropic models. |
-| 🔧 **Your tools over MCP** | The app's MCP server, called **as the signed-in user** (`forward_user`) or with a service secret. Tools are filtered per user; a server that is down only loses its own tools. |
-| 🧪 **Evals** | Test cases per agent (contains, patterns, JSON schemas, tools called, model-judged rubrics), run on demand and on every new version against the previous one, with their own budget. |
-| 🔌 **Ready connectors** | SQL databases, REST APIs from their OpenAPI document, Google Drive, SharePoint and OneDrive, IMAP mailboxes: enabled by configuration, read-only unless you opt in, under the same grants. |
-| ✋ **Confirm before change** | Tools that change data never run directly: the turn stops with a `confirm` event and resumes on the user's decision. Questions with options work the same way. |
-| 📚 **Skills** | Folders with a `SKILL.md` and, beside it, references, data and scripts: only names and descriptions go in the prompt, the agent loads a skill when it needs it (or it is preloaded), reads its files one at a time and runs its scripts in the code sandbox when code execution is on. |
-| 🎙️ **Voice** | Dictation, conversation and barge-in. Browser engines (on-device recognition, in-browser Piper or device voices) or server voice on [Pipecat](https://pipecat.ai) over WebRTC, with Silero VAD and Smart Turn. |
-| 📊 **Rich answers** | Charts, schemas, navigation and questions as typed events, rendered by your own interface. |
-| 💶 **Budgets** | Hard caps per application, defaults per user (month and day), enforced before every model call. People, in the app and in the console, only ever see **percentages** of the caps, never amounts. |
-| 🗄️ **Your choice of storage** | Conversations stored in Evokai (any SQL database) or kept by the app and sent with each request. A time to live per application deletes them for good. |
-| 🛡️ **Agent security layer** | Prompt-injection and jailbreak heuristics, untrusted tool output and e-mails marked as data, personal data (Italian formats included) masked or tokenised, secrets and unsafe links stopped in answers, a tool policy, abuse limits; each control off, monitored or enforced, per application and per agent, with security events. Mapped to the OWASP LLM Top 10. |
-| 🇪🇺 **Privacy** | A person's data exported or erased on request, sign-out everywhere, retention per kind of data, and a data residency per application that keeps models in their geography. |
-| 📜 **Compliance packs** | AI Act (classification, Annex IV-style documentation, changes), GDPR (record of processing, DPIA template, rights, DPA annex) and an ISO 27001 / SOC 2 mapping, generated from the live configuration in English and Italian, every statement with its source, snapshots and diffs. |
-| 🧮 **Code execution** | Agents run Python for analysis and charts in Amazon Bedrock AgentCore Code Interpreter: one sandbox per call, no internet, EU region, output through the guard, off until granted. |
-| 🔑 **Console access** | Single sign-on (OpenID Connect, PKCE, MFA from the provider) with viewer, operator and owner roles enforced on every route, and an audit log of every change. |
-| 🔒 **Never stored at providers** | No provider-side threads, assistants or stored responses, ever. History is always sent from Evokai or the app. Enforced by a test. |
-| 🔗 **Open standards** | [AG-UI](docs/ag-ui.md) for CopilotKit frontends, an [OpenAI-compatible API](docs/openai-compatible.md) for any OpenAI client or LangChain, and [A2A](docs/a2a.md) agent cards for other agents, under the same keys, grants, guard and caps. |
-| 🤖 **Back-office agents** | Agents that run server to server with a JSON output schema, validated, for automation such as e-mail triage. |
-| 🪄 **Admin console** | Applications, agents with versions, per-application **capability grants**, MCP servers, skills, keys, limits, usage, a playground and health, at `{base}/admin/`. |
-| 🔭 **Observable** | Structured logs with correlation ids and per-call provider metrics; OpenTelemetry traces, metrics and logs when you turn them on. |
+- **Any model**: Bedrock, OpenAI, Azure, Mistral, Ollama and more through [pydantic-ai](https://ai.pydantic.dev),
+  behind an allow-list, with fallbacks when a model has no capacity.
+- **Your tools over MCP**, called as the signed-in user; tools that change data wait for the user's confirmation.
+- **Skills, knowledge bases and ready connectors** (SQL, REST from OpenAPI, Google Drive, SharePoint, IMAP).
+- **Voice**: dictation, conversation and barge-in, in the browser or on the server with [Pipecat](https://pipecat.ai).
+- **Budgets** per application and per user, enforced before every model call; people see shares, never amounts.
+- **An agent security layer** mapped to the OWASP LLM Top 10: injection checks, personal data masked, a tool policy.
+- **Privacy and compliance**: data residency, export and erasure, retention, and AI Act and GDPR packs generated from
+  the live configuration.
+- **Open standards**: [AG-UI](docs/ag-ui.md), an [OpenAI-compatible API](docs/openai-compatible.md) and [A2A](docs/a2a.md).
+- **An admin console** for applications, agents and their versions, grants, keys, limits, evals and a playground.
+
+The whole list, with details: [features](docs/features.md).
 
 ## How it works
 
@@ -212,6 +216,7 @@ properties, in English and Italian.
 | Guide | What is in it |
 | --- | --- |
 | [Quick start](docs/quickstart.md) | Docker Compose, the first-run setup in the console, models |
+| [Features](docs/features.md) | Everything Evokai does, in one table |
 | [Knowledge bases](docs/knowledge.md) | Documents agents search (PDF, Office, HTML, Markdown, CSV), hybrid search with pgvector, access groups, citations |
 | [Evals](docs/evals.md) | Test cases per agent, runs on save and on demand, the comparison, the eval budget |
 | [Connectors](docs/connectors/README.md) | Ready MCP servers: SQL, REST/OpenAPI, Google Drive, SharePoint and OneDrive, IMAP |
@@ -241,6 +246,7 @@ clients/python     the Python SDK (evokai): server, admin and session clients, s
 clients/ui         the embeddable interface (@evokai/evokai-ui): <evokai-chat>, <evokai-voice>, React wrappers
 admin/             the admin console (static app served at {base}/admin/)
 config/            an example application (a fictional bookshop) with a skill
+examples/          a complete app that summons its agent (backend, page, tools)
 docs/              architecture, configuration, deployment
 scripts/           ci.sh (all gates) and build-image.sh
 tests/             pytest, with fake models, MCP servers and speech
@@ -250,6 +256,7 @@ tests/             pytest, with fake models, MCP servers and speech
 
 ```bash
 scripts/ci.sh      # ruff, ty, pytest, OpenAPI check, the client, the UI components and the admin console
+scripts/quickstart-smoke.sh   # the Docker quick start end to end, as CI runs it
 scripts/record-cassettes.sh mcp|bedrock   # opt-in: record the HTTP cassettes the suite replays
 ```
 
