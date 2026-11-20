@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_call:
   workflow_dispatch:
@@ -19,6 +19,21 @@ env:
   FORCE_COLOR: "1"
 
 jobs:
+  # main takes pull requests from develop (or an urgent hotfix/... branch) only.
+  pr-source:
+    name: Pull request source
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          case "$HEAD_REF" in develop|hotfix/*) ;; *) echo "::error::main takes pull requests from develop or hotfix/... only, not $HEAD_REF"; exit 1 ;; esac
+          [ "$HEAD_REPO" = "$BASE_REPO" ] || { echo "::error::main takes pull requests from this repository's branches only"; exit 1; }
+
   service:
     name: service (Python ${{ matrix.python }})
     runs-on: ubuntu-latest

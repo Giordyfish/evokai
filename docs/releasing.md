@@ -1,6 +1,7 @@
 # Releasing
 
-A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then runs every gate (the CI workflow) and
+Work lands on `develop`; `main` holds what is released and changes only through a pull request from `develop` (or a
+`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then runs every gate (the CI workflow) and
 publishes:
 
 | What | Where | How |
@@ -27,7 +28,8 @@ dist-tag.
    folders). The workflow's first job refuses a tag that does not match.
 2. Move the entries under **Unreleased** in [CHANGELOG.md](../CHANGELOG.md) to a new section with the version and
    the date.
-3. Run `scripts/ci.sh`, commit, and push to `main`.
+3. Run `scripts/ci.sh`, commit to `develop`, then open a pull request from `develop` to `main` and merge it when CI
+   is green.
 4. Tag and push the tag: `git tag -s vX.Y.Z -m "Evokai X.Y.Z" && git push origin vX.Y.Z`.
 5. When the workflow is green, create the GitHub release from the tag with the changelog section as its notes.
 
@@ -41,8 +43,10 @@ dist-tag.
   tags), and add yourself as a required reviewer if every publish should wait for a click.
 - **Settings, Code security**: enable private vulnerability reporting (it is how [SECURITY.md](../SECURITY.md) and
   the code of conduct receive reports), Dependabot alerts and secret scanning.
-- **Branch protection** on `main`: require the CI checks and, if you want it enforced, the DCO sign-off (for example
-  with the DCO GitHub App).
+- **Rulesets**: `main` takes changes only through a pull request with the CI checks green (no direct push, no force
+  push, no deletion; the check **Pull request source** refuses any branch other than `develop` or `hotfix/...`);
+  `develop` takes pull requests with the CI checks green, and the maintainer may push to it directly. For the DCO
+  sign-off to be enforced too, add the DCO GitHub App.
 - The actions in both workflows are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`) keeps them current,
   and the CI job **Workflow security** runs zizmor on every change.
 
