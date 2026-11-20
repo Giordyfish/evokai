@@ -29,6 +29,15 @@ packages = ["src/evokai_worker"]
 
 [tool.uv]
 conflicts = [[{ extra = "browser" }, { extra = "kubernetes" }]]
+# browser-use 0.13.14 (the newest pydantic-ai-harness 0.x accepts) and browser-harness pin these
+# exactly, at versions with published security advisories. Raised to the first fixed releases,
+# same majors except Pillow 13 (whose removals browser-use, browser-harness and reportlab do not use).
+override-dependencies = [
+    "anyio>=4.14.2",
+    "mcp>=2.2.0,<3",
+    "pillow>=13.0.0,<14",
+    "pypdf>=6.21.4,<7",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.4", "pytest-asyncio>=1.2", "httpx>=0.28", "ruff>=0.14"]
