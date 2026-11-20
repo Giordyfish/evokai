@@ -3,7 +3,7 @@
  * and deletable, «forget everything», memory on or off for the person) and the one-time consent card. Every text comes
  * from `strings.ts`; every colour from the theme tokens.
  */
-import type { JSX, VNode } from 'preact'
+import type { TargetedKeyboardEvent, VNode } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import type { Memory, MemoryKind } from '@evokai/evokai-client/browser'
@@ -262,7 +262,7 @@ export function MemoryView({ controller: c, state: st, onClose }: MemoryViewProp
       setBusy(false)
     }
   }
-  const onKey = (e: JSX.TargetedKeyboardEvent<HTMLElement>) => {
+  const onKey = (e: TargetedKeyboardEvent<HTMLElement>) => {
     if (!e.defaultPrevented) escape(e, asking ? () => setAsking(null) : onClose)
   }
   const done = () => {
