@@ -31,7 +31,8 @@ dist-tag.
 3. Run `scripts/ci.sh`, commit to `develop`, then open a pull request from `develop` to `main` and merge it when CI
    is green.
 4. Tag and push the tag: `git tag -s vX.Y.Z -m "Evokai X.Y.Z" && git push origin vX.Y.Z`.
-5. When the workflow is green, create the GitHub release from the tag with the changelog section as its notes.
+5. When the workflow is green, approve the three staged npm packages (npmjs.com, or `npm stage list` and
+   `npm stage approve`), then create the GitHub release from the tag with the changelog section as its notes.
 
 ## One-time setup
 
@@ -76,8 +77,9 @@ Optionally do the same on TestPyPI and try a pre-release tag there first (change
 
 ### npm (trusted publishing)
 
-No npm token is stored anywhere: the release job proves its identity to npm over OpenID Connect (npm 11.5.1 or
-newer) and gets a short-lived token for the publish.
+No npm token is stored anywhere: the release job proves its identity to npm over OpenID Connect and gets a
+short-lived token. It **stages** each version (`npm stage publish`, npm 11.15.0 or newer): nothing is public until a
+maintainer approves it on npmjs.com or with `npm stage approve`, with two-factor authentication.
 
 1. Create the **`evokai` organisation** on npmjs.com (free for public packages), so the `@evokai` scope belongs to
    you, and enable two-factor authentication on your account.
@@ -87,8 +89,9 @@ newer) and gets a short-lived token for the publish.
    publish step.
 3. Then, on npmjs.com, for each package (`@evokai/evokai-client`, `@evokai/evokai-ui`, `evokai`): **Settings,
    Trusted publishing, GitHub Actions**, with organisation or user `Giordyfish`, repository `evokai`, workflow
-   `release.yml` and environment `npm`. Optionally set **Publishing access** to require two-factor authentication
-   and disallow tokens.
+   `release.yml` and environment `npm`. Leave **publish** and **dist-tag** off under *Allowed actions*: staging is
+   always allowed, and the approval is the step a stolen workflow cannot take. Optionally set **Publishing access**
+   to require two-factor authentication and disallow tokens.
 4. Delete the token on npmjs.com and the `NPM_TOKEN` secret on GitHub.
 
 The packages carry `publishConfig.access: public`; `--provenance` links each published version to the workflow run

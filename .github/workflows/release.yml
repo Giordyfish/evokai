@@ -200,8 +200,10 @@ jobs:
         run: cd clients/typescript && npm ci --no-audit --no-fund && npm run build
       - name: Build the UI components
         run: cd clients/ui && npm ci --no-audit --no-fund && npm run build
-      # Trusted publishing (OpenID Connect): npm 11.5.1 or newer exchanges the job's identity for a short-lived token,
-      # so no npm token is stored anywhere. Each package names this repository, release.yml and the npm environment.
+      # Trusted publishing (OpenID Connect) with staged releases: the job's identity buys a short-lived token, so no npm
+      # token is stored anywhere, and each version waits on npmjs.com until a maintainer approves it with two-factor
+      # authentication (npm stage approve). npm 11.15.0 or newer. Each package names this repository, release.yml and
+      # the npm environment as its trusted publisher, allowed to stage only.
       - run: npm install --global npm@11
       - name: Publish
         env:
@@ -209,6 +211,6 @@ jobs:
         run: |
           tag=latest
           case "$VERSION" in *-*) tag=next ;; esac
-          (cd clients/typescript && npm publish --provenance --access public --tag "$tag")
-          (cd clients/ui && npm publish --provenance --access public --tag "$tag")
-          (cd clients/aliases/npm && npm publish --provenance --access public --tag "$tag")
+          (cd clients/typescript && npm stage publish --provenance --access public --tag "$tag")
+          (cd clients/ui && npm stage publish --provenance --access public --tag "$tag")
+          (cd clients/aliases/npm && npm stage publish --provenance --access public --tag "$tag")
