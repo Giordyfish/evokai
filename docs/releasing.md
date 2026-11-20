@@ -37,7 +37,7 @@ dist-tag.
 
 - **Settings, Actions, General, Workflow permissions**: read-only `GITHUB_TOKEN` is enough; the jobs ask for what
   they need (`packages: write`, `id-token: write`).
-- **Settings, Environments**: create `pypi` and `npm`. Restrict both to tags matching `v*` (deployment branches and
+- **Settings, Environments**: create `pypi`, `pypi-alias` and `npm`. Restrict all three to tags matching `v*` (deployment branches and
   tags), and add yourself as a required reviewer if every publish should wait for a click.
 - **Settings, Code security**: enable private vulnerability reporting (it is how [SECURITY.md](../SECURITY.md) and
   the code of conduct receive reports), Dependabot alerts and secret scanning.
@@ -62,7 +62,8 @@ No API token is stored anywhere. On PyPI, signed in as the owner:
 1. **Your account, Publishing, Add a new pending publisher** (the project does not exist before the first release).
 2. PyPI project name `evokai-client`; owner `Giordyfish`; repository `evokai`; workflow name `release.yml`;
    environment `pypi`.
-3. Add a second pending publisher, identical, for the PyPI project name `evokai` (the alias).
+3. Add a second pending publisher for the PyPI project name `evokai` (the alias), the same except the environment:
+   `pypi-alias` (PyPI refuses two pending publishers with the same repository, workflow and environment).
 4. The first tag creates both projects. Afterwards each publisher shows under its project's **Publishing** settings.
 
 Optionally do the same on TestPyPI and try a pre-release tag there first (change the publish step's

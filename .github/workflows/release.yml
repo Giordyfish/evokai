@@ -117,7 +117,7 @@ jobs:
         run: scripts/sign-image.sh "$IMAGE@${{ steps.build.outputs.digest }}"
 
   pypi:
-    name: PyPI (evokai-client, evokai)
+    name: PyPI (evokai-client)
     needs: [versions, gates]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -133,6 +133,27 @@ jobs:
         with:
           version: "0.13.8"
       - run: cd clients/python && uv build --out-dir ../../dist/python
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/python
+
+  # Its own environment: PyPI refuses two pending publishers with the same repository, workflow and environment.
+  pypi-alias:
+    name: PyPI (evokai)
+    needs: [versions, pypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi-alias
+      url: https://pypi.org/project/evokai/
+    permissions:
+      contents: read
+      id-token: write   # trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.8"
       - run: cd clients/aliases/python && uv build --out-dir ../../../dist/python
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
