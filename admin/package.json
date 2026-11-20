@@ -1,6 +1,6 @@
 {
   "name": "@evokai/evokai-console",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The Evokai admin console: a static single-page app served by the service at {EVOKAI_BASE_PATH}/admin.",
   "private": true,
   "type": "module",
@@ -15,12 +15,12 @@
     "@fontsource-variable/bricolage-grotesque": "^5.2.8",
     "@fontsource-variable/onest": "^5.2.8",
     "@fontsource/fragment-mono": "^5.2.6",
-    "preact": "^10.27.2"
+    "preact": "^11.2.0"
   },
   "devDependencies": {
     "typescript": "~5.9.3",
-    "vite": "^6.4.1",
-    "vitest": "^3.2.4"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
   },
   "engines": {
     "node": ">=22"

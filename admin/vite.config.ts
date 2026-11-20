@@ -8,7 +8,7 @@ const client = fileURLToPath(new URL('../clients/typescript/src', import.meta.ur
 export default defineConfig({
   base: './',
   resolve: { alias: { '@client': client } },
-  esbuild: { jsx: 'automatic', jsxImportSource: 'preact' },
+  oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   // Nothing inlined as data: URIs: the console's CSP allows fonts and scripts from its own origin only.
   build: { outDir: 'dist', emptyOutDir: true, assetsDir: 'assets', assetsInlineLimit: 0, sourcemap: false, target: 'es2022' },
   server: {
