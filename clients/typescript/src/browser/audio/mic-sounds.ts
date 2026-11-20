@@ -1,11 +1,11 @@
 /**
- * Optional sounds when the microphone opens and closes. Built-in recipes are synthesised with Web Audio (no files),
- * except `classico`, two small MP3 files shipped with the package (resolved with `new URL(…, import.meta.url)`, which
- * bundlers copy as assets); `{on, off}` plays your own files.
+ * Optional sounds when the microphone opens and closes. Built-in recipes are synthesised with Web Audio (no files);
+ * `{on, off}` plays your own files.
  *
  * Identifiers (display names in the locale packs):
  * - `goccia` (Drop): sine 988 Hz 0–0.14 s + 1319 Hz 0.08–0.22 s, reversed to close; gain 0.18.
- * - `classico` (Classic): two soft tones with a long tail (audio files).
+ * - `classico` (Classic): sine 587 Hz + 880 Hz 56 ms later, each falling 30 dB in 0.12 s then fading over 0.8 s;
+ *   to close, 784 Hz then 523 Hz 100 ms later, about 80 ms each; gain 0.2.
  * - `vetro` (Glass): an FM bell (modulator × 3.5, index 2.2 decaying), 1568 Hz 0.6 s / 1046 Hz 0.5 s; gain 0.12.
  * - `respiro` (Breath): band-pass (Q 6) noise, 0.35 s, sweeping 500 → 2600 Hz (reversed to close); gain 0.5.
  * - `cristallo` (Crystal): triangle arpeggio 880/1109/1319 Hz, 45 ms apart, 0.32 s, up / down; gain 0.11.
@@ -19,12 +19,6 @@ export type MicSound = MicSoundName | 'none' | { on: string; off: string }
 
 export const MIC_SOUNDS: readonly MicSoundName[] = ['goccia', 'classico', 'vetro', 'respiro', 'cristallo', 'clic']
 export const DEFAULT_MIC_SOUND: MicSound = 'goccia'
-
-/** The URLs of the `classico` files inside the package. */
-export const CLASSICO_URLS = {
-  on: () => new URL('./sounds/classico-on.mp3', import.meta.url).href,
-  off: () => new URL('./sounds/classico-off.mp3', import.meta.url).href,
-}
 
 /** The parts of a `BaseAudioContext` the recipes use (an `OfflineAudioContext` works). */
 export type AudioContextLike = Pick<
@@ -84,6 +78,23 @@ function note(ctx: AudioContextLike, dest: AudioNode, { f, f2 = f, t = 0, dur = 
   o.stop(now + t + dur + 0.05)
 }
 
+/** A sine chime: a fast fall (30 dB in `knee` seconds) and then a long, quiet tail. */
+function chime(ctx: AudioContextLike, dest: AudioNode, { f, t = 0, vol = 1, knee = 0.12, dur = 0.8 }: { f: number; t?: number; vol?: number; knee?: number; dur?: number }): void {
+  const now = ctx.currentTime
+  const o = ctx.createOscillator()
+  const g = ctx.createGain()
+  o.type = 'sine'
+  o.frequency.setValueAtTime(f, now + t)
+  g.gain.setValueAtTime(0, now + t)
+  g.gain.linearRampToValueAtTime(vol, now + t + 0.003)
+  g.gain.exponentialRampToValueAtTime(vol * 0.03, now + t + 0.003 + knee)
+  g.gain.exponentialRampToValueAtTime(0.0003, now + t + dur)
+  o.connect(g)
+  g.connect(dest)
+  o.start(now + t)
+  o.stop(now + t + dur + 0.05)
+}
+
 /** A tiny FM bell: a carrier with a decaying modulator. */
 function bell(ctx: AudioContextLike, dest: AudioNode, { f, t = 0, dur = 0.5, vol = 1, ratio = 3.5, index = 2.2 }: { f: number; t?: number; dur?: number; vol?: number; ratio?: number; index?: number }): void {
   const now = ctx.currentTime
@@ -136,7 +147,7 @@ function breath(ctx: AudioContextLike, dest: AudioNode, { up = true, dur = 0.35,
 type Recipe = (ctx: AudioContextLike, volume: number) => void
 
 /** The synthesised sounds, as in the reference page: exact frequencies, timings and gains. */
-export const MIC_SOUND_RECIPES: Record<Exclude<MicSoundName, 'classico'>, { on: Recipe; off: Recipe }> = {
+export const MIC_SOUND_RECIPES: Record<MicSoundName, { on: Recipe; off: Recipe }> = {
   goccia: {
     on: (c, v) => {
       const o = out(c, 0.18 * v)
@@ -147,6 +158,18 @@ export const MIC_SOUND_RECIPES: Record<Exclude<MicSoundName, 'classico'>, { on: 
       const o = out(c, 0.18 * v)
       note(c, o, { f: 1319, t: 0, dur: 0.12 })
       note(c, o, { f: 988, t: 0.07, dur: 0.22 })
+    },
+  },
+  classico: {
+    on: (c, v) => {
+      const o = out(c, 0.2 * v)
+      chime(c, o, { f: 587.33, vol: 0.72 })
+      chime(c, o, { f: 880, t: 0.056 })
+    },
+    off: (c, v) => {
+      const o = out(c, 0.2 * v)
+      note(c, o, { f: 783.99, dur: 0.075, attack: 0.002 })
+      note(c, o, { f: 523.25, t: 0.1, dur: 0.08, attack: 0.002 })
     },
   },
   vetro: {
@@ -198,6 +221,5 @@ export async function playMicSound(sound: MicSound, which: 'on' | 'off', opts: M
   const volume = opts.volume ?? 1
   const fetchFn = opts.fetch ?? ((u: string) => fetch(u))
   if (typeof sound === 'object') return playFile(ctx, sound[which], volume, fetchFn)
-  if (sound === 'classico') return playFile(ctx, CLASSICO_URLS[which](), volume, fetchFn)
   MIC_SOUND_RECIPES[sound][which](ctx, volume)
 }

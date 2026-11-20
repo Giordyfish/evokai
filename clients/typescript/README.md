@@ -351,7 +351,7 @@ boundary.
 
 **Microphone sounds**: `micSound: 'goccia' | 'classico' | 'vetro' | 'respiro' | 'cristallo' | 'clic' | 'none' |
 { on, off }` (default `goccia`). The identifiers are fixed; English and Italian display names are in the locale packs.
-`classico` ships as two small MP3 files that bundlers pick up through `new URL(…, import.meta.url)`.
+Every built-in sound is synthesised with Web Audio: the package ships no audio files.
 
 **Server voice** (`ServerVoiceEngine`) posts the WebRTC offer to `/v1/session/voice/offer` with the session token
 and feeds the RTVI server messages `{ evokai: event }` into the same session state; the call's audio tracks are

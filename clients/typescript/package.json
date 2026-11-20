@@ -39,7 +39,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsup && node scripts/copy-assets.mjs && node scripts/copy-legal.mjs",
+    "build": "tsup && node scripts/copy-legal.mjs",
     "prepack": "node scripts/copy-legal.mjs"
   },
   "peerDependencies": {

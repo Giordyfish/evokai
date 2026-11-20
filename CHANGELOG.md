@@ -19,6 +19,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Changed
 
+- The `classico` microphone sound is synthesised like the others: the TypeScript client ships no audio files, and
+  `CLASSICO_URLS` is gone (pass `{on, off}` to play your own files).
 - `security.pii.types` accepts the names of the application's own identifiers; a name that is neither built-in nor
   declared stops the bootstrap, and `PUT /v1/admin/security` answers 400 `unknown_pii_types`.
 

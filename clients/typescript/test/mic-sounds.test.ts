@@ -1,4 +1,4 @@
-import { CLASSICO_URLS, MIC_SOUND_RECIPES, playMicSound, type AudioContextLike } from '../src/browser/audio/mic-sounds'
+import { MIC_SOUND_RECIPES, playMicSound, type AudioContextLike } from '../src/browser/audio/mic-sounds'
 import { FakeAudioContext, type FakeFilter, type FakeGain, type FakeOsc, type FakeSource } from './helpers/audio'
 
 const play = async (sound: Parameters<typeof playMicSound>[0], which: 'on' | 'off', extra: Record<string, unknown> = {}) => {
@@ -80,21 +80,27 @@ describe('microphone sounds', () => {
     expect((await play('clic', 'off')).of<FakeOsc>('osc')[0]!.frequency.calls.map((c) => c.value)).toEqual([1200, 600])
   })
 
-  test('classico plays the packaged files; {on, off} plays yours; none plays nothing; volume scales', async () => {
+  test('classico is synthesised: two rising chimes with a long tail, two short falling notes to close', async () => {
+    const on = await play('classico', 'on')
+    expect(on.of<FakeOsc>('osc').map((o) => o.frequency.calls[0]!.value)).toEqual([587.33, 880])
+    expect(outGain(on)).toBeCloseTo(0.2)
+    const off = await play('classico', 'off')
+    expect(off.of<FakeOsc>('osc').map((o) => o.frequency.calls[0]!.value)).toEqual([783.99, 523.25])
+    expect(off.of<FakeSource>('source')).toHaveLength(0)
+  })
+
+  test('{on, off} plays your files; none plays nothing; volume scales', async () => {
     const urls: string[] = []
     const fetchFn = async (u: string) => {
       urls.push(u)
       return new Response(new Uint8Array([1, 2, 3]))
     }
-    const c1 = await play('classico', 'on', { fetch: fetchFn })
-    expect(urls[0]).toMatch(/\/sounds\/classico-on\.mp3$/)
-    expect(CLASSICO_URLS.off()).toMatch(/\/sounds\/classico-off\.mp3$/)
+    const c1 = await play({ on: 'https://app.test/on.ogg', off: 'https://app.test/off.ogg' }, 'off', { fetch: fetchFn })
+    expect(urls[0]).toBe('https://app.test/off.ogg')
     expect(c1.of<FakeSource>('source')[0]!.started).toHaveLength(1)
-    await play({ on: 'https://app.test/on.ogg', off: 'https://app.test/off.ogg' }, 'off', { fetch: fetchFn })
-    expect(urls[1]).toBe('https://app.test/off.ogg')
     expect((await play('none', 'on')).nodes).toHaveLength(0)
     expect(outGain(await play('goccia', 'on', { volume: 0.5 }))).toBeCloseTo(0.09)
-    expect(Object.keys(MIC_SOUND_RECIPES).sort()).toEqual(['clic', 'cristallo', 'goccia', 'respiro', 'vetro'])
+    expect(Object.keys(MIC_SOUND_RECIPES).sort()).toEqual(['classico', 'clic', 'cristallo', 'goccia', 'respiro', 'vetro'])
   })
 
   test('a suspended context is resumed first', async () => {

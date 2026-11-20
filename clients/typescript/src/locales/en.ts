@@ -41,7 +41,7 @@ export const en: LocalePack = {
   },
   micSounds: {
     goccia: { name: 'Drop', description: 'Two short sine notes, B–E rising to open, E–B falling to close.' },
-    classico: { name: 'Classic', description: 'Two soft tones with a long tail (an audio file).' },
+    classico: { name: 'Classic', description: 'Two soft rising tones with a long tail.' },
     vetro: { name: 'Glass', description: 'A short crystalline bell, higher when opening.' },
     respiro: { name: 'Breath', description: 'A filtered breath sweeping up or down: no notes, very discreet.' },
     cristallo: { name: 'Crystal', description: 'A fast A-major arpeggio, rising or falling.' },

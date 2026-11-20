@@ -49,7 +49,7 @@ export { AudioSignals, measure, meterAnalyser, SPECTRUM_BINS, RMS_GAIN, ONSET_JU
 export type { AnalyserLike, AudioSignal, AudioSource, Measurement, SignalListener } from './audio/signals'
 export { syllabify, stressIndex, timeline, syllableDriver, syllableRules, SYLLABLE_SECONDS, DRIVER_DECAY } from './audio/syllables'
 export type { DriverOptions, SyllableDriver, SyllableEvent, SyllableRules, SyllableTimeline, TimelineOptions } from './audio/syllables'
-export { playMicSound, MIC_SOUNDS, MIC_SOUND_RECIPES, DEFAULT_MIC_SOUND, CLASSICO_URLS } from './audio/mic-sounds'
+export { playMicSound, MIC_SOUNDS, MIC_SOUND_RECIPES, DEFAULT_MIC_SOUND } from './audio/mic-sounds'
 export { unlockAudio } from './audio/unlock'
 export type { UnlockTargets } from './audio/unlock'
 export type { AudioContextLike, MicSound, MicSoundName, MicSoundOptions } from './audio/mic-sounds'

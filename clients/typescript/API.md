@@ -503,7 +503,6 @@ nothing.
 type MicSound = 'goccia' | 'classico' | 'vetro' | 'respiro' | 'cristallo' | 'clic' | 'none' | { on: string; off: string }
 function playMicSound(sound: MicSound, which: 'on' | 'off', opts?: { context?: AudioContextLike; volume? = 1; fetch? }): Promise<void>
 const MIC_SOUNDS, MIC_SOUND_RECIPES, DEFAULT_MIC_SOUND = 'goccia'
-const CLASSICO_URLS: { on(): string; off(): string }   // new URL('./sounds/classico-<on|off>.mp3', import.meta.url)
 ```
 
 The identifiers are fixed (they are Italian words; English display names are in `locales.en.micSounds`):
@@ -511,7 +510,7 @@ The identifiers are fixed (they are Italian words; English display names are in 
 | Id | Name | Recipe (open; close reverses it) | Gain |
 | --- | --- | --- | --- |
 | `goccia` | Drop | sine 988 Hz 0–0.14 s + 1319 Hz 0.08–0.22 s | 0.18 |
-| `classico` | Classic | two packaged MP3 files (mono, 64 kbit/s, ~22 KB together) | 0.9 |
+| `classico` | Classic | sine 587 Hz + 880 Hz 56 ms later, each falling 30 dB in 0.12 s then fading over 0.8 s (close: 784 Hz then 523 Hz 100 ms later, about 80 ms each, 2 ms attack) | 0.2 |
 | `vetro` | Glass | FM bell: modulator × 3.5, index 2.2 decaying; 1568 Hz 0.6 s (close 1046 Hz 0.5 s) | 0.12 |
 | `respiro` | Breath | band-pass (Q 6) white noise 0.35 s sweeping 500 → 2600 Hz | 0.5 |
 | `cristallo` | Crystal | triangle 880 / 1109 / 1319 Hz, 45 ms apart, 0.32 s (close 0.3 s) | 0.11 |
@@ -627,4 +626,3 @@ your application.
 | Piper (rhasspy/piper) | Model format and phoneme-id scheme | MIT | No Piper code is included: the client reimplements the id mapping and the ONNX call. |
 | Voice `it_IT-serena-high` | Italian neural voice | Trained on the synthetic dataset `committa/serena-synthetic-it-27h`, **CC-BY-4.0** (model card) | Attribution required: credit the dataset when you ship the voice. The voices repository is published under MIT. |
 | `@pipecat-ai/client-js`, `@pipecat-ai/small-webrtc-transport` | Server voice | BSD-2-Clause | Optional peer dependencies. |
-| `classico` sound files | Microphone sound | From the reference mock-ups | Provenance to be confirmed by the owner. The synthesised sounds are original code. |

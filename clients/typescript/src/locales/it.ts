@@ -44,7 +44,7 @@ export const it: LocalePack = {
   },
   micSounds: {
     goccia: { name: 'Goccia', description: 'Due note sinusoidali brevi, si–mi a salire, mi–si a scendere.' },
-    classico: { name: 'Classico', description: 'Due toni morbidi con una coda lunga (un file audio).' },
+    classico: { name: 'Classico', description: 'Due toni morbidi a salire, con una coda lunga.' },
     vetro: { name: 'Vetro', description: 'Una campanella breve e cristallina, più acuta in accensione.' },
     respiro: { name: 'Respiro', description: 'Un soffio filtrato che sale o scende: niente note, molto discreto.' },
     cristallo: { name: 'Cristallo', description: 'Un arpeggio veloce di la maggiore, a salire o a scendere.' },
