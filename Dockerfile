@@ -14,7 +14,7 @@
 ARG PYTHON_VERSION=3.14
 
 # The console: static files, built on the build machine's own platform (they are the same everywhere).
-FROM --platform=$BUILDPLATFORM node:22-slim AS console
+FROM --platform=$BUILDPLATFORM node:26-slim AS console
 WORKDIR /src
 COPY admin/package.json admin/package-lock.json admin/
 RUN --mount=type=cache,target=/root/.npm cd admin && npm ci --no-audit --no-fund
