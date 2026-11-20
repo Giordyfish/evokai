@@ -88,17 +88,14 @@ async function page(res) {
 // The panel calls this on first use, when the token is about to expire and for another conversation.
 async function token(req, res) {
   const { conversationId } = await readJson(req)
+  const mint = (id) => evokai.mintSessionToken({ subject: currentUser().id, agent: AGENT, conversationId: id, ttlSeconds: 900 })
   try {
-    const minted = await evokai.mintSessionToken({
-      subject: currentUser().id,
-      agent: AGENT,
-      conversationId: conversationId || undefined,
-      ttlSeconds: 900,
-    })
-    json(res, 200, minted)
+    json(res, 200, await mint(conversationId || undefined))
   } catch (e) {
-    if (e instanceof EvokaiError) return json(res, e.status || 502, { error: e.code, message: e.message })
-    throw e
+    if (!(e instanceof EvokaiError)) throw e
+    // The page remembers its last conversation; when it is gone (expired, erased, a fresh Evokai), start a new one.
+    if (conversationId && e.status === 404) return json(res, 200, { ...(await mint(undefined)), restarted: true })
+    json(res, e.status || 502, { error: e.code, message: e.message })
   }
 }
 
