@@ -16,7 +16,7 @@ Any model provider, your app's tools over MCP, skills and voice, always acting a
 
 </div>
 
-<p align="center"><img src="docs/assets/screenshot-chat.png" alt="An app's own page with the Evokai chat panel open: the agent answers from the app's catalogue" width="820" /></p>
+<p align="center"><img src="docs/assets/screenshot-console.png" alt="The Evokai console in the dark theme: three applications and the share of each monthly cap they used, day by day" width="860" /></p>
 
 Your backend mints a short session token for the signed-in user; the page talks to the agent with it:
 
