@@ -3,7 +3,8 @@
 #   - the service image, lite and full, linux/amd64 and linux/arm64, to ghcr.io/giordyfish/evokai, signed (keyless);
 #   - the Python client (evokai-client) and its alias (evokai) to PyPI with trusted publishing: no token in the
 #     repository;
-#   - the npm packages @evokai/evokai-client, @evokai/evokai-ui and the alias evokai, with provenance.
+#   - the npm packages @evokai/evokai-client, @evokai/evokai-ui and the alias evokai, with trusted publishing and
+#     provenance.
 name: Release
 
 on:
@@ -199,9 +200,11 @@ jobs:
         run: cd clients/typescript && npm ci --no-audit --no-fund && npm run build
       - name: Build the UI components
         run: cd clients/ui && npm ci --no-audit --no-fund && npm run build
+      # Trusted publishing (OpenID Connect): npm 11.5.1 or newer exchanges the job's identity for a short-lived token,
+      # so no npm token is stored anywhere. Each package names this repository, release.yml and the npm environment.
+      - run: npm install --global npm@11
       - name: Publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.versions.outputs.version }}
         run: |
           tag=latest
