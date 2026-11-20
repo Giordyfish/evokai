@@ -43,7 +43,8 @@ dist-tag.
   the code of conduct receive reports), Dependabot alerts and secret scanning.
 - **Branch protection** on `main`: require the CI checks and, if you want it enforced, the DCO sign-off (for example
   with the DCO GitHub App).
-- Consider pinning the actions in both workflows to commit SHAs (Dependabot keeps them current).
+- The actions in both workflows are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`) keeps them current,
+  and the CI job **Workflow security** runs zizmor on every change.
 
 ### GitHub Container Registry
 
