@@ -17,26 +17,6 @@ signed-in user, within budgets, with an audit trail.
 
 </div>
 
-<p align="center"><img src="docs/assets/screenshot-console.png" alt="The Evokai console in the dark theme: an application's overview with what its agents may use, its share of the monthly cap and its open standard endpoints" width="860" /></p>
-
-Your backend mints a short session token for the signed-in user; the page talks to the agent with it:
-
-```ts
-// Your backend, with the server key
-import { EvokaiServer } from '@evokai/evokai-client/server'
-
-const evokai = new EvokaiServer({ baseUrl: process.env.EVOKAI_URL!, serverKey: process.env.EVOKAI_SERVER_KEY! })
-app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessionToken({ subject: req.user.id, agent: 'assistant' })))
-```
-
-```html
-<!-- Your page: a launcher and a chat panel, with voice -->
-<evokai-chat base-url="http://localhost:8787/agent" token-url="/api/agent/token" title="Ada"></evokai-chat>
-```
-
-The agent calls your app's tools over MCP as that user, asks before it changes anything, and stays within the budgets
-you set. A complete app is in [examples/bookshop-app](examples/bookshop-app).
-
 ---
 
 ## Why Evokai
@@ -65,6 +45,8 @@ people only ever act as themselves; tools that change data wait for a confirmati
 audit log, behind single sign-on with viewer, operator and owner roles. A security layer screens prompts, tool output
 and answers (mapped to the OWASP LLM Top 10), and evals catch a regression before a new agent version goes live.
 
+<p align="center"><img src="docs/assets/screenshot-console.png" alt="The Evokai console in the dark theme: an application's overview with what its agents may use, its share of the monthly cap and its open standard endpoints" width="860" /></p>
+
 ### Made for AI products in Europe
 
 Evokai is meant to enable AI products, and it pays particular attention to the European regulatory space. Each
@@ -74,6 +56,26 @@ which countries may control the providers that process it (**jurisdiction**) and
 processor alike (models, embeddings, classifiers, the code sandbox, server speech, connections), and a provider the
 catalog cannot prove compliant is left out: see [data protection](docs/data-protection.md). Privacy requests, retention
 per kind of data, and AI Act and GDPR packs generated from the live configuration build on the same facts.
+
+## In your app
+
+Your backend mints a short session token for the signed-in user; the page talks to the agent with it:
+
+```ts
+// Your backend, with the server key
+import { EvokaiServer } from '@evokai/evokai-client/server'
+
+const evokai = new EvokaiServer({ baseUrl: process.env.EVOKAI_URL!, serverKey: process.env.EVOKAI_SERVER_KEY! })
+app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessionToken({ subject: req.user.id, agent: 'assistant' })))
+```
+
+```html
+<!-- Your page: a launcher and a chat panel, with voice -->
+<evokai-chat base-url="http://localhost:8787/agent" token-url="/api/agent/token" title="Ada"></evokai-chat>
+```
+
+The agent calls your app's tools over MCP as that user, asks before it changes anything, and stays within the budgets
+you set. A complete app is in [examples/bookshop-app](examples/bookshop-app).
 
 ## Status
 
