@@ -17,6 +17,7 @@ import httpx
 import jsonschema
 
 from evokai.observability.logging import provider_operation
+from evokai.version import __version__
 
 PROTOCOL_VERSION = "2025-06-18"
 
@@ -156,7 +157,7 @@ class McpClient:
             {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "evokai", "version": "0.1.0"},
+                "clientInfo": {"name": "evokai", "version": __version__},
             },
         )
         await self._rpc("notifications/initialized", notify=True)

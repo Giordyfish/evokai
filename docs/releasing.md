@@ -74,17 +74,24 @@ No API token is stored anywhere. On PyPI, signed in as the owner:
 Optionally do the same on TestPyPI and try a pre-release tag there first (change the publish step's
 `repository-url` for that run).
 
-### npm
+### npm (trusted publishing)
+
+No npm token is stored anywhere: the release job proves its identity to npm over OpenID Connect (npm 11.5.1 or
+newer) and gets a short-lived token for the publish.
 
 1. Create the **`evokai` organisation** on npmjs.com (free for public packages), so the `@evokai` scope belongs to
    you, and enable two-factor authentication on your account.
-2. Create a **granular access token**: read and write on all packages (the first release creates the unscoped
-   `evokai`, which no scope covers; narrow it to `@evokai` and `evokai` afterwards), an expiry you are
-   comfortable rotating, and, so that CI can publish, allow it to bypass two-factor authentication for publishing.
-3. Store it as the secret `NPM_TOKEN` of the `npm` environment (not as a repository-wide secret).
-4. The packages carry `publishConfig.access: public`; `--provenance` links each published version to the workflow
-   run that built it (shown on its npm page).
+2. A package must exist before it can name a trusted publisher, so the very first release of a new package goes out
+   with a granular access token (read and write on all packages, allowed to bypass two-factor authentication for
+   publishing), stored as the secret `NPM_TOKEN` of the `npm` environment and passed as `NODE_AUTH_TOKEN` to the
+   publish step.
+3. Then, on npmjs.com, for each package (`@evokai/evokai-client`, `@evokai/evokai-ui`, `evokai`): **Settings,
+   Trusted publishing, GitHub Actions**, with organisation or user `Giordyfish`, repository `evokai`, workflow
+   `release.yml` and environment `npm`. Under *Allowed actions* allow **publish** (the workflow publishes directly)
+   and leave **dist-tag** off. Optionally set **Publishing access** to require two-factor authentication and
+   disallow tokens. (Allowing only staging is stricter: the workflow would then run `npm stage publish` and every
+   version would wait for a maintainer's approval with two-factor authentication.)
+4. Delete the token on npmjs.com and the `NPM_TOKEN` secret on GitHub.
 
-npm also supports trusted publishing over OpenID Connect (no token, npm 11.5.1 or newer): once the packages exist,
-configure `Giordyfish/evokai`, `release.yml` and the `npm` environment as their trusted publisher on npmjs.com, drop
-`NODE_AUTH_TOKEN` from the workflow, and delete the token.
+The packages carry `publishConfig.access: public`; `--provenance` links each published version to the workflow run
+that built it (shown on its npm page).

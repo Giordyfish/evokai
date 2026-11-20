@@ -43,6 +43,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from evokai_worker.version import __version__
+
 log = logging.getLogger("evokai.worker")
 
 PROTOCOL = "2025-06-18"
@@ -284,7 +286,7 @@ class Worker:
             result: Any = {
                 "protocolVersion": PROTOCOL,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": f"evokai-worker-{self.kind}", "version": "0.1.0"},
+                "serverInfo": {"name": f"evokai-worker-{self.kind}", "version": __version__},
             }
         elif method == "tools/list":
             result = {"tools": await self.tool_list()}

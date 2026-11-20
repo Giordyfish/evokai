@@ -729,3 +729,8 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .checks li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:13px}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px}
 @media (max-width:720px){.grid2,.stats3{grid-template-columns:1fr}}
+/* Native scrollbars and form controls follow the theme; plain links in the content take the accent, not the browser's blue. */
+:root{color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark}}
+:root[data-theme=dark]{color-scheme:dark}
+:where(.content a:not([class]):not([role])){color:var(--vi)}

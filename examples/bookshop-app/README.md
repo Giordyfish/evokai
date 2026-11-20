@@ -1,5 +1,7 @@
 # Inkwell Books: a shop page with its assistant
 
+<p align="center"><img src="screenshot.png" alt="The bookshop page with the chat panel open: the agent lists the poetry books in stock from the catalogue tool" width="760" /></p>
+
 A small web app for Inkwell Books, the fictional bookshop of [`config/bookshop.yaml`](../../config/bookshop.yaml),
 wired to Evokai the way a real application is:
 

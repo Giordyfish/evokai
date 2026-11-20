@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 
 from evokai.connectors.base import Connector
 from evokai.mcp.client import PROTOCOL_VERSION
+from evokai.version import __version__
 
 
 def _tool(t: Any) -> dict[str, Any]:
@@ -62,7 +63,7 @@ def mcp_app(connector: Connector, token: str | None = None, path: str = "/mcp") 
             return ok({
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": f"evokai-{connector.kind}", "version": "0.1.0"},
+                "serverInfo": {"name": f"evokai-{connector.kind}", "version": __version__},
             })
         if method == "tools/list":
             return ok({"tools": [_tool(t) for t in await connector.list_tools()]})

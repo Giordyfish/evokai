@@ -43,6 +43,7 @@ from evokai.mcp.client import McpClient
 from evokai.mcp.registry import status_of, tool_info
 from evokai.services import Services
 from evokai.sessions.limits import app_shares, caps_set, month_cap_usd, share_pct
+from evokai.version import __version__
 
 router = APIRouter(tags=["console"])
 Svc = Annotated[Services, Depends(services)]
@@ -659,7 +660,7 @@ async def health(svc: Svc, _a: Admin) -> dict[str, Any]:
         "database": database,
         "voiceEnabled": svc.settings.voice_enabled,
         "modelAllow": svc.settings.model_allow,
-        "version": "0.1.0",
+        "version": __version__,
     }
 
 
@@ -885,7 +886,7 @@ async def console_health(svc: Svc, login: ConsoleUser, check: bool = False) -> d
             "ttlApplications": sum(1 for a in apps if a.conversation_ttl_days),
         },
         "build": {
-            "version": "0.1.0",
+            "version": __version__,
             "commit": svc.settings.build_commit or None,
             "python": platform.python_version(),
         },

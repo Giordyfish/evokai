@@ -8,6 +8,27 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-20
+
+### Changed
+
+- Supported versions say what is tested: the service runs on Python 3.12 to 3.14 (onnxruntime, behind optional
+  extras, has no Python 3.15 wheels yet), the Python client on 3.10 to 3.15, and the TypeScript client, the UI
+  components and the console need Node 22 or newer. CI tests the oldest and the newest of each.
+- The service reports its version from the installed package (`evokai.version`) in the API, the console's health
+  page and MCP handshakes, instead of a number written in the code.
+- Dependencies: FastAPI 0.163.1, NumPy 2.5.5; the console is built on Node 26 in the image; the release workflow's
+  actions are at their current major versions, pinned to commit SHAs.
+- npm packages are published with trusted publishing (OpenID Connect): no npm token is stored anywhere.
+
+### Fixed
+
+- Console: in the dark theme the native scrollbars were light and plain links in the content were the browser's
+  blue.
+- The UI components' tests on Node 25 and newer, whose own `localStorage` shadowed jsdom's.
+- The bookshop example starts a new conversation when the one the page remembers is gone, instead of showing
+  `token 404`.
+
 ## [0.1.0] - 2026-11-20
 
 The first public release. Evokai is experimental: see the [status](README.md#status).

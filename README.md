@@ -4,8 +4,9 @@
 
 # Evokai™
 
-**Summon AI agents into any app.**<br/>
-Any model provider, your app's tools over MCP, skills and voice, always acting as the signed-in user, within budgets.
+**Summon AI agents into any app, with the governance a company needs.**<br/>
+Any model, from the big clouds to your own servers; your app's tools over MCP, skills and voice; always acting as the
+signed-in user, within budgets, with an audit trail.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Giordyfish/evokai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Giordyfish/evokai/actions/workflows/ci.yml)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-f59e0b?style=flat-square)](#status)
@@ -16,7 +17,47 @@ Any model provider, your app's tools over MCP, skills and voice, always acting a
 
 </div>
 
-<p align="center"><img src="docs/assets/screenshot-chat.png" alt="An app's own page with the Evokai chat panel open: the agent answers from the app's catalogue" width="820" /></p>
+---
+
+## Why Evokai
+
+Every product ends up wanting an assistant that can *do things*: read the data on screen, run the app's own
+actions, answer by voice, and never step outside what the user is allowed to do. Building that once per product
+means rewriting the same hard parts each time: the tool loop, confirmations, budgets, history, voice turn-taking.
+
+Evokai is that layer, written once. An application connects with a key, describes its agents in a YAML file, and
+its users talk to them through a small headless client. The application keeps its identity, its data and its
+interface; Evokai brings the agents.
+
+### Any model, cloud or self-hosted
+
+One allow-list for every provider [pydantic-ai](https://ai.pydantic.dev) speaks: Amazon Bedrock, Azure OpenAI,
+Google Vertex AI, OpenAI, Anthropic, Mistral, Groq, OpenRouter and European clouds (Scaleway, OVHcloud, IONOS,
+STACKIT), or models on your own hardware through Ollama, vLLM, LM Studio or any OpenAI-compatible server. Each agent
+has an ordered fallback chain, so a provider without capacity, or one a policy rules out, is skipped rather than
+failing the turn. Changing model is a line of configuration, not a new integration.
+
+### Governance for companies
+
+Bringing AI into a company is less about the model than about control. In Evokai every application is granted what
+its agents may use (models, tools, skills, voice, channels, code execution), each with its own keys and caps;
+people only ever act as themselves; tools that change data wait for a confirmation; every console change lands in an
+audit log, behind single sign-on with viewer, operator and owner roles. A security layer screens prompts, tool output
+and answers (mapped to the OWASP LLM Top 10), and evals catch a regression before a new agent version goes live.
+
+<p align="center"><img src="docs/assets/screenshot-console.png" alt="The Evokai console in the dark theme: an application's overview with what its agents may use, its share of the monthly cap and its open standard endpoints" width="860" /></p>
+
+### Made for AI products in Europe
+
+Evokai is meant to enable AI products, and it pays particular attention to the European regulatory space. Each
+application declares where its data may live and which inference geographies its models may use (**data residency**),
+which countries may control the providers that process it (**jurisdiction**) and what those providers may keep
+(**retention**: any, no training, or zero retention). This **data protection profile** applies to every external
+processor alike (models, embeddings, classifiers, the code sandbox, server speech, connections), and a provider the
+catalog cannot prove compliant is left out: see [data protection](docs/data-protection.md). Privacy requests, retention
+per kind of data, and AI Act and GDPR packs generated from the live configuration build on the same facts.
+
+## In your app
 
 Your backend mints a short session token for the signed-in user; the page talks to the agent with it:
 
@@ -36,28 +77,6 @@ app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessi
 The agent calls your app's tools over MCP as that user, asks before it changes anything, and stays within the budgets
 you set. A complete app is in [examples/bookshop-app](examples/bookshop-app).
 
----
-
-## Why Evokai
-
-Every product ends up wanting an assistant that can *do things*: read the data on screen, run the app's own
-actions, answer by voice, and never step outside what the user is allowed to do. Building that once per product
-means rewriting the same hard parts each time: the tool loop, confirmations, budgets, history, voice turn-taking.
-
-Evokai is that layer, written once. An application connects with a key, describes its agents in a YAML file, and
-its users talk to them through a small headless client. The application keeps its identity, its data and its
-interface; Evokai brings the agents.
-
-### Made for AI products in Europe
-
-Evokai is meant to enable AI products, and it pays particular attention to the European regulatory space. Each
-application declares where its data may live and which inference geographies its models may use (**data residency**),
-which countries may control the providers that process it (**jurisdiction**) and what those providers may keep
-(**retention**: any, no training, or zero retention). This **data protection profile** applies to every external
-processor alike (models, embeddings, classifiers, the code sandbox, server speech, connections), and a provider the
-catalog cannot prove compliant is left out: see [data protection](docs/data-protection.md). Privacy requests, retention
-per kind of data, and AI Act and GDPR packs generated from the live configuration build on the same facts.
-
 ## Status
 
 Evokai is **experimental** and early-stage. Interfaces (the HTTP API, the configuration, the clients) may change
@@ -67,8 +86,8 @@ conditions of any kind, and without liability, as stated in sections 7 and 8 of 
 
 ## Features
 
-- **Any model**: Bedrock, OpenAI, Azure, Mistral, Ollama and more through [pydantic-ai](https://ai.pydantic.dev),
-  behind an allow-list, with fallbacks when a model has no capacity.
+- **Any model, cloud or self-hosted**: Bedrock, Azure, Vertex, OpenAI, Anthropic, Mistral, European clouds, or your
+  own servers (Ollama, vLLM, LM Studio), behind an allow-list, with fallbacks when a model has no capacity.
 - **Your tools over MCP**, called as the signed-in user; tools that change data wait for the user's confirmation.
 - **Skills, knowledge bases and ready connectors** (SQL, REST from OpenAPI, Google Drive, SharePoint, IMAP).
 - **Voice**: dictation, conversation and barge-in, in the browser or on the server with [Pipecat](https://pipecat.ai).
