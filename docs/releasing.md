@@ -1,8 +1,8 @@
 # Releasing
 
 Work lands on `develop`; `main` holds what is released and changes only through a pull request from `develop` (or a
-`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then runs every gate (the CI workflow) and
-publishes:
+`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then runs every gate
+(the CI workflow) and publishes:
 
 | What | Where | How |
 |---|---|---|
@@ -39,8 +39,8 @@ dist-tag.
 
 - **Settings, Actions, General, Workflow permissions**: read-only `GITHUB_TOKEN` is enough; the jobs ask for what
   they need (`packages: write`, `id-token: write`).
-- **Settings, Environments**: create `pypi`, `pypi-alias` and `npm`. Restrict all three to tags matching `v*` (deployment branches and
-  tags), and add yourself as a required reviewer if every publish should wait for a click.
+- **Settings, Environments**: create `pypi`, `pypi-alias` and `npm`. Restrict all three to tags matching `v*`
+  (deployment branches and tags), and add yourself as a required reviewer if every publish should wait for a click.
 - **Settings, Code security**: enable private vulnerability reporting (it is how [SECURITY.md](../SECURITY.md) and
   the code of conduct receive reports), Dependabot alerts and secret scanning.
 - **Rulesets**: `main` takes changes only through a pull request with the CI checks green (no direct push, no force
