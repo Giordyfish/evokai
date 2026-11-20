@@ -1,8 +1,9 @@
 # A release, from a tag vX.Y.Z (see docs/releasing.md for the one-time setup):
 #   - every gate (the CI workflow);
 #   - the service image, lite and full, linux/amd64 and linux/arm64, to ghcr.io/giordyfish/evokai, signed (keyless);
-#   - the Python client (evokai-client) to PyPI with trusted publishing: no token in the repository;
-#   - the npm packages @evokai/evokai-client and @evokai/evokai-ui, with provenance.
+#   - the Python client (evokai-client) and its alias (evokai) to PyPI with trusted publishing: no token in the
+#     repository;
+#   - the npm packages @evokai/evokai-client, @evokai/evokai-ui and the alias evokai, with provenance.
 name: Release
 
 on:
@@ -32,16 +33,20 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           fail=0
-          for f in pyproject.toml clients/python/pyproject.toml workers/capability/pyproject.toml; do
+          for f in pyproject.toml clients/python/pyproject.toml workers/capability/pyproject.toml clients/aliases/python/pyproject.toml; do
             got=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$f" | head -1)
             [ "$got" = "$version" ] || { echo "::error file=$f::version $got, tag $version"; fail=1; }
           done
-          for f in clients/typescript/package.json clients/ui/package.json admin/package.json; do
+          for f in clients/typescript/package.json clients/ui/package.json admin/package.json clients/aliases/npm/package.json; do
             got=$(node -p "require('./$f').version")
             [ "$got" = "$version" ] || { echo "::error file=$f::version $got, tag $version"; fail=1; }
           done
           peer=$(node -p "require('./clients/ui/package.json').peerDependencies['@evokai/evokai-client']")
           [ "$peer" = "$version" ] || { echo "::error::@evokai/evokai-ui peer dependency $peer, tag $version"; fail=1; }
+          dep=$(node -p "require('./clients/aliases/npm/package.json').dependencies['@evokai/evokai-client']")
+          [ "$dep" = "$version" ] || { echo "::error::evokai (npm) dependency $dep, tag $version"; fail=1; }
+          grep -q "\"evokai-client==$version\"" clients/aliases/python/pyproject.toml \
+            || { echo "::error file=clients/aliases/python/pyproject.toml::dependency is not evokai-client==$version"; fail=1; }
           exit $fail
 
   gates:
@@ -112,7 +117,7 @@ jobs:
         run: scripts/sign-image.sh "$IMAGE@${{ steps.build.outputs.digest }}"
 
   pypi:
-    name: PyPI (evokai-client)
+    name: PyPI (evokai-client, evokai)
     needs: [versions, gates]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -128,12 +133,13 @@ jobs:
         with:
           version: "0.13.8"
       - run: cd clients/python && uv build --out-dir ../../dist/python
+      - run: cd clients/aliases/python && uv build --out-dir ../../../dist/python
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/python
 
   npm:
-    name: npm (@evokai/evokai-client, @evokai/evokai-ui)
+    name: npm (@evokai/evokai-client, @evokai/evokai-ui, evokai)
     needs: [versions, gates]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -161,3 +167,4 @@ jobs:
           case "${{ needs.versions.outputs.version }}" in *-*) tag=next ;; esac
           (cd clients/typescript && npm publish --provenance --access public --tag "$tag")
           (cd clients/ui && npm publish --provenance --access public --tag "$tag")
+          (cd clients/aliases/npm && npm publish --provenance --access public --tag "$tag")

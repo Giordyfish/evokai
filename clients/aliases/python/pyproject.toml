@@ -1,0 +1,31 @@
+[project]
+name = "evokai"
+version = "0.1.0"
+description = "Evokai: summon AI agents into any app. This package installs the Python client, evokai-client."
+readme = "README.md"
+authors = [
+    { name = "Giordano Pescetelli", email = "giordano.pescetelli@gmail.com" }
+]
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["evokai", "agents", "llm", "mcp", "client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = ["evokai-client==0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/Giordyfish/evokai"
+Repository = "https://github.com/Giordyfish/evokai"
+Documentation = "https://github.com/Giordyfish/evokai/tree/main/clients/python#readme"
+Issues = "https://github.com/Giordyfish/evokai/issues"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true

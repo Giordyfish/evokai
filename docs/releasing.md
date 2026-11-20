@@ -8,6 +8,7 @@ publishes:
 | The service image, `lite` and `full`, linux/amd64 and linux/arm64 | `ghcr.io/giordyfish/evokai:X.Y.Z` (and `latest`), `ghcr.io/giordyfish/evokai:X.Y.Z-full` | `GITHUB_TOKEN`, signed keyless with cosign (`scripts/sign-image.sh`), with build provenance and an SBOM attestation |
 | The Python client `evokai-client` | [PyPI](https://pypi.org/project/evokai-client/) | trusted publishing (OpenID Connect): no token in the repository |
 | `@evokai/evokai-client` and `@evokai/evokai-ui` | [npm](https://www.npmjs.com/org/evokai) | `npm publish --provenance` with the `NPM_TOKEN` secret |
+| The aliases `evokai` on PyPI (installs `evokai-client`) and `evokai` on npm (re-exports `@evokai/evokai-client`) | PyPI and npm | as above ([clients/aliases](../clients/aliases)) |
 
 The service itself is distributed as the image, not on PyPI: its migrations (`migrations/`, `alembic.ini`) and the
 built console (`admin/dist`) live outside the Python package, so a wheel of it would not run on its own. The capability
@@ -20,7 +21,8 @@ dist-tag.
 
 1. Set the same version everywhere: `pyproject.toml`, `clients/python/pyproject.toml`,
    `workers/capability/pyproject.toml`, `clients/typescript/package.json`, `clients/ui/package.json` (its version and
-   its peer dependency on `@evokai/evokai-client`) and `admin/package.json`. Refresh the lockfiles (`uv lock`,
+   its peer dependency on `@evokai/evokai-client`), `admin/package.json`, and the aliases in `clients/aliases` (their
+   versions and their dependency on the client). Refresh the lockfiles (`uv lock`,
    `uv lock` in `clients/python` and `workers/capability`, `npm install --package-lock-only` in the three npm
    folders). The workflow's first job refuses a tag that does not match.
 2. Move the entries under **Unreleased** in [CHANGELOG.md](../CHANGELOG.md) to a new section with the version and
@@ -60,7 +62,8 @@ No API token is stored anywhere. On PyPI, signed in as the owner:
 1. **Your account, Publishing, Add a new pending publisher** (the project does not exist before the first release).
 2. PyPI project name `evokai-client`; owner `Giordyfish`; repository `evokai`; workflow name `release.yml`;
    environment `pypi`.
-3. The first tag creates the project. Afterwards the publisher shows under the project's **Publishing** settings.
+3. Add a second pending publisher, identical, for the PyPI project name `evokai` (the alias).
+4. The first tag creates both projects. Afterwards each publisher shows under its project's **Publishing** settings.
 
 Optionally do the same on TestPyPI and try a pre-release tag there first (change the publish step's
 `repository-url` for that run).
@@ -69,7 +72,8 @@ Optionally do the same on TestPyPI and try a pre-release tag there first (change
 
 1. Create the **`evokai` organisation** on npmjs.com (free for public packages), so the `@evokai` scope belongs to
    you, and enable two-factor authentication on your account.
-2. Create a **granular access token**: packages and scopes `@evokai` with read and write, an expiry you are
+2. Create a **granular access token**: read and write on all packages (the first release creates the unscoped
+   `evokai`, which no scope covers; narrow it to `@evokai` and `evokai` afterwards), an expiry you are
    comfortable rotating, and, so that CI can publish, allow it to bypass two-factor authentication for publishing.
 3. Store it as the secret `NPM_TOKEN` of the `npm` environment (not as a repository-wide secret).
 4. The packages carry `publishConfig.access: public`; `--provenance` links each published version to the workflow

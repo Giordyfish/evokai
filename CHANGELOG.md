@@ -43,7 +43,8 @@ The first public release. Evokai is experimental: see the [status](README.md#sta
 - **Open standards**: AG-UI, an OpenAI-compatible Chat Completions API and A2A agent cards.
 - **Admin console** in English and Italian, with single sign-on (OIDC, PKCE, MFA), roles and an audit log.
 - **Clients**: `@evokai/evokai-client` (headless TypeScript: server, browser and React entry points),
-  `@evokai/evokai-ui` (Web Components and React wrappers) and the Python client `evokai-client`.
+  `@evokai/evokai-ui` (Web Components and React wrappers) and the Python client `evokai-client`; the plain name
+  `evokai` on PyPI and npm installs the client.
 - **Operations**: a Docker Compose quick start, read-only container images in `lite` and `full` flavours, SBOMs,
   keyless image signing, OpenTelemetry, Redis or Valkey for limits shared across instances, an example application
   (`config/bookshop.yaml`).
