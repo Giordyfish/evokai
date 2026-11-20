@@ -45,6 +45,12 @@ uv run evokai openapi --out clients/typescript/openapi.json
 Tests never reach the network: models, MCP servers and speech are faked, and real HTTP traffic is replayed from
 cassettes ([recorded HTTP cassettes](docs/deployment.md#recorded-http-cassettes)).
 
+## Branches
+
+Work happens on `develop`: branch from it and open your pull request against it. `main` holds what is released and
+changes only through a pull request from `develop` (or a `hotfix/...` branch for an urgent fix), which the maintainer
+opens when a release is due; every release is a tag on `main`.
+
 ## What a good pull request looks like
 
 - **One problem.** Say what is wrong or missing, for whom, and how you noticed. Link the issue if there is one.
@@ -68,7 +74,7 @@ git commit -s -m "Explain what the commit changes"
 ```
 
 It adds a `Signed-off-by: Your Name <you@example.com>` line with the name and e-mail of your Git configuration. Every
-commit of a pull request needs one; `git rebase --signoff main` adds it to commits you already made.
+commit of a pull request needs one; `git rebase --signoff develop` adds it to commits you already made.
 
 ## Security issues
 
