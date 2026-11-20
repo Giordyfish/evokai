@@ -1,0 +1,25 @@
+# Weekly updates, grouped so each ecosystem opens at most one pull request a week. Actions stay pinned to commit SHAs
+# (Dependabot updates the SHA and the version comment together).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ["*"]}
+
+  - package-ecosystem: uv
+    directories: ["/", "/clients/python", "/workers/capability"]
+    schedule: {interval: weekly}
+    groups:
+      python: {patterns: ["*"]}
+
+  - package-ecosystem: npm
+    directories: ["/clients/typescript", "/clients/ui", "/admin"]
+    schedule: {interval: weekly}
+    groups:
+      npm: {patterns: ["*"]}
+
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly}

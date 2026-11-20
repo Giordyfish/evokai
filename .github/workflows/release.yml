@@ -27,7 +27,9 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - id: v
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -68,18 +70,24 @@ jobs:
       matrix:
         flavour: [lite, full]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          cache-binary: false   # a release builds from nothing cached
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: tags
+        env:
+          v: ${{ needs.versions.outputs.version }}
+          FLAVOUR: ${{ matrix.flavour }}
         run: |
-          v="${{ needs.versions.outputs.version }}"
-          if [ "${{ matrix.flavour }}" = lite ]; then
+          if [ "$FLAVOUR" = lite ]; then
             tags="$IMAGE:$v"
             case "$v" in *-*) ;; *) tags="$tags,$IMAGE:latest" ;; esac
           else
@@ -87,7 +95,7 @@ jobs:
           fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           target: runtime
@@ -102,19 +110,21 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.flavour }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.flavour }}
       - name: Smoke test (read-only, no network, uid 1001)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          FLAVOUR: ${{ matrix.flavour }}
         run: |
-          ref="$IMAGE@${{ steps.build.outputs.digest }}"
+          ref="$IMAGE@$DIGEST"
           for platform in linux/amd64 linux/arm64; do
             docker run --rm --platform "$platform" --read-only --tmpfs /tmp --network none --cap-drop ALL \
-              --user 1001:1001 "$ref" selftest | tee /dev/stderr | grep -q "flavour=${{ matrix.flavour }} "
+              --user 1001:1001 "$ref" selftest | tee /dev/stderr | grep -q "flavour=$FLAVOUR "
           done
       - name: Sign the digest (keyless)
         env:
           REVISION: ${{ github.sha }}
-        run: scripts/sign-image.sh "$IMAGE@${{ steps.build.outputs.digest }}"
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: scripts/sign-image.sh "$IMAGE@$DIGEST"
 
   pypi:
     name: PyPI (evokai-client)
@@ -128,12 +138,15 @@ jobs:
       contents: read
       id-token: write   # trusted publishing
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: "0.13.8"
+          enable-cache: false   # nothing cached may reach a published artifact
       - run: cd clients/python && uv build --out-dir ../../dist/python
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/python
 
@@ -150,12 +163,15 @@ jobs:
       contents: read
       id-token: write   # trusted publishing
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: "0.13.8"
+          enable-cache: false   # nothing cached may reach a published artifact
       - run: cd clients/aliases/python && uv build --out-dir ../../../dist/python
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/python
 
@@ -171,11 +187,14 @@ jobs:
       contents: read
       id-token: write   # npm provenance
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false   # nothing cached may reach a published artifact
       - name: Build the client
         run: cd clients/typescript && npm ci --no-audit --no-fund && npm run build
       - name: Build the UI components
@@ -183,9 +202,10 @@ jobs:
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.versions.outputs.version }}
         run: |
           tag=latest
-          case "${{ needs.versions.outputs.version }}" in *-*) tag=next ;; esac
+          case "$VERSION" in *-*) tag=next ;; esac
           (cd clients/typescript && npm publish --provenance --access public --tag "$tag")
           (cd clients/ui && npm publish --provenance --access public --tag "$tag")
           (cd clients/aliases/npm && npm publish --provenance --access public --tag "$tag")
