@@ -99,15 +99,27 @@ function ProviderForm({ app, p, onSaved }: { app: ConsoleApplication; p: Credent
             const id = `cr-${p.provider}-${f.name}`
             return (
               <Field key={f.name} id={id} label={<code>{f.name}</code>} hint={state(f)}>
-                <input
-                  id={id}
-                  class="in mono"
-                  type={f.secret ? 'password' : 'text'}
-                  autocomplete={f.secret ? 'new-password' : 'off'}
-                  placeholder={!f.secret && f.value ? f.value : ''}
-                  value={values[f.name] ?? ''}
-                  onInput={(e) => setValues({ ...values, [f.name]: e.currentTarget.value })}
-                />
+                {f.secret ? (
+                  <input
+                    id={id}
+                    class="in mono"
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder=""
+                    value={values[f.name] ?? ''}
+                    onInput={(e) => setValues({ ...values, [f.name]: e.currentTarget.value })}
+                  />
+                ) : (
+                  <input
+                    id={id}
+                    class="in mono"
+                    type="text"
+                    autocomplete="off"
+                    placeholder={f.value ?? ''}
+                    value={values[f.name] ?? ''}
+                    onInput={(e) => setValues({ ...values, [f.name]: e.currentTarget.value })}
+                  />
+                )}
               </Field>
             )
           })}

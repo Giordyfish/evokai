@@ -5,7 +5,7 @@
  * agents remember, and the one-time question about memory. One orb travels between the launcher, the header and the
  * middle of the voice layer (`flow.ts`, `travel.tsx`).
  */
-import type { JSX, VNode } from 'preact'
+import type { TargetedKeyboardEvent, TargetedMouseEvent, VNode } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 
 import type { ChatMessage, Citation, Part } from '@evokai/evokai-client/browser'
@@ -206,7 +206,7 @@ export function HeaderMenu({ items, buttonRef }: { items: MenuItem[]; buttonRef:
   useEffect(() => {
     if (open) entries()[0]?.focus()
   }, [open])
-  const onKey = (e: JSX.TargetedKeyboardEvent<HTMLDivElement>) => {
+  const onKey = (e: TargetedKeyboardEvent<HTMLDivElement>) => {
     const all = entries()
     const at = all.indexOf((list.current?.getRootNode() as ShadowRoot | Document | undefined)?.activeElement as HTMLButtonElement)
     const go = (i: number) => {
@@ -478,7 +478,7 @@ export function Panel(props: PanelProps): VNode {
       void c.rewrite(text)
     } else void c.send(text)
   }
-  const onLink = (e: JSX.TargetedMouseEvent<HTMLDivElement>) => {
+  const onLink = (e: TargetedMouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest?.('a')
     if (!a) return
     const href = a.getAttribute('href') ?? ''

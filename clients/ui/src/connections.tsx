@@ -4,7 +4,7 @@
  * «Disconnect»; and the card a tool shows when its provider is not connected yet. Built like the memory view (same
  * layout, same parts naming), every text from `strings.ts`, every colour from the theme tokens.
  */
-import type { JSX, VNode } from 'preact'
+import type { TargetedKeyboardEvent, VNode } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import type { Connection, ConnectionProvider } from '@evokai/evokai-client/browser'
@@ -140,7 +140,7 @@ export function ConnectionsView({ controller: c, state: st, onClose }: Connectio
   useEffect(() => title.current?.focus(), [])
   const items = st.connections
   const loading = !items && !st.connectionsError
-  const onKey = (e: JSX.TargetedKeyboardEvent<HTMLElement>) => {
+  const onKey = (e: TargetedKeyboardEvent<HTMLElement>) => {
     if (!e.defaultPrevented) escape(e, onClose)
   }
   return (

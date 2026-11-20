@@ -15,7 +15,7 @@
     "@fontsource-variable/bricolage-grotesque": "^5.2.8",
     "@fontsource-variable/onest": "^5.2.8",
     "@fontsource/fragment-mono": "^5.2.6",
-    "preact": "^10.27.2"
+    "preact": "^11.2.0"
   },
   "devDependencies": {
     "typescript": "~5.9.3",

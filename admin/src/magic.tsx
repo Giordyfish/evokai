@@ -4,7 +4,7 @@
  * spell skeleton and the top progress line. Every animation has a still fallback for reduced motion, which follows
  * the person's preference (`src/prefs.ts`) and otherwise the system's.
  */
-import type { ComponentChildren, JSX } from 'preact'
+import type { ComponentChildren, CSSProperties } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { t } from './i18n'
 import { mascotMoves, onPrefs, prefs, reducedMotion } from './prefs'
@@ -111,7 +111,7 @@ export function Skeleton({ rows = 4 }: { rows?: number }) {
         <span
           key={i}
           class="sk"
-          style={{ '--d': `${(i * 0.14).toFixed(2)}s`, width: `${[94, 78, 86, 62, 72][i % 5]}%` } as JSX.CSSProperties}
+          style={{ '--d': `${(i * 0.14).toFixed(2)}s`, width: `${[94, 78, 86, 62, 72][i % 5]}%` } as CSSProperties}
         />
       ))}
     </div>
