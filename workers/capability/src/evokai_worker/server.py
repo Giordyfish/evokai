@@ -93,7 +93,12 @@ def capabilities_for(kind: str, config: dict[str, Any], model: Any = None) -> li
     if kind == "playwright":
         from pydantic_ai_harness.playwright import PlaywrightBrowser
 
-        return [PlaywrightBrowser(**config)]
+        # The harness turns Chromium's renderer sandbox on, which needs user namespaces; Docker's
+        # default seccomp profile refuses them, so Chromium died at launch and every tool answered
+        # "the active tab has closed". The container is the boundary here (read-only root, uid 1001,
+        # no key), as for browser-use, which turns the sandbox off in Docker by itself. A runtime
+        # that grants user namespaces turns it back on with {"chromium_sandbox": true}.
+        return [PlaywrightBrowser(**{"chromium_sandbox": False, **config})]
     if kind == "browser_use":
         from pydantic_ai_harness.browser_use import BrowserUse
 
