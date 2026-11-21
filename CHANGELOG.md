@@ -13,6 +13,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - A documentation website built from `docs/` with MkDocs and the Material theme, published to GitHub Pages at
   <https://giordyfish.github.io/evokai/> on every push to `main` and built with `--strict` on every pull request that
   touches it.
+- A short demo at the top of the README: the bookshop example's agent answering from the shop's catalogue tool,
+  recorded live with qwen3 8B through Ollama.
 
 ### Fixed
 

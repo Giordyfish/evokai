@@ -15,6 +15,12 @@ signed-in user, within budgets, with an audit trail.
 
 [Documentation](https://giordyfish.github.io/evokai/) · [Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Guides](#documentation) · [Contributing](#contributing)
 
+<br/>
+
+<img src="docs/assets/demo.gif" alt="The Inkwell Books example shop: a reader opens the chat panel and asks for poetry books in stock; the agent calls the shop's catalogue_search tool over MCP and lists the two poetry titles with their prices and stock" width="860" />
+
+<sub>The <a href="examples/bookshop-app">bookshop example</a>, recorded live with a local model (qwen3 8B through Ollama on a laptop GPU, no cloud keys). The waits for the model are shown faster.</sub>
+
 </div>
 
 ---
