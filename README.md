@@ -4,9 +4,10 @@
 
 # Evokai™
 
-**Summon AI agents into any app, with the governance a company needs.**<br/>
-Any model, from the big clouds to your own servers; your app's tools over MCP, skills and voice; always acting as the
-signed-in user, within budgets, with an audit trail.
+**Bring AI into your product: complete, governed, ready to plug in.**<br/>
+The agent backend, the chat and voice interface, the admin console, the governance and the monitoring, in one
+open-source service. Connect your app with a key, and its users get an assistant that works on their data and their
+actions, as themselves, within the limits you set.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Giordyfish/evokai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Giordyfish/evokai/actions/workflows/ci.yml)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-f59e0b?style=flat-square)](#status)
@@ -14,75 +15,95 @@ signed-in user, within budgets, with an audit trail.
 [![Python 3.12 to 3.14](https://img.shields.io/badge/python-3.12%20to%203.14-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-db2777?style=flat-square&logo=githubsponsors&logoColor=white)](#support-evokai)
 
-[Documentation](https://giordyfish.github.io/evokai/) · [Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Guides](#documentation) · [Contributing](#contributing) · [Support](#support-evokai)
-
-<br/>
-
-<img src="docs/assets/demo.gif" alt="The Inkwell Books example shop: a reader opens the chat panel and asks for poetry books in stock; the agent calls the shop's catalogue_search tool over MCP and lists the two poetry titles with their prices and stock" width="860" />
-
-<sub>The <a href="examples/bookshop-app">bookshop example</a>, recorded live with a local model (qwen3 8B through Ollama on a laptop GPU, no cloud keys). The waits for the model are shown faster.</sub>
+[Documentation](https://giordyfish.github.io/evokai/) · [What you get](#what-you-get) · [Governance](#governance-built-in) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Guides](#documentation) · [Contributing](#contributing) · [Support](#support-evokai)
 
 </div>
 
 ---
 
-## Why Evokai
+## The problem it solves
 
-Every product ends up wanting an assistant that can *do things*: read the data on screen, run the app's own
-actions, answer by voice, and never step outside what the user is allowed to do. Building that once per product
-means rewriting the same hard parts each time: the tool loop, confirmations, budgets, history, voice turn-taking.
+Every company now wants AI inside its products: an assistant that reads what is on screen, runs the app's own
+actions, answers by voice, and works in Slack, Teams or e-mail too. The model is the easy part. What takes months, and
+what stops most projects at the security review, is everything around it:
 
-Evokai is that layer, written once. An application connects with a key, describes its agents in a YAML file, and
-its users talk to them through a small headless client. The application keeps its identity, its data and its
-interface; Evokai brings the agents.
+- **whose behalf** the agent acts on, and making sure it can never do more than that person could;
+- **what it may touch**: which data, which actions, which models, and asking before it changes anything;
+- **what it costs**, with limits that hold for every application and every user;
+- **where the data goes**, which providers may see it and what they may keep;
+- **proving all of this** to security, legal and the AI Act and GDPR paperwork;
+- and then the plumbing: the tool loop, streaming, history, voice turn-taking, an interface, an admin screen, logs.
 
-### Any model, cloud or self-hosted
+Each product team rebuilds all of it, differently each time. Evokai is all of it, built once, for every application
+you connect.
 
-One allow-list for every provider [pydantic-ai](https://ai.pydantic.dev) speaks: Amazon Bedrock, Azure OpenAI,
-Google Vertex AI, OpenAI, Anthropic, Mistral, Groq, OpenRouter and European clouds (Scaleway, OVHcloud, IONOS,
-STACKIT), or models on your own hardware through Ollama, vLLM, LM Studio or any OpenAI-compatible server. Each agent
-has an ordered fallback chain, so a provider without capacity, or one a policy rules out, is skipped rather than
-failing the turn. Changing model is a line of configuration, not a new integration.
+## What you get
 
-### Governance for companies
-
-Bringing AI into a company is less about the model than about control. In Evokai every application is granted what
-its agents may use (models, tools, skills, voice, channels, code execution), each with its own keys and caps;
-people only ever act as themselves; tools that change data wait for a confirmation; every console change lands in an
-audit log, behind single sign-on with viewer, operator and owner roles. A security layer screens prompts, tool output
-and answers (mapped to the OWASP LLM Top 10), and evals catch a regression before a new agent version goes live.
+| | |
+| --- | --- |
+| ⚙️ **The agent backend** | The runtime and the API: model calls with fallbacks, your app's tools over MCP, confirmations, memory, knowledge bases, skills, code execution, voice, streaming with replay after a reconnect. Your app does not run any of it. |
+| 💬 **The interface** | `<evokai-chat>`, a launcher and a chat panel with tool activity, charts, confirmations, history, dictation and voice mode, and `<evokai-voice>`, a full-screen voice stage. One HTML tag in your page, themable, with React wrappers. Or a headless client (TypeScript, Python) if you draw your own. |
+| 🪄 **The admin console** | A web GUI for everything: applications, agents and their versions, what each app may use, MCP servers, connectors, skills, knowledge, channels, workflows, keys and limits, with a playground to try an agent before it ships. No YAML needed (YAML still works for infrastructure as code). |
+| 🛡️ **Governance** | Agents act as the signed-in user, per-app grants, confirmation before changes, hard budgets, data residency, a security layer, evals, SSO with roles and an audit log, compliance packs. [Below](#governance-built-in), in detail. |
+| 📊 **Monitoring** | Usage against the caps, as shares, with a forecast, every turn traced step by step, conversations, security events, health of models and tools, the approvals queue and the audit log, all in the console; OpenTelemetry when you want it in your own stack. |
+| 🔌 **Integrations** | Your app's MCP server, or ready connectors (SQL, REST from OpenAPI, Google Drive, SharePoint and OneDrive, IMAP). Channels beyond the web: e-mail, Microsoft Teams, Slack. Durable workflows with approvals, schedules and webhooks. Standard endpoints: an OpenAI-compatible API, AG-UI and A2A. |
+| 🧠 **Any model** | Amazon Bedrock, Azure OpenAI, Google Vertex AI, OpenAI, Anthropic, Mistral, European clouds (Scaleway, OVHcloud, IONOS, STACKIT), or your own servers through Ollama, vLLM or LM Studio. An allow-list and an ordered fallback chain per agent; switching model is one line. |
 
 <p align="center"><img src="docs/assets/screenshot-console.png" alt="The Evokai console in the dark theme: an application's overview with what its agents may use, its share of the monthly cap and its open standard endpoints" width="860" /></p>
 
-### Made for AI products in Europe
+## Governance, built in
 
-Evokai is meant to enable AI products, and it pays particular attention to the European regulatory space. Each
-application declares where its data may live and which inference geographies its models may use (**data residency**),
-which countries may control the providers that process it (**jurisdiction**) and what those providers may keep
-(**retention**: any, no training, or zero retention). This **data protection profile** applies to every external
-processor alike (models, embeddings, classifiers, the code sandbox, server speech, connections), and a provider the
-catalog cannot prove compliant is left out: see [data protection](docs/data-protection.md). Privacy requests, retention
-per kind of data, and AI Act and GDPR packs generated from the live configuration build on the same facts.
+Governance is not a plug-in in Evokai: every request goes through it.
+
+- **The agent is the user.** Your tools are called over MCP with the signed-in user's own credential, and filtered
+  per user, so an agent can never see or do more than that person. Tools that change data stop the turn and wait for
+  the user's confirmation.
+- **Each application gets explicit grants**: which models, tools, skills, voice, channels and code
+  execution its agents may use, each with its own keys and caps. Anything not granted is off.
+- **Budgets that hold.** Hard caps per application and defaults per user, by month and by day, enforced before every
+  model call. People only ever see percentages of their allowance, never amounts.
+- **Data protection per application.** Data residency (where data may live and models may run), jurisdiction (which
+  countries may control a provider) and retention (any, no training, zero retention), applied to every external
+  processor: models, embeddings, classifiers, the code sandbox, speech. A provider the catalog cannot prove compliant
+  is left out. Nothing is ever stored on the provider side: the history is always sent from Evokai or your app.
+- **A security layer** mapped to the OWASP LLM Top 10: prompt-injection and jailbreak checks, tool output and e-mails
+  marked as untrusted data, personal data masked or tokenised, secrets and unsafe links stopped in answers, a tool
+  policy and abuse limits; each control off, monitored or enforced. A red-team suite tests it on demand.
+- **Evals before release.** Test cases per agent run on every new version against the previous one, so a regression
+  is caught before it goes live.
+- **Accountable operations.** The console uses single sign-on with viewer, operator and owner roles, and every change
+  lands in an audit log.
+- **Compliance from the real configuration.** AI Act (classification, Annex IV-style documentation), GDPR (record of
+  processing, DPIA template, rights, DPA annex) and an ISO 27001 / SOC 2 mapping, generated from what is actually
+  configured, every statement with its source, with snapshots and diffs. Personal data can be exported or erased on
+  request, with retention per kind of data.
+
+Evokai pays particular attention to the European regulatory space; see [data protection](docs/data-protection.md),
+[security](docs/security.md) and [compliance](docs/compliance.md).
 
 ## In your app
 
-Your backend mints a short session token for the signed-in user; the page talks to the agent with it:
+Three steps, and your users have an assistant:
 
-```ts
-// Your backend, with the server key
-import { EvokaiServer } from '@evokai/evokai-client/server'
+1. **Connect the app** in the console: it gets a server key, its agent (a model from the allowed list, instructions,
+   your MCP server, skills) and its limits.
+2. **Mint a token** from your backend for the signed-in user:
 
-const evokai = new EvokaiServer({ baseUrl: process.env.EVOKAI_URL!, serverKey: process.env.EVOKAI_SERVER_KEY! })
-app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessionToken({ subject: req.user.id, agent: 'assistant' })))
-```
+   ```ts
+   import { EvokaiServer } from '@evokai/evokai-client/server'
 
-```html
-<!-- Your page: a launcher and a chat panel, with voice -->
-<evokai-chat base-url="http://localhost:8787/agent" token-url="/api/agent/token" title="Ada"></evokai-chat>
-```
+   const evokai = new EvokaiServer({ baseUrl: process.env.EVOKAI_URL!, serverKey: process.env.EVOKAI_SERVER_KEY! })
+   app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessionToken({ subject: req.user.id, agent: 'assistant' })))
+   ```
 
-The agent calls your app's tools over MCP as that user, asks before it changes anything, and stays within the budgets
-you set. A complete app is in [examples/bookshop-app](examples/bookshop-app).
+3. **Drop the interface** into your page:
+
+   ```html
+   <evokai-chat base-url="http://localhost:8787/agent" token-url="/api/agent/token" title="Ada"></evokai-chat>
+   ```
+
+The agent calls your app's tools over MCP as that user, asks before it changes anything, stays within the budgets
+you set, and every turn shows up in the console. A complete app is in [examples/bookshop-app](examples/bookshop-app).
 
 ## Status
 
@@ -91,21 +112,7 @@ between 0.x releases, and a release may need a manual migration step; read the [
 upgrade. Using it in production is at your own risk: the software is provided "as is", without warranties or
 conditions of any kind, and without liability, as stated in sections 7 and 8 of the [Apache License 2.0](LICENSE).
 
-## Features
-
-- **Any model, cloud or self-hosted**: Bedrock, Azure, Vertex, OpenAI, Anthropic, Mistral, European clouds, or your
-  own servers (Ollama, vLLM, LM Studio), behind an allow-list, with fallbacks when a model has no capacity.
-- **Your tools over MCP**, called as the signed-in user; tools that change data wait for the user's confirmation.
-- **Skills, knowledge bases and ready connectors** (SQL, REST from OpenAPI, Google Drive, SharePoint, IMAP).
-- **Voice**: dictation, conversation and barge-in, in the browser or on the server with [Pipecat](https://pipecat.ai).
-- **Budgets** per application and per user, enforced before every model call; people see shares, never amounts.
-- **An agent security layer** mapped to the OWASP LLM Top 10: injection checks, personal data masked, a tool policy.
-- **Privacy and compliance**: data residency, export and erasure, retention, and AI Act and GDPR packs generated from
-  the live configuration.
-- **Open standards**: [AG-UI](docs/ag-ui.md), an [OpenAI-compatible API](docs/openai-compatible.md) and [A2A](docs/a2a.md).
-- **An admin console** for applications, agents and their versions, grants, keys, limits, evals and a playground.
-
-The whole list, with details: [features](docs/features.md).
+The whole list of features, with details: [features](docs/features.md).
 
 ## How it works
 

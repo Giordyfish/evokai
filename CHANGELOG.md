@@ -8,6 +8,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Changed
+
+- The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
+  governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
+
 ## [0.1.3] - 2026-11-21
 
 ### Added
