@@ -8,6 +8,13 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Fixed
+
+- The capability worker's `playwright` capability works in the browser image: Chromium launched with its renderer
+  sandbox, which Docker's default seccomp profile does not allow, so it died at launch and every browser tool answered
+  "the active tab has closed". It now runs without it, as browser-use already did, and `{"chromium_sandbox": true}`
+  in `EVOKAI_WORKER_CONFIG` turns it back on where the runtime grants user namespaces (#25).
+
 ## [0.1.2] - 2026-11-20
 
 ### Changed
