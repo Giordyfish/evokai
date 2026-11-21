@@ -167,3 +167,28 @@ def test_browser_use_needs_evokai_and_holds_no_key(monkeypatch: Any) -> None:
     monkeypatch.setenv("EVOKAI_SERVER_KEY", "evk_srv_x")
     with pytest.raises(SystemExit, match="never holds an Evokai key"):
         from_env()
+
+
+def test_playwright_runs_chromium_without_its_sandbox_unless_asked(monkeypatch: Any) -> None:
+    import sys
+    import types
+
+    from evokai_worker.server import capabilities_for
+
+    # The browser extra is not installed with the kubernetes one the gates sync: a stand-in records what
+    # the worker passes to PlaywrightBrowser.
+    class FakeBrowser:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+
+    fake = types.ModuleType("pydantic_ai_harness.playwright")
+    fake.PlaywrightBrowser = FakeBrowser  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "pydantic_ai_harness.playwright", fake)
+
+    # Chromium's sandbox needs user namespaces, which Docker's default seccomp profile refuses: with it on,
+    # Chromium dies at launch and every browser tool answers "the active tab has closed" (#25).
+    (default,) = capabilities_for("playwright", {"block_private_addresses": False})
+    assert default.kwargs == {"chromium_sandbox": False, "block_private_addresses": False}
+    # A runtime that grants user namespaces (Playwright's seccomp profile) can turn it back on.
+    (asked,) = capabilities_for("playwright", {"chromium_sandbox": True})
+    assert asked.kwargs == {"chromium_sandbox": True}
