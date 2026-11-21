@@ -12,8 +12,9 @@ signed-in user, within budgets, with an audit trail.
 [![Status: experimental](https://img.shields.io/badge/status-experimental-f59e0b?style=flat-square)](#status)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-7c3aed?style=flat-square)](LICENSE)
 [![Python 3.12 to 3.14](https://img.shields.io/badge/python-3.12%20to%203.14-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-db2777?style=flat-square&logo=githubsponsors&logoColor=white)](#support-evokai)
 
-[Documentation](https://giordyfish.github.io/evokai/) · [Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Guides](#documentation) · [Contributing](#contributing)
+[Documentation](https://giordyfish.github.io/evokai/) · [Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Guides](#documentation) · [Contributing](#contributing) · [Support](#support-evokai)
 
 <br/>
 
@@ -300,6 +301,16 @@ described: a problem worth solving, an approach you can explain, and evidence th
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the gates, what a good pull request looks like and the DCO sign-off,
 [SECURITY.md](SECURITY.md) to report a vulnerability privately, and the [code of conduct](CODE_OF_CONDUCT.md).
 Code, comments and docs are in English.
+
+## Support Evokai
+
+Evokai is free and open source, built and maintained independently. If it saves you work, or you would like to see
+it grow, you can support it:
+
+- [GitHub Sponsors](https://github.com/sponsors/Giordyfish), monthly or one-off;
+- [Ko-fi](https://ko-fi.com/Giordyfish), one-off, also with PayPal.
+
+Starring the repository and telling others about it helps too.
 
 ## License
 
