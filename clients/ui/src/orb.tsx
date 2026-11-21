@@ -90,7 +90,7 @@ export function createOrb(canvas: HTMLCanvasElement, size: number, colors?: Part
   canvas.style.background = orbFallback(colors)
   const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio) || 1)
   canvas.width = canvas.height = Math.round(size * dpr)
-  let gl: WebGLRenderingContext | null = null
+  let gl: WebGLRenderingContext | null
   try {
     gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true })
   } catch {

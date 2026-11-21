@@ -30,6 +30,10 @@ updates:
       # openapi-typescript load; retry when they support it.
       - dependency-name: typescript
         update-types: [version-update:semver-major]
+      # The clients support Node 22 and later: their Node type definitions follow the oldest supported Node,
+      # so newer majors would let code use APIs Node 22 lacks. Raise them with the minimum Node version.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
     groups:
       npm:
         patterns: ["*"]

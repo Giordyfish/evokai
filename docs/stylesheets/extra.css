@@ -1,0 +1,34 @@
+/* Evokai's violet on the Material theme (mkdocs.yml sets primary and accent to custom). */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #4c1d95;
+  --md-primary-fg-color--light: #7c3aed;
+  --md-primary-fg-color--dark: #3b0764;
+  --md-accent-fg-color: #7c3aed;
+  --md-accent-fg-color--transparent: rgba(124, 58, 237, 0.1);
+  --md-typeset-a-color: #6d28d9;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #4c1d95;
+  --md-primary-fg-color--light: #7c3aed;
+  --md-primary-fg-color--dark: #3b0764;
+  --md-accent-fg-color: #a78bfa;
+  --md-accent-fg-color--transparent: rgba(167, 139, 250, 0.1);
+  --md-typeset-a-color: #a78bfa;
+}
+
+/* The logo is wider than tall: let it keep its proportions in the header. */
+.md-header__button.md-logo img {
+  height: 1.8rem;
+  width: auto;
+}
+
+/* The mascot on the home page. */
+.evokai-hero {
+  text-align: center;
+}
+
+.evokai-hero img {
+  width: 168px;
+}
