@@ -1,6 +1,6 @@
 [project]
 name = "evokai"
-version = "0.1.1"
+version = "0.1.2"
 description = "Agents runtime: any model provider, MCP tools, skills and voice sessions"
 authors = [
     { name = "Giordano Pescetelli", email = "giordano.pescetelli@gmail.com" }
@@ -25,7 +25,7 @@ dependencies = [
     "pypdf>=6.0",
     "pyyaml>=6.0.3",
     "redis>=8.1",
-    "sqlalchemy[asyncio]>=2.1.8",
+    "sqlalchemy[asyncio]>=2.1.9",
     "uvicorn[standard]>=0.54.0",
 ]
 

@@ -2,7 +2,7 @@
  * Small presentational components. Pages compose these and never style by themselves, so the look lives in
  * styles.css (its tokens) and here.
  */
-import type { ComponentChildren, JSX } from 'preact'
+import type { ComponentChildren, TargetedMouseEvent } from 'preact'
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
 
 import { appColor } from './format'
@@ -56,7 +56,7 @@ type BtnProps = {
   children: ComponentChildren
   kind?: string
   sm?: boolean
-  onClick?: (e: JSX.TargetedMouseEvent<HTMLButtonElement>) => void
+  onClick?: (e: TargetedMouseEvent<HTMLButtonElement>) => void
   href?: string
   busy?: ComponentChildren | false
   /** The dark flame burns in the button (a turn running). */

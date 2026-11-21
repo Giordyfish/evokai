@@ -94,6 +94,11 @@ tools over MCP (streamable HTTP, JSON answers):
   `EVOKAI_WORKER_CONFIG` such as `warm_pool` and `namespace`) with the shell and file tools on its pod; and
   `CAPABILITY=browser`, with Playwright's Chromium, serving `browser_use` (default) or `playwright`
   (`EVOKAI_WORKER_CAPABILITY=playwright`).
+- Chromium runs without its renderer sandbox in the browser image, for both capabilities: the sandbox needs user
+  namespaces, which Docker's default seccomp profile refuses (Chromium then dies at launch). The container is the
+  boundary instead: read-only root, uid 1001, no key. Where the runtime grants user namespaces (Docker with
+  Playwright's seccomp profile, a Kubernetes `seccompProfile` that allows them), `playwright` takes it back with
+  `EVOKAI_WORKER_CONFIG='{"chromium_sandbox": true}'`.
 - The application registers it as an MCP server with `auth: secret` (the worker's `EVOKAI_WORKER_SECRET`) and
   **`worker: true`** (console: MCP servers, «Evokai capability worker»; application file: `worker: true`), and an
   agent lists it in `mcp_servers`. Everything Evokai does for MCP tools applies unchanged: the grants, the tool

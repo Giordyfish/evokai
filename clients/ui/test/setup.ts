@@ -1,3 +1,5 @@
+import { options } from 'preact'
+
 // jsdom has no canvas: the orbs fall back to their CSS gradient, as in a browser without WebGL.
 HTMLCanvasElement.prototype.getContext = (() => null) as unknown as typeof HTMLCanvasElement.prototype.getContext
 
@@ -7,3 +9,20 @@ const dom = (globalThis as { jsdom?: { window: Window } }).jsdom
 for (const key of ['localStorage', 'sessionStorage'] as const) {
   if (dom && !globalThis[key]) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true, writable: true })
 }
+
+// Preact 11 runs effects, and the cleanups of unmounted components, after the next paint. Schedule that flush
+// through a queue drained after every test, so no cleanup runs once the test environment (and its
+// cancelAnimationFrame) is gone.
+const afterPaint: Array<() => void> = []
+options.requestAnimationFrame = (flush) => {
+  afterPaint.push(flush)
+  setTimeout(() => {
+    const i = afterPaint.indexOf(flush)
+    if (i < 0) return
+    afterPaint.splice(i, 1)
+    flush()
+  }, 16)
+}
+afterEach(() => {
+  for (let flush = afterPaint.shift(); flush; flush = afterPaint.shift()) flush()
+})

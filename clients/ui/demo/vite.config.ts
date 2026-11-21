@@ -71,7 +71,7 @@ function backend(): Plugin {
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   resolve: { alias: [{ find: /^@evokai\/evokai-client\/(.*)$/, replacement: `${client}/$1/index.ts` }] },
-  esbuild: { jsx: 'automatic', jsxImportSource: 'preact' },
+  oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   server: { port: 5174, strictPort: true, fs: { allow: ['../..'] } },
   plugins: [backend()],
 })

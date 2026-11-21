@@ -8,6 +8,27 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Fixed
+
+- The capability worker's `playwright` capability works in the browser image: Chromium launched with its renderer
+  sandbox, which Docker's default seccomp profile does not allow, so it died at launch and every browser tool answered
+  "the active tab has closed". It now runs without it, as browser-use already did, and `{"chromium_sandbox": true}`
+  in `EVOKAI_WORKER_CONFIG` turns it back on where the runtime grants user namespaces (#25).
+
+## [0.1.2] - 2026-11-20
+
+### Changed
+
+- Development tooling of the npm packages: Vitest 5, Vite 8, tsup 9 and typescript-eslint 8.73; the UI components
+  and the console run on Preact 11. The published client and components behave the same.
+
+### Security
+
+- The browser capability worker image (`workers/capability`, `browser` extra) now installs Pillow 13.0.0, pypdf
+  6.21.4, mcp 2.3.0 and anyio 4.14.2 instead of the vulnerable versions browser-use 0.13.14 pins exactly.
+- The npm packages' test tooling no longer pulls the vulnerable tinypool, minimatch and esbuild versions (Vitest 4 and
+  newer, tsup 9).
+
 ## [0.1.1] - 2026-11-20
 
 ### Changed

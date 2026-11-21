@@ -25,6 +25,11 @@ updates:
     directories: ["/clients/typescript", "/clients/ui", "/admin"]
     target-branch: develop
     schedule: {interval: weekly}
+    ignore:
+      # TypeScript 7 ships without the compiler API that typescript-eslint, tsup's declaration build and
+      # openapi-typescript load; retry when they support it.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
     groups:
       npm:
         patterns: ["*"]
