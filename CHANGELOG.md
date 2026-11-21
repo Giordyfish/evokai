@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-21
+
 ### Added
 
 - A documentation website built from `docs/` with MkDocs and the Material theme, published to GitHub Pages at
@@ -15,6 +17,13 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   touches it.
 - A short demo at the top of the README: the bookshop example's agent answering from the shop's catalogue tool,
   recorded live with qwen3 8B through Ollama.
+
+### Changed
+
+- Development tooling of the npm packages: ESLint 10 with @eslint/js 10 and jsdom 31. The published client and
+  components behave the same.
+- The service requires FastAPI 0.164 or newer.
+- A Support section in the README, with GitHub Sponsors and Ko-fi.
 
 ### Fixed
 
