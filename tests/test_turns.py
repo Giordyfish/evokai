@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
+import pytest
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 
@@ -300,6 +302,38 @@ async def test_events_can_be_replayed_after_a_sequence_number(env: Env) -> None:
     replay = r.json()["events"]
     assert replay[0]["seq"] == first[-1]["seq"] + 1
     assert "".join(e.get("delta", "") for e in replay if e["type"] == "text") == "Due."
+
+
+async def test_a_channel_still_saving_its_events_is_not_dropped(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A stream closes as soon as it sees ``done``, while the turn is still saving its last events.
+    # Dropping the channel then would let the next message reopen it from a stale last number and
+    # number its events again from there.
+    store, hub = env.svc.store, env.svc.hub
+    tok = await env.token()
+    session_id = (await env.chat(tok["token"], text="a"))[-1]["conversationId"]
+    saving, saved = asyncio.Event(), asyncio.Event()
+    append = store.events.append
+
+    async def slow_append(sid: str, rows: list[dict[str, Any]]) -> None:
+        saving.set()
+        await saved.wait()
+        await append(sid, rows)
+
+    monkeypatch.setattr(store.events, "append", slow_append)
+    channel = await hub.get(session_id)
+    last = channel.publish({"type": "status"}, None)["seq"]
+    flushing = asyncio.create_task(channel.flush())
+    await saving.wait()
+    hub.drop_if_idle(session_id)
+    assert await hub.get(session_id) is channel
+    saved.set()
+    await flushing
+    hub.drop_if_idle(session_id)
+    reopened = await hub.get(session_id)
+    assert reopened is not channel
+    assert reopened.publish({"type": "status"}, None)["seq"] == last + 1
 
 
 async def test_memories_persist_across_conversations(env: Env) -> None:

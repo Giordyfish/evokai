@@ -18,6 +18,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- Events of a message sent right after an answer are no longer lost. The answer's stream let go of the session's
+  channel while its last events were still being saved; the next message reopened it from a stale last number, its
+  events collided with the saved ones and were dropped, and a client reconnecting could not replay them.
 - The capability worker's `playwright` capability works in the browser image: Chromium launched with its renderer
   sandbox, which Docker's default seccomp profile does not allow, so it died at launch and every browser tool answered
   "the active tab has closed". It now runs without it, as browser-use already did, and `{"chromium_sandbox": true}`
