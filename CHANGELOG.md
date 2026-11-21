@@ -8,6 +8,12 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- A documentation website built from `docs/` with MkDocs and the Material theme, published to GitHub Pages at
+  <https://giordyfish.github.io/evokai/> on every push to `main` and built with `--strict` on every pull request that
+  touches it.
+
 ### Fixed
 
 - The capability worker's `playwright` capability works in the browser image: Chromium launched with its renderer
