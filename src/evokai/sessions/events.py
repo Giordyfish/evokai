@@ -142,5 +142,7 @@ class ChannelHub:
     def drop_if_idle(self, session_id: str) -> None:
         """Forget a channel nobody listens to and with nothing left to persist."""
         ch = self._channels.get(session_id)
-        if ch and ch.persist and not ch._listeners and not ch._pending:
+        # A flush in progress has already taken its events off ``_pending``: until they are stored,
+        # a channel reopened from the database would number new events from a stale last number.
+        if ch and ch.persist and not ch._listeners and not ch._pending and not ch._lock.locked():
             self._channels.pop(session_id, None)
