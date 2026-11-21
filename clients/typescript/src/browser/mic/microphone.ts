@@ -203,7 +203,7 @@ export class Microphone {
   private async refreshDevices(changed: boolean): Promise<MicDevice[]> {
     const md = this.md
     if (!md) return []
-    let list: MediaDeviceInfo[] = []
+    let list: MediaDeviceInfo[]
     try {
       list = await md.enumerateDevices()
     } catch {
