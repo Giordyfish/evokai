@@ -7,6 +7,7 @@ outgoing call (SMTP, IMAP, the Bot Connector, Slack's Web API) goes to a fake.
 from __future__ import annotations
 
 import json
+import re
 import time
 from email.message import EmailMessage
 from typing import Any
@@ -335,8 +336,9 @@ async def test_an_email_is_answered_in_its_thread_as_untrusted_input(env: Env) -
         thread = (await db.execute(sa.select(m.ChannelThread))).scalars().first()
         session = (await db.execute(sa.select(m.Session))).scalars().first()
     assert thread is not None and session is not None
-    # The subject is a keyed hash: no address is kept as the subject.
-    assert thread.subject.startswith("email:") and "ada" not in thread.subject
+    # The subject is a keyed hash: no address is kept as the subject. Only hex digits are
+    # checked, since a random key may spell "ada" in them.
+    assert re.fullmatch(r"email:[0-9a-f]+", thread.subject)
     assert session.subject == thread.subject
     # A reply in the thread goes on with the same conversation, without the quoted text.
     env.script.add("function:primary", ["Yes, also on Sunday morning."])

@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-21
+
 ### Added
 
 - A documentation website built from `docs/` with MkDocs and the Material theme, published to GitHub Pages at
@@ -16,8 +18,18 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - A short demo at the top of the README: the bookshop example's agent answering from the shop's catalogue tool,
   recorded live with qwen3 8B through Ollama.
 
+### Changed
+
+- Development tooling of the npm packages: ESLint 10 with @eslint/js 10 and jsdom 31. The published client and
+  components behave the same.
+- The service requires FastAPI 0.164 or newer.
+- A Support section in the README, with GitHub Sponsors and Ko-fi.
+
 ### Fixed
 
+- Events of a message sent right after an answer are no longer lost. The answer's stream let go of the session's
+  channel while its last events were still being saved; the next message reopened it from a stale last number, its
+  events collided with the saved ones and were dropped, and a client reconnecting could not replay them.
 - The capability worker's `playwright` capability works in the browser image: Chromium launched with its renderer
   sandbox, which Docker's default seccomp profile does not allow, so it died at launch and every browser tool answered
   "the active tab has closed". It now runs without it, as browser-use already did, and `{"chromium_sandbox": true}`

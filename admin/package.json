@@ -1,6 +1,6 @@
 {
   "name": "@evokai/evokai-console",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The Evokai admin console: a static single-page app served by the service at {EVOKAI_BASE_PATH}/admin.",
   "private": true,
   "type": "module",
