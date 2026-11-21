@@ -87,6 +87,10 @@ dev = [
     "pytest-recording>=0.15",
     "vcrpy>=9.4",
 ]
+# The documentation site (mkdocs.yml): never installed with the service.
+docs = [
+    "mkdocs-material>=9.8.2",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

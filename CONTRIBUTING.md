@@ -42,6 +42,10 @@ uv run evokai openapi --out clients/typescript/openapi.json
 (cd clients/typescript && npm run gen)
 ```
 
+The documentation under `docs/` is also a website (MkDocs with the Material theme, `mkdocs.yml`). Preview it at
+`http://127.0.0.1:8000/evokai/` with `uv run --only-group docs mkdocs serve`; a pull request that touches it is built
+with `mkdocs build --strict`, so a broken link or anchor fails the check.
+
 Tests never reach the network: models, MCP servers and speech are faked, and real HTTP traffic is replayed from
 cassettes ([recorded HTTP cassettes](docs/deployment.md#recorded-http-cassettes)).
 

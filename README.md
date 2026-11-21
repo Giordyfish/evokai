@@ -13,7 +13,7 @@ signed-in user, within budgets, with an audit trail.
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-7c3aed?style=flat-square)](LICENSE)
 [![Python 3.12 to 3.14](https://img.shields.io/badge/python-3.12%20to%203.14-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 
-[Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Docs](#documentation) · [Contributing](#contributing)
+[Documentation](https://giordyfish.github.io/evokai/) · [Quick start](#quick-start) · [Examples](examples) · [Features](#features) · [How it works](#how-it-works) · [Client](#the-typescript-client) · [Guides](#documentation) · [Contributing](#contributing)
 
 </div>
 
@@ -231,6 +231,8 @@ properties, in English and Italian.
 ```
 
 ## Documentation
+
+The guides are also published as a website: [giordyfish.github.io/evokai](https://giordyfish.github.io/evokai/).
 
 | Guide | What is in it |
 | --- | --- |
