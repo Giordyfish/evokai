@@ -400,6 +400,8 @@ A session declares its **voice engine** (token claim, else the application defau
 | `sandbox` | isolated code execution: the AgentCore Code Interpreter client, the `code_run` tool and `skill_run` for skill scripts ([code](code.md)) |
 | `connections` | per-user OAuth connections: providers and scopes, the token vault, the authorization flow with PKCE, refresh and revocation |
 | `channels` | e-mail, Teams and Slack: configuration, subject mapping, each protocol's verification and replies, runs and turns from deliveries |
+| `mcp_admin` | the admin MCP server: the admin API's allow-listed routes as MCP tools, called in process with the caller's rights ([admin MCP](admin-mcp.md)) |
+| `assistant` | the console assistant: its locked system application, delegation tokens, activation and model recommendations, its evals ([assistant](assistant.md)) |
 | `guard` | the security layer: policies, injection and personal-data detectors, spotlighting, output filter, tool policy, abuse limits, security events ([security](security.md)) |
 
 ## Database
@@ -437,6 +439,9 @@ turn), usage and health (database and migrations, models answering, MCP servers,
 The console shows no amount anywhere (pages, charts, tables, exports): only used and left shares of the caps, computed
 by the service (see the hard rule above). The caps themselves are set on the Limits page as plain numbers, never with a
 currency.
+
+The console embeds Evokai's own assistant (`<evokai-chat>` with the mascot), which operates the selected application
+through the admin MCP server with the person's rights and asks before every change ([assistant](assistant.md)).
 
 The console is internal: it is not meant to be published on the internet (the application's proxy should block
 `{base}/admin`; reach it through a port-forward to the service, for example with SSM).

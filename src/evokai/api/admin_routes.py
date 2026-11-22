@@ -488,7 +488,8 @@ async def put_agent(
         )
     current = await svc.store.agents.active(a.application_id, name)
     before = current.definition if current else None
-    if a.role != "owner" and (before or {}).get("security") != body.security:
+    if (a.role != "owner" or a.via) and (before or {}).get("security") != body.security:
+        # The console assistant never changes a security policy, whoever it acts for.
         raise Forbidden("Changing an agent's security policy needs the owner role.", code="role")
     await _check_ask_rules(svc, a, body)
     await check_agent_modules(svc.store, a.application_id, body)

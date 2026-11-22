@@ -207,7 +207,7 @@ class RedTeamService:
         Returns:
             The run (status ``running``).
         """
-        attacks = select(categories, languages)
+        attacks = select(categories, languages, assistant=bool(app.system))
         run = await self.svc.store.evals.start_run(
             app.id,
             agent,
