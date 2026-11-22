@@ -12,7 +12,7 @@ import { activateBody, type AssistantState, badge, canActivate, type Candidate, 
 import { deleted, kindText, type ResetPreview, resetExport, slugTyped } from '../assistant/reset'
 import { fitBadge, fitReasons } from '../fit'
 import { download } from '../format'
-import { num, t } from '../i18n'
+import { num, t, tn } from '../i18n'
 import { Empty, toast } from '../magic'
 import { setTitle, useConsole } from '../state'
 import { Bar, Btn, Field, Hero, Panel, Tag } from '../ui'
@@ -74,7 +74,7 @@ function SystemApp({ state, onChanged }: { state: AssistantState; onChanged: () 
       {state.updateAvailable ? <p class="hint">{t('reset.updateAvailable')}</p> : null}
       {preview ? (
         <>
-          <p class="hint">{gone.length ? t('reset.previewText', { n: num(gone.length) }) : t('reset.previewNothing')}</p>
+          <p class="hint">{gone.length ? tn('reset.previewText', gone.length) : t('reset.previewNothing')}</p>
           <div class="wx">
             <table class="tbl">
               <thead>

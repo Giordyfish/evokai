@@ -409,3 +409,23 @@ async def test_privacy_route_says_which_voice(env: Env) -> None:
         ids["app"], data_protection={"residency": {"geographies": ["eu"]}}
     )
     assert (await env.client.get(url, headers=_on(ids["app"]))).json()["voice"] == "device"
+
+
+async def test_a_new_inspection_shows_the_notice_again(env: Env) -> None:
+    ids = await _two_people(env)
+    url = "/agent/v1/console/assistant/privacy"
+    inspect = f"/agent/v1/admin/assistant/conversations/{ids['a_conv']}/inspect"
+    _sign_in(env, ids["alice"], "alice", {SLUG: "viewer"})
+    r = await env.client.post(url, json={"version": 1}, headers=_on(ids["app"]))
+    assert r.status_code == 200
+    assert (await env.client.get(url, headers=_on(ids["app"]))).json()["unseen"] == 0
+    owner = await _user(env, "olga", {SLUG: "owner"})
+    _sign_in(env, owner, "olga", {SLUG: "owner"})
+    r = await env.client.post(inspect, json={"reason": REASON}, headers=_on(ids["app"]))
+    assert r.status_code == 200
+    _sign_in(env, ids["alice"], "alice", {SLUG: "viewer"})
+    body = (await env.client.get(url, headers=_on(ids["app"]))).json()
+    assert body["accepted"] is True and body["unseen"] == 1
+    assert body["inspections"][0]["at"].endswith("+00:00")
+    await env.client.post(url, json={"version": 1}, headers=_on(ids["app"]))
+    assert (await env.client.get(url, headers=_on(ids["app"]))).json()["unseen"] == 0

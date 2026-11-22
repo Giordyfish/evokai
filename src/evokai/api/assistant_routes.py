@@ -7,6 +7,7 @@ Neither route is a tool of the admin MCP server, and the assistant's delegation 
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -403,6 +404,19 @@ class NoticeAccept(BaseModel):
     version: int = Field(ge=0)
 
 
+def _when(value: Any) -> datetime:
+    """A stored time as an aware UTC time (SQLite returns naive ones; absent is the epoch).
+
+    Returns:
+        The time.
+    """
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if not isinstance(value, datetime):
+        return datetime(1970, 1, 1, tzinfo=UTC)
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def _notice_key(login: Any) -> str:
     return f"assistant-notice:{identity_of(login)}"[:120]
 
@@ -436,16 +450,16 @@ async def assistant_privacy(svc: Svc, a: Admin, request: Request) -> dict[str, A
     entries = await svc.store.audit.query(
         system.id, action=privacy.INSPECT, target=f"subject:{key}", limit=50
     )
-    seen = str(stored.get("seenAt") or "")
+    seen = _when(stored.get("seenAt"))
+    mine = [e for e in entries if (e.after or {}).get("author") == key]
     inspections = [
         {
             "conversationId": e.target.split()[0].removeprefix("conversation:"),
             "by": e.actor.removeprefix("sso:"),
-            "at": e.at.isoformat(),
+            "at": _when(e.at).isoformat(),
             "reason": (e.after or {}).get("reason", ""),
         }
-        for e in entries
-        if (e.after or {}).get("author") == key
+        for e in mine
     ]
     voice = (
         "online"
@@ -459,7 +473,7 @@ async def assistant_privacy(svc: Svc, a: Admin, request: Request) -> dict[str, A
         "ttlDays": system.conversation_ttl_days,
         "voice": voice,
         "inspections": inspections,
-        "unseen": sum(1 for i in inspections if i["at"] > seen),
+        "unseen": sum(1 for e in mine if _when(e.at) > seen),
     }
 
 

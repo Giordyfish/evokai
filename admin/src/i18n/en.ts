@@ -2820,7 +2820,7 @@ export const en = {
   "reset.unlocked": "Unlocked: your changes are kept and Evokai's updates wait. A reset deletes what was added and brings back the shipped definition, locked.",
   "reset.updateAvailable": "A newer shipped definition is available: a reset applies it.",
   "reset.preview": "Preview the reset",
-  "reset.previewText": "The reset deletes {n} items and restores the rest. Download them first if you want to keep a copy.",
+  "reset.previewText": { one: "The reset deletes {n} item and restores the rest. Download it first if you want to keep a copy.", other: "The reset deletes {n} items and restores the rest. Download them first if you want to keep a copy." },
   "reset.previewNothing": "Nothing to delete: the reset restores the shipped definition.",
   "reset.kind": "Kind",
   "reset.name": "Name",

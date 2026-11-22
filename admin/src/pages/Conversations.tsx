@@ -343,35 +343,37 @@ function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: str
                   })}
                 </div>
               </Panel>
-              <div class="grid" style="gap:16px" hidden={!!inspected}>
-                <Panel title={t('cv.review')}>
-                  <p class="hint" style="margin:0 0 12px">{t('cv.reviewHint')}</p>
-                  <NoteForm app={app} conversation={c.id} turnId={focus && traces.has(focus) ? focus : null} onAdded={load.reload} />
-                  {focus && traces.has(focus) ? <p class="hint">{t('cv.onTurn')}</p> : null}
-                </Panel>
-                <Panel title={t('cv.notes')} actions={<Tag>{num(notes.length)}</Tag>}>
-                  {notes.length ? (
-                    notes.map((n) => (
-                      <div key={n.id} class="opt">
-                        <div class="t">
-                          {n.label ? <Tag tone="vi">{labelText(n.label)}</Tag> : null} <b>{n.note}</b>
-                          <small>
-                            {n.author} · {ago(n.createdAt)}
-                            {n.turnId ? ` · ${t('cv.onATurn')}` : ''}
-                          </small>
+              {inspected ? null : (
+                <div class="grid" style="gap:16px">
+                  <Panel title={t('cv.review')}>
+                    <p class="hint" style="margin:0 0 12px">{t('cv.reviewHint')}</p>
+                    <NoteForm app={app} conversation={c.id} turnId={focus && traces.has(focus) ? focus : null} onAdded={load.reload} />
+                    {focus && traces.has(focus) ? <p class="hint">{t('cv.onTurn')}</p> : null}
+                  </Panel>
+                  <Panel title={t('cv.notes')} actions={<Tag>{num(notes.length)}</Tag>}>
+                    {notes.length ? (
+                      notes.map((n) => (
+                        <div key={n.id} class="opt">
+                          <div class="t">
+                            {n.label ? <Tag tone="vi">{labelText(n.label)}</Tag> : null} <b>{n.note}</b>
+                            <small>
+                              {n.author} · {ago(n.createdAt)}
+                              {n.turnId ? ` · ${t('cv.onATurn')}` : ''}
+                            </small>
+                          </div>
+                          {app.role !== 'viewer' ? (
+                            <Btn sm kind="ghost" onClick={() => void remove(n.id)}>
+                              {t('cv.delete')}
+                            </Btn>
+                          ) : null}
                         </div>
-                        {app.role !== 'viewer' ? (
-                          <Btn sm kind="ghost" onClick={() => void remove(n.id)}>
-                            {t('cv.delete')}
-                          </Btn>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <p class="hint">{t('cv.noNotes')}</p>
-                  )}
-                </Panel>
-              </div>
+                      ))
+                    ) : (
+                      <p class="hint">{t('cv.noNotes')}</p>
+                    )}
+                  </Panel>
+                </div>
+              )}
             </div>
           </>
         )

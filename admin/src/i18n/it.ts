@@ -2818,7 +2818,7 @@ export const it: Messages = {
   "reset.unlocked": "Sbloccata: le tue modifiche restano e gli aggiornamenti di Evokai attendono. Un ripristino cancella ciò che è stato aggiunto e riporta la definizione distribuita, bloccata.",
   "reset.updateAvailable": "È disponibile una definizione più recente: un ripristino la applica.",
   "reset.preview": "Anteprima del ripristino",
-  "reset.previewText": "Il ripristino cancella {n} elementi e ripristina il resto. Scaricali prima se vuoi conservarne una copia.",
+  "reset.previewText": { one: "Il ripristino cancella {n} elemento e ripristina il resto. Scaricalo prima se vuoi conservarne una copia.", other: "Il ripristino cancella {n} elementi e ripristina il resto. Scaricali prima se vuoi conservarne una copia." },
   "reset.previewNothing": "Niente da cancellare: il ripristino riporta la definizione distribuita.",
   "reset.kind": "Tipo",
   "reset.name": "Nome",
