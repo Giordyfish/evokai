@@ -252,7 +252,7 @@ describe('runs, console views and the console client', () => {
 
   test('EvokaiConsole: preferences are read, saved whole and reset with the cookie', async () => {
     const prefs = {
-      version: 1 as const,
+      version: 2 as const,
       language: 'it' as const,
       dateFormat: 'auto' as const,
       timeFormat: '24h' as const,
