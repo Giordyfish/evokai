@@ -3,6 +3,7 @@
  * from its own stylesheet; a `Theme` object sets the same properties from code, with a light and a dark palette and the
  * orb's colours. For deeper changes see `skin` (your CSS inside the components), `unstyled`, parts, slots and `icons`.
  */
+import type { ChatState } from './chatstate'
 
 /** Colours of one scheme. Any CSS colour. */
 export interface Palette {
@@ -38,6 +39,16 @@ export interface OrbColors {
   glow: string
 }
 
+/** A chat state (`chatstate.ts`): each may have its own image. */
+export type OrbState = ChatState
+
+/**
+ * An orb made of images: one per chat state (a still image, an animated GIF, WebP or PNG), `idle` for the states left
+ * out. `still` is shown instead with reduced motion (without it, the first frame of the state's image). A transition
+ * (`"confirm>tool"`, or `"*>done"` from any state) may play a one-shot image for `ms` before the state's own.
+ */
+export type OrbImages = { idle: string; still?: string; transitions?: Record<string, { src: string; ms: number }> } & Partial<Record<Exclude<OrbState, 'idle'>, string>>
+
 export interface Theme {
   /** `light`, `dark`, or `auto` (follows the system; default). */
   scheme?: 'light' | 'dark' | 'auto'
@@ -51,7 +62,8 @@ export interface Theme {
   radius?: string
   /** A logo (image URL) shown in the panel header instead of the small orb. */
   logo?: string
-  orb?: Partial<OrbColors>
+  /** The orb's colours, and `images` to draw it with images instead (see `OrbImages`). */
+  orb?: Partial<OrbColors> & { images?: OrbImages }
   /** The launcher's corner: `bottom-right` (default) or `bottom-left`. */
   position?: 'bottom-right' | 'bottom-left'
 }
@@ -115,8 +127,40 @@ export function themeVars(theme: Theme | null | undefined): Record<string, strin
   if (theme.font) out['--evokai-font'] = theme.font
   if (theme.displayFont) out['--evokai-display-font'] = theme.displayFont
   if (theme.radius) out['--evokai-radius'] = theme.radius
-  for (const [k, v] of Object.entries(theme.orb ?? {})) if (v) out[`--evokai-orb-${k}`] = v
+  for (const [k, v] of Object.entries(theme.orb ?? {})) if (typeof v === 'string' && v) out[`--evokai-orb-${k}`] = v
   return out
+}
+
+/** The orb's colours of a theme (without its images). */
+export function orbColors(orb: Theme['orb']): Partial<OrbColors> | undefined {
+  if (!orb) return undefined
+  const { images: _images, ...colors } = orb
+  return colors
+}
+
+/** The images of an orb made of images: the `orb-images` attribute (JSON) wins over the theme's. Null without `idle`. */
+export function orbImages(attr: string | null, orb: Theme['orb']): OrbImages | null {
+  let v: unknown = orb?.images
+  if (attr) {
+    try {
+      v = JSON.parse(attr)
+    } catch {
+      v = null
+    }
+  }
+  return v && typeof v === 'object' && typeof (v as OrbImages).idle === 'string' ? (v as OrbImages) : null
+}
+
+/** The image for a state (idle when the state has none). */
+export function orbImageFor(images: OrbImages, state: OrbState): string {
+  const own = state === 'idle' ? undefined : images[state]
+  return typeof own === 'string' && own ? own : images.idle
+}
+
+/** The one-shot image of a change of state, if the images have one. */
+export function orbTransition(images: OrbImages, from: OrbState, to: OrbState): { src: string; ms: number } | null {
+  const t = images.transitions?.[`${from}>${to}`] ?? images.transitions?.[`*>${to}`]
+  return t && typeof t.src === 'string' && t.ms > 0 ? t : null
 }
 
 /** A preset by name, or the theme itself. */

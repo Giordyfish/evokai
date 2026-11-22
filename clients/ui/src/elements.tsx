@@ -13,11 +13,11 @@ import { Panel, useController } from './panel'
 import { VoiceStage } from './stage'
 import { baseCss } from './styles'
 import { stringsFor, type Strings } from './strings'
-import { resolveTheme, themeVars, type Theme } from './theme'
+import { orbColors, orbImages, resolveTheme, themeVars, type Theme } from './theme'
 import { ChartView, DiagramView } from './visuals'
 
 const CONFIG = ['base-url', 'token-url', 'conversations-url', 'locale', 'storage-key', 'page-context', 'page-selector'] as const
-const LOOK = ['theme', 'title', 'app-name', 'voice', 'scheme', 'position', 'shortcut', 'open', 'unstyled'] as const
+const LOOK = ['theme', 'title', 'app-name', 'voice', 'scheme', 'position', 'shortcut', 'open', 'unstyled', 'orb-images'] as const
 
 // Outside a browser (server rendering) the module still loads; the elements are only defined in a browser.
 const HTMLBase: typeof HTMLElement = typeof HTMLElement === 'undefined' ? (Object as unknown as typeof HTMLElement) : HTMLElement
@@ -175,6 +175,8 @@ abstract class EvokaiBase extends HTMLBase {
     const previous = this.state_
     this.state_ = next
     this.setAttribute('data-state', next)
+    // An orb made of images follows the state.
+    this.update()
     this.dispatchEvent(new CustomEvent('statechange', { detail: { state: next, previous }, bubbles: true, composed: true }))
   }
 
@@ -277,6 +279,11 @@ export class EvokaiChatElement extends EvokaiBase {
     if (this.getAttribute('data-view') !== view) this.setAttribute('data-view', view)
   }
 
+  /** Where the orb (or what stands in for it) is: `data-orb` = `launcher`, `head`, `center` or `flying`. */
+  private onOrb = (at: string) => {
+    if (this.getAttribute('data-orb') !== at) this.setAttribute('data-orb', at)
+  }
+
   get isOpen(): boolean {
     return this.hasAttribute('open')
   }
@@ -325,10 +332,13 @@ export class EvokaiChatElement extends EvokaiBase {
         onOpen={(o) => (o ? this.open() : this.close())}
         voice={this.getAttribute('voice') !== 'off'}
         logo={theme.logo}
-        orb={theme.orb}
+        orb={orbColors(theme.orb)}
+        images={orbImages(this.getAttribute('orb-images'), theme.orb)}
+        state={this.chatState}
         keyTarget={typeof window === 'undefined' ? null : window}
         onNavigate={(p) => this.navigate(p)}
         onView={this.onView}
+        onOrb={this.onOrb}
       />
     )
   }
@@ -389,7 +399,7 @@ export class EvokaiVoiceElement extends EvokaiBase {
   protected view(theme: Theme): VNode | null {
     const c = this.controller
     if (!c || !this.hasAttribute('open')) return null
-    return <Standalone c={c} orb={theme.orb} onEnd={() => void this.stop()} />
+    return <Standalone c={c} orb={orbColors(theme.orb)} onEnd={() => void this.stop()} />
   }
 }
 

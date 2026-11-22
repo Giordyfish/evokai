@@ -21,7 +21,7 @@ something opens the orb moves first and the panel's box opens around it once it 
 box closes first and the orb travels after. Turning voice on or off inside the open panel flies the orb between the
 header and the middle while the chat and voice layers crossfade.
 
-- **closed**: the launcher orb, bottom right.
+- **closed**: the launcher orb, bottom right (bottom left with `position="bottom-left"`).
 - **chat**: the panel; the launcher is hidden while it is open, so on a desktop the panel reaches the bottom margin.
   On a phone the panel is full screen.
 - **voice**: voice mode inside the panel, the page behind still visible and usable: the orb (the user's voice swells
@@ -35,7 +35,58 @@ header and the middle while the chat and voice layers crossfade.
 
 Closing the panel from voice mode ends voice; closing it any other way while voice is on (`close()`, Ctrl/⌘+J, the
 React `open` prop) minimizes it, and `open()` restores it. The view is on the host as `data-view` (`closed`, `chat`,
-`voice`, `minimized`). With `prefers-reduced-motion` nothing flies: every change is instant.
+`voice`, `minimized`), and where the orb is as `data-orb` (`launcher`, `head`, `center`, `flying`). With
+`prefers-reduced-motion` nothing flies: every change is instant.
+
+With `position="bottom-left"` everything mirrors: the launcher and the panel sit on the left, the minimized bubble
+opens to the right of the launcher and the hover actions rise above it.
+
+### Your own orb
+
+The orb can be replaced, and whatever replaces it lives exactly as the orb does: it rests in the launcher, the
+header and the middle of voice mode, takes the same flight between them (transform only, the slight arc, the box
+opening around it once it has landed and closing before it leaves), speaks from the launcher while voice is
+minimized with the bubble beside it and the actions above it, and stands still with reduced motion. There is still
+one of it on screen: it is never copied, only moved. In order of precedence:
+
+1. **An element of yours**: one child with `slot="orb"`. It is laid out in a square box of 168 CSS pixels (the
+   orb's largest size, in the middle of voice mode) and scaled to each resting place, so draw it at that size. The
+   component draws nothing on it (no plasma, no ring, no swell) and never re-creates it: follow the host's
+   `data-state`, `data-view` and `data-orb` (or the `statechange` event, and `controller.voice.signals` for the
+   voice's envelope) to animate it. It receives no pointer events: a click on it is a click on the launcher.
+2. **Images per state**: `theme.orb.images`, or the `orb-images` attribute (JSON, it wins over the theme). One image
+   per chat state (`idle`, `listening`, `thinking`, `tool`, `confirm`, `speaking`, `done`), still or animated (GIF,
+   WebP, APNG); a state without one shows `idle`. With reduced motion `still` is shown for every state, or without
+   it the first frame of the state's image. `transitions` plays a one-shot image for `ms` milliseconds when the
+   state changes, by pair (`"confirm>tool"`) or from any state (`"*>done"`).
+3. The built-in orb.
+
+A mascot from images only, no code:
+
+```html
+<evokai-chat base-url="/agent" token-url="/api/agent/token" title="Ada" position="bottom-left" orb-images='{
+  "idle": "/mascot/idle.webp",
+  "listening": "/mascot/listening.webp",
+  "thinking": "/mascot/thinking.webp",
+  "tool": "/mascot/working.webp",
+  "confirm": "/mascot/asking.webp",
+  "speaking": "/mascot/talking.webp",
+  "still": "/mascot/still.png",
+  "transitions": { "*>done": { "src": "/mascot/happy.webp", "ms": 2600 } }
+}'></evokai-chat>
+```
+
+Draw the images square, with the figure filling the frame: they are shown at 168 pixels in voice mode and scaled
+down to the launcher and the header (resize those places with a skin, for example
+`.oslot.launch{min-width:72px;min-height:72px}`). An element of your own:
+
+```ts
+const figure = document.createElement('div')
+figure.slot = 'orb'
+figure.append(myCanvas)                      // drawn at 168 x 168
+chat.append(figure)
+chat.addEventListener('statechange', (e) => figure.dataset.state = e.detail.state)
+```
 
 ## Install
 
@@ -103,7 +154,8 @@ import { EvokaiChat } from '@evokai/evokai-ui/react'
 | `theme` | `evokai` | A preset (`evokai`) or, as a property, a `Theme` object |
 | `unstyled` | | Drop the default look; only the tokens and a reset remain (see [Skins](#skins)) |
 | `scheme` | system | `light` or `dark` |
-| `position` | `bottom-right` | `bottom-left` moves the launcher and the panel |
+| `position` | `bottom-right` | `bottom-left` moves the launcher and the panel, and mirrors the bubble |
+| `orb-images` | | Images per chat state in place of the orb (JSON, see [Your own orb](#your-own-orb)) |
 | `voice` | on | `off` hides voice mode |
 | `shortcut` | `j` | Ctrl/⌘ + this key toggles the panel; `none` |
 | `storage-key` | `evokai` | Remembers the open conversation (and the «Interrupt by speaking» choice) in this browser; empty: nothing |
@@ -219,14 +271,16 @@ questions, confirmations, usage, history, dictation, voice) and redraw the compo
 - **Unstyled.** With the `unstyled` attribute (React `unstyled`) the default look is dropped: only the tokens, a reset
   and the behaviour remain, and the skin draws everything.
 - **State on the host.** `data-phase` (`idle`, `listening`, `thinking`, `speaking`, `interrupted`), `data-busy`,
-  `data-voice`, `data-dictating` and `data-view` (`closed`, `chat`, `voice`, `minimized`) are kept on the element: `evokai-chat[data-phase=speaking]::part(title)`, or
+  `data-voice`, `data-dictating`, `data-view` (`closed`, `chat`, `voice`, `minimized`) and `data-orb` (`launcher`,
+  `head`, `center`, `flying`) are kept on the element: `evokai-chat[data-phase=speaking]::part(title)`, or
   `:host([data-busy]) ...` in a skin.
 - **The conversation's state, for slotted content.** `data-state` on the host says in one word what the conversation is
   doing: `idle`, `listening` (voice mode listens, or the person dictates), `thinking`, `tool` (a tool runs), `confirm`
   (a change waits for the person's answer), `speaking` or `done` (the turn ended). Each change also fires a
   `statechange` event (`detail: { state, previous }`), so a figure of your own in a slot can follow the conversation;
   `chatState` and `fromEvent` (exported) compute it from a controller and its events.
-- **Slots.** Children of the element with `slot="launcher"` (the launcher's content), `slot="avatar"` (the header's
+- **Slots.** A child with `slot="orb"` replaces the travelling orb everywhere (see [Your own orb](#your-own-orb)).
+  Children with `slot="launcher"` (the launcher's content), `slot="avatar"` (the header's
   orb or logo), `slot="empty"` (above the starter questions) or `slot="stage-orb"` (the sphere of voice mode) replace
   or add to those places (where a slot is filled, the travelling orb hides while it rests there); in React pass them as children. The element's `controller` gives your own pieces the state
   and the voice signals.
@@ -235,7 +289,8 @@ questions, confirmations, usage, history, dictation, voice) and redraw the compo
   `thumbDown`, `more`, `back`, `memory`, `edit`, `trash`, `keyboard`, `minimize` and `restore` (one family: an arrow
   into the orb's corner and out of it), `chart` (the bubble's chart chip).
 
-Parts: `root`, `dock` (the launcher with the bubble and its buttons), `launcher`, `orb` (the travelling orb),
+Parts: `root`, `dock` (the launcher with the bubble and its buttons), `launcher`, `orb` (the travelling orb, with
+`data-kind` = `orb`, `element` or `images`), `orb-image` (the image of an orb made of images, with `data-state`),
 `orb-slot` (its three resting places, with `data-rest` and, where it rests, `data-here`), `panel` (with `data-box`
 and `data-layer`), `aurora`, `header`, `avatar` (a logo), `title`, `tagline`, `usage`, `usage-tip`,
 `header-buttons`, `header-button` (with `menu-button`, `history-button`, `new-button`, `minimize-button`,
@@ -309,6 +364,6 @@ EVOKAI_URL=http://localhost:8787/agent EVOKAI_SERVER_KEY=evk_srv_... EVOKAI_AGEN
 VITE_EVOKAI_URL=http://localhost:8787/agent npm run demo      # http://localhost:5174 (add it to the allowed origins)
 ```
 
-**Size budget** (gzip, checked by `npm run build`): the components with Preact 47 KB (today about 46.5 KB); the
+**Size budget** (gzip, checked by `npm run build`): the components with Preact 47.5 KB (today about 47.1 KB); the
 headless client is a peer dependency (its browser entry about 31 KB, budget 60 KB). The in-browser neural voice and its
 runtime load on demand and are never part of these.
