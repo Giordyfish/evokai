@@ -94,6 +94,7 @@ nav:
       - Workflows: workflows.md
       - Code execution: code.md
       - Evals: evals.md
+      - Model suitability: models.md
       - Cost governance: costs.md
       - Operate from an AI agent: admin-mcp.md
       - The console assistant: assistant.md

@@ -2548,6 +2548,22 @@
         "title": "InputSettings",
         "type": "object"
       },
+      "Inspect": {
+        "description": "Why the owner opens another person's conversation (kept in the audit log, shown to them).",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 20,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "Inspect",
+        "type": "object"
+      },
       "KeyRequest": {
         "description": "A new key.",
         "properties": {
@@ -3151,6 +3167,21 @@
           }
         },
         "title": "NoteBody",
+        "type": "object"
+      },
+      "NoticeAccept": {
+        "description": "The version of the notice the person read.",
+        "properties": {
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "NoticeAccept",
         "type": "object"
       },
       "OAuthAppIn": {
@@ -5372,7 +5403,7 @@
         "type": "object"
       },
       "Unlock": {
-        "description": "The application's slug, typed by the person who unlocks it.",
+        "description": "The application's slug, typed by the person who unlocks or resets it.",
         "properties": {
           "confirm": {
             "maxLength": 60,
@@ -6366,6 +6397,63 @@
         ]
       }
     },
+    "/agent/v1/admin/agents/{agent}/suitability": {
+      "get": {
+        "description": "How well a model suits an agent, estimated from sourced facts (``evokai.llm.suitability``).\n\nThe agent's complexity (tier and factors) and the model's estimate: recommended, not\nrecommended or to verify, with its reasons. For the built-in assistant a measured model shows\nits measurement instead (``basis: measured``). Never an amount.\n\nReturns:\n    complexity and estimate.\n\nRaises:\n    NotFound: No such agent.",
+        "operationId": "agent_suitability_agent_v1_admin_agents__agent__suitability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9_.:/@-]+$",
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Agent Suitability Agent V1 Admin Agents  Agent  Suitability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Suitability",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/agent/v1/admin/agents/{agent}/switch-model": {
       "post": {
         "description": "Save a new version of the agent with another primary model.\n\nIt is saved like any version: allow-lists, residency, grants, evals, red team and its gate.\n\nReturns:\n    What saving the agent returns (version, created, published...).\n\nRaises:\n    NotFound: Unknown agent.",
@@ -6733,7 +6821,7 @@
         ]
       },
       "patch": {
-        "description": "Change caps, origins, models, storage mode or the default voice engine (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: The application is gone.",
+        "description": "Change caps, origins, models, storage mode or the default voice engine (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: The application is gone.\n    BadRequest: A system application kept longer than 30 days (400 ``system_ttl``).",
         "operationId": "patch_application_agent_v1_admin_application_patch",
         "requestBody": {
           "content": {
@@ -6779,17 +6867,59 @@
     },
     "/agent/v1/admin/application/reset": {
       "post": {
-        "description": "Apply a system application's shipped definition again, and lock it (owner).\n\nReturns:\n    ok.\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
+        "description": "Delete what the reset preview lists and apply the shipped definition again, locked (owner).\n\nReturns:\n    ok and deleted (how many items).\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).\n    Conflict: A system application this version of Evokai does not ship.",
         "operationId": "reset_application_agent_v1_admin_application_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Unlock"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
+                  "additionalProperties": true,
                   "title": "Response Reset Application Agent V1 Admin Application Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Application",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/application/reset/preview": {
+      "get": {
+        "description": "Everything a reset of the system application deletes or restores (owner).\n\nEach deleted item carries its definition without secrets (``item``), for the owner to keep\nbefore resetting.\n\nReturns:\n    slug and items (kind, name, action: ``delete`` or ``restore``, item).\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
+        "operationId": "reset_preview_agent_v1_admin_application_reset_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Preview Agent V1 Admin Application Reset Preview Get",
                   "type": "object"
                 }
               }
@@ -6797,7 +6927,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Reset Application",
+        "summary": "Reset Preview",
         "tags": [
           "admin"
         ]
@@ -6978,6 +7108,61 @@
           }
         },
         "summary": "Activate Assistant",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect": {
+      "post": {
+        "description": "Read another person's conversation with the assistant (owner of its application).\n\nRead only. The reason (20 to 500 characters) is written to the audit log with who inspected and\nthe author's keyed subject, and the author's console lists it (\"viewed by\").\n\nReturns:\n    The conversation, as the conversation detail returns it.\n\nRaises:\n    NotFound: The assistant is off, or no such conversation.",
+        "operationId": "inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Inspect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Conversation Agent V1 Admin Assistant Conversations  Conversation Id  Inspect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Conversation",
         "tags": [
           "admin"
         ]
@@ -8232,7 +8417,7 @@
     },
     "/agent/v1/admin/conversations/{conversation_id}": {
       "get": {
-        "description": "One conversation with its messages, turns, their traces and the reviewers' notes.\n\nReturns:\n    The conversation: messages (with their turn), turns, traces (summaries by turn) and\n    notes.\n\nRaises:\n    NotFound: Unknown, or the application keeps conversations itself.",
+        "description": "One conversation with its messages, turns, their traces and the reviewers' notes.\n\nOn a system application only the caller's own conversation opens; an owner opens another\nperson's through an inspection (403 ``inspection_required``).\n\nReturns:\n    The conversation: messages (with their turn), turns, traces (summaries by turn) and\n    notes.\n\nRaises:\n    NotFound: Unknown, or the application keeps conversations itself.\n    Forbidden: Another person's conversation on a system application, for an owner.",
         "operationId": "conversation_agent_v1_admin_conversations__conversation_id__get",
         "parameters": [
           {
@@ -12151,6 +12336,74 @@
         ]
       }
     },
+    "/agent/v1/console/assistant/privacy": {
+      "get": {
+        "description": "What the console tells a person about the assistant, for the selected application.\n\nThe first-use notice (its version and whether this login accepted it), how long conversations\nare kept, the voice in use (``online`` only when the selected application's and the\nassistant's data protection allow processors outside the EU, else ``device``) and every\ninspection of this person's conversations: who, when and why.\n\nReturns:\n    noticeVersion, accepted, acceptedAt, ttlDays, voice, inspections, unseen.\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login.\n    NotFound: The assistant is off.",
+        "operationId": "assistant_privacy_agent_v1_console_assistant_privacy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant Privacy Agent V1 Console Assistant Privacy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Privacy",
+        "tags": [
+          "console"
+        ]
+      },
+      "post": {
+        "description": "Record that this login read the current first-use notice (and the inspections listed).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: Not the current version of the notice (400 ``notice_version``).\n    NotFound: The assistant is off.\n    Forbidden: A key or the assistant itself instead of a console login.",
+        "operationId": "accept_notice_agent_v1_console_assistant_privacy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeAccept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Accept Notice Agent V1 Console Assistant Privacy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Notice",
+        "tags": [
+          "console"
+        ]
+      }
+    },
     "/agent/v1/console/assistant/session": {
       "post": {
         "description": "A session token for the console assistant, acting on the selected application.\n\nIt needs a console login (the cookie, its header and the application it acts on): its\nforwarded credential is a delegation token for that application with the login's role, which\nthe admin MCP server checks against the live login on every call. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.\n    Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).",
@@ -12842,7 +13095,7 @@
     },
     "/agent/v1/conversations": {
       "get": {
-        "description": "A subject's recent conversations.\n\nReturns:\n    items.",
+        "description": "A subject's recent conversations (on a system application, only the caller's own).\n\nReturns:\n    items.",
         "operationId": "conversations_agent_v1_conversations_get",
         "parameters": [
           {
@@ -12901,7 +13154,7 @@
     },
     "/agent/v1/conversations/{conversation_id}": {
       "delete": {
-        "description": "Delete a subject's conversation.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Not a conversation of this subject.",
+        "description": "Delete a subject's conversation.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Not a conversation of this subject.\n    Conflict: A system application's conversation: it is kept until its time to live ends\n        (409 ``retention``).",
         "operationId": "delete_conversation_agent_v1_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -13344,7 +13597,7 @@
     },
     "/agent/v1/privacy/erase": {
       "post": {
-        "description": "Erase a subject (right to be forgotten).\n\nConversations, messages, replay events, turns, pending confirmations, memories, bug reports,\nworkflow runs, OAuth connections (revoked at the provider when it can be) and channel threads\nare deleted; usage rows and security events are de-identified, so the\napplication's caps keep counting; every session token of the subject stops working. Idempotent.\n\nReturns:\n    ok and how many rows of each kind were deleted or de-identified.",
+        "description": "Erase a subject (right to be forgotten).\n\nConversations, messages, replay events, turns, pending confirmations, memories, bug reports,\nworkflow runs, OAuth connections (revoked at the provider when it can be) and channel threads\nare deleted; usage rows and security events are de-identified, so the\napplication's caps keep counting; every session token of the subject stops working. Idempotent.\n\nOn a system application only an owner erases, and never their own conversations: the\nconsole assistant's conversations stay until their time to live ends (403 ``role``, 409\n``retention``).\n\nReturns:\n    ok and how many rows of each kind were deleted or de-identified.\n\nRaises:\n    Forbidden: Not an owner, on a system application.\n    Conflict: Your own data on a system application.",
         "operationId": "erase_agent_v1_privacy_erase_post",
         "requestBody": {
           "content": {
@@ -13388,7 +13641,7 @@
     },
     "/agent/v1/privacy/export": {
       "post": {
-        "description": "Everything Evokai keeps about a subject, as JSON (right of access and portability).\n\nConversations with messages and turns, memories, usage, security events (masked), bug reports\nand consents. Amounts only with a server or admin key.\n\nReturns:\n    The export.",
+        "description": "Everything Evokai keeps about a subject, as JSON (right of access and portability).\n\nConversations with messages and turns, memories, usage, security events (masked), bug reports\nand consents. Amounts only with a server or admin key.\n\nOn a system application a person exports only their own data (403 ``own_data``).\n\nReturns:\n    The export.\n\nRaises:\n    Forbidden: Another person's data on a system application.",
         "operationId": "export_agent_v1_privacy_export_post",
         "requestBody": {
           "content": {
