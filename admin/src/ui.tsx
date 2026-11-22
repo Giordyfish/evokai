@@ -18,6 +18,7 @@ export const ICONS = {
   perms: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="14" height="5" rx="2.5"/><circle cx="14.5" cy="6.5" r="1.2" fill="currentColor"/><rect x="3" y="11" width="14" height="5" rx="2.5"/><circle cx="5.5" cy="13.5" r="1.2"/></svg>',
   mcp: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="M7 9l6-3M7 11l6 3"/></svg>',
   skills: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3.5h8.5L16 7v9.5H4z"/><path d="M12.5 3.5V7H16M7 11h6M7 14h4"/></svg>',
+  prompts: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3.5" width="14" height="13" rx="2"/><path d="M6.5 8l2.5 2-2.5 2M10.5 12.5h3"/></svg>',
   knowledge: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 4.5c2.2-.9 4.4-.9 6.5.6v11c-2.1-1.5-4.3-1.5-6.5-.6z"/><path d="M16.5 4.5c-2.2-.9-4.4-.9-6.5.6v11c2.1-1.5 4.3-1.5 6.5-.6z"/></svg>',
   keys: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="12" r="3.5"/><path d="M9.5 9.5L16 3M13.5 5.5l2 2"/></svg>',
   limits: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14a7 7 0 1 1 14 0"/><path d="M10 14l3.5-4"/></svg>',

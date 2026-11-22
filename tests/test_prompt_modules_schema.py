@@ -145,3 +145,38 @@ async def test_put_prompt_with_bad_template_is_400(env: Env) -> None:
     assert item["parameters"]["properties"]["name"]["maxLength"] == 40
     assert item["parameters"]["additionalProperties"] is False
     assert item["text"] == "Hi {{name}}"
+
+
+async def test_prompt_preview_renders(env: Env) -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "maxLength": 40},
+            "shelf": {"type": "string", "enum": ["a", "b"], "default": "a"},
+        },
+    }
+    body = {
+        "text": "Hi {{name}} at {{app}}: {{lookup data shelf}}",
+        "parameters": schema,
+        "data": {"a": "poetry", "b": "crime"},
+    }
+    r = await env.client.put(f"{PROMPTS}/greet", json=body, headers=_adm(env))
+    assert r.status_code == 200, r.text
+    r = await env.client.post(
+        f"{PROMPTS}/greet/preview", json={"params": {"name": "R&D <team>"}}, headers=_adm(env)
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["text"] == "Hi R&D <team> at Test App: poetry"
+    r = await env.client.post(
+        f"{PROMPTS}/greet/preview", json={"params": {"shelf": "z"}}, headers=_adm(env)
+    )
+    assert r.status_code == 400 and r.json()["error"] == "module_params", r.text
+    # A draft is checked like a save, then rendered.
+    draft = {**body, "text": "Bye {{nmae}}", "params": {}}
+    r = await env.client.post(f"{PROMPTS}/greet/preview", json=draft, headers=_adm(env))
+    assert r.status_code == 400 and r.json()["error"] == "module_template", r.text
+    draft = {**body, "text": "Bye {{name}}", "params": {"name": "Ada"}}
+    r = await env.client.post(f"{PROMPTS}/greet/preview", json=draft, headers=_adm(env))
+    assert r.json()["text"] == "Bye Ada"
+    r = await env.client.post(f"{PROMPTS}/missing/preview", json={}, headers=_adm(env))
+    assert r.status_code == 404

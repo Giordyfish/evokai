@@ -19,7 +19,10 @@ from evokai.agents.modules import (
     check_data,
     check_module_template,
     check_parameters_schema,
+    render_template,
+    validate_params,
 )
+from evokai.agents.prompts import long_date
 from evokai.api.deps import admin_app, services
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
@@ -34,6 +37,7 @@ from evokai.core.caps import (
 )
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.security import generate_key
+from evokai.core.util import utcnow
 from evokai.evals.redteam.service import gate_of
 from evokai.grants import explicit_client_tools, grants_of
 from evokai.i18n import locale_of, pack
@@ -1027,6 +1031,52 @@ async def put_prompt(
         after={"text": body.text, "parameters": body.parameters},
     )
     return {"version": version}
+
+
+class PreviewBody(BaseModel):
+    """Sample values for a prompt preview, and optionally an unsaved draft to preview instead."""
+
+    params: dict[str, Any] = Field(default_factory=dict)
+    version: int | None = Field(default=None, ge=1)
+    """A saved version (default: the latest), when no draft is sent."""
+    text: str | None = Field(default=None, min_length=1, max_length=60_000)
+    """A draft text: checked like a save (with ``parameters`` and ``data``) and rendered."""
+    parameters: dict[str, Any] | None = None
+    data: dict[str, str] | None = None
+
+
+@router.post("/prompts/{name}/preview")
+async def preview_prompt(name: str, body: PreviewBody, svc: Svc, a: Admin) -> dict[str, str]:
+    """Render a prompt (a saved version or a draft) with sample parameter values.
+
+    The values get the parameters' defaults and are checked against the schema; required ones may
+    be left out. ``date`` and ``app`` are today's date and the application's name.
+
+    Returns:
+        text: the rendered prompt.
+
+    Raises:
+        NotFound: No such prompt (and no draft) or application. A draft or values that do not
+            pass the module checks are refused as when saving (400 ``module_*``).
+    """
+    app = await svc.store.applications.get(a.application_id)
+    if app is None:
+        raise NotFound()
+    if body.text is not None:
+        text, parameters, data = body.text, body.parameters, body.data
+        if parameters is not None:
+            check_parameters_schema(parameters)
+            check_data(data)
+            check_module_template(text, parameters, data)
+    else:
+        row = await svc.store.prompts.get(a.application_id, name, body.version)
+        if row is None:
+            raise NotFound("Unknown prompt.", code="unknown_prompt")
+        text, parameters, data = row.text, row.parameters, row.data
+    params = validate_params(parameters, body.params, partial=True) if parameters else {}
+    timezone = str((app.defaults or {}).get("timezone") or "UTC")
+    values = {"date": long_date(utcnow(), timezone), "app": app.name, "data": data or {}, **params}
+    return {"text": render_template(text, values)}
 
 
 @router.get("/prompts")

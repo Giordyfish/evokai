@@ -119,6 +119,11 @@ async def test_mint_refuses_ungranted_module(env: Env) -> None:
     assert r.status_code == 200, r.text
     r = await _mint(env, modules={"tone": {"params": {"style": "brief"}}})
     assert r.status_code == 403 and r.json()["error"] == "module_not_granted", r.text
+    view = (await env.client.get("/agent/v1/admin/grants", headers=_adm(env))).json()
+    group = next(x for x in view["groups"] if x["id"] == "modules")
+    items = {x["name"]: x for x in group["items"]}
+    assert items["tone"]["value"] is False and items["tone"]["default"] is True
+    assert items["persona"]["value"] is True and items["persona"]["usedBy"] == ["helper"]
     # Without a choice the agent's default still applies.
     assert (await _mint(env)).status_code == 200
 

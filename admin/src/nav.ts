@@ -13,6 +13,7 @@ export const TAB_ORDER: Tab[] = [
   'connections',
   'channels',
   'skills',
+  'prompts',
   'knowledge',
   'workflows',
   'approvals',

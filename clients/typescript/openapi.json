@@ -3431,6 +3431,69 @@
         "title": "Preferences",
         "type": "object"
       },
+      "PreviewBody": {
+        "description": "Sample values for a prompt preview, and optionally an unsaved draft to preview instead.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "PreviewBody",
+        "type": "object"
+      },
       "PromptBody": {
         "description": "A prompt's text; saving a different text, schema, description or data makes a new version.",
         "properties": {
@@ -9484,6 +9547,63 @@
           }
         },
         "summary": "Put Prompt",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/prompts/{name}/preview": {
+      "post": {
+        "description": "Render a prompt (a saved version or a draft) with sample parameter values.\n\nThe values get the parameters' defaults and are checked against the schema; required ones may\nbe left out. ``date`` and ``app`` are today's date and the application's name.\n\nReturns:\n    text: the rendered prompt.\n\nRaises:\n    NotFound: No such prompt (and no draft) or application. A draft or values that do not\n        pass the module checks are refused as when saving (400 ``module_*``).",
+        "operationId": "preview_prompt_agent_v1_admin_prompts__name__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Preview Prompt Agent V1 Admin Prompts  Name  Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Prompt",
         "tags": [
           "admin"
         ]

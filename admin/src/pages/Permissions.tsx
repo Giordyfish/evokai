@@ -31,6 +31,7 @@ const GROUPS: Record<string, { title: TextKey; note: TextKey }> = {
   code: { title: 'perms.g.code', note: 'perms.g.codeNote' },
   connections: { title: 'perms.g.connections', note: 'perms.g.connectionsNote' },
   capabilities: { title: 'perms.g.capabilities', note: 'perms.g.capabilitiesNote' },
+  modules: { title: 'perms.g.modules', note: 'perms.g.modulesNote' },
 }
 const CHANNEL_LABEL: Record<string, TextKey> = {
   browser: 'perms.browserSessions',
@@ -136,6 +137,8 @@ function sub(x: GrantItem, appName: string): string {
       ]
         .filter(Boolean)
         .join(', ')
+    case 'module':
+      return [t('perms.moduleSub'), x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''].filter(Boolean).join(', ')
     case 'code':
       return `${t('perms.codeSub', { region: x.region ?? '' })}${x.enabled === false ? t('perms.codeNotEnabled') : ''}${x.usedBy?.length ? `, ${t('perms.usedBy', { agents: x.usedBy.join(', ') })}` : ''}`
     default:

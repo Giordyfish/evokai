@@ -32,6 +32,7 @@ import { Traces } from './pages/Traces'
 import { Conversations } from './pages/Conversations'
 import { Setup } from './pages/Setup'
 import { Skills } from './pages/Skills'
+import { Prompts } from './pages/Prompts'
 import { Knowledge } from './pages/Knowledge'
 import { Workflows } from './pages/Workflows'
 import { Approvals } from './pages/Approvals'
@@ -64,6 +65,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
         return <Channels app={app} />
       case 'skills':
         return <Skills app={app} id={id} />
+      case 'prompts':
+        return <Prompts app={app} id={id} />
       case 'knowledge':
         return <Knowledge app={app} id={id} />
       case 'workflows':

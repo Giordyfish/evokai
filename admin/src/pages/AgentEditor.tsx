@@ -6,7 +6,7 @@
 import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
 
-import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, SkillInfo } from '@client/core/types'
+import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, ModuleRef, PromptVersion, SkillInfo } from '@client/core/types'
 import { describe, forApp } from '../api'
 import { ago, day, modelName } from '../format'
 import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
@@ -16,12 +16,14 @@ import { rulesOf, toRow, type RuleRow } from '../askRules'
 import { Btn, Field, Hero, KV, Panel, StatusTag, Switch, Tag } from '../ui'
 import { Loads } from './common'
 import { RulesEditor } from './AskRules'
+import { ParamsForm } from './ModuleParams'
 import { capDescription } from '../capabilityText'
 import { t, tn, type TextKey } from '../i18n'
 
-type Sec = 'ins' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
+type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
 const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
   ins: ['name', 'title', 'instructions', 'channels', 'a2a'],
+  mod: ['modules'],
   model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'model_settings', 'temperature', 'prompt_cache'],
   tools: ['mcp_servers', 'client_tools', 'ask_rules'],
   skills: ['skills', 'preload_skills'],
@@ -68,6 +70,7 @@ interface Data {
   skills: SkillInfo[]
   bases: KnowledgeBase[]
   keys: Map<string, string>
+  prompts: PromptVersion[]
 }
 
 export function AgentEditor({ app, name }: { app: ConsoleApplication; name: string }) {
@@ -75,15 +78,16 @@ export function AgentEditor({ app, name }: { app: ConsoleApplication; name: stri
   setTitle(isNew ? t('ag.new') : name, t('tab.agents'), app.name)
   const api = forApp(app.id)
   const load = useLoad<Data>(async () => {
-    const [versions, grants, servers, skills, keys, bases] = await Promise.all([
+    const [versions, grants, servers, skills, keys, bases, prompts] = await Promise.all([
       isNew ? Promise.resolve([] as AgentVersion[]) : api.admin.agents.versions(name),
       api.admin.grants.get(),
       api.admin.mcpServers.list(),
       api.admin.skills.list(),
       api.admin.keys.list(),
       api.admin.knowledge.list().then((l) => l.items),
+      api.admin.prompts.list(),
     ])
-    return { versions, grants, servers, skills, bases, keys: new Map(keys.map((k) => [k.id, k.prefix])) }
+    return { versions, grants, servers, skills, bases, prompts, keys: new Map(keys.map((k) => [k.id, k.prefix])) }
   }, [app.id, name])
   return (
     <Loads load={load} what={isNew ? t('what.newAgent') : name}>
@@ -128,7 +132,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
   const liveIndex = live ? data.versions.length - data.versions.indexOf(live) : 0
   const dirty = (s: Sec) => SECTION_FIELDS[s].some((k) => !same(draft[k], base[k]))
   const secs: Array<[Sec, string]> = (
-    ['ins', 'model', 'tools', 'skills', 'kb', ...(browser ? ['voice'] : []), ...(server ? ['out'] : []), ...(isNew ? [] : ['ver'])] as Sec[]
+    ['ins', 'mod', 'model', 'tools', 'skills', 'kb', ...(browser ? ['voice'] : []), ...(server ? ['out'] : []), ...(isNew ? [] : ['ver'])] as Sec[]
   ).map((k) => [k, t(`ag.sec.${k}`)])
   const unsaved = secs.filter(([k]) => dirty(k)).length
   const locked = (
@@ -225,7 +229,100 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
     set({ model: list[0] ?? '', fallbacks: list.slice(1) })
   }
 
+  // Prompt modules: the latest version of each prompt (or the version a module pins) and its parameters.
+  const promptAt = (name: string, version?: number | null): PromptVersion | undefined => {
+    const all = data.prompts.filter((x) => x.name === name)
+    return version ? all.find((x) => x.version === version) : all.reduce<PromptVersion | undefined>((m, x) => (!m || x.version > m.version ? x : m), undefined)
+  }
+  const modules: ModuleRef[] = draft.modules ?? []
+  const promptNames = [...new Set(data.prompts.map((x) => x.name))].filter((n) => !modules.some((m) => m.name === n)).sort()
+  const [adding, setAdding] = useState('')
+  const setModule = (i: number, patch: Partial<ModuleRef>) => set({ modules: modules.map((m, k) => (k === i ? { ...m, ...patch } : m)) })
+  const moveModule = (i: number, d: number) => {
+    const j = i + d
+    if (j < 0 || j >= modules.length) return
+    const next = [...modules]
+    ;[next[i], next[j]] = [next[j]!, next[i]!]
+    set({ modules: next })
+  }
+
   const panes: Record<Sec, ComponentChildren> = {
+    mod: (
+      <Panel title={t('ag.sec.mod')}>
+        <p class="hint">{t('ag.modHint')}</p>
+        {modules.length ? null : <p class="hint">{t('ag.modNone')}</p>}
+        {modules.map((m, i) => {
+          const prompt = promptAt(m.name, m.version)
+          return (
+            <div key={m.name} class="opt" style="display:block">
+              <div class="flags" style="justify-content:space-between">
+                <span>
+                  <b>
+                    <code>{m.name}</code>
+                  </b>{' '}
+                  {prompt ? <small class="hint">v{prompt.version}{prompt.description ? `, ${prompt.description}` : ''}</small> : <Tag tone="bad">{t('ag.modMissing')}</Tag>}
+                </span>
+                <span class="flags">
+                  <Switch label={t('ag.modOn')} on={m.on !== false} onChange={(v) => setModule(i, { on: v })} />
+                  <Switch label={t('ag.modSession')} on={m.session === true} onChange={(v) => setModule(i, { session: v })} />
+                  <select
+                    class="in"
+                    style="width:auto"
+                    value={m.version ? String(m.version) : ''}
+                    aria-label={t('ag.modVersion')}
+                    onChange={(e) => setModule(i, { version: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
+                  >
+                    <option value="">{t('ag.modLatest')}</option>
+                    {data.prompts
+                      .filter((x) => x.name === m.name)
+                      .map((x) => (
+                        <option key={x.version} value={x.version}>
+                          v{x.version}
+                        </option>
+                      ))}
+                  </select>
+                  <Btn sm kind="ghost" label={t('prm.up')} onClick={() => moveModule(i, -1)}>
+                    ↑
+                  </Btn>
+                  <Btn sm kind="ghost" label={t('prm.down')} onClick={() => moveModule(i, 1)}>
+                    ↓
+                  </Btn>
+                  <Btn sm kind="ghost danger" onClick={() => set({ modules: modules.filter((_, k) => k !== i) })}>
+                    {t('ag.modRemove')}
+                  </Btn>
+                </span>
+              </div>
+              {prompt?.parameters ? (
+                <ParamsForm schema={prompt.parameters} values={(m.params ?? {}) as Record<string, unknown>} onChange={(v) => setModule(i, { params: v })} idPrefix={`ag-mod-${i}`} />
+              ) : null}
+            </div>
+          )
+        })}
+        <div class="flags" style="margin-top:12px">
+          <select class="in" style="width:auto" value={adding} onChange={(e) => setAdding(e.currentTarget.value)} aria-label={t('ag.modPick')}>
+            <option value="">{t('ag.modPick')}</option>
+            {promptNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <Btn
+            sm
+            disabled={!adding}
+            onClick={() => {
+              set({ modules: [...modules, { name: adding, on: true, session: false, params: {} }] })
+              setAdding('')
+            }}
+          >
+            {t('ag.modAdd')}
+          </Btn>
+          <a class="hint" href={appHref(app.slug, 'prompts')}>
+            {t('ag.modManage')}
+          </a>
+        </div>
+      </Panel>
+    ),
     ins: (
       <Panel title={t('ag.sec.ins')}>
         <div class="grid g2" style="gap:0 14px">

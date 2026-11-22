@@ -897,7 +897,28 @@ export interface SkillDetail extends Omit<SkillInfo, 'files' | 'scripts'> {
   scripts: SkillScripts
   limits: SkillLimits
 }
-export interface PromptVersion { name: string; version: number; createdAt: string }
+/**
+ * A version of an application prompt. A prompt module (`parameters` set) has a Handlebars text checked against its
+ * parameter schema, and optionally a lookup table (`data`) its text reads with `{{lookup data <parameter>}}`.
+ */
+export interface PromptVersion {
+  name: string
+  version: number
+  text: string
+  description: string
+  /** The module's parameter schema (a restricted JSON Schema), or null for a plain prompt. */
+  parameters: Record<string, unknown> | null
+  data: Record<string, string> | null
+  createdAt: string
+}
+/** A prompt to save: a changed text, schema, description or data becomes the next version. */
+export type PromptBody = Schemas['PromptBody']
+/** Sample values for a preview, and optionally an unsaved draft (`text`, `parameters`, `data`) to render instead. */
+export type PromptPreview = Schemas['PreviewBody']
+/** A prompt module an agent may use, with its default state and parameters. */
+export type ModuleRef = Schemas['ModuleRef']
+/** A session's choice for one prompt module, at token mint (server key only). */
+export type ModuleChoice = Schemas['ModuleChoice']
 export interface BugReport {
   id: string
   subject: string
@@ -912,7 +933,7 @@ export interface BugReport {
 
 export type GrantKind =
   | 'model' | 'mcp' | 'tool' | 'skill' | 'client' | 'voice' | 'stt' | 'tts' | 'storage' | 'channel' | 'knowledge'
-  | 'workflow' | 'code' | 'connection' | 'capability'
+  | 'workflow' | 'code' | 'connection' | 'capability' | 'module'
 export type ModelGrant = 'any' | 'fallback' | 'off'
 export type GrantValue = boolean | ModelGrant
 export type ClientToolName = 'navigate' | 'chart' | 'diagram' | 'ask' | 'confirm' | 'memory'
