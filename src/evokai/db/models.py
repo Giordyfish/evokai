@@ -76,6 +76,13 @@ class Application(Base):
     audit_ttl_days: Mapped[int | None] = mapped_column(sa.Integer)
     """Audit log entries are deleted this many days after the change (None = the deployment's
     ``EVOKAI_AUDIT_TTL_DAYS``)."""
+    system: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=sa.false())
+    """Shipped with Evokai (the built-in assistant, ``evokai.assistant``)."""
+    locked: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=sa.false())
+    """A locked system application refuses every change (409 ``locked``) until an owner unlocks
+    it; shipped updates are applied only while it is locked."""
+    system_version: Mapped[str | None] = mapped_column(sa.String(64))
+    """The hash of the shipped definition a system application was last set from."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
 
 

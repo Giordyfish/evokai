@@ -1,0 +1,53 @@
+# The built-in console assistant, shipped with Evokai (evokai.assistant.bootstrap).
+#
+# Applied at start while the application is locked; an owner who unlocks it keeps their changes,
+# and a reset applies this file again. At start, the agent's model is the one an owner activated
+# (none until then), its instructions are prompt.md, the MCP server's url is EVOKAI_INTERNAL_URL
+# and the docs skill is skills/evokai-docs.
+application:
+  slug: evokai-assistant
+  name: Evokai assistant
+  storage_mode: evokai
+  conversation_ttl_days: 30
+  monthly_cap_usd: 20
+  memory:
+    mode: "off"
+  redteam:
+    gate: "off"
+    on_save: false
+  security:
+    modes:
+      input.injection: enforce
+      untrusted.spotlight: enforce
+  ask_rules: []
+mcp_servers:
+  - name: evokai-admin
+    url: "http://127.0.0.1:8787/agent/mcp/admin"
+    auth: forward_user
+    timeout_seconds: 120
+grants:
+  knowledge:
+    "*": false
+  channels:
+    server: false
+agents:
+  - name: assistant
+    title: Evokai assistant
+    model: "evokai:unset"
+    mcp_servers: [evokai-admin]
+    skills: [evokai-docs]
+    channels: [browser]
+    max_tool_calls_per_turn: 8
+    client_tools:
+      navigate:
+        enabled: true
+        description: "Take the person to a page of the Evokai console."
+        path_pattern: "^/(apps|setup|playground|usage|health|access|preferences|assistant)(/[A-Za-z0-9_.:-]+)*/?(\\?[A-Za-z0-9=&_.:-]*)?$"
+      chart: true
+      diagram: false
+      ask: true
+      memory: false
+    suggestions:
+      - "What does this application have?"
+      - "Which agents use the most of the cap?"
+      - "How do I connect an MCP server?"

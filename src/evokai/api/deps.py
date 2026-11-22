@@ -5,11 +5,11 @@ from __future__ import annotations
 from fastapi import Request
 
 from evokai.assistant import delegation
-from evokai.core.errors import AppError, Forbidden, NotFound, Unauthorized
+from evokai.core.errors import AppError, Conflict, Forbidden, NotFound, Unauthorized
 from evokai.identity import console
 from evokai.identity.auth import bearer
 from evokai.identity.models import AppPrincipal, SessionPrincipal
-from evokai.identity.roles import authorize
+from evokai.identity.roles import authorize, required, route_of
 from evokai.services import Services
 
 SESSION_REQUESTS_PER_MINUTE = 240
@@ -140,6 +140,9 @@ async def server_app(request: Request) -> AppPrincipal:
 async def admin_app(request: Request) -> AppPrincipal:
     """An application authenticated with its admin key, or a console login.
 
+    Every change on a locked system application is refused here (409 ``locked``), for every admin
+    route, including routes added later; only ``LOCK_EXEMPT`` routes pass.
+
     Returns:
         The application principal.
 
@@ -148,12 +151,43 @@ async def admin_app(request: Request) -> AppPrincipal:
     """
     token = bearer(request.headers.get("authorization"))
     if not token:
-        if (c := await _console(request)) is not None:
-            return c
-        raise Unauthorized()
-    if delegation.is_delegation(token):
-        return await _delegated(request, token)
-    return await services(request).auth.application(token, admin=True)
+        if (c := await _console(request)) is None:
+            raise Unauthorized()
+        who = c
+    elif delegation.is_delegation(token):
+        who = await _delegated(request, token)
+    else:
+        who = await services(request).auth.application(token, admin=True)
+    await _unlocked(request, who)
+    return who
+
+
+LOCK_EXEMPT: frozenset[tuple[str, str]] = frozenset({
+    ("POST", "/v1/admin/application/unlock"),
+    ("POST", "/v1/admin/application/reset"),
+    ("POST", "/v1/admin/assistant/activate"),
+    ("POST", "/v1/admin/assistant/try"),
+})
+"""Changes a locked system application accepts: unlocking and resetting it, activating the
+assistant's model and trying a model on it."""
+
+
+async def _unlocked(request: Request, who: AppPrincipal) -> None:
+    """Refuse a change on a locked system application (409 ``locked``).
+
+    Raises:
+        Conflict: The application is a locked system application and the route changes something.
+    """
+    svc = services(request)
+    method, path = request.method.upper(), route_of(request, svc.settings.base_path)
+    if required(method, path) == "viewer" or (method, path) in LOCK_EXEMPT:
+        return
+    app = await svc.store.applications.get(who.application_id)
+    if app is not None and app.system and app.locked:
+        raise Conflict(
+            "This system application is locked: an owner unlocks it in the console first.",
+            code="locked",
+        )
 
 
 async def operator(request: Request) -> None:

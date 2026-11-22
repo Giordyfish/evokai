@@ -22,6 +22,7 @@ from evokai.api import (
     admin_routes,
     agui_routes,
     ask_routes,
+    assistant_routes,
     capability_routes,
     channel_routes,
     compliance_routes,
@@ -47,6 +48,7 @@ from evokai.api import (
 )
 from evokai.api.console_static import mount_console
 from evokai.api.hardening import Hardening, origin_cache
+from evokai.assistant.bootstrap import ensure_assistant
 from evokai.core.config import Settings, get_settings
 from evokai.core.errors import AppError
 from evokai.core.util import utcnow
@@ -157,6 +159,11 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         if settings.bootstrap_apps:
             ids = await bootstrap_apps(svc.store, settings.bootstrap_apps)
             logger.info("bootstrapped_from_env", extra={"applications": len(ids)})
+        # The built-in console assistant: a locked system application, inactive until activated.
+        try:
+            await ensure_assistant(svc.store, svc.keyring, settings)
+        except Exception as e:
+            logger.warning("assistant_not_ensured", extra={"error_type": type(e).__name__})
         # Every application's own identifiers are masked in logs and traces from the start.
         with contextlib.suppress(Exception):
             for application in await svc.store.applications.all():
@@ -279,6 +286,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(a2a_routes.router)
     root.include_router(server_routes.router)
     root.include_router(admin_routes.router)
+    root.include_router(assistant_routes.router)
     root.include_router(grants_routes.router)
     root.include_router(ask_routes.router)
     root.include_router(capability_routes.router)

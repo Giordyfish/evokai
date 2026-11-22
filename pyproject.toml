@@ -112,6 +112,8 @@ markers = [
 line-length = 100
 target-version = "py312"
 preview = true
+# The assistant's docs skill is a copy of docs/ (scripts/assistant_docs.py): never reformatted.
+extend-exclude = ["src/evokai/assistant/skills"]
 lint.select = [
   "E",    # pycodestyle errors
   "F",    # pyflakes
