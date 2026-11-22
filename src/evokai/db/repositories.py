@@ -1722,6 +1722,17 @@ class PromptRepository(_Repo):
             q = sa.select(p).where(p.application_id == application_id).order_by(p.name, p.version)
             return list((await s.execute(q)).scalars().all())
 
+    async def delete(self, application_id: str, name: str) -> int:
+        """Delete a prompt with every version (a system application's reset).
+
+        Returns:
+            How many versions were deleted.
+        """
+        async with self.db.session() as s:
+            p = m.PromptRecord
+            q = sa.delete(p).where(p.application_id == application_id, p.name == name)
+            return _rowcount(await s.execute(q))
+
 
 class VoiceRepository(_Repo):
     """The deployment's text-to-speech voice catalog."""

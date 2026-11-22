@@ -16,7 +16,7 @@ from evokai import audit
 from evokai.api.console_routes import conversation_subject, conversation_view
 from evokai.api.deps import admin_app, console_login, services
 from evokai.api.server_routes import TokenRequest, mint
-from evokai.assistant import activation, privacy
+from evokai.assistant import activation, privacy, reset
 from evokai.assistant import bootstrap as shipped
 from evokai.assistant.delegation import mint_delegation
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
@@ -31,7 +31,7 @@ Admin = Annotated[AppPrincipal, Depends(admin_app)]
 
 
 class Unlock(BaseModel):
-    """The application's slug, typed by the person who unlocks it."""
+    """The application's slug, typed by the person who unlocks or resets it."""
 
     confirm: str = Field(max_length=60)
 
@@ -81,12 +81,15 @@ async def unlock_application(body: Unlock, svc: Svc, a: Admin, request: Request)
     return {"ok": True}
 
 
-@router.post("/application/reset")
-async def reset_application(svc: Svc, a: Admin, request: Request) -> dict[str, bool]:
-    """Apply a system application's shipped definition again, and lock it (owner).
+@router.get("/application/reset/preview")
+async def reset_preview(svc: Svc, a: Admin) -> dict[str, Any]:
+    """Everything a reset of the system application deletes or restores (owner).
+
+    Each deleted item carries its definition without secrets (``item``), for the owner to keep
+    before resetting.
 
     Returns:
-        ok.
+        slug and items (kind, name, action: ``delete`` or ``restore``, item).
 
     Raises:
         Conflict: A system application this version of Evokai does not ship.
@@ -94,14 +97,34 @@ async def reset_application(svc: Svc, a: Admin, request: Request) -> dict[str, b
     app = await _system_app(svc, a)
     if app.slug != shipped.SLUG:
         raise Conflict("This version of Evokai does not ship this application.", code="not_system")
+    return {"slug": app.slug, "items": await reset.plan(svc, app.id)}
+
+
+@router.post("/application/reset")
+async def reset_application(body: Unlock, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
+    """Delete what the reset preview lists and apply the shipped definition again, locked (owner).
+
+    Returns:
+        ok and deleted (how many items).
+
+    Raises:
+        BadRequest: The typed slug is not the application's (400 ``confirm``).
+        Conflict: A system application this version of Evokai does not ship.
+    """
+    app = await _system_app(svc, a)
+    if app.slug != shipped.SLUG:
+        raise Conflict("This version of Evokai does not ship this application.", code="not_system")
+    if body.confirm != app.slug:
+        raise BadRequest("Type the application's slug to confirm.", code="confirm")
     before = await svc.store.agents.active_all(app.id)
     model = (app.defaults or {}).get(shipped.MODEL_KEY)
-    await shipped.apply_shipped(svc.store, svc.keyring, svc.settings, model=model)
+    items = await reset.reset(svc, app.id, model)
     for agent in before:
         svc.agents.invalidate(app.id, agent.name)
     svc.mcp.forget(app.id)
-    await audit.record(request, a, "application.reset", target=app.slug)
-    return {"ok": True}
+    deleted = [f"{i['kind']}:{i['name']}" for i in items if i["action"] == "delete"]
+    await audit.record(request, a, "application.reset", target=app.slug, after={"deleted": deleted})
+    return {"ok": True, "deleted": len(deleted)}
 
 
 # ── the assistant: state, activation and tries ──────────────────────────────────────────────────
