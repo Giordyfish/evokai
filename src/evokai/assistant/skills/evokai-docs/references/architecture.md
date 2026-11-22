@@ -23,8 +23,8 @@ One service, one event vocabulary. Text and voice are two ways into the same con
   nothing reached the user yet); an MCP server that is down drops its tools for that turn; a
   failing speech provider turns the session to text; a budget that runs out ends the turn with a
   clear message.
-- **Avatar-ready, not avatar-bound.** Speech is emitted as ordered `say` segments any renderer
-  (browser TTS, server TTS, subtitles, a future avatar) can follow. A session declares its actor
+- **Renderer-agnostic speech.** Speech is emitted as ordered `say` segments that any renderer
+  (browser TTS, server TTS, subtitles, a visual) can follow. A session declares its actor
   (`agent` today).
 
 ## Hard rule: no conversations at model providers
@@ -106,6 +106,10 @@ admin console ── OIDC (code + PKCE) ──▶ /v1/console/sso/* ──▶ th
   optional per-subject caps, optional model and voice, **voice engine**, and whether a credential
   was forwarded. The forwarded credential itself is stored encrypted (Fernet) for the token's life
   and purged after it.
+- The mint may also choose the session's **prompt modules** (`modules`: which of the agent's
+  modules are on, with which parameters) and its **locale** (a BCP 47 tag with a shipped language
+  pack). They are checked (free-text parameters by the guard) and stored on the conversation, not
+  in the token: the browser never sees or changes them ([Prompt modules](prompt-modules.md)).
 - A session can record the **consent** the user gave (version, time, notice hash) and, for kiosks,
   a hashed **exit code** (`POST /v1/session/exit`: 204, 403 wrong, 429 too many attempts).
 

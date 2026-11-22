@@ -32,6 +32,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/memory.md`: Long-term memory
 - `references/openai-compatible.md`: OpenAI-compatible API
 - `references/privacy.md`: Privacy and data protection
+- `references/prompt-modules.md`: Prompt modules
 - `references/pydantic-ai-agent.md`: Turns and runs on the pydantic-ai Agent
 - `references/quickstart.md`: Quick start: Evokai in five minutes
 - `references/redteam.md`: Red team
