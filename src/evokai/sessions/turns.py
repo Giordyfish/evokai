@@ -46,7 +46,7 @@ from pydantic_ai.tools import DeferredToolResults, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
 from evokai.agents.definitions import AgentDef
-from evokai.agents.modules import resolve_modules
+from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import (
     PageContext,
     memory_block,
@@ -891,6 +891,7 @@ class TurnEngine:
         modules = await resolve_modules(
             self.store, run.app.id, agent, run.session.prompt_options, session=run.session
         )
+        modules = protected(modules, guard.protect_text)
         if modules and guard.trace is not None:
             # Which modules at which versions; never their parameters.
             guard.trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})

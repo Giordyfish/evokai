@@ -271,17 +271,17 @@ async def _prompt_options(
     Returns:
         The options to store, or None when the token chooses nothing.
     """
-    modules = stored.get("modules")
+    modules: dict[str, Any] | None = stored.get("modules")
     if body.modules is not None:
         modules = choose_modules(agent, body.modules, grants, modules)
     texts = await check_session_modules(svc.store, app.id, agent, modules)
-    if body.modules:
+    if body.modules and modules is not None:
         # Only the values this token brings are scanned (the agent's own are trusted).
         given = {
             name: [(p, v) for p, v in texts.get(name, []) if (c.params or {}).get(p) == v]
             for name, c in body.modules.items()
         }
-        await scan_module_texts(
+        cleaned = await scan_module_texts(
             svc.guard,
             app,
             agent,
@@ -289,6 +289,8 @@ async def _prompt_options(
             subject=body.subject,
             session_id=body.conversationId,
         )
+        for name, values in cleaned.items():
+            modules[name]["params"] = {**modules[name]["params"], **values}
     if body.modules is None and body.locale is None:
         return None
     return {

@@ -115,15 +115,16 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
         grants = await grants_of(svc.store, application)
         modules = choose_modules(agent, body.modules or {}, grants)
         texts = await check_session_modules(svc.store, application.id, agent, modules)
-        await scan_module_texts(
+        cleaned = await scan_module_texts(
             svc.guard,
             application,
             agent,
             texts,
             subject=body.subject or f"system:{agent.name}",
             session_id=None,
-            channel="server",
         )
+        for module, values in cleaned.items():
+            modules[module]["params"] = {**modules[module]["params"], **values}
         options = {"modules": modules, "locale": body.locale}
     text = body.input if isinstance(body.input, str) else None
     messages = None if isinstance(body.input, str) else [x.model_dump() for x in body.input]

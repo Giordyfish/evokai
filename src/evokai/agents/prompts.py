@@ -11,6 +11,7 @@ changes once a day.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -19,8 +20,11 @@ from pydantic import BaseModel
 from pydantic_ai.messages import InstructionPart
 
 from evokai.agents.definitions import AgentDef
-from evokai.agents.modules import RenderedModule, render_template
+from evokai.agents.modules import RenderedModule, render_legacy, render_template
 from evokai.agents.skills import Skill, files_listing
+from evokai.core.errors import BadRequest
+
+log = logging.getLogger(__name__)
 
 
 class PageContext(BaseModel):
@@ -121,9 +125,13 @@ def system_prompt(
         The prompt, in its stable and volatile parts.
     """
     values = {"date": long_date(now, timezone), "app": app_name}
-    lines = [render_template((instructions or agent.instructions).strip(), values)]
+    lines = [render_legacy((instructions or agent.instructions).strip(), values)]
     for m in modules or []:
-        text = render_template(m.text, {**values, "data": m.data or {}, **m.params}).strip()
+        try:
+            text = render_template(m.text, {**values, "data": m.data or {}, **m.params}).strip()
+        except BadRequest:
+            log.warning("prompt module left out, not rendered: %s", m.name)
+            continue
         if text:
             lines += ["", text]
     for s in preloaded or []:

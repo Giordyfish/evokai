@@ -16,7 +16,10 @@ section of the application YAML) that also carries:
   choice parameter. A session then picks an entry by name without sending any free text.
 
 Every change of text, schema, description or data is a new version. A prompt without `parameters` is a plain prompt; an
-agent may still list it as a module without parameters.
+agent may still list it as a module without parameters. A save that leaves out `parameters`, `data` or `description`
+keeps them as the latest version has them (send `parameters: null` to make a module a plain prompt), and a new version
+whose parameters no longer fit the values an agent gives it (an agent that follows the latest version) is refused with
+400 `module_in_use`.
 
 ```yaml
 prompts:
@@ -65,12 +68,17 @@ A module's text is a [Handlebars](https://handlebarsjs.com/guide/) template, ren
 - `{{lookup data style}}` the entry of the data table picked by a choice parameter;
 - `{{date}}` today in the application's time zone, `{{app}}` the application's name.
 
+A template holds at most two `{{#each}}` blocks and renders to at most 64,000 characters; a module that cannot be
+rendered is left out of the prompt (with a warning in the log). A free-text `pattern` has at most 100 characters and no
+quantified group that holds a quantifier (`(a+)+`), which could backtrack for minutes.
+
 Values are inserted as they are: nothing is HTML-escaped (`R&D <team>` stays `R&D <team>`). When the prompt is saved the
 template is checked against its schema: a variable it does not declare (a typo such as `{{nmae}}`) is refused with 400
 `module_template`, and a data table that is not a map of short keys to texts with 400 `module_data`.
 
-Texts without `{{` keep the older single-brace placeholders: `{date}` and `{app}` are replaced and every other brace is
-left as written, so JSON examples in prompts stay intact. This applies to agents' inline instructions too.
+Module texts without `{{` keep the older single-brace placeholders. Agents' instructions (inline, or a prompt they
+reference with `prompt:`) are never Handlebars: `{date}` and `{app}` are replaced, `{{` and `}}` become single braces
+as they always did, and every other brace is left as written, so JSON examples in instructions stay intact.
 
 ## Agents list their modules
 
@@ -87,12 +95,15 @@ agents:
 
 Each entry names a prompt, and optionally:
 
-- `version`: a fixed version; without it the latest version when a conversation starts, then **pinned** for that
-  conversation (a later version of the prompt does not change a conversation under way);
+- `version`: a fixed version (it applies to running conversations too); without it the latest version when a
+  conversation starts, then **pinned** for that conversation (a later version of the prompt does not change a
+  conversation under way);
 - `on` (default `true`): whether the module is in the prompt unless the session switches it;
 - `params`: the agent's values for its parameters (the schema's defaults fill the rest; required parameters may be left
   to the session);
-- `session` (default `false`): whether a session token may switch it or change its parameters.
+- `session` (default `false`): whether a session token may switch it or change its parameters. A module the agent
+  locks later gets the agent's own state back in running conversations; one that is on and locked must have every
+  required value (400 `module_params` otherwise).
 
 An agent lists at most 20 modules, each once. Saving an agent checks that every module exists (400 `unknown_module`)
 and that its values fit (400 `module_params`). Module texts go right after the agent's instructions, in this order and
@@ -148,8 +159,11 @@ shipped pack of its language, today `en` and `it`. Without it the session follow
 - Free-text parameters (strings without `enum`) are the only values a session can give that are not chosen from a list,
   so they pass the guard's input checks at mint, as a person's message would (`input.size`, `input.encoding`,
   `input.injection`, moderation, scope). With a control in `enforce` mode the mint is refused (400
-  `module_param_rejected`); in `monitor` mode the token is minted and a security event is recorded. Events keep the
-  control and the module and parameter names, never the value.
+  `module_param_rejected`); in `monitor` mode the token is minted and a security event is recorded. What the guard
+  cleans (invisible characters with `input.encoding` enforced) is stored cleaned. Server runs check the values the
+  same way. Events keep the control and the module and parameter names, never the value.
+- Free-text values also go through `pii.model` before the prompt reaches the model, like page text: with the control
+  enforced, personal data in them is tokenised or masked.
 - Prefer choices and a data table to free text: a session that picks `style: detailed` cannot write anything into the
   prompt.
 - Traces record which modules were rendered, as `prompt.modules: ["tone@2", ...]`; parameter values are never traced.

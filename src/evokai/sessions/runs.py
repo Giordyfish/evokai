@@ -44,7 +44,7 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.usage import UsageLimits
 
 from evokai.agents.definitions import AgentDef
-from evokai.agents.modules import resolve_modules
+from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import split_skills, system_prompt
 from evokai.agents.skills import load as load_skill
 from evokai.core.errors import AppError, BadRequest, Forbidden
@@ -252,7 +252,9 @@ class AgentRunner:
         )
         await eng.guard.admit(guard)
         status, reason, result = "done", "end_turn", None
-        modules = await resolve_modules(eng.store, app.id, agent, prompt_options)
+        modules = protected(
+            await resolve_modules(eng.store, app.id, agent, prompt_options), guard.protect_text
+        )
         if modules:
             # Which modules at which versions; never their parameters.
             trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})

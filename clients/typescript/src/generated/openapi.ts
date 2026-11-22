@@ -1760,7 +1760,8 @@ export interface paths {
          *         The version.
          *
          *     Raises:
-         *         BadRequest: A schema, template or data table that does not pass the module checks.
+         *         BadRequest: A schema, template or data table that does not pass the module checks, or
+         *             a new version whose parameters no longer fit an agent's values (``module_in_use``).
          */
         put: operations["put_prompt_agent_v1_admin_prompts__name__put"];
         post?: never;

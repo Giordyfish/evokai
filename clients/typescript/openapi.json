@@ -9497,7 +9497,7 @@
     },
     "/agent/v1/admin/prompts/{name}": {
       "put": {
-        "description": "Save a prompt (a changed text, schema, description or data becomes the next version).\n\nReturns:\n    The version.\n\nRaises:\n    BadRequest: A schema, template or data table that does not pass the module checks.",
+        "description": "Save a prompt (a changed text, schema, description or data becomes the next version).\n\nReturns:\n    The version.\n\nRaises:\n    BadRequest: A schema, template or data table that does not pass the module checks, or\n        a new version whose parameters no longer fit an agent's values (``module_in_use``).",
         "operationId": "put_prompt_agent_v1_admin_prompts__name__put",
         "parameters": [
           {

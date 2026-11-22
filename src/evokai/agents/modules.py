@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from jsonschema import Draft202012Validator
@@ -45,9 +45,18 @@ RESERVED = ("date", "app", "data")
 
 log = logging.getLogger(__name__)
 
-_HANDLEBARS = HandlebarsEnvironment(auto_escape=False)
+MAX_RENDERED = 64_000
+"""Characters a module may render to."""
+MAX_PATTERN = 100
+"""Characters of a free-text parameter's ``pattern``."""
+MAX_EACH = 2
+"""``{{#each}}`` blocks in a module template (each loops at most ``MAX_ITEMS`` times)."""
+
+_HANDLEBARS = HandlebarsEnvironment(auto_escape=False, max_output_size=MAX_RENDERED)
 """Prompts are not HTML: values go in as they are."""
-_LEGACY = re.compile(r"\{(date|app)\}")
+_LEGACY = re.compile(r"\{\{|\}\}|\{(date|app)\}")
+_NESTED_QUANTIFIER = re.compile(r"\([^()]*[*+?}][^()]*\)\s*[*+?{]")
+"""A quantified group that holds a quantifier (``(a+)+``): it can backtrack for minutes."""
 
 
 @dataclass(frozen=True)
@@ -62,30 +71,66 @@ class RenderedModule:
     """The parameter values (defaults filled, validated)."""
     data: dict[str, Any] | None = field(default=None)
     """The version's lookup table."""
+    free: tuple[str, ...] = ()
+    """The free-text parameters (strings without ``enum``): the guard protects them."""
+
+
+def render_legacy(text: str, values: dict[str, Any]) -> str:
+    """Render a prompt text the way agent instructions always were.
+
+    ``{date}`` and ``{app}`` are replaced, ``{{`` and ``}}`` become single braces (as with
+    ``str.format``), and every other brace stays as it is (JSON examples in prompts are common).
+
+    Returns:
+        The text.
+    """
+
+    def one(m: re.Match[str]) -> str:
+        if m[0] == "{{":
+            return "{"
+        if m[0] == "}}":
+            return "}"
+        return str(values.get(m[1], m[0]))
+
+    return _LEGACY.sub(one, text)
 
 
 def render_template(text: str, values: dict[str, Any]) -> str:
-    """Render a prompt text.
+    """Render a module's text.
 
-    A text with ``{{`` is a Handlebars template (``pydantic_handlebars``, no HTML escaping).
-    Any other text keeps the older single-brace placeholders: ``{date}`` and ``{app}`` are
-    replaced and every other brace stays as it is (JSON examples in prompts are common).
+    A text with ``{{`` is a Handlebars template (``pydantic_handlebars``, no HTML escaping, at
+    most ``MAX_RENDERED`` characters out); any other text takes the older single-brace path
+    (``render_legacy``).
 
     Args:
-        text: The prompt text.
-        values: What the template may read (``date``, ``app`` and, for a module, ``data`` and
-            its parameters).
+        text: The module's text.
+        values: What the template may read (``date``, ``app``, ``data`` and its parameters).
 
     Returns:
-        The rendered text. A Handlebars text that cannot be rendered falls back to the
-        single-brace path rather than failing the turn.
+        The rendered text.
+
+    Raises:
+        BadRequest: ``module_template`` when the template cannot be rendered.
     """
-    if "{{" in text:
-        try:
-            return _HANDLEBARS.render(text, values)
-        except HandlebarsError as e:
-            log.warning("prompt template not rendered: %s", type(e).__name__)
-    return _LEGACY.sub(lambda m: str(values.get(m[1], m[0])), text)
+    if "{{" not in text:
+        return render_legacy(text, values)
+    try:
+        return _HANDLEBARS.render(text, values)
+    except HandlebarsError as e:
+        raise BadRequest(f"Template not rendered: {e}", code="module_template") from e
+
+
+def protected(modules: list[RenderedModule], protect: Any) -> list[RenderedModule]:
+    """The modules with their free-text values passed through a guard's ``protect_text``.
+
+    Returns:
+        The modules (the free-text values protected for the model, as page text is).
+    """
+    out = []
+    for m in modules:
+        changed = {k: protect(m.params[k]) for k in m.free if isinstance(m.params.get(k), str)}
+        out.append(replace(m, params={**m.params, **changed}) if changed else m)
+    return out
 
 
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -129,8 +174,14 @@ def _check_property(name: str, prop: Any) -> None:
                 f"Parameter {name}: a free text needs maxLength from 1 to {MAX_STRING}."
             )
         if "pattern" in prop:
+            pattern = str(prop["pattern"])
+            if len(pattern) > MAX_PATTERN or _NESTED_QUANTIFIER.search(pattern):
+                raise ModuleSchemaError(
+                    f"Parameter {name}: a pattern of at most {MAX_PATTERN} characters, with no "
+                    "quantified group that holds a quantifier."
+                )
             try:
-                re.compile(str(prop["pattern"]))
+                re.compile(pattern)
             except re.error as e:
                 raise ModuleSchemaError(
                     f"Parameter {name}: the pattern is not a valid expression."
@@ -262,6 +313,10 @@ def check_module_template(
     Raises:
         BadRequest: ``module_template``, with what the check found.
     """
+    if text.count("{{#each") > MAX_EACH:
+        raise BadRequest(
+            f"Template: at most {MAX_EACH} each blocks in a module.", code="module_template"
+        )
     try:
         check_template_compatibility(text, template_schema(schema, data), raise_on_error=True)
     except HandlebarsError as e:
@@ -395,6 +450,25 @@ def choose_modules(
     return out
 
 
+def entry_of(ref: Any, stored: Any) -> dict[str, Any]:
+    """A module's state for a session: the session's choice where the agent allows one.
+
+    The stored ``on`` and ``params`` apply only while the agent lets a session change the module
+    (``session: true``); an agent that locks it later gets its own defaults back. The version is
+    the agent's own when it fixes one, else the one the conversation pinned.
+
+    Returns:
+        ``{"on", "params", "version"}``.
+    """
+    stored = stored if isinstance(stored, dict) else {}
+    chosen = stored if ref.session and stored else {}
+    return {
+        "on": chosen.get("on", ref.on),
+        "params": chosen.get("params", ref.params),
+        "version": ref.version or stored.get("version"),
+    }
+
+
 async def check_session_modules(
     store: Store, application_id: str, agent: AgentDef, modules: dict[str, Any] | None
 ) -> dict[str, list[tuple[str, str]]]:
@@ -414,13 +488,10 @@ async def check_session_modules(
     """
     out: dict[str, list[tuple[str, str]]] = {}
     for ref in agent.modules:
-        entry: dict[str, Any] = (modules or {}).get(ref.name) or {
-            "on": ref.on,
-            "params": ref.params,
-        }
+        entry = entry_of(ref, (modules or {}).get(ref.name))
         if not entry.get("on"):
             continue
-        version = entry.get("version") or ref.version
+        version = entry.get("version")
         row = await store.prompts.get(application_id, ref.name, int(version) if version else None)
         if row is None:
             raise BadRequest(f"Unknown prompt module: {ref.name}.", code="unknown_module")
@@ -457,9 +528,37 @@ async def check_agent_modules(store: Store, application_id: str, agent: AgentDef
                 raise BadRequest(f"Module {ref.name} has no parameters.", code="module_params")
             continue
         try:
-            validate_params(row.parameters, ref.params, partial=True)
+            # Required values may be left to a session only when one can give them.
+            validate_params(row.parameters, ref.params, partial=ref.session or not ref.on)
         except BadRequest as e:
             raise BadRequest(f"Module {ref.name}: {e.message}", code="module_params") from e
+
+
+async def check_prompt_in_use(
+    store: Store, application_id: str, name: str, parameters: dict[str, Any] | None
+) -> None:
+    """Check that a new version of a prompt still fits the agents that follow its latest version.
+
+    Raises:
+        BadRequest: ``module_in_use``, naming the agent whose module values no longer fit.
+    """
+    for row in await store.agents.active_all(application_id):
+        for ref in row.definition.get("modules") or []:
+            if ref.get("name") != name or ref.get("version"):
+                continue
+            params = ref.get("params") or {}
+            try:
+                if parameters is None:
+                    if params:
+                        raise BadRequest("it gives values to parameters")
+                    continue
+                on, session = ref.get("on", True), ref.get("session", False)
+                validate_params(parameters, params, partial=session or not on)
+            except BadRequest as e:
+                raise BadRequest(
+                    f"Agent {row.name} uses this module and would no longer fit: {e.message}",
+                    code="module_in_use",
+                ) from e
 
 
 async def resolve_modules(
@@ -492,10 +591,11 @@ async def resolve_modules(
     out: list[RenderedModule] = []
     pinned = False
     for ref in agent.modules:
-        entry: dict[str, Any] = dict(chosen.get(ref.name) or {"on": ref.on, "params": ref.params})
+        stored = chosen.get(ref.name)
+        entry = entry_of(ref, stored)
         if not entry.get("on"):
             continue
-        version = entry.get("version") or ref.version
+        version = entry.get("version")
         row = await store.prompts.get(application_id, ref.name, int(version) if version else None)
         if row is None:
             log.warning("prompt module not found: %s", ref.name)
@@ -507,10 +607,14 @@ async def resolve_modules(
             except BadRequest:
                 log.warning("prompt module left out, parameters do not fit: %s", ref.name)
                 continue
-        if entry.get("version") != row.version:
-            chosen[ref.name] = {**entry, "version": row.version}
+        if ref.version is None and (stored or {}).get("version") != row.version:
+            chosen[ref.name] = {
+                **(stored or {"on": ref.on, "params": ref.params}),
+                "version": row.version,
+            }
             pinned = True
-        out.append(RenderedModule(ref.name, row.version, row.text, params, row.data))
+        free = tuple(n for n, _v in free_text_items(row.parameters or {}, params))
+        out.append(RenderedModule(ref.name, row.version, row.text, params, row.data, free))
     if pinned and session is not None:
         updated = {"modules": chosen, "locale": (options or {}).get("locale")}
         await store.sessions.set_prompt_options(session.id, updated)
@@ -526,13 +630,14 @@ async def scan_module_texts(
     *,
     subject: str | None,
     session_id: str | None,
-    channel: str = "browser",
-) -> None:
+) -> dict[str, dict[str, str]]:
     """Run the guard's input checks on a session's free-text module parameters.
 
-    The guard of the application and agent is built as for a turn, and each value is checked as
-    a person's message would be. The security events keep the control and the module and
-    parameter names only, never the value.
+    The guard of the application and agent is built as for a browser turn, and each value is
+    checked as a person's message would be, whoever asks (a session token or a server run: the
+    values come from the application's backend either way, and are never only marked as untrusted
+    data). The security events keep the control and the module and parameter names only, never
+    the value.
 
     Args:
         guard: The guard engine (``Services.guard``).
@@ -541,15 +646,19 @@ async def scan_module_texts(
         texts: Module name to (parameter, value) (``check_session_modules``).
         subject: The session's subject.
         session_id: The conversation, when it already exists.
-        channel: ``browser`` (session tokens) or ``server`` (server runs).
+
+    Returns:
+        Module name to the values the guard changed (invisible characters removed), to store
+        instead of the ones given.
 
     Raises:
         BadRequest: 400 ``module_param_rejected`` when an enforced control refused a value.
     """
+    cleaned: dict[str, dict[str, str]] = {}
     if not any(texts.values()):
-        return
+        return cleaned
     turn = guard.turn(
-        app, agent, subject=subject, session_id=session_id, turn_id=None, channel=channel
+        app, agent, subject=subject, session_id=session_id, turn_id=None, channel="browser"
     )
     refused: tuple[str, str] | None = None
     try:
@@ -563,6 +672,8 @@ async def scan_module_texts(
                 if decision.blocked:
                     refused = (module, param)
                     break
+                if decision.text != value:
+                    cleaned.setdefault(module, {})[param] = decision.text
             if refused:
                 break
     finally:
@@ -573,3 +684,4 @@ async def scan_module_texts(
             f"Module {refused[0]}: the guard refused the parameter {refused[1]}.",
             code="module_param_rejected",
         )
+    return cleaned

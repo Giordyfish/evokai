@@ -19,6 +19,8 @@ from evokai.agents.modules import (
     check_data,
     check_module_template,
     check_parameters_schema,
+    check_prompt_in_use,
+    render_legacy,
     render_template,
     validate_params,
 )
@@ -1007,28 +1009,40 @@ async def put_prompt(
         The version.
 
     Raises:
-        BadRequest: A schema, template or data table that does not pass the module checks.
+        BadRequest: A schema, template or data table that does not pass the module checks, or
+            a new version whose parameters no longer fit an agent's values (``module_in_use``).
     """
-    if body.parameters is not None:
-        check_parameters_schema(body.parameters)
-        check_data(body.data)
-        check_module_template(body.text, body.parameters, body.data)
-    elif body.data is not None:
+    # What the body leaves out stays as the latest version has it: a text-only save (an older
+    # client) keeps a module a module. Send ``parameters: null`` to make it a plain prompt.
+    last = await svc.store.prompts.get(a.application_id, name)
+    sent = body.model_fields_set
+    keep = last is not None
+    parameters = body.parameters if "parameters" in sent or not keep else last.parameters
+    data = body.data if "data" in sent or not keep else last.data
+    description = (
+        body.description if "description" in sent or not keep else (last.description or "")
+    )
+    if parameters is not None:
+        check_parameters_schema(parameters)
+        check_data(data)
+        check_module_template(body.text, parameters, data)
+    elif data is not None:
         raise BadRequest("A data table needs parameters (a module).", code="module_data")
+    await check_prompt_in_use(svc.store, a.application_id, name, parameters)
     version = await svc.store.prompts.put(
         a.application_id,
         name,
         body.text,
-        parameters=body.parameters,
-        description=body.description,
-        data=body.data,
+        parameters=parameters,
+        description=description,
+        data=data,
     )
     await audit.record(
         request,
         a,
         "prompt.put",
         target=f"{name} v{version}",
-        after={"text": body.text, "parameters": body.parameters},
+        after={"text": body.text, "parameters": parameters},
     )
     return {"version": version}
 
@@ -1076,7 +1090,7 @@ async def preview_prompt(name: str, body: PreviewBody, svc: Svc, a: Admin) -> di
     params = validate_params(parameters, body.params, partial=True) if parameters else {}
     timezone = str((app.defaults or {}).get("timezone") or "UTC")
     values = {"date": long_date(utcnow(), timezone), "app": app.name, "data": data or {}, **params}
-    return {"text": render_template(text, values)}
+    return {"text": render_template(text, values) if parameters else render_legacy(text, values)}
 
 
 @router.get("/prompts")
