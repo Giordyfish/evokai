@@ -26,7 +26,9 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   `evokai-admin-mcp` audience, valid on that application only) and a session token for the assistant that forwards it.
   The admin API re-checks the token against the live login on every call: a revoked admin key or a disabled single
   sign-on user ends it at once, and the role used is the lower of the token's and the login's current role. A viewer's
-  assistant only reads; an operator's cannot change the owner's settings.
+  assistant only reads; an operator's cannot change the owner's settings. Even used directly, the token opens only
+  the routes of the admin MCP server's allow-list and the body fields its tools may send (`403 assistant_route`,
+  `403 assistant_field` otherwise), and the server API (session tokens, a person's data) refuses it.
 - **Every change is confirmed.** The admin MCP server marks every tool that is not a read `destructiveHint`; Evokai
   asks the person before running such a tool, as for any agent. The assistant never changes an agent's security
   policy, whoever it acts for.

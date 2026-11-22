@@ -141,7 +141,7 @@ async def test_activate_needs_owner(env: Env) -> None:
     login = ConsoleLogin("op", None, int(time.time()) + 3600)
     token = mint_delegation(env.svc.keyring, login, app_id, "owner")
     r = await env.client.post(url, json=body, headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 403 and r.json()["error"] == "person"
+    assert r.status_code == 403 and r.json()["error"] == "assistant_route"
 
 
 class _LateApp(httpx.AsyncBaseTransport):

@@ -110,7 +110,7 @@ async def test_unlock_needs_owner_and_typed_confirmation(env: Env) -> None:
     r = await env.client.post(
         url, json={"confirm": SLUG}, headers={"Authorization": f"Bearer {token}"}
     )
-    assert r.status_code == 403 and r.json()["error"] == "person", r.text
+    assert r.status_code == 403 and r.json()["error"] == "assistant_route", r.text
     r = await env.client.post(url, json={"confirm": SLUG}, headers=_on(app_id))
     assert r.status_code == 200
     log = (await env.client.get("/agent/v1/admin/audit", headers=_on(app_id))).json()["items"]

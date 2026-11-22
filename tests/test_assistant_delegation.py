@@ -49,6 +49,17 @@ async def test_token_works_only_on_its_application(env: Env) -> None:
     # Never a session token.
     r = await env.client.get("/agent/v1/session", headers=_bearer(token))
     assert r.status_code == 401
+    # Never a server key: the server API (session tokens, a person's data) refuses it.
+    r = await env.client.post(
+        "/agent/v1/privacy/export", json={"subject": "u1"}, headers=_bearer(token)
+    )
+    assert r.status_code == 401
+    r = await env.client.post(
+        "/agent/v1/session-tokens",
+        json={"subject": "u1", "agent": "helper"},
+        headers=_bearer(token),
+    )
+    assert r.status_code == 401
 
 
 async def test_role_is_capped_by_the_live_login(env: Env) -> None:
@@ -118,3 +129,28 @@ async def test_wrong_audience_is_401(env: Env) -> None:
         )
         r = await env.client.get("/agent/v1/admin/agents", headers=_bearer(forged))
         assert r.status_code == 401, change
+
+
+async def test_token_opens_only_the_admin_mcp_tools(env: Env) -> None:
+    """Even used directly, a delegation token reaches only the routes of the admin MCP server."""
+    login = await _sso(env, {"test": "owner"})
+    token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
+    for method, path, body in (
+        ("POST", "/agent/v1/admin/keys", {"kind": "adm"}),
+        ("GET", "/agent/v1/admin/keys", None),
+        ("GET", "/agent/v1/admin/audit", None),
+        ("PUT", "/agent/v1/admin/security", {}),
+        ("GET", "/agent/v1/admin/export", None),
+        ("POST", "/agent/v1/admin/application/unlock", {"confirm": "test"}),
+    ):
+        r = await env.client.request(method, path, json=body, headers=_bearer(token))
+        assert r.status_code == 403 and r.json()["error"] == "assistant_route", (path, r.text)
+    # The parts of a change it may not make are refused too.
+    r = await env.client.patch(
+        "/agent/v1/admin/application",
+        json={"eval_credential": "x" * 12},
+        headers=_bearer(token),
+    )
+    assert r.status_code == 403 and r.json()["error"] == "assistant_field", r.text
+    keys = await env.svc.store.applications.keys(env.app_id)
+    assert len(keys) == 2

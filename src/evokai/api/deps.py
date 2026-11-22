@@ -10,6 +10,7 @@ from evokai.identity import console
 from evokai.identity.auth import bearer
 from evokai.identity.models import AppPrincipal, SessionPrincipal
 from evokai.identity.roles import authorize, required, route_of
+from evokai.mcp_admin.tools import by_route
 from evokai.services import Services
 
 SESSION_REQUESTS_PER_MINUTE = 240
@@ -79,14 +80,27 @@ async def _delegated(request: Request, token: str) -> AppPrincipal:
     """The console assistant's delegation token: the live login's rights, checked like the console.
 
     An expired or forged token, or one whose login ended, is refused (401); a role that does not
-    allow the route is refused (403 ``role``).
+    allow the route is refused (403 ``role``). Even used directly, it opens only the routes of the
+    admin MCP server's allow-list (403 ``assistant_route``) and only the body fields a tool may send
+    (403 ``assistant_field``): keys, secrets, sign-in, the audit log, personal data and the unlock
+    of a system application stay out of its reach whoever holds it.
 
     Returns:
         The principal.
+
+    Raises:
+        Forbidden: A route or a field outside the admin MCP server's allow-list.
     """
     svc = services(request)
     who = await delegation.principal(svc, token)
     authorize(request, who.role, svc.settings.base_path)
+    spec = by_route().get((request.method.upper(), route_of(request, svc.settings.base_path)))
+    if spec is None:
+        raise Forbidden("The assistant cannot use this route.", code="assistant_route")
+    if spec.fields is not None:
+        body = await request.json() if await request.body() else {}
+        if isinstance(body, dict) and set(body) - set(spec.fields):
+            raise Forbidden("The assistant cannot change these fields.", code="assistant_field")
     return who
 
 
@@ -132,8 +146,8 @@ async def server_app(request: Request) -> AppPrincipal:
         if (c := await _console(request)) is not None:
             return c
         raise Unauthorized()
-    if delegation.is_delegation(token):
-        return await _delegated(request, token)
+    # The console assistant's delegation token is never a server key: the server API mints session
+    # tokens and reaches a person's data (export, erase), which the assistant must never do.
     return await services(request).auth.application(token)
 
 
