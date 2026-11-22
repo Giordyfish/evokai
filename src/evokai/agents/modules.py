@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from jsonschema import Draft202012Validator
+from pydantic import BaseModel
 from pydantic_handlebars import HandlebarsEnvironment, HandlebarsError, check_template_compatibility
 
 from evokai.core.errors import BadRequest
@@ -25,6 +26,7 @@ from evokai.core.errors import BadRequest
 if TYPE_CHECKING:
     from evokai.agents.definitions import AgentDef
     from evokai.db.repositories import Store
+    from evokai.grants import Grants
 
 MAX_PROPERTIES = 20
 """Parameters of a module."""
@@ -306,6 +308,21 @@ def validate_params(
     return full
 
 
+def free_text_items(schema: dict[str, Any], params: dict[str, Any]) -> list[tuple[str, str]]:
+    """The free-text parameters with their values (see ``free_text_params``).
+
+    Returns:
+        (parameter name, value), in the schema's order.
+    """
+    out = []
+    for name, prop in schema.get("properties", {}).items():
+        if prop.get("type") == "string" and "enum" not in prop:
+            value = params.get(name)
+            if isinstance(value, str) and value:
+                out.append((name, value))
+    return out
+
+
 def free_text_params(schema: dict[str, Any], params: dict[str, Any]) -> list[str]:
     """The free-text values: strings of properties without an ``enum``.
 
@@ -315,12 +332,108 @@ def free_text_params(schema: dict[str, Any], params: dict[str, Any]) -> list[str
     Returns:
         The values, in the schema's order.
     """
-    out = []
-    for name, prop in schema.get("properties", {}).items():
-        if prop.get("type") == "string" and "enum" not in prop:
-            value = params.get(name)
-            if isinstance(value, str) and value:
-                out.append(value)
+    return [value for _name, value in free_text_items(schema, params)]
+
+
+class ModuleChoice(BaseModel):
+    """A session's choice for one prompt module (server key only, at token mint)."""
+
+    on: bool | None = None
+    """Switch the module on or off; omitted keeps the agent's default."""
+    params: dict[str, Any] | None = None
+    """Parameter values over the agent's defaults; omitted keeps the agent's values."""
+
+
+def choose_modules(
+    agent: AgentDef,
+    choice: dict[str, ModuleChoice],
+    grants: Grants,
+    stored: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """The modules of a session: the agent's defaults with the session's choice over them.
+
+    A choice replaces any earlier one of the conversation; only the versions it already pinned
+    are kept.
+
+    Args:
+        agent: The agent definition.
+        choice: Module name to the session's choice.
+        grants: The application's grants (``module`` kind).
+        stored: The modules stored on the conversation so far, if any.
+
+    Returns:
+        Module name to ``{"on", "params"}`` (and ``version`` once pinned).
+
+    Raises:
+        BadRequest: ``unknown_module`` (not one of the agent's) or ``module_locked`` (the agent
+            does not let a session change it).
+        NotGranted: 403 ``module_not_granted``.
+    """
+    from evokai.grants import NotGranted
+
+    refs = {r.name: r for r in agent.modules}
+    out: dict[str, dict[str, Any]] = {
+        r.name: {"on": r.on, "params": dict(r.params)} for r in agent.modules
+    }
+    for name, entry in (stored or {}).items():
+        if name in out and isinstance(entry, dict) and entry.get("version"):
+            out[name]["version"] = entry["version"]
+    for name, c in choice.items():
+        ref = refs.get(name)
+        if ref is None:
+            raise BadRequest(f"Unknown prompt module: {name}.", code="unknown_module")
+        if not ref.session:
+            raise BadRequest(
+                f"The agent does not let a session change {name}.", code="module_locked"
+            )
+        if not grants.module(name):
+            raise NotGranted("module", f"Session choices of the module {name} are not granted.")
+        if c.on is not None:
+            out[name]["on"] = c.on
+        if c.params is not None:
+            out[name]["params"] = {**ref.params, **c.params}
+    return out
+
+
+async def check_session_modules(
+    store: Store, application_id: str, agent: AgentDef, modules: dict[str, Any] | None
+) -> dict[str, list[tuple[str, str]]]:
+    """Validate the parameters of a session's modules that are on, against their versions.
+
+    Args:
+        store: Repositories.
+        application_id: Owner application.
+        agent: The agent definition.
+        modules: The session's modules (``choose_modules``), or None for the agent's defaults.
+
+    Returns:
+        Module name to its free-text parameters (name, value), for the guard.
+
+    Raises:
+        BadRequest: ``unknown_module`` (the prompt is gone) or ``module_params``.
+    """
+    out: dict[str, list[tuple[str, str]]] = {}
+    for ref in agent.modules:
+        entry: dict[str, Any] = (modules or {}).get(ref.name) or {
+            "on": ref.on,
+            "params": ref.params,
+        }
+        if not entry.get("on"):
+            continue
+        version = entry.get("version") or ref.version
+        row = await store.prompts.get(application_id, ref.name, int(version) if version else None)
+        if row is None:
+            raise BadRequest(f"Unknown prompt module: {ref.name}.", code="unknown_module")
+        params: dict[str, Any] = dict(entry.get("params") or {})
+        if row.parameters is None:
+            if params:
+                raise BadRequest(f"Module {ref.name} has no parameters.", code="module_params")
+            continue
+        try:
+            full = validate_params(row.parameters, params)
+        except BadRequest as e:
+            raise BadRequest(f"Module {ref.name}: {e.message}", code="module_params") from e
+        out[ref.name] = free_text_items(row.parameters, full)
     return out
 
 
@@ -347,3 +460,60 @@ async def check_agent_modules(store: Store, application_id: str, agent: AgentDef
             validate_params(row.parameters, ref.params, partial=True)
         except BadRequest as e:
             raise BadRequest(f"Module {ref.name}: {e.message}", code="module_params") from e
+
+
+async def scan_module_texts(
+    guard: Any,
+    app: Any,
+    agent: AgentDef,
+    texts: dict[str, list[tuple[str, str]]],
+    *,
+    subject: str | None,
+    session_id: str | None,
+    channel: str = "browser",
+) -> None:
+    """Run the guard's input checks on a session's free-text module parameters.
+
+    The guard of the application and agent is built as for a turn, and each value is checked as
+    a person's message would be. The security events keep the control and the module and
+    parameter names only, never the value.
+
+    Args:
+        guard: The guard engine (``Services.guard``).
+        app: The application.
+        agent: The agent definition.
+        texts: Module name to (parameter, value) (``check_session_modules``).
+        subject: The session's subject.
+        session_id: The conversation, when it already exists.
+        channel: ``browser`` (session tokens) or ``server`` (server runs).
+
+    Raises:
+        BadRequest: 400 ``module_param_rejected`` when an enforced control refused a value.
+    """
+    if not any(texts.values()):
+        return
+    turn = guard.turn(
+        app, agent, subject=subject, session_id=session_id, turn_id=None, channel=channel
+    )
+    refused: tuple[str, str] | None = None
+    try:
+        for module, items in texts.items():
+            for param, value in items:
+                seen = len(turn.events)
+                decision = await turn.check_input(value)
+                for row in turn.events[seen:]:
+                    row["snippet"] = ""
+                    row["details"] = {"module": module, "parameter": param}
+                if decision.blocked:
+                    refused = (module, param)
+                    break
+            if refused:
+                break
+    finally:
+        turn.checked.clear()
+        await turn.flush()
+    if refused:
+        raise BadRequest(
+            f"Module {refused[0]}: the guard refused the parameter {refused[1]}.",
+            code="module_param_rejected",
+        )

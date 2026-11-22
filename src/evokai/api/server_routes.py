@@ -9,6 +9,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, model_validator
 
 from evokai import audit, privacy
+from evokai.agents.modules import (
+    ModuleChoice,
+    check_session_modules,
+    choose_modules,
+    scan_module_texts,
+)
 from evokai.api.deps import server_app, services
 from evokai.core.caps import CapSpec, caps_of, currency_of, rate_of, zone_of
 from evokai.core.caps import window as cap_window
@@ -17,6 +23,7 @@ from evokai.core.security import hash_code
 from evokai.core.util import utcnow
 from evokai.db.repositories import DEFAULT_TITLE, Who
 from evokai.grants import Grants, NotGranted, grants_of
+from evokai.i18n import pack_language
 from evokai.identity.models import AppPrincipal
 from evokai.memory.store import memory_view as view
 from evokai.privacy import residency_allows
@@ -112,6 +119,17 @@ class TokenRequest(BaseModel):
     """The person's answer to long-term memory, when the application asked it in its own
     interface (``memory_mode: ask``): recorded for the subject, the latest answer counts. False
     deletes what was remembered. Omitted = unchanged (the chat panel may ask)."""
+    modules: dict[str, ModuleChoice] | None = Field(default=None, max_length=20)
+    """Prompt modules of the agent to switch on or off and fill, by name
+    (``{"tone": {"on": true, "params": {"style": "brief"}}}``): only the ones the agent lets a
+    session change (``session: true``, else 400 ``module_locked``) and the application is granted
+    (403 ``module_not_granted``). Parameters are validated (400 ``module_params``) and free-text
+    values pass the guard's input checks (400 ``module_param_rejected``). On a continued
+    conversation it replaces the earlier choice; omitted keeps it."""
+    locale: str | None = Field(default=None, max_length=35)
+    """The session's language, a BCP 47 tag (``it-IT``): speech rules and messages use the shipped
+    pack of its language (400 ``unknown_locale`` without one). Omitted = the application's locale,
+    or the conversation's earlier choice."""
 
 
 @router.post("/session-tokens")
@@ -125,8 +143,10 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         NotFound: Unknown agent, conversation or application.
         Conflict: The conversation is closed, or kept in another storage mode.
         Forbidden: The agent runs on the server only.
-        NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,
-            are not granted to the application (403 ``*_not_granted``).
+        NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,
+            or browser sessions, are not granted to the application (403 ``*_not_granted``).
+        BadRequest: An unknown locale, or a prompt module choice that is refused
+            (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).
     """
     agent = await svc.agents.active(app.application_id, body.agent)
     if "browser" not in agent.channels:
@@ -150,10 +170,16 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
     if body.voice and not grants.tts(engine, body.voice):
         raise NotGranted("voice", f"The voice {body.voice} is not granted for {engine} speech.")
     mode = _storage_mode(body.storageMode, application.storage_mode, grants)
+    if body.locale is not None and pack_language(body.locale) is None:
+        raise BadRequest(f"No language pack for the locale {body.locale}.", code="unknown_locale")
+    existing = None
     if body.conversationId:
         existing = await svc.store.sessions.get(who, body.conversationId)
         if not existing:
             raise NotFound("Unknown conversation.", code="unknown_conversation")
+    stored = (existing.prompt_options if existing else None) or {}
+    options = await _prompt_options(svc, application, agent, grants, body, stored)
+    if existing:
         if existing.status == "closed":
             raise Conflict("This session is closed.", code="closed")
         kept = existing.storage_mode or application.storage_mode
@@ -162,9 +188,11 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         if not grants.storage(kept):
             raise NotGranted("storage_mode", f"The {kept} storage mode is not granted.")
         mode = kept
-        conversation_id = body.conversationId
+        conversation_id = existing.id
         if existing.voice_engine != engine:
             await svc.store.sessions.set_voice_engine(existing.id, engine)
+        if options is not None and options != stored:
+            await svc.store.sessions.set_prompt_options(existing.id, options)
     else:
         sess, _ = await svc.store.sessions.create(
             who,
@@ -176,6 +204,7 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
             exit_code_hash=hash_code(body.exitCode) if body.exitCode else None,
             voice_engine=engine,
             storage_mode=mode,
+            prompt_options=options,
         )
         conversation_id = sess.id
     claims: dict[str, Any] = {
@@ -223,6 +252,48 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         "storageMode": mode,
         "usage": caps.view(),
         "suggestions": agent.suggestions,
+    }
+
+
+async def _prompt_options(
+    svc: Services,
+    app: Any,
+    agent: Any,
+    grants: Grants,
+    body: TokenRequest,
+    stored: dict[str, Any],
+) -> dict[str, Any] | None:
+    """The prompt modules and locale of the session, checked.
+
+    A choice of modules replaces the conversation's earlier one (over the agent's defaults); a
+    locale replaces the earlier locale; what is omitted is kept.
+
+    Returns:
+        The options to store, or None when the token chooses nothing.
+    """
+    modules = stored.get("modules")
+    if body.modules is not None:
+        modules = choose_modules(agent, body.modules, grants, modules)
+    texts = await check_session_modules(svc.store, app.id, agent, modules)
+    if body.modules:
+        # Only the values this token brings are scanned (the agent's own are trusted).
+        given = {
+            name: [(p, v) for p, v in texts.get(name, []) if (c.params or {}).get(p) == v]
+            for name, c in body.modules.items()
+        }
+        await scan_module_texts(
+            svc.guard,
+            app,
+            agent,
+            given,
+            subject=body.subject,
+            session_id=body.conversationId,
+        )
+    if body.modules is None and body.locale is None:
+        return None
+    return {
+        "modules": modules or {},
+        "locale": body.locale if body.locale is not None else stored.get("locale"),
     }
 
 

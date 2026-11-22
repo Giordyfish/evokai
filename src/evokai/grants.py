@@ -12,8 +12,8 @@ published over A2A) is the one item that is off until granted.
 
 Enforced in four places:
 
-- **session token mint**: the browser channel, a requested model, voice engine, voice and storage
-  mode (403 with a ``*_not_granted`` code);
+- **session token mint**: the browser channel, a requested model, voice engine, voice, storage
+  mode and prompt module choice (403 with a ``*_not_granted`` code);
 - **turns and server runs**: the agent only gets granted MCP servers, tools, skills and client
   tools; the model chain skips models that are off, and fallback-only models never answer first;
 - **voice offers**: server voice and its speech-to-text engine;
@@ -50,6 +50,7 @@ WORKFLOW = "workflow"
 CODE = "code"
 CONNECTION = "connection"
 CAPABILITY = "capability"
+MODULE = "module"
 KINDS = (
     MODEL,
     MCP,
@@ -66,6 +67,7 @@ KINDS = (
     CODE,
     CONNECTION,
     CAPABILITY,
+    MODULE,
 )
 KNOWLEDGE_ALL = "*"
 """The knowledge grant of the whole capability (each base is also an item of its own)."""
@@ -125,6 +127,7 @@ YAML_SECTIONS = {
     "code": CODE,
     "connections": CONNECTION,
     "capabilities": CAPABILITY,
+    "modules": MODULE,
 }
 """Sections of ``grants:`` in an application YAML (and ``EVOKAI_BOOTSTRAP_APPS``) → kinds."""
 
@@ -385,6 +388,14 @@ class Grants:
         return self._flag(CONNECTION, provider) and (
             family is None or self._flag(CONNECTION, f"{provider}/{family}")
         )
+
+    def module(self, name: str) -> bool:
+        """Whether session tokens may switch a prompt module or change its parameters.
+
+        Returns:
+            True if granted (the default).
+        """
+        return self._flag(MODULE, name)
 
     def channel(self, name: str) -> bool:
         """Whether agents may be reached this way.

@@ -2937,6 +2937,36 @@
         "title": "ModerationSettings",
         "type": "object"
       },
+      "ModuleChoice": {
+        "description": "A session's choice for one prompt module (server key only, at token mint).",
+        "properties": {
+          "on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          }
+        },
+        "title": "ModuleChoice",
+        "type": "object"
+      },
       "ModuleRef": {
         "description": "A prompt module the agent may use (``evokai.agents.modules``), with its defaults.",
         "properties": {
@@ -4834,6 +4864,18 @@
               }
             ]
           },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
           "memoryConsent": {
             "anyOf": [
               {
@@ -4855,6 +4897,21 @@
               }
             ],
             "title": "Model"
+          },
+          "modules": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ModuleChoice"
+                },
+                "maxProperties": 20,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
           },
           "storageMode": {
             "anyOf": [
@@ -12981,7 +13038,7 @@
     },
     "/agent/v1/session-tokens": {
       "post": {
-        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,\n        are not granted to the application (403 ``*_not_granted``).",
+        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,\n        or browser sessions, are not granted to the application (403 ``*_not_granted``).\n    BadRequest: An unknown locale, or a prompt module choice that is refused\n        (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).",
         "operationId": "mint_agent_v1_session_tokens_post",
         "requestBody": {
           "content": {
