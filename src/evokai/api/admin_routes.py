@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from evokai import audit
 from evokai.agents import skills as sk
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import check_data, check_module_template, check_parameters_schema
 from evokai.api.deps import admin_app, services
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
@@ -973,23 +974,49 @@ SKILL_LIMITS = {
 
 
 class PromptBody(BaseModel):
-    """A prompt's text; saving a different text makes a new version."""
+    """A prompt's text; saving a different text, schema, description or data makes a new version."""
 
     text: str = Field(min_length=1, max_length=60_000)
+    parameters: dict[str, Any] | None = None
+    """A prompt module's parameter schema (``evokai.agents.modules``); the text is then a
+    Handlebars template checked against it."""
+    description: str = Field("", max_length=500)
+    data: dict[str, str] | None = None
+    """A module's lookup table (key to text, at most 256 KB), read in the template as ``data``."""
 
 
 @router.put("/prompts/{name}")
 async def put_prompt(
     name: str, body: PromptBody, svc: Svc, a: Admin, request: Request
 ) -> dict[str, int]:
-    """Save a prompt (a changed text becomes the next version).
+    """Save a prompt (a changed text, schema, description or data becomes the next version).
 
     Returns:
         The version.
+
+    Raises:
+        BadRequest: A schema, template or data table that does not pass the module checks.
     """
-    version = await svc.store.prompts.put(a.application_id, name, body.text)
+    if body.parameters is not None:
+        check_parameters_schema(body.parameters)
+        check_data(body.data)
+        check_module_template(body.text, body.parameters, body.data)
+    elif body.data is not None:
+        raise BadRequest("A data table needs parameters (a module).", code="module_data")
+    version = await svc.store.prompts.put(
+        a.application_id,
+        name,
+        body.text,
+        parameters=body.parameters,
+        description=body.description,
+        data=body.data,
+    )
     await audit.record(
-        request, a, "prompt.put", target=f"{name} v{version}", after={"text": body.text}
+        request,
+        a,
+        "prompt.put",
+        target=f"{name} v{version}",
+        after={"text": body.text, "parameters": body.parameters},
     )
     return {"version": version}
 
@@ -999,12 +1026,21 @@ async def list_prompts(svc: Svc, a: Admin) -> dict[str, Any]:
     """Every version of every prompt.
 
     Returns:
-        items: name, version, createdAt.
+        items: name, version, text, description, parameters (a module's schema, or null), data
+        and createdAt.
     """
     rows = await svc.store.prompts.all(a.application_id)
     return {
         "items": [
-            {"name": r.name, "version": r.version, "createdAt": r.created_at.isoformat()}
+            {
+                "name": r.name,
+                "version": r.version,
+                "text": r.text,
+                "description": r.description or "",
+                "parameters": r.parameters,
+                "data": r.data,
+                "createdAt": r.created_at.isoformat(),
+            }
             for r in rows
         ]
     }

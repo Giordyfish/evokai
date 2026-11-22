@@ -3351,8 +3351,40 @@
         "type": "object"
       },
       "PromptBody": {
-        "description": "A prompt's text; saving a different text makes a new version.",
+        "description": "A prompt's text; saving a different text, schema, description or data makes a new version.",
         "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
           "text": {
             "maxLength": 60000,
             "minLength": 1,
@@ -5312,7 +5344,7 @@
             "type": "integer"
           },
           "prompt_rule": {
-            "default": "The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read tax codes, IBANs, meter codes or personal data aloud: point to the screen instead.",
+            "default": "The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read codes, account numbers or personal data aloud: point to the screen instead.",
             "title": "Prompt Rule",
             "type": "string"
           },
@@ -9243,7 +9275,7 @@
     },
     "/agent/v1/admin/prompts": {
       "get": {
-        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, createdAt.",
+        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data\n    and createdAt.",
         "operationId": "list_prompts_agent_v1_admin_prompts_get",
         "responses": {
           "200": {
@@ -9267,7 +9299,7 @@
     },
     "/agent/v1/admin/prompts/{name}": {
       "put": {
-        "description": "Save a prompt (a changed text becomes the next version).\n\nReturns:\n    The version.",
+        "description": "Save a prompt (a changed text, schema, description or data becomes the next version).\n\nReturns:\n    The version.\n\nRaises:\n    BadRequest: A schema, template or data table that does not pass the module checks.",
         "operationId": "put_prompt_agent_v1_admin_prompts__name__put",
         "parameters": [
           {
