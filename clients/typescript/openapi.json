@@ -68,6 +68,7 @@
           "model": {
             "maxLength": 200,
             "minLength": 3,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
             "title": "Model",
             "type": "string"
           }
@@ -5350,6 +5351,7 @@
           "model": {
             "maxLength": 200,
             "minLength": 3,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
             "title": "Model",
             "type": "string"
           }
@@ -12142,7 +12144,7 @@
     },
     "/agent/v1/console/assistant/session": {
       "post": {
-        "description": "A session token for the console assistant, acting on the selected application.\n\nIt needs a console login (the cookie, its header and the application it acts on): its\nforwarded credential is a delegation token for that application with the login's role, which\nthe admin MCP server checks against the live login on every call. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.",
+        "description": "A session token for the console assistant, acting on the selected application.\n\nIt needs a console login (the cookie, its header and the application it acts on): its\nforwarded credential is a delegation token for that application with the login's role, which\nthe admin MCP server checks against the live login on every call. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.\n    Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).",
         "operationId": "assistant_session_agent_v1_console_assistant_session_post",
         "requestBody": {
           "content": {

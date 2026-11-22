@@ -2825,6 +2825,7 @@ export interface paths {
          *     Raises:
          *         Forbidden: A key or the assistant itself instead of a console login (``console_required``).
          *         NotFound: The assistant is off.
+         *         Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).
          */
         post: operations["assistant_session_agent_v1_console_assistant_session_post"];
         delete?: never;
