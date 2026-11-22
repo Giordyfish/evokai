@@ -909,6 +909,8 @@ export interface PromptVersion {
   /** The module's parameter schema (a restricted JSON Schema), or null for a plain prompt. */
   parameters: Record<string, unknown> | null
   data: Record<string, string> | null
+  /** `handlebars`, or `legacy` for a version saved before Handlebars (it keeps rendering as it did). */
+  templateSyntax: 'legacy' | 'handlebars'
   createdAt: string
 }
 /** A prompt to save: a changed text, schema, description or data becomes the next version. */

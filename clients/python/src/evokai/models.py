@@ -930,7 +930,11 @@ class AgentDef(SnakeModel):
     output_schema: dict[str, Any] | None = None
     prompt_cache: Literal["off", "5m", "1h"] = "off"
     confirm_labels: dict[str, str | list[str]] = Field(default_factory=dict)
+    """Tool name to label template(s) of its confirmation card, in Handlebars."""
     confirm_values: dict[str, dict[str, str]] = Field(default_factory=dict)
+    template_syntax: Literal["legacy", "handlebars"] = "handlebars"
+    """The syntax of the instructions and labels: what is saved is ``handlebars``; ``legacy``
+    marks a version saved before Handlebars."""
     suggestions: list[str] = Field(default_factory=list)
     voice: VoiceDef | None = None
     security: dict[str, Any] | None = None
@@ -1115,6 +1119,9 @@ class PromptVersion(WireModel):
     parameters: dict[str, Any] | None = None
     """A module's parameter schema, or None for a plain prompt."""
     data: dict[str, str] | None = None
+    template_syntax: Literal["legacy", "handlebars"] | None = None
+    """``handlebars``, or ``legacy`` for a version saved before Handlebars (it keeps rendering as
+    it did)."""
     created_at: str | None = None
 
 

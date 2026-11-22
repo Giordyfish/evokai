@@ -15,6 +15,7 @@ import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { Btn, Field, Hero, KV, Panel, Seg, Switch, Tag } from '../ui'
 import { Loads } from './common'
 import { ParamsForm } from './ModuleParams'
+import { isLegacyPrompt } from '../templates'
 import { num, t, type TextKey } from '../i18n'
 
 const usedBy = (agents: AgentDef[], name: string): string[] =>
@@ -76,7 +77,10 @@ export function Prompts({ app, id }: { app: ConsoleApplication; id: string | nul
                           <td class="s" style="max-width:420px">
                             {p.description}
                           </td>
-                          <td>{p.parameters ? <Tag tone="vi">{t('prm.module')}</Tag> : <Tag>{t('prm.plain')}</Tag>}</td>
+                          <td>
+                            {p.parameters ? <Tag tone="vi">{t('prm.module')}</Tag> : <Tag>{t('prm.plain')}</Tag>}
+                            {isLegacyPrompt(p) ? <Tag tone="warn">{t('tpl.legacy')}</Tag> : null}
+                          </td>
                           <td>{by.length ? by.map((x) => <Tag key={x}>{x}</Tag>) : <Tag>{t('prm.unused')}</Tag>}</td>
                           <td class="num">v{num(p.version)}</td>
                           <td class="num">{day(p.createdAt)}</td>
@@ -259,6 +263,11 @@ function Detail(p: { app: ConsoleApplication; id: string; versions: PromptVersio
           </div>
           <textarea class="in mono" spellcheck={false} style="min-height:220px" value={text} onInput={(e) => setText(e.currentTarget.value)} aria-label={t('prm.text')} />
           <p class="hint">{t(isModule ? 'prm.textHintModule' : 'prm.textHint')}</p>
+          {isLegacyPrompt(cur) ? (
+            <p class="hint">
+              <Tag tone="warn">{t('tpl.legacy')}</Tag> {t('tpl.legacyHint')}
+            </p>
+          ) : null}
         </Panel>
         <Panel title={t('prm.details')}>
           <KV
@@ -459,7 +468,10 @@ function Detail(p: { app: ConsoleApplication; id: string; versions: PromptVersio
                 {versions.map((v) => (
                   <tr key={v.version}>
                     <td class="num">v{num(v.version)}</td>
-                    <td>{v.parameters ? <Tag tone="vi">{t('prm.module')}</Tag> : <Tag>{t('prm.plain')}</Tag>}</td>
+                    <td>
+                      {v.parameters ? <Tag tone="vi">{t('prm.module')}</Tag> : <Tag>{t('prm.plain')}</Tag>}
+                      {isLegacyPrompt(v) ? <Tag tone="warn">{t('tpl.legacy')}</Tag> : null}
+                    </td>
                     <td class="s">{v.description}</td>
                     <td class="num">{dateTime(v.createdAt)}</td>
                   </tr>
