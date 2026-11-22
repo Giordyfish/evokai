@@ -12,11 +12,13 @@ can.
 from __future__ import annotations
 
 import json
+import logging
 import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from jsonschema import Draft202012Validator
-from pydantic_handlebars import HandlebarsError, check_template_compatibility
+from pydantic_handlebars import HandlebarsEnvironment, HandlebarsError, check_template_compatibility
 
 from evokai.core.errors import BadRequest
 
@@ -38,6 +40,51 @@ MAX_DATA_BYTES = 256 * 1024
 """The data table of a module version, serialised."""
 RESERVED = ("date", "app", "data")
 """Names every module template gets; a parameter cannot take them."""
+
+log = logging.getLogger(__name__)
+
+_HANDLEBARS = HandlebarsEnvironment(auto_escape=False)
+"""Prompts are not HTML: values go in as they are."""
+_LEGACY = re.compile(r"\{(date|app)\}")
+
+
+@dataclass(frozen=True)
+class RenderedModule:
+    """A module resolved for a turn: its pinned version, template and the values it gets."""
+
+    name: str
+    version: int
+    text: str
+    """The module's template (rendered by ``system_prompt`` with ``date``, ``app``, ``data``)."""
+    params: dict[str, Any]
+    """The parameter values (defaults filled, validated)."""
+    data: dict[str, Any] | None = field(default=None)
+    """The version's lookup table."""
+
+
+def render_template(text: str, values: dict[str, Any]) -> str:
+    """Render a prompt text.
+
+    A text with ``{{`` is a Handlebars template (``pydantic_handlebars``, no HTML escaping).
+    Any other text keeps the older single-brace placeholders: ``{date}`` and ``{app}`` are
+    replaced and every other brace stays as it is (JSON examples in prompts are common).
+
+    Args:
+        text: The prompt text.
+        values: What the template may read (``date``, ``app`` and, for a module, ``data`` and
+            its parameters).
+
+    Returns:
+        The rendered text. A Handlebars text that cannot be rendered falls back to the
+        single-brace path rather than failing the turn.
+    """
+    if "{{" in text:
+        try:
+            return _HANDLEBARS.render(text, values)
+        except HandlebarsError as e:
+            log.warning("prompt template not rendered: %s", type(e).__name__)
+    return _LEGACY.sub(lambda m: str(values.get(m[1], m[0])), text)
+
 
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 _COMMON = {"type", "default", "description"}
