@@ -23,8 +23,8 @@ validation:
 
 theme:
   name: material
-  logo: assets/evokai-head.png
-  favicon: assets/evokai-head.png
+  logo: assets/evokai-logo.png
+  favicon: assets/evokai-favicon.png
   icon:
     repo: fontawesome/brands/github
   palette:
