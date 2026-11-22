@@ -365,6 +365,11 @@ export const it: Messages = {
   'keys.revoke': 'Revoca',
   'keys.empty': 'Nessuna chiave.',
   'keys.emptyText': 'Crea una server key per collegare il backend di {app}.',
+  'keys.agentTitle': 'Usalo con un agente AI',
+  'keys.agentText': 'Gli agenti AI possono gestire questa applicazione tramite il suo MCP server di amministrazione, con i diritti della admin key che usano. Le letture sono libere; ogni modifica viene verificata e registrata come una chiamata alla admin API.',
+  'keys.agentCommand': 'Con Claude Code si aggiunge così (qualunque client MCP che usa Streamable HTTP funziona allo stesso modo):',
+  'keys.agentCopy': 'Copia il comando',
+  'keys.agentCopied': 'Comando copiato',
 
   // Limits and privacy
   'limits.msg.app': "Il mese dell'applicazione è esaurito",
