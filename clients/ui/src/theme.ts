@@ -138,17 +138,18 @@ export function orbColors(orb: Theme['orb']): Partial<OrbColors> | undefined {
   return colors
 }
 
-/** The images of an orb made of images: the `orb-images` attribute (JSON) wins over the theme's. Null without `idle`. */
+/** The images of an orb made of images: the `orb-images` attribute (JSON) wins over the theme's; null without `idle`. */
 export function orbImages(attr: string | null, orb: Theme['orb']): OrbImages | null {
-  let v: unknown = orb?.images
+  const ok = (v: unknown): v is OrbImages => !!v && typeof v === 'object' && typeof (v as OrbImages).idle === 'string'
   if (attr) {
     try {
-      v = JSON.parse(attr)
+      const v: unknown = JSON.parse(attr)
+      if (ok(v)) return v
     } catch {
-      v = null
+      // Not JSON: the theme's images, if any.
     }
   }
-  return v && typeof v === 'object' && typeof (v as OrbImages).idle === 'string' ? (v as OrbImages) : null
+  return ok(orb?.images) ? orb.images : null
 }
 
 /** The image for a state (idle when the state has none). */

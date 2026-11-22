@@ -1,5 +1,5 @@
 import { setLocale } from '../src/i18n'
-import { SKIN, targetApp } from '../src/assistant/launcher'
+import { SIDE_OFFSET, SKIN, targetApp } from '../src/assistant/launcher'
 import { ORB_MAX } from '@ui/travel'
 import { activateBody, assistantActive, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../src/assistant/choice'
 
@@ -79,5 +79,10 @@ describe('the mascot is the launcher', () => {
     expect(SKIN).not.toMatch(/\.dock\{display:none\}|\.orbfly\{display:none\}/)
     expect(SKIN).toContain('.oslot.launch{')
     expect(SKIN).toContain(`.oslot.mid{width:${ORB_MAX}px;height:${ORB_MAX}px}`)
+  })
+  it('keeps the sidebar usable and lets no voice start before the notice is read', () => {
+    expect(SKIN).toContain(`@media (min-width:901px){.dock,.panel{left:${SIDE_OFFSET}px}}`)
+    expect(SKIN).toContain(':host([data-notice]) [part~="launcher-actions"]{display:none}')
+    expect(SKIN).toContain(':host([data-notice=open]) :is(.dock,[part~="orb"]){opacity:0;pointer-events:none}')
   })
 })

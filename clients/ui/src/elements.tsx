@@ -176,7 +176,7 @@ abstract class EvokaiBase extends HTMLBase {
     this.state_ = next
     this.setAttribute('data-state', next)
     // An orb made of images follows the state.
-    this.update()
+    if (this.hasAttribute('orb-images') || resolveTheme(this.theme).orb?.images) this.update()
     this.dispatchEvent(new CustomEvent('statechange', { detail: { state: next, previous }, bubbles: true, composed: true }))
   }
 
@@ -339,6 +339,7 @@ export class EvokaiChatElement extends EvokaiBase {
         onNavigate={(p) => this.navigate(p)}
         onView={this.onView}
         onOrb={this.onOrb}
+        host={this}
       />
     )
   }

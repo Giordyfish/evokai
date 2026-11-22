@@ -747,4 +747,5 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .viewed{border-left:3px solid var(--warn);padding-left:8px}
 .mascot{display:block;position:relative}
 .mascot.live canvas{position:absolute;inset:0}
+@media (min-width:901px){.assistant-panel{left:292px}}
 @media (max-width:640px){.assistant-panel{inset:0;width:auto;border-radius:0;border:0}}

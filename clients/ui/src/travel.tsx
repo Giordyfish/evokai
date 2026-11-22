@@ -64,7 +64,8 @@ function OrbImage({ images, state }: { images: OrbImages; state: ChatState }): V
   const prev = useRef(state)
   const [once, setOnce] = useState<string | null>(null)
   const still = reducedMotion()
-  useEffect(() => {
+  // Before the paint: the state's own image never shows for a frame ahead of the one-shot image.
+  useLayoutEffect(() => {
     const from = prev.current
     prev.current = state
     const t = from === state || still ? null : orbTransition(images, from, state)
@@ -78,7 +79,7 @@ function OrbImage({ images, state }: { images: OrbImages; state: ChatState }): V
   const all = JSON.stringify(images)
   useEffect(() => {
     if (typeof Image === 'undefined') return
-    for (const src of [images.idle, images.still, images.listening, images.thinking, images.tool, images.confirm, images.speaking, images.done, ...Object.values(images.transitions ?? {}).map((t) => t.src)])
+    for (const src of [images.idle, images.still, images.listening, images.thinking, images.tool, images.confirm, images.speaking, images.done, ...Object.values(images.transitions ?? {}).map((t) => t?.src)])
       if (src) new Image().src = src
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all])

@@ -59,7 +59,6 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The console assistant has no button: the mascot is its launcher at the bottom left and travels like the chat's orb
   (to the header, to the middle in voice mode, back to the launcher while voice is minimized). There is no launcher
   while the assistant is not active; it is activated from the Assistant page.
-
 - **Breaking: one template syntax, Handlebars.** Agent instructions, application prompts and confirm labels are
   Handlebars templates (pydantic-handlebars, as prompt modules): `{{date}}`, `{{app}}`, and in labels `{{field}}`,
   `{{count field}}` and `{{map field "table"}}`; the first label whose fields are all present still wins. Every agent

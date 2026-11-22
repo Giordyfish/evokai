@@ -49,8 +49,22 @@ function localVoices(): Promise<LocalVoice[]> {
 
 /** The first-use notice: retention, who can see, purpose, the assistant's AI nature, and who viewed what. */
 function Notice({ privacy, error, onAccept, onClose }: { privacy: AssistantPrivacy; error: string | null; onAccept: () => void; onClose: () => void }) {
+  const box = useRef<HTMLElement>(null)
+  // The focus moves into the notice (it opened from the launcher), Escape closes it.
+  useEffect(() => box.current?.querySelector<HTMLElement>('.btn.pri')?.focus(), [])
   return (
-    <section class="assistant-panel" role="dialog" aria-label={t('assistant.noticeTitle')}>
+    <section
+      ref={box}
+      class="assistant-panel"
+      role="dialog"
+      aria-label={t('assistant.noticeTitle')}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          onClose()
+        }
+      }}
+    >
       <header>
         <b>{t('assistant.noticeTitle')}</b>
         <Btn kind="ic sm ghost" label={t('common.close')} onClick={onClose}>
@@ -115,6 +129,14 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
   const [error, setError] = useState<string | null>(null)
   const [chat, setChat] = useState<EvokaiChatElement | null>(null)
   const [mood, setMood] = useState<Mood>({ now: 'idle', before: 'idle', applied: false, greeting: false })
+  const [, setSwaps] = useState(0)
+  // The mascot's place: a child of the chat from its first render, so the chat never draws an orb of its own.
+  const [orbSlot] = useState(() => {
+    const div = document.createElement('div')
+    div.setAttribute('slot', 'orb')
+    div.className = 'assistant-mascot'
+    return div
+  })
   const live = useRef({ privacy, notice })
   live.current = { privacy, notice }
 
@@ -124,7 +146,8 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
     let on = true
     Promise.all([adminJson<AssistantPrivacy>(target.id, 'GET', '/v1/console/assistant/privacy'), localVoices()])
       .then(([p, voices]) => on && setPrivacy({ app: target.id, p, voices }))
-      .catch(() => on && setPrivacy(null))
+      // A failure keeps what was read before (a running conversation goes on); with nothing read, no launcher.
+      .catch(() => {})
     return () => {
       on = false
     }
@@ -138,7 +161,6 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
     defineElements()
     const el = document.createElement('evokai-chat')
     el.setAttribute('base-url', baseUrl)
-    el.setAttribute('title', t('assistant.panelTitle'))
     el.setAttribute('position', 'bottom-left')
     el.setAttribute('page-context', 'off')
     el.skin = SKIN
@@ -164,9 +186,11 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
     el.addEventListener('statechange', onState)
     el.addEventListener('evokai-navigate', onNavigate)
     el.addEventListener('evokai-open', onOpen)
+    el.append(orbSlot)
     document.body.append(el)
     setChat(el)
     return () => {
+      render(null, orbSlot)
       el.removeEventListener('statechange', onState)
       el.removeEventListener('evokai-navigate', onNavigate)
       el.removeEventListener('evokai-open', onOpen)
@@ -178,17 +202,37 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
 
   // The application it acts on: a new token source, its own remembered conversation and its voice. The storage key
   // changes last, so the chat starts its new session with all three.
+  const lang = locale()
   useEffect(() => {
     if (!chat || !privacy) return
     chat.getToken = tokenFor(privacy.app)
-    chat.voiceOptions = voiceOptions(voiceKind(privacy.p.voice, privacy.voices, locale()))
-    chat.setAttribute('locale', locale())
+    chat.voiceOptions = voiceOptions(voiceKind(privacy.p.voice, privacy.voices, lang))
     chat.setAttribute('storage-key', `evokai-console-assistant:${privacy.app}`)
-  }, [chat, privacy])
+    // Draw again once the new controller exists: the mascot follows its voice.
+    setTimeout(() => setSwaps((n) => n + 1), 0)
+  }, [chat, privacy?.app, privacy?.p.voice])
 
+  // The console's language and theme, also when the person changes them.
+  useEffect(() => {
+    if (!chat) return
+    chat.setAttribute('locale', lang)
+    chat.setAttribute('title', t('assistant.panelTitle'))
+  }, [chat, lang])
   useEffect(() => {
     chat?.setAttribute('scheme', dark ? 'dark' : 'light')
   }, [chat, dark])
+  // Until the notice is read the launcher cannot start voice; while it is open the launcher steps aside.
+  const pending = !!privacy && needsNotice(privacy.p)
+  useEffect(() => {
+    if (!chat) return
+    if (notice) chat.setAttribute('data-notice', 'open')
+    else if (pending) chat.setAttribute('data-notice', 'pending')
+    else chat.removeAttribute('data-notice')
+  }, [chat, notice, pending])
+  const closeNotice = () => {
+    setNotice(false)
+    setTimeout(() => chat?.shadowRoot?.querySelector<HTMLElement>('[part~="launcher"]')?.focus(), 0)
+  }
 
   const accept = async () => {
     if (!privacy) return
@@ -208,18 +252,17 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
   const ended = () => setMood((m) => ({ ...m, applied: false, greeting: false }))
   return (
     <>
-      {chat ? <Mascot chat={chat} view={view} onClipEnd={ended} /> : null}
+      {chat ? <Mascot chat={chat} slot={orbSlot} view={view} onClipEnd={ended} /> : null}
       {chat && privacy ? <About chat={chat} app={c.apps.find((a) => a.id === privacy.app)?.name ?? ''} privacy={privacy.p} voices={privacy.voices} /> : null}
-      {notice && privacy ? <Notice privacy={privacy.p} error={error} onAccept={() => void accept()} onClose={() => setNotice(false)} /> : null}
+      {notice && privacy ? <Notice privacy={privacy.p} error={error} onAccept={() => void accept()} onClose={closeNotice} /> : null}
     </>
   )
 }
 
 /** The mascot as the chat's orb (`slot="orb"`): drawn once at the orb's largest size, moved and scaled by the chat. */
-function Mascot(p: { chat: EvokaiChatElement; view: MascotView; onClipEnd: () => void }) {
-  const slot = useSlot(p.chat, 'orb', 'assistant-mascot')
+function Mascot(p: { chat: EvokaiChatElement; slot: HTMLDivElement; view: MascotView; onClipEnd: () => void }) {
   useEffect(() => {
-    render(<LiveMascot view={p.view} size={ORB_MAX} signals={p.chat.controller?.voice?.signals ?? null} onClipEnd={p.onClipEnd} />, slot)
+    render(<LiveMascot view={p.view} size={ORB_MAX} signals={p.chat.controller?.voice?.signals ?? null} onClipEnd={p.onClipEnd} />, p.slot)
   })
   return null
 }

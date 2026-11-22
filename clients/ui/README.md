@@ -46,19 +46,21 @@ opens to the right of the launcher and the hover actions rise above it.
 The orb can be replaced, and whatever replaces it lives exactly as the orb does: it rests in the launcher, the
 header and the middle of voice mode, takes the same flight between them (transform only, the slight arc, the box
 opening around it once it has landed and closing before it leaves), speaks from the launcher while voice is
-minimized with the bubble beside it and the actions above it, and stands still with reduced motion. There is still
+minimized with the bubble beside it and the actions above it, and with reduced motion it moves without flying. There is still
 one of it on screen: it is never copied, only moved. In order of precedence:
 
 1. **An element of yours**: one child with `slot="orb"`. It is laid out in a square box of 168 CSS pixels (the
    orb's largest size, in the middle of voice mode) and scaled to each resting place, so draw it at that size. The
    component draws nothing on it (no plasma, no ring, no swell) and never re-creates it: follow the host's
    `data-state`, `data-view` and `data-orb` (or the `statechange` event, and `controller.voice.signals` for the
-   voice's envelope) to animate it. It receives no pointer events: a click on it is a click on the launcher.
+   voice's envelope) to animate it, and keep it still yourself with `prefers-reduced-motion`. It receives no pointer
+   events: a click on it is a click on the launcher.
 2. **Images per state**: `theme.orb.images`, or the `orb-images` attribute (JSON, it wins over the theme). One image
    per chat state (`idle`, `listening`, `thinking`, `tool`, `confirm`, `speaking`, `done`), still or animated (GIF,
    WebP, APNG); a state without one shows `idle`. With reduced motion `still` is shown for every state, or without
    it the first frame of the state's image. `transitions` plays a one-shot image for `ms` milliseconds when the
-   state changes, by pair (`"confirm>tool"`) or from any state (`"*>done"`).
+   state changes, by pair (`"confirm>tool"`) or from any state (`"*>done"`). An `orb-images` that is not valid JSON
+   (or has no `idle`) is ignored. In React pass them as `theme={{ orb: { images } }}`.
 3. The built-in orb.
 
 A mascot from images only, no code:
@@ -364,6 +366,6 @@ EVOKAI_URL=http://localhost:8787/agent EVOKAI_SERVER_KEY=evk_srv_... EVOKAI_AGEN
 VITE_EVOKAI_URL=http://localhost:8787/agent npm run demo      # http://localhost:5174 (add it to the allowed origins)
 ```
 
-**Size budget** (gzip, checked by `npm run build`): the components with Preact 47.5 KB (today about 47.1 KB); the
+**Size budget** (gzip, checked by `npm run build`): the components with Preact 47.5 KB (today about 47.2 KB); the
 headless client is a peer dependency (its browser entry about 31 KB, budget 60 KB). The in-browser neural voice and its
 runtime load on demand and are never part of these.

@@ -52,6 +52,8 @@ export interface PanelProps {
   state?: ChatState
   /** Images per chat state in place of the orb (a slotted `orb` element wins over them). */
   images?: OrbImages | null | undefined
+  /** The host element, whose children fill the slots (read from the first render on). */
+  host?: Element | undefined
 }
 
 const KNOWLEDGE_TOOL = 'knowledge_search'
@@ -459,18 +461,24 @@ export function Panel(props: PanelProps): VNode {
     const r = rootRef.current
     const on = () => slotsChanged((n) => n + 1)
     r?.addEventListener('slotchange', on)
-    const host = (r?.getRootNode() as ShadowRoot | undefined)?.host
-    const watch = host && typeof MutationObserver === 'function' ? new MutationObserver(on) : null
-    if (host) watch?.observe(host, { childList: true })
+    const host = props.host ?? (r?.getRootNode() as ShadowRoot | undefined)?.host
+    // Children added or removed, or a child's slot changed; not what happens inside a slotted element.
+    const watch =
+      host && typeof MutationObserver === 'function'
+        ? new MutationObserver((recs) => {
+            if (recs.some((m) => m.target === host || m.type === 'attributes')) on()
+          })
+        : null
+    if (host) watch?.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['slot'] })
     // The first render ran before the root existed: read the slots again now.
     on()
     return () => {
       r?.removeEventListener('slotchange', on)
       watch?.disconnect()
     }
-  }, [])
+  }, [props.host])
   const slotted = (name: string) => {
-    const host = (rootRef.current?.getRootNode() as ShadowRoot | undefined)?.host
+    const host = props.host ?? (rootRef.current?.getRootNode() as ShadowRoot | undefined)?.host
     return !!host && [...host.children].some((e) => e.getAttribute('slot') === name)
   }
   const custom = (r: Look['orb']) => (r === 'launcher' ? slotted('launcher') : r === 'head' ? !!props.logo || slotted('avatar') : r === 'center' ? slotted('stage-orb') : false)

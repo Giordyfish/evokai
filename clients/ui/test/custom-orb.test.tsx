@@ -1,7 +1,14 @@
+import * as orbModule from '../src/orb'
 import { defineElements, type EvokaiChatElement } from '../src/elements'
 import { CSS } from '../src/styles'
 import { orbImageFor, orbImages, orbTransition, themeVars, type OrbImages } from '../src/theme'
 import { fakeEvokai, tick } from './fake'
+
+// Every WebGL orb the component creates, counted.
+vi.mock('../src/orb', async (original) => {
+  const mod = await original<typeof orbModule>()
+  return { ...mod, createOrb: vi.fn(mod.createOrb) }
+})
 
 defineElements()
 
@@ -50,6 +57,7 @@ const img = (el: EvokaiChatElement) => el.shadowRoot!.querySelector<HTMLImageEle
 const webglOrbs = (el: EvokaiChatElement) => el.shadowRoot!.querySelectorAll('canvas.orbgl').length
 
 afterEach(() => {
+  vi.mocked(orbModule.createOrb).mockClear()
   document.body.innerHTML = ''
   localStorage.clear()
 })
@@ -61,6 +69,8 @@ describe('an element of the page as the orb', () => {
     const { el, $ } = await mounted((e) => e.append(figure))
     await until(() => el.getAttribute('data-orb') === 'launcher')
     expect(webglOrbs(el)).toBe(0)
+    // Not even for the first frame: the element is known from the first render.
+    expect(orbModule.createOrb).not.toHaveBeenCalled()
     const slot = $('.orbfly slot[name=orb]') as HTMLSlotElement
     expect(slot).toBeTruthy()
     expect($('.orbfly')!.getAttribute('data-kind')).toBe('element')
@@ -87,6 +97,14 @@ describe('an element of the page as the orb', () => {
     await until(() => webglOrbs(el) === 1)
   })
 
+  test('a child that becomes the orb later (its slot set afterwards) replaces it too', async () => {
+    const figure = document.createElement('div')
+    const { el } = await mounted((e) => e.append(figure))
+    await until(() => webglOrbs(el) === 1)
+    figure.setAttribute('slot', 'orb')
+    await until(() => webglOrbs(el) === 0 && el.shadowRoot!.querySelector('.orbfly slot[name=orb]'))
+  })
+
   test('it wins over images', async () => {
     const figure = document.createElement('div')
     figure.setAttribute('slot', 'orb')
@@ -104,6 +122,7 @@ describe('an orb made of images', () => {
     const { el } = await mounted((e) => e.setAttribute('orb-images', JSON.stringify(IMAGES)))
     await until(() => img(el)?.getAttribute('src') === 'idle.webp')
     expect(webglOrbs(el)).toBe(0)
+    expect(orbModule.createOrb).not.toHaveBeenCalled()
     await open(el)
     voice(el, true, 'listening')
     await until(() => el.getAttribute('data-state') === 'listening' && img(el)?.getAttribute('src') === 'listening.webp')
@@ -126,7 +145,7 @@ describe('an orb made of images', () => {
   })
 
   test('a one-shot image plays on a change of state, then the state image', async () => {
-    const images: OrbImages = { ...IMAGES, transitions: { '*>speaking': { src: 'hello.webp', ms: 60 } } }
+    const images = { ...IMAGES, transitions: { '*>speaking': { src: 'hello.webp', ms: 60 }, '*>done': null } } as unknown as OrbImages
     const { el } = await mounted((e) => e.setAttribute('orb-images', JSON.stringify(images)))
     await open(el)
     voice(el, true, 'speaking')
@@ -157,7 +176,8 @@ describe('an orb made of images', () => {
     expect(orbTransition(t, 'confirm', 'tool')?.src).toBe('yes.webp')
     expect(orbTransition(t, 'thinking', 'tool')).toBeNull()
     expect(orbTransition(t, 'speaking', 'done')?.src).toBe('end.webp')
-    expect(orbImages('{not json', { images: IMAGES })).toBeNull()
+    expect(orbImages('{not json', { images: IMAGES })).toBe(IMAGES)
+    expect(orbImages('{not json', undefined)).toBeNull()
     expect(orbImages(null, { images: IMAGES })).toBe(IMAGES)
     expect(orbImages('{"listening":"x.png"}', undefined)).toBeNull()
     expect(themeVars({ orb: { ink: '#000000', images: IMAGES } })).toEqual({ '--evokai-orb-ink': '#000000' })

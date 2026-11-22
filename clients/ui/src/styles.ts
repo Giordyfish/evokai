@@ -72,7 +72,7 @@ const LOOK = `
 .launcher[data-hidden]{visibility:hidden;pointer-events:none}
 .launcher:hover{transform:scale(1.05)}
 .launcher:focus-visible{outline-offset:4px}
-.vbubble{position:absolute;right:calc(100% + 16px);bottom:6px;width:min(20rem,calc(100vw - 124px));padding:11px 14px 12px;border-radius:20px 20px 6px 20px;background:var(--ek-surface);border:1px solid var(--ek-border);box-shadow:0 22px 44px -22px rgb(0 0 0/.45);transform-origin:right bottom;animation:ekbubble .35s cubic-bezier(.2,.8,.2,1) both}
+.vbubble{position:absolute;right:calc(100% + 16px);bottom:6px;width:min(20rem,calc(100vw - 100% - 64px));padding:11px 14px 12px;border-radius:20px 20px 6px 20px;background:var(--ek-surface);border:1px solid var(--ek-border);box-shadow:0 22px 44px -22px rgb(0 0 0/.45);transform-origin:right bottom;animation:ekbubble .35s cubic-bezier(.2,.8,.2,1) both}
 .vbubble::after{content:"";position:absolute;right:-7px;bottom:16px;width:14px;height:14px;background:inherit;border-right:1px solid var(--ek-border);border-bottom:1px solid var(--ek-border);transform:rotate(-45deg);border-radius:0 0 4px 0}
 .vbubble.small{width:auto;white-space:nowrap}
 :host([position=bottom-left]) .vbubble{right:auto;left:calc(100% + 16px);border-radius:20px 20px 20px 6px;transform-origin:left bottom;animation-name:ekbubblel}
