@@ -462,6 +462,62 @@ async def check_agent_modules(store: Store, application_id: str, agent: AgentDef
             raise BadRequest(f"Module {ref.name}: {e.message}", code="module_params") from e
 
 
+async def resolve_modules(
+    store: Store,
+    application_id: str,
+    agent: AgentDef,
+    options: dict[str, Any] | None,
+    *,
+    session: Any = None,
+) -> list[RenderedModule]:
+    """The modules a turn renders: the agent's, as the session chose them, at pinned versions.
+
+    Each module that is on is resolved at the version the conversation pinned, else the agent's
+    version, else the latest; with a session, a version used for the first time is pinned by
+    writing it back into the session's ``prompt_options``, so a later version of the prompt
+    does not change a conversation under way. A module whose parameters no longer fit (a
+    required one nobody gave) is left out, with a warning.
+
+    Args:
+        store: Repositories.
+        application_id: Owner application.
+        agent: The agent definition.
+        options: The session's prompt options (``{"modules": ..., "locale": ...}``), or None.
+        session: The session row, to pin versions on (None: nothing is pinned).
+
+    Returns:
+        The modules, in the agent's order.
+    """
+    chosen: dict[str, Any] = dict((options or {}).get("modules") or {})
+    out: list[RenderedModule] = []
+    pinned = False
+    for ref in agent.modules:
+        entry: dict[str, Any] = dict(chosen.get(ref.name) or {"on": ref.on, "params": ref.params})
+        if not entry.get("on"):
+            continue
+        version = entry.get("version") or ref.version
+        row = await store.prompts.get(application_id, ref.name, int(version) if version else None)
+        if row is None:
+            log.warning("prompt module not found: %s", ref.name)
+            continue
+        params: dict[str, Any] = dict(entry.get("params") or {})
+        if row.parameters is not None:
+            try:
+                params = validate_params(row.parameters, params)
+            except BadRequest:
+                log.warning("prompt module left out, parameters do not fit: %s", ref.name)
+                continue
+        if entry.get("version") != row.version:
+            chosen[ref.name] = {**entry, "version": row.version}
+            pinned = True
+        out.append(RenderedModule(ref.name, row.version, row.text, params, row.data))
+    if pinned and session is not None:
+        updated = {"modules": chosen, "locale": (options or {}).get("locale")}
+        await store.sessions.set_prompt_options(session.id, updated)
+        session.prompt_options = updated
+    return out
+
+
 async def scan_module_texts(
     guard: Any,
     app: Any,

@@ -3979,6 +3979,33 @@
             ],
             "title": "Input"
           },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "modules": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ModuleChoice"
+                },
+                "maxProperties": 20,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
+          },
           "store": {
             "default": false,
             "title": "Store",
@@ -11363,7 +11390,7 @@
     },
     "/agent/v1/agents/{name}/run": {
       "post": {
-        "description": "Run an agent that allows the ``server`` channel and return its (structured) answer.\n\nReturns:\n    The output, the model that answered and the usage.\n\nRaises:\n    NotFound: Unknown application.",
+        "description": "Run an agent that allows the ``server`` channel and return its (structured) answer.\n\nReturns:\n    The output, the model that answered and the usage.\n\nRaises:\n    NotFound: Unknown application.\n    BadRequest: An unknown locale, or a prompt module choice that is refused.",
         "operationId": "run_agent_agent_v1_agents__name__run_post",
         "parameters": [
           {
