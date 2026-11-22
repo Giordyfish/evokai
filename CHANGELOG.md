@@ -36,6 +36,14 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Changed
 
+- **Breaking: one template syntax, Handlebars.** Agent instructions, application prompts and confirm labels are
+  Handlebars templates (pydantic-handlebars, as prompt modules): `{{date}}`, `{{app}}`, and in labels `{{field}}`,
+  `{{count field}}` and `{{map field "table"}}`; the first label whose fields are all present still wins. Every agent
+  version and prompt version records its `template_syntax`; those saved before are `legacy` and keep rendering exactly
+  as they did, so running conversations are unchanged, and the console marks them **Legacy syntax**. Saving a text
+  that still has an old placeholder (`{date}`, `{app}`, a label's `{field}`, `{field|count}`, `{field|map:table}`) is
+  refused with 400 `legacy_syntax`, naming the placeholder and its Handlebars form; templates that do not fit are
+  400 `prompt_template` or `label_template`. Nothing is converted automatically. See `docs/templates.md`.
 - Prompt texts without `{{` replace only `{date}` and `{app}`: other braces stay as written (before, a JSON example
   such as `{"ok": true}` in instructions failed to render).
 - Neutral wording: the default voice rule no longer names domain-specific codes ("codes, account numbers or personal
@@ -45,6 +53,20 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The console assistant can never change an agent's security policy, whoever it acts for.
 - The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
+
+### Upgrading
+
+- **Convert the application YAML before you start the new version.** A file whose agents or prompts still use
+  `{date}`, `{app}` or the old label fields stops the start-up with a message naming the file, the item and what to
+  write instead: `{date}` becomes `{{date}}`, `{app}` `{{app}}`, `{field}` `{{field}}`, `{field|count}`
+  `{{count field}}` and `{field|map:table}` `{{map field "table"}}`. Double braces that were escapes for a literal
+  brace become single braces. JSON examples need no change. `config/bookshop.yaml` and the examples are converted.
+- Nothing else needs doing: versions already stored stay legacy and keep working, and can still be restored or saved
+  with another model. The first change of an agent's or prompt's text through the API or the console is saved in
+  Handlebars, and is refused while the agent's confirm labels still use the old fields: the console does not edit
+  labels, so convert them through the API or the YAML file first. Migration `0032` adds `template_syntax` to prompt
+  versions (existing rows are `legacy`).
+- Workflow approval labels keep the older grammar: leave them as they are.
 
 ## [0.1.3] - 2026-11-21
 

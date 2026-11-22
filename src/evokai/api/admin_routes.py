@@ -17,14 +17,15 @@ from evokai.agents.definitions import AgentDef
 from evokai.agents.modules import (
     check_agent_modules,
     check_data,
-    check_module_template,
     check_parameters_schema,
     check_prompt_in_use,
     render_legacy,
     render_template,
+    render_text,
     validate_params,
 )
 from evokai.agents.prompts import long_date
+from evokai.agents.templates import check_agent_templates, check_prompt, syntax_to_save
 from evokai.api.deps import admin_app, services
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
@@ -438,10 +439,13 @@ async def list_agents(svc: Svc, a: Admin) -> dict[str, Any]:
     """Active agents with their definitions.
 
     Returns:
-        items.
+        items, each with its ``template_syntax`` (``legacy`` for a version saved before
+        Handlebars).
     """
     rows = await svc.store.agents.active_all(a.application_id)
-    return {"items": [{**r.definition, "version": r.version} for r in rows]}
+    return {
+        "items": [{"template_syntax": "legacy", **r.definition, "version": r.version} for r in rows]
+    }
 
 
 @router.put("/agents/{name}")
@@ -466,6 +470,8 @@ async def put_agent(
     """
     if body.name != name:
         raise BadRequest("The name in the path and in the body must be the same.")
+    # What is saved now is Handlebars; a body that is exactly a stored legacy version is a restore.
+    body = await syntax_to_save(svc.store, a.application_id, body)
     for model in (body.model, *body.fallbacks, *body.models):
         if not svc.catalog.allowed(model):
             raise BadRequest(f"Model not allowed: {model}", code="model")
@@ -496,6 +502,8 @@ async def put_agent(
     if (a.role != "owner" or a.via) and (latest or {}).get("security") != body.security:
         # The console assistant never changes a security policy, whoever it acts for.
         raise Forbidden("Changing an agent's security policy needs the owner role.", code="role")
+    stored = await svc.store.agents.version(a.application_id, name, body.with_version().version)
+    check_agent_templates(body, before, stored=stored is not None)
     await _check_ask_rules(svc, a, body)
     await check_agent_modules(svc.store, a.application_id, body)
     agent = body.with_version()
@@ -1031,9 +1039,9 @@ async def put_prompt(
     if parameters is not None:
         check_parameters_schema(parameters)
         check_data(data)
-        check_module_template(body.text, parameters, data)
     elif data is not None:
         raise BadRequest("A data table needs parameters (a module).", code="module_data")
+    check_prompt(body.text, parameters, data)
     await check_prompt_in_use(svc.store, a.application_id, name, parameters)
     version = await svc.store.prompts.put(
         a.application_id,
@@ -1083,19 +1091,21 @@ async def preview_prompt(name: str, body: PreviewBody, svc: Svc, a: Admin) -> di
     if app is None:
         raise NotFound()
     if body.text is not None:
-        text, parameters, data = body.text, body.parameters, body.data
+        text, parameters, data, syntax = body.text, body.parameters, body.data, "handlebars"
         if parameters is not None:
             check_parameters_schema(parameters)
             check_data(data)
-            check_module_template(text, parameters, data)
+        check_prompt(text, parameters, data)
     else:
         row = await svc.store.prompts.get(a.application_id, name, body.version)
         if row is None:
             raise NotFound("Unknown prompt.", code="unknown_prompt")
-        text, parameters, data = row.text, row.parameters, row.data
+        text, parameters, data, syntax = row.text, row.parameters, row.data, row.template_syntax
     params = validate_params(parameters, body.params, partial=True) if parameters else {}
     timezone = str((app.defaults or {}).get("timezone") or "UTC")
     values = {"date": long_date(utcnow(), timezone), "app": app.name, "data": data or {}, **params}
+    if syntax != "legacy":
+        return {"text": render_text(text, syntax, values)}
     return {"text": render_template(text, values) if parameters else render_legacy(text, values)}
 
 
@@ -1104,8 +1114,8 @@ async def list_prompts(svc: Svc, a: Admin) -> dict[str, Any]:
     """Every version of every prompt.
 
     Returns:
-        items: name, version, text, description, parameters (a module's schema, or null), data
-        and createdAt.
+        items: name, version, text, description, parameters (a module's schema, or null), data,
+        templateSyntax and createdAt.
     """
     rows = await svc.store.prompts.all(a.application_id)
     return {
@@ -1117,6 +1127,7 @@ async def list_prompts(svc: Svc, a: Admin) -> dict[str, Any]:
                 "description": r.description or "",
                 "parameters": r.parameters,
                 "data": r.data,
+                "templateSyntax": r.template_syntax,
                 "createdAt": r.created_at.isoformat(),
             }
             for r in rows

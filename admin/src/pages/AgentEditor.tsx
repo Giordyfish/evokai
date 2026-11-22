@@ -18,6 +18,7 @@ import { Loads } from './common'
 import { RulesEditor } from './AskRules'
 import { ParamsForm } from './ModuleParams'
 import { capDescription } from '../capabilityText'
+import { hasLegacyLabels, isLegacy, withSyntax } from '../templates'
 import { t, tn, type TextKey } from '../i18n'
 
 type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
@@ -155,11 +156,15 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
     setProblems(null)
     let body: AgentDef = draft
     try {
-      body = {
-        ...body,
-        output_schema: server && schemaText.trim() ? JSON.parse(schemaText) : null,
-        model_settings: settingsText.trim() ? JSON.parse(settingsText) : {},
-      }
+      body = withSyntax(
+        {
+          ...body,
+          output_schema: server && schemaText.trim() ? JSON.parse(schemaText) : null,
+          model_settings: settingsText.trim() ? JSON.parse(settingsText) : {},
+        },
+        base,
+        isNew,
+      )
     } catch {
       setProblems(t('ag.badJson'))
       return
@@ -386,6 +391,12 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
           onInput={(e) => set({ instructions: e.currentTarget.value })}
         />
         <div class="hint">{t('ag.insHint')}</div>
+        {!isNew && isLegacy(base) ? (
+          <p class="hint">
+            <Tag tone="warn">{t('tpl.legacy')}</Tag> {t('tpl.legacyHint')}
+            {hasLegacyLabels(base) ? <> {t('tpl.legacyLabels')}</> : null}
+          </p>
+        ) : null}
       </Panel>
     ),
     model: (
@@ -604,6 +615,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
               clientGranted(g, 'confirm') ? <Tag tone="ok">{t('ag.grantedTag')}</Tag> : locked,
               !clientGranted(g, 'confirm'),
             )}
+            <p class="hint">{t('ag.confirmCardHint')}</p>
           </Panel>
         ) : (
           <Panel title={t('ag.clientTools')}>
@@ -891,6 +903,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
                       {t('ag.live')}
                     </Tag>
                   ) : null}
+                  {isLegacy(v.definition) ? <Tag tone="warn">{t('tpl.legacy')}</Tag> : null}
                   <span style="margin-left:auto">
                     {v.active ? null : (
                       <Btn sm kind="ghost" onClick={() => void restore(v)}>

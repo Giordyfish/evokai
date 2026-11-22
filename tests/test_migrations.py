@@ -45,3 +45,25 @@ def test_migrations_build_the_models_schema_and_the_latest_is_reversible(tmp_pat
     command.downgrade(cfg, "-1")
     command.upgrade(cfg, "head")
     assert _diff(db) == []
+
+
+def test_prompt_versions_stored_before_handlebars_become_legacy(tmp_path: Path) -> None:
+    db = tmp_path / "prompts.db"
+    cfg = _config(db)
+    command.upgrade(cfg, "0031")
+    engine = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with engine.begin() as c:
+            c.execute(
+                sa.text(
+                    "INSERT INTO evokai_prompts"
+                    " (id, application_id, name, version, text, created_at)"
+                    " VALUES ('p1', 'a1', 'base', 1, 'Today is {date}.', '2026-11-01')"
+                )
+            )
+        command.upgrade(cfg, "head")
+        with engine.connect() as c:
+            syntax = c.execute(sa.text("SELECT template_syntax FROM evokai_prompts")).scalar_one()
+        assert syntax == "legacy"
+    finally:
+        engine.dispose()

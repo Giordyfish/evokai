@@ -330,6 +330,15 @@
             ],
             "title": "Temperature"
           },
+          "template_syntax": {
+            "default": "legacy",
+            "enum": [
+              "legacy",
+              "handlebars"
+            ],
+            "title": "Template Syntax",
+            "type": "string"
+          },
           "title": {
             "default": "",
             "title": "Title",
@@ -5858,7 +5867,7 @@
     },
     "/agent/v1/admin/agents": {
       "get": {
-        "description": "Active agents with their definitions.\n\nReturns:\n    items.",
+        "description": "Active agents with their definitions.\n\nReturns:\n    items, each with its ``template_syntax`` (``legacy`` for a version saved before\n    Handlebars).",
         "operationId": "list_agents_agent_v1_admin_agents_get",
         "responses": {
           "200": {
@@ -9730,7 +9739,7 @@
     },
     "/agent/v1/admin/prompts": {
       "get": {
-        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data\n    and createdAt.",
+        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data,\n    templateSyntax and createdAt.",
         "operationId": "list_prompts_agent_v1_admin_prompts_get",
         "responses": {
           "200": {

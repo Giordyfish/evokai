@@ -1239,3 +1239,14 @@ def test_raw_paths_are_encoded(router: respx.MockRouter) -> None:
     with EvokaiServer(BASE, admin_key=ADMIN_KEY) as c:
         c.admin.skills.get("a/b?c")
     assert route.calls.last.request.url.raw_path == b"/agent/v1/admin/skills/a%2Fb%3Fc"
+
+
+def test_template_syntax_is_left_to_the_service_unless_set() -> None:
+    from evokai._calls import body
+
+    sent = body(AgentDef, AgentDef(name="a", model="m", instructions="Today is {{date}}."))
+    assert "template_syntax" not in sent
+    kept = body(AgentDef, {"name": "a", "model": "m", "template_syntax": "legacy"})
+    assert kept["template_syntax"] == "legacy"
+    version = PromptVersion.model_validate({"name": "p", "version": 1, "templateSyntax": "legacy"})
+    assert version.template_syntax == "legacy"

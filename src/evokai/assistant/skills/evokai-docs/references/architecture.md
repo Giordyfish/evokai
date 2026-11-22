@@ -135,7 +135,7 @@ tools ── cachePoint(ttl) ── system: stable part ── cachePoint(ttl) �
 
 - The **stable part** of the system prompt is the same on every request of an agent version: the
   instructions, the text of the agent's `preload_skills` and the list of the skills it loads on
-  demand. `{date}` in the instructions changes it once a day.
+  demand. `{{date}}` in the instructions changes it once a day.
 - The **volatile part** (voice rule, memories, open page) follows the cache point, so nothing per
   request is ever inside the cached prefix. A server run has no volatile part: its input is the
   user's message.

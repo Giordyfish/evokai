@@ -455,6 +455,11 @@ class PromptRecord(Base):
     description: Mapped[str] = mapped_column(sa.Text, default="", server_default="")
     data: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
     """A static lookup table of the version, readable in the template as ``data``."""
+    template_syntax: Mapped[str] = mapped_column(
+        sa.String(16), default="handlebars", server_default="legacy"
+    )
+    """``handlebars``, or ``legacy`` for the versions saved before Handlebars (they keep rendering
+    as they always did, ``evokai.agents.modules.render_text``)."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     __table_args__ = (
         sa.UniqueConstraint("application_id", "name", "version", name="uq_evokai_prompt_version"),

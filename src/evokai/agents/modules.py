@@ -19,7 +19,13 @@ from typing import TYPE_CHECKING, Any
 
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel
-from pydantic_handlebars import HandlebarsEnvironment, HandlebarsError, check_template_compatibility
+from pydantic_handlebars import (
+    HandlebarsEnvironment,
+    HandlebarsError,
+    HandlebarsRuntimeError,
+    HelperOptions,
+    check_template_compatibility,
+)
 
 from evokai.core.errors import BadRequest
 
@@ -54,6 +60,50 @@ MAX_EACH = 2
 
 _HANDLEBARS = HandlebarsEnvironment(auto_escape=False, max_output_size=MAX_RENDERED)
 """Prompts are not HTML: values go in as they are."""
+LABEL_TABLES = " tables"
+"""Where a label's context carries the agent's ``confirm_values`` (no template path names it)."""
+LABEL_HELPERS = frozenset({"count", "map", "if", "unless", "each", "with", "lookup"})
+"""What a confirm label may call."""
+
+
+def _label_count(*args: Any, options: HelperOptions) -> str:
+    """``{{count field}}``: the length of a list, 1 for one value.
+
+    Returns:
+        The count, as text.
+
+    Raises:
+        HandlebarsRuntimeError: Called without a field (a bare {{count}} gets the context), so
+            the template is incomplete.
+    """
+    if not args or args[0] is options.data.get("root"):
+        raise HandlebarsRuntimeError("count needs a field")
+    return str(len(args[0])) if isinstance(args[0], list) else "1"
+
+
+def _label_map(*args: Any, options: HelperOptions) -> str:
+    """``{{map field "table"}}``: the value through a ``confirm_values`` table, item by item.
+
+    Returns:
+        The words, joined with commas.
+
+    Raises:
+        HandlebarsRuntimeError: Called without a field and a table (a bare {{map}}).
+    """
+    if len(args) < 2:
+        raise HandlebarsRuntimeError("map needs a field and a table")
+    value, table = args[0], args[1]
+    words = (options.data.get("root") or {}).get(LABEL_TABLES, {}).get(str(table), {})
+    items = value if isinstance(value, list) else [value]
+    return ", ".join(words.get(str(v), str(v)) for v in items)
+
+
+LABELS = HandlebarsEnvironment(auto_escape=False, max_output_size=2000, strict=True)
+"""Confirm labels: the same options, strict so a missing field makes a template incomplete
+(``evokai.tools.labels``), with ``count`` and ``map``."""
+LABELS.register_helper("count", _label_count)
+LABELS.register_helper("map", _label_map)
+LABELS.unregister_helper("log")  # it would write the call's arguments to the log
 _LEGACY = re.compile(r"\{\{|\}\}|\{(date|app)\}")
 _NESTED_QUANTIFIER = re.compile(r"\([^()]*[*+?}][^()]*\)\s*[*+?{]")
 """A quantified group that holds a quantifier (``(a+)+``): it can backtrack for minutes."""
@@ -73,6 +123,9 @@ class RenderedModule:
     """The version's lookup table."""
     free: tuple[str, ...] = ()
     """The free-text parameters (strings without ``enum``): the guard protects them."""
+    syntax: str = "legacy"
+    """The version's template syntax: a ``legacy`` version keeps the detection it was saved with
+    (``render_template``)."""
 
 
 def render_legacy(text: str, values: dict[str, Any]) -> str:
@@ -113,6 +166,32 @@ def render_template(text: str, values: dict[str, Any]) -> str:
         BadRequest: ``module_template`` when the template cannot be rendered.
     """
     if "{{" not in text:
+        return render_legacy(text, values)
+    try:
+        return _HANDLEBARS.render(text, values)
+    except HandlebarsError as e:
+        raise BadRequest(f"Template not rendered: {e}", code="module_template") from e
+
+
+def render_text(text: str, syntax: str, values: dict[str, Any]) -> str:
+    """Render a text in its syntax.
+
+    ``legacy`` is the single-brace renderer every text had before Handlebars (``render_legacy``);
+    ``handlebars`` is the module environment (no HTML escaping, at most ``MAX_RENDERED``
+    characters out, a backslash before ``{{`` for literal braces).
+
+    Args:
+        text: The text.
+        syntax: ``legacy`` or ``handlebars``.
+        values: What the text may read.
+
+    Returns:
+        The rendered text.
+
+    Raises:
+        BadRequest: ``module_template`` when a Handlebars text cannot be rendered.
+    """
+    if syntax == "legacy":
         return render_legacy(text, values)
     try:
         return _HANDLEBARS.render(text, values)
@@ -614,7 +693,11 @@ async def resolve_modules(
             }
             pinned = True
         free = tuple(n for n, _v in free_text_items(row.parameters or {}, params))
-        out.append(RenderedModule(ref.name, row.version, row.text, params, row.data, free))
+        out.append(
+            RenderedModule(
+                ref.name, row.version, row.text, params, row.data, free, row.template_syntax
+            )
+        )
     if pinned and session is not None:
         updated = {"modules": chosen, "locale": (options or {}).get("locale")}
         await store.sessions.set_prompt_options(session.id, updated)

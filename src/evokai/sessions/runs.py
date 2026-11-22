@@ -45,7 +45,7 @@ from pydantic_ai.usage import UsageLimits
 
 from evokai.agents.definitions import AgentDef
 from evokai.agents.modules import protected, resolve_modules
-from evokai.agents.prompts import split_skills, system_prompt
+from evokai.agents.prompts import Instructions, split_skills, system_prompt
 from evokai.agents.skills import load as load_skill
 from evokai.core.errors import AppError, BadRequest, Forbidden
 from evokai.core.util import clip, new_id
@@ -235,7 +235,7 @@ class AgentRunner:
             session_id=None,
             turn_id=run_id,
             channel=guard_channel,
-            instructions=instructions or agent.instructions,
+            instructions=instructions.text if instructions else agent.instructions,
             tags=tags,
         )
         trace = guard.trace = eng.new_trace(
@@ -340,7 +340,7 @@ class AgentRunner:
         agent: AgentDef,
         guard: TurnGuard,
         run_id: str,
-        instructions: str | None,
+        instructions: Instructions | None,
         candidates: list[str],
         grants: Any,
         who: Who,

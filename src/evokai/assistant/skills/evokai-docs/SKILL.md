@@ -38,4 +38,5 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/redteam.md`: Red team
 - `references/security-assessment.md`: Security assessment of the browser session API
 - `references/security.md`: Security of agents
+- `references/templates.md`: Templates
 - `references/workflows.md`: Workflows

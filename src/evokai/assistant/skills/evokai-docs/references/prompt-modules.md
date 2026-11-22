@@ -76,9 +76,9 @@ Values are inserted as they are: nothing is HTML-escaped (`R&D <team>` stays `R&
 template is checked against its schema: a variable it does not declare (a typo such as `{{nmae}}`) is refused with 400
 `module_template`, and a data table that is not a map of short keys to texts with 400 `module_data`.
 
-Module texts without `{{` keep the older single-brace placeholders. Agents' instructions (inline, or a prompt they
-reference with `prompt:`) are never Handlebars: `{date}` and `{app}` are replaced, `{{` and `}}` become single braces
-as they always did, and every other brace is left as written, so JSON examples in instructions stay intact.
+Agents' instructions, plain prompts and confirm labels are Handlebars too ([Templates](templates.md)). Versions saved
+before Handlebars are `legacy` and keep rendering as they did (a legacy module text without `{{` keeps the older
+single-brace placeholders); a new save with an old placeholder such as `{date}` is refused with 400 `legacy_syntax`.
 
 ## Agents list their modules
 

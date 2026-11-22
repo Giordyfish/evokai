@@ -48,6 +48,7 @@ from pydantic_ai.usage import UsageLimits
 from evokai.agents.definitions import AgentDef
 from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import (
+    Instructions,
     PageContext,
     memory_block,
     split_skills,
@@ -887,7 +888,7 @@ class TurnEngine:
         skills = await self._skills(run.app.id, agent, run.grants)
         preloaded, on_demand = split_skills(agent, skills)
         instructions = await self._instructions(run.app.id, agent)
-        guard.instructions = instructions or agent.instructions
+        guard.instructions = instructions.text if instructions else agent.instructions
         modules = await resolve_modules(
             self.store, run.app.id, agent, run.session.prompt_options, session=run.session
         )
@@ -2453,11 +2454,11 @@ class TurnEngine:
         enc = await self.store.credentials.get(claims.token_id, claims.application_id)
         return self.keyring.decrypt(enc) if enc else None
 
-    async def _instructions(self, application_id: str, agent: AgentDef) -> str | None:
-        """The text of the agent's versioned prompt, if it references one.
+    async def _instructions(self, application_id: str, agent: AgentDef) -> Instructions | None:
+        """The agent's versioned prompt, if it references one.
 
         Returns:
-            The prompt text, or None to use the inline instructions.
+            The prompt's text and syntax, or None to use the inline instructions.
 
         Raises:
             ConfigError: The referenced prompt does not exist.
@@ -2467,7 +2468,8 @@ class TurnEngine:
         row = await self.store.prompts.get(application_id, agent.prompt.name, agent.prompt.version)
         if row is None:
             raise ConfigError(f"prompt not found: {agent.prompt.name}")
-        return row.text
+        # An empty prompt leaves the inline instructions, as it always did.
+        return Instructions(row.text, row.template_syntax) if row.text else None
 
     async def _skills(
         self, application_id: str, agent: AgentDef, grants: Grants | None = None

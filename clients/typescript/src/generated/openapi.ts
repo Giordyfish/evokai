@@ -114,7 +114,8 @@ export interface paths {
          * @description Active agents with their definitions.
          *
          *     Returns:
-         *         items.
+         *         items, each with its ``template_syntax`` (``legacy`` for a version saved before
+         *         Handlebars).
          */
         get: operations["list_agents_agent_v1_admin_agents_get"];
         put?: never;
@@ -1866,8 +1867,8 @@ export interface paths {
          * @description Every version of every prompt.
          *
          *     Returns:
-         *         items: name, version, text, description, parameters (a module's schema, or null), data
-         *         and createdAt.
+         *         items: name, version, text, description, parameters (a module's schema, or null), data,
+         *         templateSyntax and createdAt.
          */
         get: operations["list_prompts_agent_v1_admin_prompts_get"];
         put?: never;
@@ -4316,6 +4317,12 @@ export interface components {
             suggestions?: string[];
             /** Temperature */
             temperature?: number | null;
+            /**
+             * Template Syntax
+             * @default legacy
+             * @enum {string}
+             */
+            template_syntax?: "legacy" | "handlebars";
             /**
              * Title
              * @default
