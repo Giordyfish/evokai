@@ -48,8 +48,17 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   agent editor): the agent's complexity from its definition and a verdict from sourced facts only (context window,
   tool calling, streaming, τ²-bench results from the benchmark's own repository in `model_profiles.yaml`), "to
   verify" when a fact is missing, replaced by a measurement when there is one ([model suitability](docs/models.md)).
+- `<evokai-chat>` takes your own orb: one element of the page (`slot="orb"`) or images per chat state
+  (`theme.orb.images` or the `orb-images` attribute: still or animated, `idle` for a missing state, a `still` image for
+  reduced motion, optional one-shot images per change of state). It rests and flies exactly as the orb does, and the
+  host says where it is as `data-orb`. With `position="bottom-left"` the minimized bubble and its actions mirror
+  around a launcher of any size.
 
 ### Changed
+
+- The console assistant has no button: the mascot is its launcher at the bottom left and travels like the chat's orb
+  (to the header, to the middle in voice mode, back to the launcher while voice is minimized). There is no launcher
+  while the assistant is not active; it is activated from the Assistant page.
 
 - **Breaking: one template syntax, Handlebars.** Agent instructions, application prompts and confirm labels are
   Handlebars templates (pydantic-handlebars, as prompt modules): `{{date}}`, `{{app}}`, and in labels `{{field}}`,
