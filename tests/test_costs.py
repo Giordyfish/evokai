@@ -171,17 +171,19 @@ async def _usage(env: Env, subject: str, usd: float, when: datetime) -> None:
 
 async def test_alerts_fire_once_per_threshold_and_month_and_carry_shares_only(env: Env) -> None:
     await _settings(env, monthly_cap_usd=10, subject_monthly_usd=1, cost_alert_thresholds=[50, 90])
-    now = datetime.now(UTC)
+    # Mid-month of the current month, so the forecast does not depend on today's date: 5.6 USD
+    # in the first 14 days of a month projects well above 90% of 10 USD.
+    now = datetime.now(UTC).replace(day=15, hour=12, minute=0, second=0, microsecond=0)
     for i in range(1, 15):
         await _usage(env, "u1", 0.40, now - timedelta(days=i))
     app = await env.svc.store.applications.get(env.app_id)
-    view = await env.svc.costs.forecast(app)
+    view = await env.svc.costs.forecast(app, now)
     assert view["application"]["forecastPct"] > 90
-    first = await env.svc.costs.evaluate(app, view)
+    first = await env.svc.costs.evaluate(app, view, now)
     scopes = sorted((a.scope.split(":")[0], a.threshold) for a in first)
     assert ("application", 50) in scopes and ("application", 90) in scopes
     assert ("subject", 90) in scopes  # u1 against their own monthly cap
-    assert await env.svc.costs.evaluate(app, view) == []  # never twice
+    assert await env.svc.costs.evaluate(app, view, now) == []  # never twice
     assert await env.svc.costs.check_alerts() == 0
     r = await env.client.get("/agent/v1/admin/costs/forecast", headers=_adm(env))
     body = r.json()
