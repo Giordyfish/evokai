@@ -27,6 +27,7 @@ from evokai.agents.modules import (
 from evokai.agents.prompts import long_date
 from evokai.agents.templates import check_agent_templates, check_prompt, syntax_to_save
 from evokai.api.deps import admin_app, services
+from evokai.assistant.privacy import MAX_TTL_DAYS, lists_everyone, own_subject
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
 from evokai.connectors import validate as validate_connector
@@ -278,6 +279,7 @@ async def patch_application(
 
     Raises:
         NotFound: The application is gone.
+        BadRequest: A system application kept longer than 30 days (400 ``system_ttl``).
     """
     before = await get_application(svc, a)
     fields = body.model_dump(exclude_unset=True)
@@ -285,6 +287,12 @@ async def patch_application(
     if current is None:
         raise NotFound()
     _check_caps(body, fields, current)
+    ttl = fields.get("conversation_ttl_days", -1)
+    if current.system and "conversation_ttl_days" in fields and not (ttl and ttl <= MAX_TTL_DAYS):
+        raise BadRequest(
+            f"A system application keeps conversations {MAX_TTL_DAYS} days at most.",
+            code="system_ttl",
+        )
     if "residency" in fields:
         fields["residency"] = body.residency.stored() if body.residency else None
     if "data_protection" in fields:
@@ -1168,6 +1176,9 @@ async def bug_reports(svc: Svc, a: Admin) -> dict[str, Any]:
         items.
     """
     rows = await svc.store.bug_reports.all(a.application_id)
+    mine = await own_subject(svc, a)
+    if mine is not None and not lists_everyone(a):
+        rows = [r for r in rows if r.subject == mine]
     return {
         "items": [
             {

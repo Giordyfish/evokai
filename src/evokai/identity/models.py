@@ -32,6 +32,10 @@ class AppPrincipal:
     ``sso:<e-mail>``, ``assistant:<the console login>``."""
     via: str = ""
     """``assistant`` for the console assistant's delegation token (``evokai.assistant``)."""
+    subject: str = ""
+    """The person's subject in the console assistant (``console:<login>``) for a console login or
+    a delegation; empty for keys. A system application shows each person only this subject's
+    conversations (``evokai.assistant.privacy``)."""
 
 
 @dataclass(frozen=True)

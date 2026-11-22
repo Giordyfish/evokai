@@ -10,17 +10,19 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from evokai import audit
+from evokai.api.console_routes import conversation_subject, conversation_view
 from evokai.api.deps import admin_app, console_login, services
 from evokai.api.server_routes import TokenRequest, mint
-from evokai.assistant import activation
+from evokai.assistant import activation, privacy
 from evokai.assistant import bootstrap as shipped
 from evokai.assistant.delegation import mint_delegation
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
-from evokai.identity.console import ConsoleLogin
+from evokai.core.util import utcnow
 from evokai.identity.models import AppPrincipal
+from evokai.identity.preferences import identity_of
 from evokai.services import Services
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -226,6 +228,54 @@ async def try_assistant_model(body: Try, svc: Svc, a: Admin) -> dict[str, Any]:
     return {"runId": run.id}
 
 
+# ── inspection: an owner reads another person's conversation, with a reason ──────────────────────
+
+
+class Inspect(BaseModel):
+    """Why the owner opens another person's conversation (kept in the audit log, shown to them)."""
+
+    reason: str = Field(min_length=20, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _written(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if len(v) < 20:
+            raise ValueError("write a reason of at least 20 characters")
+        return v
+
+
+@router.post("/assistant/conversations/{conversation_id}/inspect")
+async def inspect_conversation(
+    conversation_id: str, body: Inspect, svc: Svc, a: Admin, request: Request
+) -> dict[str, Any]:
+    """Read another person's conversation with the assistant (owner of its application).
+
+    Read only. The reason (20 to 500 characters) is written to the audit log with who inspected and
+    the author's keyed subject, and the author's console lists it ("viewed by").
+
+    Returns:
+        The conversation, as the conversation detail returns it.
+
+    Raises:
+        NotFound: The assistant is off, or no such conversation.
+    """
+    app = await _owned_assistant(svc, a)
+    subject = await conversation_subject(svc, app.id, conversation_id)
+    if subject is None:
+        raise NotFound()
+    view = await conversation_view(svc, app.id, conversation_id)
+    key = privacy.key_of(svc, app.id, subject)
+    await audit.record(
+        request,
+        a,
+        privacy.INSPECT,
+        target=f"conversation:{conversation_id} subject:{key}",
+        after={"reason": body.reason, "author": key},
+    )
+    return view
+
+
 # ── the console's assistant session ─────────────────────────────────────────────────────────────
 
 console = APIRouter(prefix="/v1/console", tags=["console"])
@@ -235,10 +285,6 @@ class SessionBody(BaseModel):
     """The conversation to continue (a token refresh); omitted = a new one."""
 
     conversationId: str | None = Field(default=None, max_length=64)
-
-
-def _login_id(login: ConsoleLogin) -> str:
-    return {"sso": login.user_id, "adm": login.key_id}.get(login.kind) or "operator"
 
 
 @console.post("/assistant/session")
@@ -279,7 +325,7 @@ async def assistant_session(
         ttl=svc.settings.session_token_max_ttl,
     )
     token = TokenRequest(
-        subject=f"console:{_login_id(login)}",
+        subject=a.subject,
         agent=shipped.AGENT,
         conversationId=body.conversationId if body else None,
         forwardCredential=credential,
@@ -292,3 +338,114 @@ async def assistant_session(
     )
     minted = await mint(token, svc, who)
     return {**minted, "applicationId": system.id}
+
+
+# ── what a person is told: the first-use notice, who viewed their conversations, the voice ──────
+
+
+class NoticeAccept(BaseModel):
+    """The version of the notice the person read."""
+
+    version: int = Field(ge=0)
+
+
+def _notice_key(login: Any) -> str:
+    return f"assistant-notice:{identity_of(login)}"[:120]
+
+
+@console.get("/assistant/privacy")
+async def assistant_privacy(svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
+    """What the console tells a person about the assistant, for the selected application.
+
+    The first-use notice (its version and whether this login accepted it), how long conversations
+    are kept, the voice in use (``online`` only when the selected application's and the
+    assistant's data protection allow processors outside the EU, else ``device``) and every
+    inspection of this person's conversations: who, when and why.
+
+    Returns:
+        noticeVersion, accepted, acceptedAt, ttlDays, voice, inspections, unseen.
+
+    Raises:
+        Forbidden: A key or the assistant itself instead of a console login.
+        NotFound: The assistant is off.
+    """
+    if not a.console or a.via:
+        raise Forbidden("The assistant is opened from the console.", code="console_required")
+    login = await console_login(request)
+    system = await activation.system_app(svc)
+    if system is None:
+        raise NotFound("The assistant is off in this deployment.", code="assistant_off")
+    selected = await svc.store.applications.get(a.application_id)
+    row = await svc.store.console_preferences.get(_notice_key(login))
+    stored = (row.value if row else None) or {}
+    key = privacy.key_of(svc, system.id, a.subject)
+    entries = await svc.store.audit.query(
+        system.id, action=privacy.INSPECT, target=f"subject:{key}", limit=50
+    )
+    seen = str(stored.get("seenAt") or "")
+    inspections = [
+        {
+            "conversationId": e.target.split()[0].removeprefix("conversation:"),
+            "by": e.actor.removeprefix("sso:"),
+            "at": e.at.isoformat(),
+            "reason": (e.after or {}).get("reason", ""),
+        }
+        for e in entries
+        if (e.after or {}).get("author") == key
+    ]
+    voice = (
+        "online"
+        if privacy.online_voice_allowed(system) and privacy.online_voice_allowed(selected)
+        else "device"
+    )
+    return {
+        "noticeVersion": privacy.NOTICE_VERSION,
+        "accepted": stored.get("version") == privacy.NOTICE_VERSION,
+        "acceptedAt": stored.get("acceptedAt"),
+        "ttlDays": system.conversation_ttl_days,
+        "voice": voice,
+        "inspections": inspections,
+        "unseen": sum(1 for i in inspections if i["at"] > seen),
+    }
+
+
+@console.post("/assistant/privacy")
+async def accept_notice(
+    body: NoticeAccept, svc: Svc, a: Admin, request: Request
+) -> dict[str, bool]:
+    """Record that this login read the current first-use notice (and the inspections listed).
+
+    Returns:
+        ok.
+
+    Raises:
+        BadRequest: Not the current version of the notice (400 ``notice_version``).
+        NotFound: The assistant is off.
+        Forbidden: A key or the assistant itself instead of a console login.
+    """
+    if not a.console or a.via:
+        raise Forbidden("The assistant is opened from the console.", code="console_required")
+    if body.version != privacy.NOTICE_VERSION:
+        raise BadRequest("This is not the current notice.", code="notice_version")
+    login = await console_login(request)
+    system = await activation.system_app(svc)
+    if system is None:
+        raise NotFound("The assistant is off in this deployment.", code="assistant_off")
+    key = _notice_key(login)
+    row = await svc.store.console_preferences.get(key)
+    now = utcnow().isoformat()
+    first = (row.value if row else None) or {}
+    accepted = first.get("acceptedAt") if first.get("version") == body.version else None
+    await svc.store.console_preferences.put(
+        key, {"version": body.version, "acceptedAt": accepted or now, "seenAt": now}
+    )
+    if not accepted:
+        await audit.record(
+            request,
+            login,
+            privacy.NOTICE,
+            application_id=system.id,
+            target=login.actor,
+            after={"version": body.version},
+        )
+    return {"ok": True}

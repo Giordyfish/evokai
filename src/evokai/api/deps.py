@@ -75,6 +75,9 @@ async def _console(request: Request) -> AppPrincipal | None:
         console=True,
         role=role,
         actor=login.actor,
+        subject=delegation.login_subject(
+            login.kind, login.user_id, login.key_id, login.application_id
+        ),
     )
 
 
@@ -189,6 +192,7 @@ LOCK_EXEMPT: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/v1/admin/application/reset"),
     ("POST", "/v1/admin/assistant/activate"),
     ("POST", "/v1/admin/assistant/try"),
+    ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
 })
 """Changes a locked system application accepts: unlocking and resetting it, activating the
 assistant's model and trying a model on it."""

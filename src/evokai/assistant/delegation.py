@@ -38,6 +38,24 @@ RECORDED = "recorded"
 """The kind of the token of the assistant's evals: the recorded admin MCP server, no application."""
 
 
+def login_subject(
+    kind: str, user_id: str | None, key_id: str | None, application_id: str | None = None
+) -> str:
+    """The subject of a console login in the assistant: ``console:<login>``.
+
+    A single sign-on login is its user id, an admin key's login its key id (or its application's
+    id for a login without one), the operator key's login ``operator``.
+
+    Returns:
+        The subject.
+    """
+    if kind == "sso" and user_id:
+        return f"console:{user_id}"
+    if kind == "adm":
+        return f"console:{key_id}" if key_id else f"console:admin-app:{application_id or ''}"
+    return "console:operator"
+
+
 def is_delegation(token: str) -> bool:
     """Whether a bearer value is a delegation token.
 
@@ -181,4 +199,7 @@ async def principal(svc: Services, token: str) -> AppPrincipal:
         role=role,
         actor=f"assistant:{claims.get('act') or claims['kind']}"[:200],
         via="assistant",
+        subject=login_subject(
+            str(claims["kind"]), claims.get("uid"), claims.get("kid"), str(claims["app"])
+        ),
     )

@@ -2022,10 +2022,12 @@ class AuditRepository(_Repo):
         end: datetime | None = None,
         before: datetime | None = None,
         limit: int = 100,
+        target: str | None = None,
     ) -> list[m.AuditEntry]:
         """Entries, newest first: of one application, or every entry (``everything``).
 
-        ``action`` ending in ``.`` is a prefix (``agent.``); ``actor`` matches a part of it.
+        ``action`` ending in ``.`` is a prefix (``agent.``); ``actor`` and ``target`` match a part
+        of it.
 
         Returns:
             Entries.
@@ -2042,6 +2044,8 @@ class AuditRepository(_Repo):
             )
         if actor:
             where.append(a.actor.like(f"%{actor}%"))
+        if target:
+            where.append(a.target.like(f"%{target}%"))
         if start is not None:
             where.append(a.at >= start)
         if end is not None:
