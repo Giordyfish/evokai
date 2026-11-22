@@ -16,6 +16,12 @@ import yaml
 from pydantic import ValidationError
 
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import (
+    check_agent_modules,
+    check_data,
+    check_module_template,
+    check_parameters_schema,
+)
 from evokai.agents.skills import Skill, SkillError, check_skill, make_file, skills_in
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import validate as validate_connector
@@ -212,6 +218,9 @@ async def bootstrap(
     for raw in data.get("knowledge_bases") or []:
         await store.knowledge.put_base(app_id, str(raw["name"]), **knowledge_base(raw))
 
+    for raw in data.get("prompts") or []:
+        await _prompt(store, app_id, raw)
+
     if "grants" in data:
         await apply_grants(store, app_id, data.get("grants") or {})
 
@@ -240,6 +249,10 @@ async def bootstrap(
         agent = AgentDef.model_validate(raw).with_version()
         if problems := check_rules(agent.ask_rules, set()):
             raise ConfigError(f"bootstrap: agent {agent.name}: {'; '.join(problems)}")
+        try:
+            await check_agent_modules(store, app_id, agent)
+        except AppError as e:
+            raise ConfigError(f"bootstrap: agent {agent.name}: {e.message}") from e
         if grants and (problems := grants.problems(agent, explicit_client_tools(raw))):
             # Applied anyway: the runtime offers only what is granted, and a start must not fail
             # because of a grant changed in the console.
@@ -252,6 +265,38 @@ async def bootstrap(
     for raw in data.get("workflows") or []:
         await _workflow(store, app_id, raw)
     return app_id
+
+
+async def _prompt(store: Store, app_id: str, raw: Any) -> None:
+    """Store a prompt of the application YAML (a new version only when something changed).
+
+    An entry has a ``name`` and a ``text``, and optionally a ``description``; a prompt module
+    also has ``parameters`` (its schema) and may have ``data`` (``evokai.agents.modules``).
+
+    Raises:
+        ConfigError: A malformed entry, schema, template or data table.
+    """
+    if not isinstance(raw, dict) or not raw.get("name") or not isinstance(raw.get("text"), str):
+        raise ConfigError("bootstrap: every prompt needs a name and a text")
+    name = str(raw["name"])
+    parameters, data = raw.get("parameters"), raw.get("data")
+    if parameters is None and data is not None:
+        raise ConfigError(f"bootstrap: prompt {name}: a data table needs parameters (a module)")
+    try:
+        if parameters is not None:
+            check_parameters_schema(parameters)
+            check_data(data)
+            check_module_template(raw["text"], parameters, data)
+    except AppError as e:
+        raise ConfigError(f"bootstrap: prompt {name}: {e.message}") from e
+    await store.prompts.put(
+        app_id,
+        name,
+        raw["text"],
+        parameters=parameters,
+        description=str(raw.get("description") or ""),
+        data=data,
+    )
 
 
 async def _workflow(store: Store, app_id: str, raw: Any) -> None:

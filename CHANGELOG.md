@@ -8,7 +8,26 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- Prompt modules: versioned application prompts with a restricted JSON Schema of parameters and an optional data table,
+  rendered as Handlebars templates (pydantic-handlebars, no HTML escaping) after an agent's instructions. Agents list
+  the modules they use with defaults and whether a session may change them; the application backend switches and
+  fills them in `POST /v1/session-tokens` (and server runs) with `modules`, checked against the schema, the `module`
+  grants and, for free-text values, the guard's input checks. Versions are pinned per conversation and traced as
+  `prompt.modules`. Declared in the application YAML (`prompts:` and the agents' `modules:`), managed in the console's
+  new Prompts page (visual parameter builder, data table, version diff, live check and preview through
+  `POST /v1/admin/prompts/{name}/preview`), the agent editor and the playground. See `docs/prompt-modules.md`.
+- A per-session `locale` at token mint: speech rules and messages follow the shipped pack of its language
+  (400 `unknown_locale` without one).
+- The TypeScript and Python clients send `modules` and `locale` when minting, and save prompt modules and preview them.
+
 ### Changed
+
+- Prompt texts without `{{` replace only `{date}` and `{app}`: other braces stay as written (before, a JSON example
+  such as `{"ok": true}` in instructions failed to render).
+- Neutral wording: the default voice rule no longer names domain-specific codes ("codes, account numbers or personal
+  data"); agents that keep the default rule keep their version.
 
 - The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.

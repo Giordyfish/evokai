@@ -712,6 +712,7 @@ class SessionRepository(_Repo):
         exit_code_hash: str | None = None,
         voice_engine: str = "browser",
         storage_mode: str | None = None,
+        prompt_options: dict[str, Any] | None = None,
     ) -> tuple[m.Session, m.Thread]:
         """Create a conversation and its thread.
 
@@ -731,10 +732,21 @@ class SessionRepository(_Repo):
                 exit_code_hash=exit_code_hash,
                 voice_engine=voice_engine,
                 storage_mode=storage_mode,
+                prompt_options=prompt_options,
             )
             thread = m.Thread(id=new_id(), session_id=sess.id)
             s.add_all([sess, thread])
             return sess, thread
+
+    async def set_prompt_options(self, session_id: str, options: dict[str, Any]) -> None:
+        """Replace the prompt modules and locale chosen for the session."""
+        async with self.db.session() as s:
+            await s.execute(
+                sa
+                .update(m.Session)
+                .where(m.Session.id == session_id)
+                .values(prompt_options=options)
+            )
 
     async def set_voice_engine(self, session_id: str, engine: str) -> None:
         """Record who does speech for the session from now on."""
@@ -1624,8 +1636,25 @@ class UsageRepository(_Repo):
 class PromptRepository(_Repo):
     """Versioned prompts of an application."""
 
-    async def put(self, application_id: str, name: str, text: str) -> int:
-        """Store a new version of a prompt (no-op when the text is unchanged).
+    async def put(
+        self,
+        application_id: str,
+        name: str,
+        text: str,
+        *,
+        parameters: dict[str, Any] | None = None,
+        description: str = "",
+        data: dict[str, Any] | None = None,
+    ) -> int:
+        """Store a new version of a prompt (no-op when nothing changed).
+
+        Args:
+            application_id: Owner application.
+            name: Prompt name.
+            text: The text (a template for a module).
+            parameters: A module's parameter schema; None for a plain prompt.
+            description: What the prompt is for.
+            data: A module's static lookup table.
 
         Returns:
             The version number.
@@ -1640,11 +1669,26 @@ class PromptRepository(_Repo):
                 .limit(1)
             )
             last = (await s.execute(q)).scalar_one_or_none()
-            if last and last.text == text:
+            if (
+                last
+                and last.text == text
+                and last.parameters == parameters
+                and (last.description or "") == description
+                and last.data == data
+            ):
                 return last.version
             version = (last.version if last else 0) + 1
             s.add(
-                p(id=new_id(), application_id=application_id, name=name, version=version, text=text)
+                p(
+                    id=new_id(),
+                    application_id=application_id,
+                    name=name,
+                    version=version,
+                    text=text,
+                    parameters=parameters,
+                    description=description,
+                    data=data,
+                )
             )
             return version
 

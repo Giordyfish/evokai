@@ -1,7 +1,8 @@
 """The system prompt of a turn.
 
 Two parts. The stable part is the same on every request of an agent version: its instructions,
-the text of its preloaded skills and the list of the skills it can load. The volatile part follows
+the prompt modules the session has switched on (``evokai.agents.modules``), the text of its
+preloaded skills and the list of the skills it can load. The volatile part follows
 it: the voice rule (in voice mode), what is remembered about the subject and what the user is
 looking at. With prompt caching (``evokai.llm.caching``) the cache point sits between the two, so
 nothing that changes per request is ever inside the cached prefix. ``{date}`` in the instructions
@@ -10,6 +11,7 @@ changes once a day.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -18,7 +20,11 @@ from pydantic import BaseModel
 from pydantic_ai.messages import InstructionPart
 
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import RenderedModule, render_legacy, render_template
 from evokai.agents.skills import Skill, files_listing
+from evokai.core.errors import BadRequest
+
+log = logging.getLogger(__name__)
 
 
 class PageContext(BaseModel):
@@ -41,11 +47,6 @@ def long_date(now: datetime, timezone: str = "UTC") -> str:
     """
     d = now.astimezone(ZoneInfo(timezone))
     return f"{d:%A} {d.day} {d:%B %Y} ({d:%Y-%m-%d})"
-
-
-class _Safe(dict):
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ def system_prompt(
     preloaded: list[Skill] | None = None,
     memory_text: str | None = None,
     scripts_runnable: bool = False,
+    modules: list[RenderedModule] | None = None,
 ) -> SystemPrompt:
     """Build the system prompt.
 
@@ -116,12 +118,22 @@ def system_prompt(
         memory_text: The recalled memories, already rendered and marked (``memory_block``);
             when given, ``memories`` is ignored.
         scripts_runnable: Whether ``skill_run`` is offered (for the files of preloaded skills).
+        modules: The prompt modules switched on for the session, in the agent's order; each is
+            rendered with ``date``, ``app``, ``data`` and its parameters, after the instructions.
 
     Returns:
         The prompt, in its stable and volatile parts.
     """
-    values = _Safe(date=long_date(now, timezone), app=app_name)
-    lines = [(instructions or agent.instructions).strip().format_map(values)]
+    values = {"date": long_date(now, timezone), "app": app_name}
+    lines = [render_legacy((instructions or agent.instructions).strip(), values)]
+    for m in modules or []:
+        try:
+            text = render_template(m.text, {**values, "data": m.data or {}, **m.params}).strip()
+        except BadRequest:
+            log.warning("prompt module left out, not rendered: %s", m.name)
+            continue
+        if text:
+            lines += ["", text]
     for s in preloaded or []:
         lines += ["", f"Skill {s.name} (already loaded, do not load it again): {s.description}"]
         lines += ["", s.body.strip()]

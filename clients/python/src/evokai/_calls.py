@@ -45,6 +45,7 @@ from evokai.models import (
     MemoryFact,
     MemoryList,
     NewKey,
+    PreviewBody,
     PromptBody,
     PromptVersion,
     RunRequest,
@@ -394,12 +395,21 @@ def prompts_list() -> Call[list[PromptVersion]]:
     return _admin("GET", "/prompts", items(PromptVersion))
 
 
-def prompts_put(name: str, text: str) -> Call[int]:
+def prompts_put(name: str, text: str, fields: Mapping[str, Any] | None = None) -> Call[int]:
     return _admin(
         "PUT",
         f"/prompts/{seg(name)}",
         lambda d: int((d or {})["version"]),
-        body=body(PromptBody, {"text": text}),
+        body=body(PromptBody, {"text": text, **(fields or {})}),
+    )
+
+
+def prompts_preview(name: str, fields: Mapping[str, Any]) -> Call[str]:
+    return _admin(
+        "POST",
+        f"/prompts/{seg(name)}/preview",
+        lambda d: str((d or {})["text"]),
+        body=body(PreviewBody, fields),
     )
 
 

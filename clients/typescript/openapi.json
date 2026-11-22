@@ -202,6 +202,14 @@
             "title": "Models",
             "type": "array"
           },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleRef"
+            },
+            "maxItems": 20,
+            "title": "Modules",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2929,6 +2937,79 @@
         "title": "ModerationSettings",
         "type": "object"
       },
+      "ModuleChoice": {
+        "description": "A session's choice for one prompt module (server key only, at token mint).",
+        "properties": {
+          "on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          }
+        },
+        "title": "ModuleChoice",
+        "type": "object"
+      },
+      "ModuleRef": {
+        "description": "A prompt module the agent may use (``evokai.agents.modules``), with its defaults.",
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "session": {
+            "default": false,
+            "title": "Session",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ModuleRef",
+        "type": "object"
+      },
       "NavigateDef": {
         "description": "The client navigation tool.",
         "properties": {
@@ -3350,9 +3431,104 @@
         "title": "Preferences",
         "type": "object"
       },
-      "PromptBody": {
-        "description": "A prompt's text; saving a different text makes a new version.",
+      "PreviewBody": {
+        "description": "Sample values for a prompt preview, and optionally an unsaved draft to preview instead.",
         "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "PreviewBody",
+        "type": "object"
+      },
+      "PromptBody": {
+        "description": "A prompt's text; saving a different text, schema, description or data makes a new version.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
           "text": {
             "maxLength": 60000,
             "minLength": 1,
@@ -3865,6 +4041,33 @@
               }
             ],
             "title": "Input"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "modules": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ModuleChoice"
+                },
+                "maxProperties": 20,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
           },
           "store": {
             "default": false,
@@ -4751,6 +4954,18 @@
               }
             ]
           },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
           "memoryConsent": {
             "anyOf": [
               {
@@ -4772,6 +4987,21 @@
               }
             ],
             "title": "Model"
+          },
+          "modules": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ModuleChoice"
+                },
+                "maxProperties": 20,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
           },
           "storageMode": {
             "anyOf": [
@@ -5312,7 +5542,7 @@
             "type": "integer"
           },
           "prompt_rule": {
-            "default": "The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read tax codes, IBANs, meter codes or personal data aloud: point to the screen instead.",
+            "default": "The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read codes, account numbers or personal data aloud: point to the screen instead.",
             "title": "Prompt Rule",
             "type": "string"
           },
@@ -6220,7 +6450,7 @@
         ]
       },
       "put": {
-        "description": "Create or update an agent; a changed definition becomes a new active version.\n\nReturns:\n    version and whether it is new.\n\nRaises:\n    BadRequest: Name mismatch, or a model outside the deployment's allow-list.\n    NotGrantedInAgent: The definition references a model, MCP server, skill, client tool or\n        channel the application is not granted (400 ``not_granted``, with ``problems``).\n    NotFound: The application is gone.\n    AppError: A model outside the application's data residency (400 ``residency``).\n    Forbidden: A console operator changing the agent's security policy (owner only).\n    Conflict: The red team gate blocked this version (409 ``redteam_blocked``).",
+        "description": "Create or update an agent; a changed definition becomes a new active version.\n\nReturns:\n    version and whether it is new.\n\nRaises:\n    BadRequest: Name mismatch, or a model outside the deployment's allow-list.\n    NotGrantedInAgent: The definition references a model, MCP server, skill, client tool or\n        channel the application is not granted (400 ``not_granted``, with ``problems``).\n    NotFound: The application is gone.\n    AppError: A model outside the application's data residency (400 ``residency``).\n    Forbidden: A console operator changing the agent's security policy (owner only).\n    Conflict: The red team gate blocked this version (409 ``redteam_blocked``).\n    BadRequest: A prompt module that does not exist or whose parameters do not fit\n        (``unknown_module``, ``module_params``).",
         "operationId": "put_agent_agent_v1_admin_agents__name__put",
         "parameters": [
           {
@@ -9243,7 +9473,7 @@
     },
     "/agent/v1/admin/prompts": {
       "get": {
-        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, createdAt.",
+        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data\n    and createdAt.",
         "operationId": "list_prompts_agent_v1_admin_prompts_get",
         "responses": {
           "200": {
@@ -9267,7 +9497,7 @@
     },
     "/agent/v1/admin/prompts/{name}": {
       "put": {
-        "description": "Save a prompt (a changed text becomes the next version).\n\nReturns:\n    The version.",
+        "description": "Save a prompt (a changed text, schema, description or data becomes the next version).\n\nReturns:\n    The version.\n\nRaises:\n    BadRequest: A schema, template or data table that does not pass the module checks, or\n        a new version whose parameters no longer fit an agent's values (``module_in_use``).",
         "operationId": "put_prompt_agent_v1_admin_prompts__name__put",
         "parameters": [
           {
@@ -9317,6 +9547,63 @@
           }
         },
         "summary": "Put Prompt",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/prompts/{name}/preview": {
+      "post": {
+        "description": "Render a prompt (a saved version or a draft) with sample parameter values.\n\nThe values get the parameters' defaults and are checked against the schema; required ones may\nbe left out. ``date`` and ``app`` are today's date and the application's name.\n\nReturns:\n    text: the rendered prompt.\n\nRaises:\n    NotFound: No such prompt (and no draft) or application. A draft or values that do not\n        pass the module checks are refused as when saving (400 ``module_*``).",
+        "operationId": "preview_prompt_agent_v1_admin_prompts__name__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Preview Prompt Agent V1 Admin Prompts  Name  Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Prompt",
         "tags": [
           "admin"
         ]
@@ -11223,7 +11510,7 @@
     },
     "/agent/v1/agents/{name}/run": {
       "post": {
-        "description": "Run an agent that allows the ``server`` channel and return its (structured) answer.\n\nReturns:\n    The output, the model that answered and the usage.\n\nRaises:\n    NotFound: Unknown application.",
+        "description": "Run an agent that allows the ``server`` channel and return its (structured) answer.\n\nReturns:\n    The output, the model that answered and the usage.\n\nRaises:\n    NotFound: Unknown application.\n    BadRequest: An unknown locale, or a prompt module choice that is refused.",
         "operationId": "run_agent_agent_v1_agents__name__run_post",
         "parameters": [
           {
@@ -12898,7 +13185,7 @@
     },
     "/agent/v1/session-tokens": {
       "post": {
-        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,\n        are not granted to the application (403 ``*_not_granted``).",
+        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,\n        or browser sessions, are not granted to the application (403 ``*_not_granted``).\n    BadRequest: An unknown locale, or a prompt module choice that is refused\n        (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).",
         "operationId": "mint_agent_v1_session_tokens_post",
         "requestBody": {
           "content": {

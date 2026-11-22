@@ -102,6 +102,8 @@ import type {
   ChannelView,
   ChannelsView,
   PageContext,
+  PromptBody,
+  PromptPreview,
   PromptVersion,
   SessionToken,
   SkillBody,
@@ -450,9 +452,18 @@ export class EvokaiServer {
     prompts: {
       /** Every version of every prompt. */
       list: (): Promise<PromptVersion[]> => this.adminCall<{ items: PromptVersion[] }>('/prompts').then((r) => r.items),
-      /** Save a prompt; a changed text becomes the next version. */
-      put: (name: string, text: string): Promise<number> =>
-        this.adminCall<{ version: number }>(`/prompts/${enc(name)}`, { method: 'PUT', body: { text } }).then((r) => r.version),
+      /**
+       * Save a prompt (a text, or a module's text with its `parameters`, `description` and `data`); a change becomes the
+       * next version. 400 `module_schema`, `module_template` or `module_data` when a module does not pass the checks.
+       */
+      put: (name: string, body: string | PromptBody): Promise<number> =>
+        this.adminCall<{ version: number }>(`/prompts/${enc(name)}`, {
+          method: 'PUT',
+          body: typeof body === 'string' ? { text: body } : body,
+        }).then((r) => r.version),
+      /** Render a prompt (a saved version, or the draft sent) with sample parameter values. */
+      preview: (name: string, body: PromptPreview = {}): Promise<string> =>
+        this.adminCall<{ text: string }>(`/prompts/${enc(name)}/preview`, { method: 'POST', body }).then((r) => r.text),
     },
     voices: {
       /** Add or replace a voice in the deployment's catalogue (list with `voices()`). */

@@ -46,6 +46,7 @@ from pydantic_ai.tools import DeferredToolResults, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import (
     PageContext,
     memory_block,
@@ -392,7 +393,7 @@ class TurnEngine:
             replaced_from=replaced_from,
             guard=guard,
             trace=guard.trace,
-            rules=speech_rules(locale_of(app), identifiers.of_app(app)),
+            rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
             threads=threads,
             grants=grants,
             storage=storage,
@@ -445,7 +446,7 @@ class TurnEngine:
             index, code = rewrite.check(rows, inp.rewrite.get("messageId"))
         if code is not None or index is None:
             code = code or rewrite.NOTHING
-            raise Conflict(message(app, rewrite.MESSAGE_KEYS[code]), code=code)
+            raise Conflict(message(app, rewrite.MESSAGE_KEYS[code], session=session), code=code)
         if storage == "external":
             return None, index
         return rewrite.plan_of(rows, index), None
@@ -661,7 +662,11 @@ class TurnEngine:
         except Exception as e:
             log.exception("turn_failed", extra={"turnId": run.turn_id, "error": error_class(e)})
             run.status, run.reason = "failed", "internal"
-            emit({"type": "error", "code": "internal", "message": message(run.app, "turn.failed")})
+            emit({
+                "type": "error",
+                "code": "internal",
+                "message": message(run.app, "turn.failed", session=run.session),
+            })
         finally:
             # The turn is over: its capability workers' call tokens stop working.
             await self.mcp.end_run(run.turn_id)
@@ -774,7 +779,7 @@ class TurnEngine:
                 emit({
                     "type": "error",
                     "code": "expired",
-                    "message": message(run.app, "turn.confirmExpired"),
+                    "message": message(run.app, "turn.confirmExpired", session=run.session),
                 })
                 run.reason = "expired"
                 return
@@ -812,7 +817,7 @@ class TurnEngine:
                     content=content,
                     events=[{"type": "confirmed", "approve": approve, "writes": False}],
                 )
-                refusal = message(run.app, "turn.refusal")
+                refusal = message(run.app, "turn.refusal", session=run.session)
                 emit({"type": "text", "delta": refusal})
                 say(refusal)
                 await self._add(run, role="assistant", content=[{"text": refusal}], text=refusal)
@@ -822,7 +827,11 @@ class TurnEngine:
         else:
             text = (inp.text or "").strip()
             if not text:
-                emit({"type": "error", "code": "empty", "message": message(run.app, "turn.empty")})
+                emit({
+                    "type": "error",
+                    "code": "empty",
+                    "message": message(run.app, "turn.empty", session=run.session),
+                })
                 run.reason = "empty"
                 return
             tr = self._trace(run, inp)
@@ -834,7 +843,7 @@ class TurnEngine:
                     emit({"type": "text", "delta": decision.refusal})
                     say(speakable(decision.refusal, run.rules))
                 else:
-                    refused = message(run.app, "turn.guard")
+                    refused = message(run.app, "turn.guard", session=run.session)
                     emit({"type": "error", "code": "guard", "message": refused})
                 run.status, run.reason = "blocked", "guard"
                 return
@@ -879,6 +888,13 @@ class TurnEngine:
         preloaded, on_demand = split_skills(agent, skills)
         instructions = await self._instructions(run.app.id, agent)
         guard.instructions = instructions or agent.instructions
+        modules = await resolve_modules(
+            self.store, run.app.id, agent, run.session.prompt_options, session=run.session
+        )
+        modules = protected(modules, guard.protect_text)
+        if modules and guard.trace is not None:
+            # Which modules at which versions; never their parameters.
+            guard.trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})
         # Memory: only with Evokai storage, the application's mode and the person's consent.
         memory_on = False
         if run.storage == "evokai" and self.memory is not None:
@@ -898,7 +914,7 @@ class TurnEngine:
             max_tokens=settings.max_output_tokens,
             op_tags={"turnId": run.turn_id},
             prompt_cache=agent.prompt_cache,
-            locale=locale_of(run.app),
+            locale=locale_of(run.app, run.session),
             expired=self.expired_callback(run.app.id, run.who.subject),
         )
         if resume is not None:
@@ -927,7 +943,7 @@ class TurnEngine:
             emit({
                 "type": "error",
                 "code": "model",
-                "message": message(run.app, "turn.modelUnavailable"),
+                "message": message(run.app, "turn.modelUnavailable", session=run.session),
             })
             run.status, run.reason = "failed", "model"
             return
@@ -956,6 +972,7 @@ class TurnEngine:
             timezone=str((run.app.defaults or {}).get("timezone") or "UTC"),
             preloaded=preloaded,
             scripts_runnable=SKILL_RUN in names,
+            modules=modules,
         )
         if notes:
             prompt = replace(prompt, stable=f"{prompt.stable}\n\n{notes}")
@@ -1403,6 +1420,8 @@ class TurnEngine:
             specs = [s for s in specs if not asks(s.name)]
             child.tools = {s.name: s for s in specs}
             instructions = await self._instructions(scope.app.id, target)
+            # A subagent renders its own modules at their defaults (no session choice, no pin).
+            modules = await resolve_modules(self.store, scope.app.id, target, None)
             prompt = system_prompt(
                 target,
                 now=self.now(),
@@ -1416,6 +1435,7 @@ class TurnEngine:
                 timezone=str((scope.app.defaults or {}).get("timezone") or "UTC"),
                 preloaded=preloaded,
                 scripts_runnable=False,
+                modules=modules,
             )
             notes = guard.system_notes()
             if kbs:
@@ -1486,7 +1506,10 @@ class TurnEngine:
             raise _Cancelled()
         guard = self._guard(run)
         if guard.budget(0):
-            emit({"type": "text", "delta": "\n\n" + message(run.app, "turn.maxSteps")})
+            emit({
+                "type": "text",
+                "delta": "\n\n" + message(run.app, "turn.maxSteps", session=run.session),
+            })
             raise StopRun("guard")
         claims = inp.principal.claims
         caps = await cap_state(self.store, run.app, run.who, self.now(), claims.limits)
@@ -1503,12 +1526,12 @@ class TurnEngine:
                 "type": "error",
                 "code": "limit",
                 "limit": hit.kind,
-                "message": limit_message(run.app, hit),
+                "message": limit_message(run.app, hit, session=run.session),
                 "resetsAt": hit.end.isoformat(),
             })
             # In voice the person may not be looking at the panel: the cap is said aloud too,
             # or the assistant just seems not to answer.
-            say(speakable(limit_message(run.app, hit), run.rules))
+            say(speakable(limit_message(run.app, hit, session=run.session), run.rules))
             raise StopRun("limit")
 
     async def _on_response(
@@ -1619,7 +1642,7 @@ class TurnEngine:
                                     await finish_attempt(rs, a, response)
                             rs.extra["streaming"] = False
                             if filt.blocked:
-                                stop = message(run.app, "turn.guardStopped")
+                                stop = message(run.app, "turn.guardStopped", session=run.session)
                                 emit({"type": "text", "delta": ("\n\n" if rs.text else "") + stop})
                                 say(stop)
                                 answer = f"{rs.text}\n\n{stop}" if rs.text else stop
@@ -1717,7 +1740,8 @@ class TurnEngine:
                             if rs.tool_calls >= max_calls:
                                 emit({
                                     "type": "text",
-                                    "delta": "\n\n" + message(run.app, "turn.maxSteps"),
+                                    "delta": "\n\n"
+                                    + message(run.app, "turn.maxSteps", session=run.session),
                                 })
                                 run.reason = "max_steps"
                                 return
@@ -1749,7 +1773,7 @@ class TurnEngine:
             emit({
                 "type": "error",
                 "code": "model",
-                "message": message(run.app, "turn.modelUnavailable"),
+                "message": message(run.app, "turn.modelUnavailable", session=run.session),
             })
             if rs.text:
                 await self._keep_partial(run, rs.text, splitter)
@@ -1783,7 +1807,11 @@ class TurnEngine:
         rs.events.append(confirm)
         emit(confirm)
         items = "; ".join(w["label"] for w in rs.waiting)
-        say(speakable(message(run.app, "turn.confirmPrompt", items=items), run.rules))
+        say(
+            speakable(
+                message(run.app, "turn.confirmPrompt", session=run.session, items=items), run.rules
+            )
+        )
         if assistant:
             await self._add(
                 run, role="assistant", content=assistant, text=rs.text, events=rs.events

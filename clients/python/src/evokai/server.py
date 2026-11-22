@@ -48,6 +48,7 @@ from evokai.models import (
     McpTestResult,
     MemoryConsentResult,
     MemoryFact,
+    ModuleChoice,
     NewKey,
     PromptVersion,
     RunAttachment,
@@ -197,6 +198,8 @@ class EvokaiServer:
         exit_code: str | None = None,
         groups: Sequence[str] | None = None,
         memory_consent: bool | None = None,
+        modules: Mapping[str, ModuleChoice | Obj] | None = None,
+        locale: str | None = None,
     ) -> SessionToken:
         """Mint a short-lived session token for the browser (it creates the conversation).
 
@@ -217,6 +220,10 @@ class EvokaiServer:
             groups: The subject's groups, for knowledge bases restricted to some groups.
             memory_consent: The person's answer to long-term memory, when the application asked it
                 in its own interface (``memory_mode: ask``); False deletes what was remembered.
+            modules: Prompt modules of the agent to switch on or off and fill, by name
+                (``{"tone": {"params": {"style": "brief"}}}``): only those the agent lets a session
+                change. On a continued conversation it replaces the earlier choice.
+            locale: The session's language, a BCP 47 tag with a shipped pack (``it-IT``).
 
         Returns:
             The token, its expiry, the conversation, the voice engine, the storage mode, the usage
@@ -239,6 +246,8 @@ class EvokaiServer:
                 "exit_code": exit_code,
                 "groups": list(groups) if groups is not None else None,
                 "memory_consent": memory_consent,
+                "modules": dict(modules) if modules is not None else None,
+                "locale": locale,
             },
         )
         return self._send(calls.mint(req))
@@ -631,13 +640,57 @@ class AdminPrompts:
         """Every version of every prompt."""
         return self._s._send(calls.prompts_list())
 
-    def put(self, name: str, text: str) -> int:
-        """Save a prompt; a changed text becomes the next version.
+    def put(
+        self,
+        name: str,
+        text: str,
+        *,
+        parameters: Obj | None = None,
+        description: str | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> int:
+        """Save a prompt; a changed text, schema, description or data becomes the next version.
+
+        Args:
+            name: The prompt's name.
+            text: Its text (a Handlebars template for a module).
+            parameters: A prompt module's parameter schema (a restricted JSON Schema).
+            description: What the prompt is for.
+            data: A module's lookup table, key to text.
 
         Returns:
             The version.
         """
-        return self._s._send(calls.prompts_put(name, text))
+        fields = {"parameters": parameters, "description": description, "data": data}
+        return self._s._send(
+            calls.prompts_put(name, text, {k: v for k, v in fields.items() if v is not None})
+        )
+
+    def preview(
+        self,
+        name: str,
+        *,
+        params: Obj | None = None,
+        version: int | None = None,
+        text: str | None = None,
+        parameters: Obj | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> str:
+        """Render a prompt (a saved version, or the draft given) with sample parameter values.
+
+        Returns:
+            The rendered text.
+        """
+        fields = {
+            "params": params,
+            "version": version,
+            "text": text,
+            "parameters": parameters,
+            "data": data,
+        }
+        return self._s._send(
+            calls.prompts_preview(name, {k: v for k, v in fields.items() if v is not None})
+        )
 
 
 class AdminVoices:
@@ -822,6 +875,8 @@ class AsyncEvokaiServer:
         exit_code: str | None = None,
         groups: Sequence[str] | None = None,
         memory_consent: bool | None = None,
+        modules: Mapping[str, ModuleChoice | Obj] | None = None,
+        locale: str | None = None,
     ) -> SessionToken:
         """Mint a short-lived session token; see :meth:`EvokaiServer.mint_session_token`.
 
@@ -845,6 +900,8 @@ class AsyncEvokaiServer:
                 "exit_code": exit_code,
                 "groups": list(groups) if groups is not None else None,
                 "memory_consent": memory_consent,
+                "modules": dict(modules) if modules is not None else None,
+                "locale": locale,
             },
         )
         return await self._send(calls.mint(req))
@@ -1220,13 +1277,57 @@ class AsyncAdminPrompts:
         """Every version of every prompt."""
         return await self._s._send(calls.prompts_list())
 
-    async def put(self, name: str, text: str) -> int:
-        """Save a prompt; a changed text becomes the next version.
+    async def put(
+        self,
+        name: str,
+        text: str,
+        *,
+        parameters: Obj | None = None,
+        description: str | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> int:
+        """Save a prompt; a changed text, schema, description or data becomes the next version.
+
+        Args:
+            name: The prompt's name.
+            text: Its text (a Handlebars template for a module).
+            parameters: A prompt module's parameter schema (a restricted JSON Schema).
+            description: What the prompt is for.
+            data: A module's lookup table, key to text.
 
         Returns:
             The version.
         """
-        return await self._s._send(calls.prompts_put(name, text))
+        fields = {"parameters": parameters, "description": description, "data": data}
+        return await self._s._send(
+            calls.prompts_put(name, text, {k: v for k, v in fields.items() if v is not None})
+        )
+
+    async def preview(
+        self,
+        name: str,
+        *,
+        params: Obj | None = None,
+        version: int | None = None,
+        text: str | None = None,
+        parameters: Obj | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> str:
+        """Render a prompt (a saved version, or the draft given) with sample parameter values.
+
+        Returns:
+            The rendered text.
+        """
+        fields = {
+            "params": params,
+            "version": version,
+            "text": text,
+            "parameters": parameters,
+            "data": data,
+        }
+        return await self._s._send(
+            calls.prompts_preview(name, {k: v for k, v in fields.items() if v is not None})
+        )
 
 
 class AsyncAdminVoices:

@@ -44,6 +44,7 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.usage import UsageLimits
 
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import split_skills, system_prompt
 from evokai.agents.skills import load as load_skill
 from evokai.core.errors import AppError, BadRequest, Forbidden
@@ -165,6 +166,7 @@ class AgentRunner:
         conversation_id: str | None = None,
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
+        prompt_options: dict[str, Any] | None = None,
     ) -> RunResult:
         """Run the agent to its answer.
 
@@ -194,6 +196,8 @@ class AgentRunner:
                 ``PGTaskDurability``).
             usage_key: Makes the run's usage records idempotent: each model call's record is keyed
                 by it and the call's number (a durable step: its pgtask task).
+            prompt_options: The prompt modules and locale the caller chose (already checked,
+                ``evokai.agents.modules``); None renders the agent's defaults.
 
         Returns:
             The result.
@@ -248,6 +252,12 @@ class AgentRunner:
         )
         await eng.guard.admit(guard)
         status, reason, result = "done", "end_turn", None
+        modules = protected(
+            await resolve_modules(eng.store, app.id, agent, prompt_options), guard.protect_text
+        )
+        if modules:
+            # Which modules at which versions; never their parameters.
+            trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})
         try:
             result = await self._run(
                 app,
@@ -272,6 +282,7 @@ class AgentRunner:
                 conversation_id=conversation_id,
                 extra_capabilities=extra_capabilities,
                 usage_key=usage_key,
+                modules=modules,
             )
             return result
         except LimitReached:
@@ -348,6 +359,7 @@ class AgentRunner:
         conversation_id: str | None = None,
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
+        modules: list[Any] | None = None,
     ) -> RunResult:
         """The run itself, under its guard, on the same engine as the turns.
 
@@ -450,6 +462,7 @@ class AgentRunner:
             timezone=str((app.defaults or {}).get("timezone") or "UTC"),
             preloaded=preloaded,
             scripts_runnable=bool(script_skills),
+            modules=modules,
         )
         notes = guard.system_notes()
         if kbs:

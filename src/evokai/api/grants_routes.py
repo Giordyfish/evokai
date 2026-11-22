@@ -366,6 +366,17 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         stored_names(await svc.store.capability_credentials.all(app.id)),
         svc.settings.image_flavour,
     )
+    # Prompt modules: the ones an agent lets a session change, and every override.
+    module_users: dict[str, list[str]] = {}
+    for a in agents:
+        for ref in a.definition.get("modules") or []:
+            if ref.get("session"):
+                module_users.setdefault(str(ref.get("name")), []).append(a.name)
+    module_names = set(module_users) | {r.name for r in rows if r.kind == g.MODULE}
+    modules = [
+        _item(grants, g.MODULE, n, grants.module(n), usedBy=sorted(module_users.get(n, [])))
+        for n in sorted(module_names)
+    ]
     groups = [
         {"id": "models", "items": models},
         {"id": "mcp", "items": mcp},
@@ -379,6 +390,7 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         {"id": "code", "items": code},
         {"id": "connections", "items": connections},
         {"id": "capabilities", "items": capabilities},
+        {"id": "modules", "items": modules},
     ]
     return {
         "groups": groups,

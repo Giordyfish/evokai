@@ -193,7 +193,7 @@ class Session(Base):
     subject: Mapped[str] = mapped_column(SUBJECT)
     tags: Mapped[list[Any]] = mapped_column(sa.JSON, default=list)
     actor_kind: Mapped[str] = mapped_column(sa.String(16), default="agent", server_default="agent")
-    """Who answers: an agent today; an avatar fronting an agent later."""
+    """Who answers: an agent."""
     voice_engine: Mapped[str] = mapped_column(
         sa.String(16), default="browser", server_default="browser"
     )
@@ -209,6 +209,9 @@ class Session(Base):
     exit_code_hash: Mapped[str | None] = mapped_column(sa.String(200))
     """Kiosk sessions: a hashed code that closes the session."""
     exit_attempts: Mapped[int] = mapped_column(sa.Integer, default=0, server_default="0")
+    prompt_options: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """The prompt modules and locale chosen at token mint: ``{"modules": {name: {"on", "params",
+    "version"}}, "locale"}`` (``evokai.agents.modules``); None follows the agent's defaults."""
     status: Mapped[str] = mapped_column(sa.String(16), default="active")
     last_seq: Mapped[int] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
@@ -440,6 +443,11 @@ class PromptRecord(Base):
     name: Mapped[str] = mapped_column(sa.String(80))
     version: Mapped[int] = mapped_column(sa.Integer)
     text: Mapped[str] = mapped_column(sa.Text)
+    parameters: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """A prompt module's parameter schema (``evokai.agents.modules``); None for a plain prompt."""
+    description: Mapped[str] = mapped_column(sa.Text, default="", server_default="")
+    data: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """A static lookup table of the version, readable in the template as ``data``."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     __table_args__ = (
         sa.UniqueConstraint("application_id", "name", "version", name="uq_evokai_prompt_version"),

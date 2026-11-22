@@ -14,6 +14,17 @@ from pydantic import BaseModel, Field
 from evokai import audit
 from evokai.agents import skills as sk
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import (
+    check_agent_modules,
+    check_data,
+    check_module_template,
+    check_parameters_schema,
+    check_prompt_in_use,
+    render_legacy,
+    render_template,
+    validate_params,
+)
+from evokai.agents.prompts import long_date
 from evokai.api.deps import admin_app, services
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
@@ -28,6 +39,7 @@ from evokai.core.caps import (
 )
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.security import generate_key
+from evokai.core.util import utcnow
 from evokai.evals.redteam.service import gate_of
 from evokai.grants import explicit_client_tools, grants_of
 from evokai.i18n import locale_of, pack
@@ -449,6 +461,8 @@ async def put_agent(
         AppError: A model outside the application's data residency (400 ``residency``).
         Forbidden: A console operator changing the agent's security policy (owner only).
         Conflict: The red team gate blocked this version (409 ``redteam_blocked``).
+        BadRequest: A prompt module that does not exist or whose parameters do not fit
+            (``unknown_module``, ``module_params``).
     """
     if body.name != name:
         raise BadRequest("The name in the path and in the body must be the same.")
@@ -477,6 +491,7 @@ async def put_agent(
     if a.role != "owner" and (before or {}).get("security") != body.security:
         raise Forbidden("Changing an agent's security policy needs the owner role.", code="role")
     await _check_ask_rules(svc, a, body)
+    await check_agent_modules(svc.store, a.application_id, body)
     agent = body.with_version()
     gate, _minimum = gate_of(app)
     existing = await svc.store.agents.version(a.application_id, name, agent.version)
@@ -973,25 +988,109 @@ SKILL_LIMITS = {
 
 
 class PromptBody(BaseModel):
-    """A prompt's text; saving a different text makes a new version."""
+    """A prompt's text; saving a different text, schema, description or data makes a new version."""
 
     text: str = Field(min_length=1, max_length=60_000)
+    parameters: dict[str, Any] | None = None
+    """A prompt module's parameter schema (``evokai.agents.modules``); the text is then a
+    Handlebars template checked against it."""
+    description: str = Field("", max_length=500)
+    data: dict[str, str] | None = None
+    """A module's lookup table (key to text, at most 256 KB), read in the template as ``data``."""
 
 
 @router.put("/prompts/{name}")
 async def put_prompt(
     name: str, body: PromptBody, svc: Svc, a: Admin, request: Request
 ) -> dict[str, int]:
-    """Save a prompt (a changed text becomes the next version).
+    """Save a prompt (a changed text, schema, description or data becomes the next version).
 
     Returns:
         The version.
+
+    Raises:
+        BadRequest: A schema, template or data table that does not pass the module checks, or
+            a new version whose parameters no longer fit an agent's values (``module_in_use``).
     """
-    version = await svc.store.prompts.put(a.application_id, name, body.text)
+    # What the body leaves out stays as the latest version has it: a text-only save (an older
+    # client) keeps a module a module. Send ``parameters: null`` to make it a plain prompt.
+    last = await svc.store.prompts.get(a.application_id, name)
+    sent = body.model_fields_set
+    keep = last is not None
+    parameters = body.parameters if "parameters" in sent or not keep else last.parameters
+    data = body.data if "data" in sent or not keep else last.data
+    description = (
+        body.description if "description" in sent or not keep else (last.description or "")
+    )
+    if parameters is not None:
+        check_parameters_schema(parameters)
+        check_data(data)
+        check_module_template(body.text, parameters, data)
+    elif data is not None:
+        raise BadRequest("A data table needs parameters (a module).", code="module_data")
+    await check_prompt_in_use(svc.store, a.application_id, name, parameters)
+    version = await svc.store.prompts.put(
+        a.application_id,
+        name,
+        body.text,
+        parameters=parameters,
+        description=description,
+        data=data,
+    )
     await audit.record(
-        request, a, "prompt.put", target=f"{name} v{version}", after={"text": body.text}
+        request,
+        a,
+        "prompt.put",
+        target=f"{name} v{version}",
+        after={"text": body.text, "parameters": parameters},
     )
     return {"version": version}
+
+
+class PreviewBody(BaseModel):
+    """Sample values for a prompt preview, and optionally an unsaved draft to preview instead."""
+
+    params: dict[str, Any] = Field(default_factory=dict)
+    version: int | None = Field(default=None, ge=1)
+    """A saved version (default: the latest), when no draft is sent."""
+    text: str | None = Field(default=None, min_length=1, max_length=60_000)
+    """A draft text: checked like a save (with ``parameters`` and ``data``) and rendered."""
+    parameters: dict[str, Any] | None = None
+    data: dict[str, str] | None = None
+
+
+@router.post("/prompts/{name}/preview")
+async def preview_prompt(name: str, body: PreviewBody, svc: Svc, a: Admin) -> dict[str, str]:
+    """Render a prompt (a saved version or a draft) with sample parameter values.
+
+    The values get the parameters' defaults and are checked against the schema; required ones may
+    be left out. ``date`` and ``app`` are today's date and the application's name.
+
+    Returns:
+        text: the rendered prompt.
+
+    Raises:
+        NotFound: No such prompt (and no draft) or application. A draft or values that do not
+            pass the module checks are refused as when saving (400 ``module_*``).
+    """
+    app = await svc.store.applications.get(a.application_id)
+    if app is None:
+        raise NotFound()
+    if body.text is not None:
+        text, parameters, data = body.text, body.parameters, body.data
+        if parameters is not None:
+            check_parameters_schema(parameters)
+            check_data(data)
+            check_module_template(text, parameters, data)
+    else:
+        row = await svc.store.prompts.get(a.application_id, name, body.version)
+        if row is None:
+            raise NotFound("Unknown prompt.", code="unknown_prompt")
+        text, parameters, data = row.text, row.parameters, row.data
+    params = validate_params(parameters, body.params, partial=True) if parameters else {}
+    timezone = str((app.defaults or {}).get("timezone") or "UTC")
+    values = {"date": long_date(utcnow(), timezone), "app": app.name, "data": data or {}, **params}
+    return {"text": render_template(text, values) if parameters else render_legacy(text, values)}
 
 
 @router.get("/prompts")
@@ -999,12 +1098,21 @@ async def list_prompts(svc: Svc, a: Admin) -> dict[str, Any]:
     """Every version of every prompt.
 
     Returns:
-        items: name, version, createdAt.
+        items: name, version, text, description, parameters (a module's schema, or null), data
+        and createdAt.
     """
     rows = await svc.store.prompts.all(a.application_id)
     return {
         "items": [
-            {"name": r.name, "version": r.version, "createdAt": r.created_at.isoformat()}
+            {
+                "name": r.name,
+                "version": r.version,
+                "text": r.text,
+                "description": r.description or "",
+                "parameters": r.parameters,
+                "data": r.data,
+                "createdAt": r.created_at.isoformat(),
+            }
             for r in rows
         ]
     }

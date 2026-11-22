@@ -369,6 +369,8 @@ export interface paths {
          *         AppError: A model outside the application's data residency (400 ``residency``).
          *         Forbidden: A console operator changing the agent's security policy (owner only).
          *         Conflict: The red team gate blocked this version (409 ``redteam_blocked``).
+         *         BadRequest: A prompt module that does not exist or whose parameters do not fit
+         *             (``unknown_module``, ``module_params``).
          */
         put: operations["put_agent_agent_v1_admin_agents__name__put"];
         post?: never;
@@ -1730,7 +1732,8 @@ export interface paths {
          * @description Every version of every prompt.
          *
          *     Returns:
-         *         items: name, version, createdAt.
+         *         items: name, version, text, description, parameters (a module's schema, or null), data
+         *         and createdAt.
          */
         get: operations["list_prompts_agent_v1_admin_prompts_get"];
         put?: never;
@@ -1751,13 +1754,47 @@ export interface paths {
         get?: never;
         /**
          * Put Prompt
-         * @description Save a prompt (a changed text becomes the next version).
+         * @description Save a prompt (a changed text, schema, description or data becomes the next version).
          *
          *     Returns:
          *         The version.
+         *
+         *     Raises:
+         *         BadRequest: A schema, template or data table that does not pass the module checks, or
+         *             a new version whose parameters no longer fit an agent's values (``module_in_use``).
          */
         put: operations["put_prompt_agent_v1_admin_prompts__name__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/prompts/{name}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Prompt
+         * @description Render a prompt (a saved version or a draft) with sample parameter values.
+         *
+         *     The values get the parameters' defaults and are checked against the schema; required ones may
+         *     be left out. ``date`` and ``app`` are today's date and the application's name.
+         *
+         *     Returns:
+         *         text: the rendered prompt.
+         *
+         *     Raises:
+         *         NotFound: No such prompt (and no draft) or application. A draft or values that do not
+         *             pass the module checks are refused as when saving (400 ``module_*``).
+         */
+        post: operations["preview_prompt_agent_v1_admin_prompts__name__preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2439,6 +2476,7 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: Unknown application.
+         *         BadRequest: An unknown locale, or a prompt module choice that is refused.
          */
         post: operations["run_agent_agent_v1_agents__name__run_post"];
         delete?: never;
@@ -3328,8 +3366,10 @@ export interface paths {
          *         NotFound: Unknown agent, conversation or application.
          *         Conflict: The conversation is closed, or kept in another storage mode.
          *         Forbidden: The agent runs on the server only.
-         *         NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,
-         *             are not granted to the application (403 ``*_not_granted``).
+         *         NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,
+         *             or browser sessions, are not granted to the application (403 ``*_not_granted``).
+         *         BadRequest: An unknown locale, or a prompt module choice that is refused
+         *             (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).
          */
         post: operations["mint_agent_v1_session_tokens_post"];
         delete?: never;
@@ -4067,6 +4107,8 @@ export interface components {
             };
             /** Models */
             models?: string[];
+            /** Modules */
+            modules?: components["schemas"]["ModuleRef"][];
             /** Name */
             name: string;
             /** Output Schema */
@@ -5145,6 +5187,42 @@ export interface components {
             threshold?: number | null;
         };
         /**
+         * ModuleChoice
+         * @description A session's choice for one prompt module (server key only, at token mint).
+         */
+        ModuleChoice: {
+            /** On */
+            on?: boolean | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * ModuleRef
+         * @description A prompt module the agent may use (``evokai.agents.modules``), with its defaults.
+         */
+        ModuleRef: {
+            /** Name */
+            name: string;
+            /**
+             * On
+             * @default true
+             */
+            on?: boolean;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Session
+             * @default false
+             */
+            session?: boolean;
+            /** Version */
+            version?: number | null;
+        };
+        /**
          * NavigateDef
          * @description The client navigation tool.
          */
@@ -5340,10 +5418,45 @@ export interface components {
             version?: 1;
         };
         /**
+         * PreviewBody
+         * @description Sample values for a prompt preview, and optionally an unsaved draft to preview instead.
+         */
+        PreviewBody: {
+            /** Data */
+            data?: {
+                [key: string]: string;
+            } | null;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            } | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Text */
+            text?: string | null;
+            /** Version */
+            version?: number | null;
+        };
+        /**
          * PromptBody
-         * @description A prompt's text; saving a different text makes a new version.
+         * @description A prompt's text; saving a different text, schema, description or data makes a new version.
          */
         PromptBody: {
+            /** Data */
+            data?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Description
+             * @default
+             */
+            description?: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            } | null;
             /** Text */
             text: string;
         };
@@ -5554,6 +5667,12 @@ export interface components {
             groups?: string[];
             /** Input */
             input: string | components["schemas"]["RunMessage"][];
+            /** Locale */
+            locale?: string | null;
+            /** Modules */
+            modules?: {
+                [key: string]: components["schemas"]["ModuleChoice"];
+            } | null;
             /**
              * Store
              * @default false
@@ -5867,10 +5986,16 @@ export interface components {
             /** Groups */
             groups?: string[];
             limits?: components["schemas"]["SubjectLimits"] | null;
+            /** Locale */
+            locale?: string | null;
             /** Memoryconsent */
             memoryConsent?: boolean | null;
             /** Model */
             model?: string | null;
+            /** Modules */
+            modules?: {
+                [key: string]: components["schemas"]["ModuleChoice"];
+            } | null;
             /** Storagemode */
             storageMode?: ("evokai" | "external") | null;
             /** Subject */
@@ -6053,7 +6178,7 @@ export interface components {
             first_clause_min_chars?: number;
             /**
              * Prompt Rule
-             * @default The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read tax codes, IBANs, meter codes or personal data aloud: point to the screen instead.
+             * @default The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read codes, account numbers or personal data aloud: point to the screen instead.
              */
             prompt_rule?: string;
             /**
@@ -8647,6 +8772,43 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: number;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_prompt_agent_v1_admin_prompts__name__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
                     };
                 };
             };

@@ -7,8 +7,16 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from evokai.agents.modules import (
+    ModuleChoice,
+    check_session_modules,
+    choose_modules,
+    scan_module_texts,
+)
 from evokai.api.deps import server_app, services
-from evokai.core.errors import NotFound
+from evokai.core.errors import BadRequest, NotFound
+from evokai.grants import grants_of
+from evokai.i18n import pack_language
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
 from evokai.sessions.runs import AgentRunner, Attachment
@@ -48,6 +56,11 @@ class RunRequest(BaseModel):
     )
     """The subject's groups or roles: knowledge documents with access groups are found only when
     one of them matches (documents without access groups always are)."""
+    modules: dict[str, ModuleChoice] | None = Field(default=None, max_length=20)
+    """Prompt modules of the agent to switch on or off and fill for this run, as in a session
+    token (``POST /v1/session-tokens``), with the same checks."""
+    locale: str | None = Field(default=None, max_length=35)
+    """The run's language, a BCP 47 tag with a shipped pack (400 ``unknown_locale`` without)."""
 
 
 class RunUsage(BaseModel):
@@ -87,11 +100,32 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
 
     Raises:
         NotFound: Unknown application.
+        BadRequest: An unknown locale, or a prompt module choice that is refused.
     """
     application = await svc.store.applications.get(app.application_id)
     if application is None:
         raise NotFound()
     agent = await svc.agents.active(app.application_id, name)
+    options = None
+    if body.modules is not None or body.locale is not None:
+        if body.locale is not None and pack_language(body.locale) is None:
+            raise BadRequest(
+                f"No language pack for the locale {body.locale}.", code="unknown_locale"
+            )
+        grants = await grants_of(svc.store, application)
+        modules = choose_modules(agent, body.modules or {}, grants)
+        texts = await check_session_modules(svc.store, application.id, agent, modules)
+        cleaned = await scan_module_texts(
+            svc.guard,
+            application,
+            agent,
+            texts,
+            subject=body.subject or f"system:{agent.name}",
+            session_id=None,
+        )
+        for module, values in cleaned.items():
+            modules[module]["params"] = {**modules[module]["params"], **values}
+        options = {"modules": modules, "locale": body.locale}
     text = body.input if isinstance(body.input, str) else None
     messages = None if isinstance(body.input, str) else [x.model_dump() for x in body.input]
     result = await AgentRunner(svc.engine).run(
@@ -104,6 +138,7 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
         tags=body.tags,
         store_conversation=body.store,
         groups=body.groups,
+        prompt_options=options,
     )
     return RunResponse(
         runId=result.run_id,

@@ -36,6 +36,27 @@ mcp_servers:
 
 skills_dir: skills
 
+# Prompt modules (docs/prompt-modules.md): versioned prompts with parameters that the agent puts after its instructions.
+# The shop's backend switches them and fills their parameters when it mints a session token; the browser never can.
+prompts:
+  - name: tone
+    description: How long the answers are.
+    text: "{{lookup data style}}"
+    parameters:
+      type: object
+      properties:
+        style: {type: string, enum: [brief, detailed], default: brief, description: Length of the answers}
+    data:
+      brief: "Keep answers to one or two sentences unless the user asks for more."
+      detailed: "Give the reasons and the figures behind each answer, in a few short paragraphs."
+  - name: reader_level
+    description: Extra guidance for people new to the back office.
+    text: "{{#if beginner}}The user is new to the back office: explain each step and say on which page it is done.{{/if}}"
+    parameters:
+      type: object
+      properties:
+        beginner: {type: boolean, default: false, description: The user is new to the back office}
+
 agents:
   - name: bookshop
     title: Inkwell Books
@@ -63,6 +84,9 @@ agents:
         late: Arrived too late
     max_tool_calls_per_turn: 6
     memory: {episodes: true, recall: 6}
+    modules:
+      - {name: tone, session: true}
+      - {name: reader_level, session: true}
     client_tools:
       navigate:
         description: "Takes the user to a page of the shop's back office. Use the paths the tools return (field page) or: /orders (orders), /returns (returns), /catalogue (catalogue)."

@@ -120,10 +120,10 @@ def test_no_amount_field_in_usage_events() -> None:
 
 
 def test_unknown_type_keeps_every_field() -> None:
-    event = parse_event({"type": "avatar", "pose": "wave", **META})
+    event = parse_event({"type": "highlight", "target": "price", **META})
     assert isinstance(event, UnknownEvent)
-    assert event.type == "avatar"
-    assert event.data == {"type": "avatar", "pose": "wave", "turnId": "t1", "seq": 4}
+    assert event.type == "highlight"
+    assert event.data == {"type": "highlight", "target": "price", "turnId": "t1", "seq": 4}
 
 
 def test_known_type_with_a_payload_that_no_longer_fits_falls_back() -> None:
