@@ -35,8 +35,10 @@ OWNER_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("PUT", "/v1/admin/compliance/profile"),
     ("POST", "/v1/admin/application/unlock"),
     ("POST", "/v1/admin/application/reset"),
+    ("GET", "/v1/admin/application/reset/preview"),
     ("POST", "/v1/admin/assistant/activate"),
     ("POST", "/v1/admin/assistant/try"),
+    ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
 })
 """Changes that need the owner role (application settings and policy, the deployment's voices)."""
 
@@ -45,6 +47,7 @@ READ_ONLY_POSTS: frozenset[str] = frozenset({
     "/v1/admin/knowledge/{name}/search",
     "/v1/admin/workflows/validate",
     "/v1/console/assistant/session",
+    "/v1/console/assistant/privacy",
 })
 """POST routes that change nothing of the application (they parse what they are sent, or open the
 console assistant's own session, which acts with the caller's role)."""

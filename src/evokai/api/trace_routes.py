@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from evokai import audit
 from evokai.api.deps import admin_app, services
+from evokai.assistant.privacy import NOBODY, key_of
 from evokai.core.errors import BadRequest, NotFound
 from evokai.core.util import utcnow
 from evokai.db import models as m
@@ -136,6 +137,13 @@ async def traces(
         items (summaries, no spans) and next.
     """
     app = await _app(svc, a)
+    wanted = _key(svc, app.id, subject)
+    if app.system:
+        # Each person's own traces only (``evokai.assistant.privacy``).
+        mine = key_of(svc, app.id, a.subject or NOBODY)
+        if wanted and wanted != mine:
+            return {"items": [], "next": None, "storage": app.storage_mode}
+        wanted = mine
     rows = await svc.store.traces.query(
         app.id,
         limit=limit,
@@ -144,7 +152,7 @@ async def traces(
         end=end,
         agent=agent,
         version=version,
-        subject_key=_key(svc, app.id, subject),
+        subject_key=wanted,
         outcome=outcome,
         kind=kind,
         guard=guard,
@@ -173,7 +181,7 @@ async def trace(trace_id: str, svc: Svc, a: Admin) -> dict[str, Any]:
     """
     app = await _app(svc, a)
     row = await svc.store.traces.get(app.id, trace_id)
-    if row is None:
+    if row is None or (app.system and row.subject != (a.subject or NOBODY)):
         raise NotFound()
     readable = False
     notes: list[dict[str, Any]] = []
@@ -307,17 +315,20 @@ class NoteBody(BaseModel):
     note: str = Field(default="", max_length=4_000)
 
 
-async def _conversation(svc: Services, app: m.Application, conversation_id: str) -> m.Session:
+async def _conversation(
+    svc: Services, app: m.Application, conversation_id: str, a: AppPrincipal
+) -> m.Session:
     """A conversation of the application kept in Evokai (reviewable).
 
     Returns:
         The conversation.
 
     Raises:
-        NotFound: Unknown, expired, or kept by the application itself.
+        NotFound: Unknown, expired, kept by the application itself, or another person's on a
+            system application.
     """
     rows = await svc.store.sessions.review(app.id, limit=1, conversation_id=conversation_id)
-    if not rows:
+    if not rows or (app.system and rows[0]["subject"] != (a.subject or NOBODY)):
         raise NotFound()
     session = await svc.store.sessions.get(Who(app.id, rows[0]["subject"]), conversation_id)
     if session is None:
@@ -340,7 +351,7 @@ async def add_note(
     if not body.label and not body.note.strip():
         raise BadRequest("Give a label or a note.", code="empty")
     app = await _app(svc, a)
-    session = await _conversation(svc, app, conversation_id)
+    session = await _conversation(svc, app, conversation_id, a)
     row = await svc.store.review_notes.add(
         application_id=app.id,
         session_id=session.id,
@@ -373,6 +384,8 @@ async def delete_note(
         NotFound: No such note on this conversation.
     """
     app = await _app(svc, a)
+    if app.system:
+        await _conversation(svc, app, conversation_id, a)
     row = await svc.store.review_notes.delete(app.id, conversation_id, note_id)
     if row is None:
         raise NotFound()

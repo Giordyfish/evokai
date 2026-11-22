@@ -24,6 +24,8 @@ code,.mono{font:13px var(--mono)}
 .side{position:sticky;top:12px;height:calc(100vh - 24px);margin:12px 0 12px 12px;border-radius:var(--r-2xl);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);box-shadow:var(--sh);display:flex;flex-direction:column;padding:14px 12px;overflow:auto}
 .brand{display:flex;align-items:center;gap:10px;padding:2px 6px 14px;color:inherit;text-decoration:none;border-radius:10px;transition:opacity .15s}.brand:hover{opacity:.8}
 .brand img{width:34px;height:34px}
+/* The small mage in the logo's place, a little larger than the mark and drawn over the header's padding. */
+.brand img.bmage{width:44px;height:44px;margin:-5px}
 .brand b{font:650 19px var(--disp);letter-spacing:-.02em}.brand sup{font:500 9px var(--ui);color:var(--mu)}
 .switch{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:var(--r-lg);border:1px solid var(--hair);background:var(--glass2);color:var(--tx);cursor:pointer;text-align:left;font:500 14px var(--ui);position:relative}
 .switch:hover{border-color:color-mix(in srgb,var(--vi) 40%,transparent)}
@@ -413,10 +415,7 @@ details.acc>summary .ctl{cursor:default}
 
 /* ---------- v5: semantic colours, status marks, the familiar, the playground ---------- */
 .msg.me{align-self:flex-end;background:var(--vis);color:var(--tx);box-shadow:0 0 0 1px color-mix(in srgb,var(--vi) 28%,transparent);border-bottom-right-radius:5px}
-.side .foot{margin-top:0;display:flex;align-items:center;gap:8px;padding:10px 4px 0;border-top:1px solid var(--hair2)}
-.famslot{margin-top:auto;padding:8px 0 6px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
-.familiar{display:block;width:104px;height:104px;padding:0;border:0;background:none;cursor:pointer;margin-left:-6px;border-radius:12px}
-.familiar img{width:104px;height:104px;display:block}
+.side .foot{margin-top:auto;display:flex;align-items:center;gap:8px;padding:10px 4px 0;border-top:1px solid var(--hair2)}
 .bar1 i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--vi),var(--teal))}
 .tabs .bar{position:absolute;bottom:-1px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--vi),var(--teal));transition:left .28s cubic-bezier(.3,.9,.3,1),width .28s cubic-bezier(.3,.9,.3,1)}
 .tag.bad{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
@@ -495,7 +494,6 @@ details.acc>summary .ctl{cursor:default}
 .lang button{height:24px;min-width:30px;padding:0 7px;border:0;border-radius:var(--r-xs);background:none;color:var(--mu);font:600 11.5px var(--ui);letter-spacing:.04em;cursor:pointer}
 .lang button:hover{color:var(--tx)}
 .lang button[aria-pressed=true]{color:var(--tx);background:var(--solid);box-shadow:0 1px 2px rgba(20,10,60,.12),0 0 0 1px var(--hair)}
-.famslot .lang{margin-bottom:6px}
 .login .lang{position:absolute;top:16px;right:16px}
 
 /* ---------- the person's preferences (src/prefs.ts sets these attributes on <html>) ---------- */
@@ -530,9 +528,6 @@ details.acc>summary .ctl{cursor:default}
 :root[data-density=compact] .hero{padding:14px 0 14px}
 :root[data-density=compact] .hero h1{font-size:34px}
 :root[data-density=compact] .fld{margin-bottom:10px}
-/* The mascot hidden: nowhere in the console (the sidebar's familiar is not rendered at all). */
-:root[data-mascot=hidden] .mas{display:none}
-:root[data-mascot=hidden] .lmas{visibility:hidden}
 
 /* The signed-in identity in the sidebar opens Preferences. */
 .side a.me{text-decoration:none;color:var(--mu);border-radius:var(--r-md);padding:4px 6px;margin:-4px 0 -4px -6px}
@@ -746,6 +741,12 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .assistant-off{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center}
 .assistant-off h3{font:600 17px var(--disp);margin:6px 0 0}
 .assistant-off .hint{max-width:30ch}
+.assistant-notice{flex:1;display:flex;flex-direction:column;gap:10px;padding:16px 20px;overflow:auto}
+.assistant-notice h3{font:600 15px var(--disp);margin:8px 0 0}
+.assistant-notice .btn{align-self:flex-start;margin-top:6px}
+.assistant-about{margin:4px 0 8px;font-size:12.5px;line-height:1.5;color:var(--mu)}
+.assistant-about p{margin:4px 0}
+.viewed{border-left:3px solid var(--warn);padding-left:8px}
 .mascot{display:block;position:relative}
 .mascot.live canvas{position:absolute;inset:0}
 @media (max-width:640px){.assistant-panel{inset:0;width:auto;border-radius:0;border:0}}

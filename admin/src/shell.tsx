@@ -4,10 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import type { ConsoleApplication, CostAlert } from '@client/core/types'
 import { forApp, root } from './api'
+import { useAssistantActive } from './assistant/active'
 import { AssistantPanel } from './assistant/Panel'
 import { ALERTS_CHANGED, alertText, bannerAlert } from './costs'
 import { pl } from './format'
-import { Empty, Familiar, HAT } from './magic'
+import { BrandMark, Empty } from './magic'
 import { Access } from './pages/Access'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
@@ -132,6 +133,7 @@ export function Shell({ route }: { route: Route }) {
   const [lastApp, setLastApp] = useState<string | null>(null)
   const fresh = app && app.slug !== lastApp
   const alerts = useCostAlerts(app)
+  const assistantOn = useAssistantActive(helper, route.view === 'assistant')
 
   useEffect(() => {
     setOpen(false)
@@ -210,7 +212,7 @@ export function Shell({ route }: { route: Route }) {
     <div class={`shell ${open ? 'open' : ''}`}>
       <aside class="side" aria-label={t('shell.navigation')}>
         <a class="brand" href="#/apps" title={t('shell.home')} aria-label={t('shell.homeLabel')}>
-          <img src={HAT} alt="" />
+          <BrandMark assistantActive={assistantOn} />
           <b>
             Evokai<sup>™</sup>
           </b>
@@ -269,9 +271,6 @@ export function Shell({ route }: { route: Route }) {
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
           {nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant')}
           {c.me.deploymentOwner ? nav('#/access', t('page.access'), 'access', route.view === 'access') : null}
-        </div>
-        <div class="famslot">
-          <Familiar />
         </div>
         <div class="foot">
           <a

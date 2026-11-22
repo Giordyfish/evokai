@@ -67,6 +67,7 @@ async def test_any_write_on_locked_system_app_is_409(env: Env) -> None:
         "/agent/v1/admin/application/reset",
         "/agent/v1/admin/assistant/activate",
         "/agent/v1/admin/assistant/try",
+        "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect",
     }
     checked = 0
     for path, operations in paths.items():
@@ -77,7 +78,8 @@ async def test_any_write_on_locked_system_app_is_409(env: Env) -> None:
         for method in set(operations) - {"get", "head"}:
             r = await env.client.request(method.upper(), _fill(path), json={}, headers=_on(app_id))
             assert r.status_code == 409, (method, path, r.status_code, r.text)
-            assert r.json()["error"] == "locked", (method, path, r.text)
+            # Another kind of resource is refused as such (system_app), locked or not.
+            assert r.json()["error"] in {"locked", "system_app"}, (method, path, r.text)
             checked += 1
     assert checked >= 45
     # Reads still work.
@@ -143,7 +145,9 @@ async def test_reset_restores_shipped_definition(env: Env) -> None:
     changed.pop("version", None)
     r = await env.client.put("/agent/v1/admin/agents/assistant", json=changed, headers=_on(app_id))
     assert r.status_code == 200, r.text
-    r = await env.client.post("/agent/v1/admin/application/reset", json={}, headers=_on(app_id))
+    r = await env.client.post(
+        "/agent/v1/admin/application/reset", json={"confirm": SLUG}, headers=_on(app_id)
+    )
     assert r.status_code == 200, r.text
     app = await env.svc.store.applications.get(app_id)
     agent = await env.svc.store.agents.active(app_id, "assistant")

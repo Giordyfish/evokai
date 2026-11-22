@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 
 from evokai import audit, privacy
 from evokai.api.deps import server_app, services
+from evokai.assistant.privacy import own_subject
+from evokai.core.errors import Conflict, Forbidden
 from evokai.db.repositories import Who
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
@@ -36,9 +38,17 @@ async def export(body: SubjectRequest, svc: Svc, app: App, request: Request) -> 
     Conversations with messages and turns, memories, usage, security events (masked), bug reports
     and consents. Amounts only with a server or admin key.
 
+    On a system application a person exports only their own data (403 ``own_data``).
+
     Returns:
         The export.
+
+    Raises:
+        Forbidden: Another person's data on a system application.
     """
+    mine = await own_subject(svc, app)
+    if mine is not None and body.subject != mine:
+        raise Forbidden("On this application you export only your own data.", code="own_data")
     data = await privacy.export_subject(
         svc.store, Who(app.application_id, body.subject), amounts=not app.console
     )
@@ -65,9 +75,25 @@ async def erase(body: SubjectRequest, svc: Svc, app: App, request: Request) -> d
     are deleted; usage rows and security events are de-identified, so the
     application's caps keep counting; every session token of the subject stops working. Idempotent.
 
+    On a system application only an owner erases, and never their own conversations: the
+    console assistant's conversations stay until their time to live ends (403 ``role``, 409
+    ``retention``).
+
     Returns:
         ok and how many rows of each kind were deleted or de-identified.
+
+    Raises:
+        Forbidden: Not an owner, on a system application.
+        Conflict: Your own data on a system application.
     """
+    mine = await own_subject(svc, app)
+    if mine is not None and app.role != "owner":
+        raise Forbidden("On this application an owner erases a person's data.", code="role")
+    if mine is not None and body.subject == mine:
+        raise Conflict(
+            "Your conversations with the assistant are kept until their time to live ends.",
+            code="retention",
+        )
     who = Who(app.application_id, body.subject)
     # Connections first: Google's refresh tokens are revoked at Google before they are deleted.
     revoked = await svc.connections.forget_subject(app.application_id, body.subject)

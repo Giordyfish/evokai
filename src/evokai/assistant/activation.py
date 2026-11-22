@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from evokai.agents.definitions import AgentDef
 from evokai.assistant import bootstrap as shipped
 from evokai.assistant.delegation import mint_recorded
 from evokai.core.util import new_id
@@ -36,6 +37,7 @@ from evokai.evals.runner import EvalLimit, shares, summarize
 from evokai.llm.catalog import normalize, provider_of
 from evokai.llm.context import context_window
 from evokai.llm.suggestions import suggestions
+from evokai.llm.suitability import Complexity, agent_complexity, estimate
 from evokai.version import __version__
 
 if TYPE_CHECKING:
@@ -138,23 +140,81 @@ def _view(numbers: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
-def candidate(app: m.Application | None, model: str, label: str = "") -> dict[str, Any]:
+def candidate(
+    app: m.Application | None,
+    model: str,
+    label: str = "",
+    complexity: Complexity | None = None,
+    context_windows: dict[str, int] | None = None,
+) -> dict[str, Any]:
     """One model as the owner sees it.
 
     Returns:
         model, label, status (``recommended``, ``not_recommended``, ``not_measured``),
-        recommended and measured (the numbers, or None).
+        recommended, measured (the numbers, or None) and estimate (the suitability estimate,
+        ``basis: measured`` when there are numbers).
     """
     numbers = measured(app, model)
     ok = meets(numbers, model)
     status = "recommended" if ok else "not_recommended" if numbers else "not_measured"
+    fit = estimate(
+        model,
+        complexity or Complexity("high", {}),
+        context_windows=context_windows,
+        measured=ok if numbers else None,
+    )
     return {
         "model": model,
         "label": label or model,
         "status": status,
         "recommended": ok,
         "measured": _view(numbers),
+        "estimate": fit.view(),
     }
+
+
+async def complexity_of(svc: Services, app: m.Application, agent: AgentDef) -> Complexity:
+    """An agent's complexity from its definition and the tools its MCP servers last listed.
+
+    The assistant's own admin MCP server counts its allow-list when it has not listed its tools
+    yet. A system application answers in the console's two languages.
+
+    Returns:
+        The complexity.
+    """
+    from evokai.mcp_admin.tools import ADMIN_TOOLS
+
+    servers = {s.name: s for s in await svc.store.mcp_servers.all(app.id)}
+    tools = confirm = 0
+    for name in agent.mcp_servers:
+        server = servers.get(name)
+        listed = list((server.tools if server else None) or [])
+        if not listed and app.system and name == shipped.MCP_SERVER:
+            tools += len(ADMIN_TOOLS)
+            confirm += sum(1 for t in ADMIN_TOOLS if t.method != "GET")
+            continue
+        tools += len(listed)
+        confirm += sum(1 for t in listed if not (t or {}).get("readOnly"))
+    return agent_complexity(agent, tools, confirm_tools=confirm, languages=2 if app.system else 1)
+
+
+async def suitability(
+    svc: Services, app: m.Application, agent: AgentDef, model: str
+) -> dict[str, Any]:
+    """How well a model suits an agent: its complexity and the estimate (or the measurement).
+
+    Returns:
+        complexity (tier, factors) and estimate (verdict, reasons, basis, facts).
+    """
+    c = await complexity_of(svc, app, agent)
+    numbers = measured(app, model) if app.system and agent.name == shipped.AGENT else None
+    fit = estimate(
+        model,
+        c,
+        context_windows=svc.settings.context_windows,
+        measured=meets(numbers, model) if numbers else None,
+    )
+    return {"complexity": {"tier": c.tier, "factors": c.factors}, "estimate": fit.view()}
 
 
 async def candidates(svc: Services, app: m.Application | None) -> list[dict[str, Any]]:
@@ -172,8 +232,12 @@ async def candidates(svc: Services, app: m.Application | None) -> list[dict[str,
     for model in [*(defaults.get(MEASURED_KEY) or {}), defaults.get(shipped.MODEL_KEY)]:
         if model:
             labels.setdefault(str(model), str(model))
+    complexity = None
+    record = await svc.store.agents.active(app.id, shipped.AGENT) if app else None
+    if app is not None and record is not None:
+        complexity = await complexity_of(svc, app, AgentDef.model_validate(record.definition))
     out = [
-        candidate(app, model, label)
+        candidate(app, model, label, complexity, svc.settings.context_windows)
         for model, label in labels.items()
         if svc.catalog.allowed(model) and supports_tools(model)
     ]

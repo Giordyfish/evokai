@@ -655,6 +655,9 @@ class SessionRepository(_Repo):
     async def purge_expired(self, now: datetime | None = None) -> int:
         """Delete conversations past their application's time to live, for good.
 
+        The time to live counts from the last message, and for a system application from the
+        conversation's start.
+
         Messages, summaries, events, turns, pending actions, threads and the conversation go; usage
         records stay (budgets keep counting) without their link to the conversation or turn; bug
         reports lose the link too.
@@ -671,11 +674,15 @@ class SessionRepository(_Repo):
                         m.Application.id,
                         m.Application.conversation_ttl_days,
                         m.Application.storage_mode,
+                        m.Application.system,
                     ).where(m.Application.conversation_ttl_days.is_not(None))
                 )
             ).all()
-        for app_id, ttl, app_mode in apps:
+        for app_id, ttl, app_mode, system in apps:
             cutoff = now - timedelta(days=int(ttl or 0))
+            # A system application's conversations (the console assistant's) go that many days
+            # after they started, however long they are resumed: what was said is kept no longer.
+            since = m.Session.created_at if system else m.Session.updated_at
             while True:
                 async with self.db.session() as s:
                     ids = list(
@@ -685,7 +692,7 @@ class SessionRepository(_Repo):
                                 .select(m.Session.id)
                                 .where(
                                     m.Session.application_id == app_id,
-                                    m.Session.updated_at <= cutoff,
+                                    since <= cutoff,
                                     _stored_here(str(app_mode or "evokai")),
                                 )
                                 .limit(500)
@@ -1722,6 +1729,17 @@ class PromptRepository(_Repo):
             q = sa.select(p).where(p.application_id == application_id).order_by(p.name, p.version)
             return list((await s.execute(q)).scalars().all())
 
+    async def delete(self, application_id: str, name: str) -> int:
+        """Delete a prompt with every version (a system application's reset).
+
+        Returns:
+            How many versions were deleted.
+        """
+        async with self.db.session() as s:
+            p = m.PromptRecord
+            q = sa.delete(p).where(p.application_id == application_id, p.name == name)
+            return _rowcount(await s.execute(q))
+
 
 class VoiceRepository(_Repo):
     """The deployment's text-to-speech voice catalog."""
@@ -2022,10 +2040,12 @@ class AuditRepository(_Repo):
         end: datetime | None = None,
         before: datetime | None = None,
         limit: int = 100,
+        target: str | None = None,
     ) -> list[m.AuditEntry]:
         """Entries, newest first: of one application, or every entry (``everything``).
 
-        ``action`` ending in ``.`` is a prefix (``agent.``); ``actor`` matches a part of it.
+        ``action`` ending in ``.`` is a prefix (``agent.``); ``actor`` and ``target`` match a part
+        of it.
 
         Returns:
             Entries.
@@ -2042,6 +2062,8 @@ class AuditRepository(_Repo):
             )
         if actor:
             where.append(a.actor.like(f"%{actor}%"))
+        if target:
+            where.append(a.target.like(f"%{target}%"))
         if start is not None:
             where.append(a.at >= start)
         if end is not None:

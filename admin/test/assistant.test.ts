@@ -1,5 +1,5 @@
 import { setLocale } from '../src/i18n'
-import { activateBody, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../src/assistant/choice'
+import { activateBody, assistantActive, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../src/assistant/choice'
 
 afterEach(() => setLocale('en'))
 
@@ -51,5 +51,15 @@ describe('a try', () => {
     const trial = { runId: 'r', model: 'm', status: 'running', progressPct: 40, budgetPct: 3, measured: null, startedAt: '' }
     expect(trialRunning({ ...base, trial })).toBe(true)
     expect(trialRunning({ ...base, trial: { ...trial, status: 'done' } })).toBe(false)
+  })
+})
+
+describe('one mascot on screen', () => {
+  const base = { requirements, candidates: [], trial: null, model: null }
+  it('counts the assistant as there only while it is available and activated', () => {
+    expect(assistantActive(null)).toBe(false)
+    expect(assistantActive({ ...base, available: false, active: false })).toBe(false)
+    expect(assistantActive({ ...base, available: true, active: false })).toBe(false)
+    expect(assistantActive({ ...base, available: true, active: true, model: 'bedrock:eu.x' })).toBe(true)
   })
 })

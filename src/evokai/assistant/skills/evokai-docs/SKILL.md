@@ -30,6 +30,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/index.md`: Evokai
 - `references/knowledge.md`: Knowledge bases
 - `references/memory.md`: Long-term memory
+- `references/models.md`: Model suitability
 - `references/openai-compatible.md`: OpenAI-compatible API
 - `references/privacy.md`: Privacy and data protection
 - `references/prompt-modules.md`: Prompt modules

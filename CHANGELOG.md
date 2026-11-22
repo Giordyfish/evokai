@@ -33,6 +33,21 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - `<evokai-chat>` exposes the conversation's state as `data-state` and a `statechange` event, for slotted content.
 - The browser voice takes `pitch` and `preferVoice`; Piper takes `pitchShift`.
 - The red team suite has attacks on the console assistant, run on system applications.
+- The console assistant's conversations are each person's own: on its system application every route that returns
+  conversation content (conversation list and detail, notes, traces, the server API's conversations, the privacy
+  export, bug reports, security events, and the admin MCP tools through them) keeps to the caller's subject. An owner
+  reads another person's conversation only through `POST /v1/admin/assistant/conversations/{id}/inspect` with a
+  written reason, audited and listed to the author (`GET /v1/console/assistant/privacy`); the console asks for the
+  reason. A first-use notice (retention, who can see, purpose, the assistant's AI nature) is accepted once per login
+  with its version. See [assistant](docs/assistant.md#privacy-of-the-conversations).
+- The assistant's voice follows data protection: the browser's online voice only when the selected application's and
+  the assistant's profiles allow processors outside the EU, otherwise a local system voice or Piper in the browser.
+- `GET /v1/admin/application/reset/preview`: every item a reset of the assistant's application deletes or restores,
+  with the deleted items' definitions; the console downloads them as JSON.
+- A model suitability estimate for every agent (`GET /v1/admin/agents/{agent}/suitability`, the Assistant page and the
+  agent editor): the agent's complexity from its definition and a verdict from sourced facts only (context window,
+  tool calling, streaming, τ²-bench results from the benchmark's own repository in `model_profiles.yaml`), "to
+  verify" when a fact is missing, replaced by a measurement when there is one ([model suitability](docs/models.md)).
 
 ### Changed
 
@@ -44,6 +59,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   that still has an old placeholder (`{date}`, `{app}`, a label's `{field}`, `{field|count}`, `{field|map:table}`) is
   refused with 400 `legacy_syntax`, naming the placeholder and its Handlebars form; templates that do not fit are
   400 `prompt_template` or `label_template`. Nothing is converted automatically. See `docs/templates.md`.
+- The assistant's system application holds only its own resources: creating workflows, knowledge bases, other agents,
+  channels, OAuth apps, capability credentials, keys or other MCP servers on it answers `409 system_app`, locked or
+  not. `POST /v1/admin/application/reset` needs `{confirm: <slug>}` and deletes exactly what its preview lists
+  (prompts, extra skills and MCP servers, eval cases and the rest included). Its conversations are kept 30 days at
+  most (`400 system_ttl` above), and their author cannot delete them within that time (`409 retention`).
 - Prompt texts without `{{` replace only `{date}` and `{app}`: other braces stay as written (before, a JSON example
   such as `{"ok": true}` in instructions failed to render).
 - Neutral wording: the default voice rule no longer names domain-specific codes ("codes, account numbers or personal

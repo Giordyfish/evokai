@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from evokai import audit
 from evokai.api.deps import admin_app, services
+from evokai.assistant.privacy import lists_everyone, own_subject
 from evokai.core.errors import BadRequest, NotFound
 from evokai.db import models as m
 from evokai.guard import SecurityPolicy, catalogue, identifiers
@@ -153,6 +154,12 @@ async def events(
     Returns:
         items, and ``next`` (the ``before`` of the next page) when there may be more.
     """
+    mine = await own_subject(svc, a)
+    if mine is not None and not lists_everyone(a):
+        # A system application: the snippets are a person's words; their own only.
+        if subject and subject != mine:
+            return {"items": [], "next": None}
+        subject = mine
     rows = await svc.store.security_events.query(
         a.application_id,
         limit=limit,

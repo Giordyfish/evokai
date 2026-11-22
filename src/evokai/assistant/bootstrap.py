@@ -24,6 +24,7 @@ import yaml
 from evokai.agents.bootstrap import bootstrap
 from evokai.agents.definitions import AgentDef
 from evokai.agents.skills import skills_in
+from evokai.assistant.privacy import MAX_TTL_DAYS
 from evokai.core.errors import ConfigError
 
 if TYPE_CHECKING:
@@ -70,9 +71,13 @@ def rendered(path: Path, settings: Settings, model: str | None) -> dict[str, Any
         The application file as data.
 
     Raises:
-        ConfigError: The prompt holds ``${...}`` (the bootstrap would read it as a variable).
+        ConfigError: The prompt holds ``${...}`` (the bootstrap would read it as a variable), or
+            the conversations would be kept longer than a system application may keep them.
     """
     data: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
+    ttl = (data.get("application") or {}).get("conversation_ttl_days")
+    if not isinstance(ttl, int) or not 1 <= ttl <= MAX_TTL_DAYS:
+        raise ConfigError(f"assistant: conversation_ttl_days must be 1 to {MAX_TTL_DAYS}")
     prompt = (path.parent / "prompt.md").read_text(encoding="utf-8")
     if "${" in prompt:
         raise ConfigError("assistant: the prompt must not contain ${...}")

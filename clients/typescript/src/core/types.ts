@@ -596,7 +596,10 @@ export interface ParsedSkill {
 export interface AdminConversation {
   id: string
   subject: string
-  title: string
+  /** Null for another person's conversation with the console assistant (an owner's list shows no content). */
+  title: string | null
+  /** On the assistant's system application: whether it is the caller's own conversation. */
+  own?: boolean
   agent: string
   agentVersion: string
   status: string
@@ -777,7 +780,8 @@ export interface ConsoleMe {
  * operator). Every field is one of a few choices; the service refuses anything else.
  */
 export interface ConsolePreferences {
-  version: 1
+  /** 2 since the logo became the mascot's default (a version 1 document's `on` reads as `hidden`). */
+  version: 2
   /** `auto` follows the browser. */
   language: 'auto' | 'en' | 'it'
   /** `auto` is the language's own order. */
@@ -787,6 +791,7 @@ export interface ConsolePreferences {
   density: 'comfortable' | 'compact'
   /** `system` follows the operating system's reduced motion setting. */
   motion: 'system' | 'reduce' | 'full'
+  /** Beside Evokai in the console's sidebar: the mage animated, still, or the logo (`hidden`, the default). */
   mascot: 'on' | 'still' | 'hidden'
   /** Percent. */
   textSize: 100 | 112 | 125

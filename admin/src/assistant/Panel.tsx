@@ -1,7 +1,9 @@
 /**
  * The assistant's panel, opened from the shell. While the assistant has no model it shows the activation screen (a
  * link to the Assistant page for its owners). Once active it embeds `<evokai-chat>` (from `clients/ui`) acting on the
- * selected application, with the live mascot in the panel's header slot following the chat's state.
+ * selected application, with the live mascot in the panel's header slot following the chat's state. Before the
+ * chat it shows the first-use notice (once per login, and again when someone viewed the person's conversations); the
+ * voice is the one the data protection allows.
  */
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -12,7 +14,8 @@ import type { ConsoleApplication } from '@client/core/types'
 import type { AudioSignals } from '@client/browser/index'
 import { adminJson, baseUrl, describe } from '../api'
 import type { AssistantState } from './choice'
-import { tokenFor, VOICE } from './session'
+import { type AssistantPrivacy, type LocalVoice, needsNotice, noticeLines, viewedLine, voiceKind, voiceOptions, voiceText } from './privacy'
+import { tokenFor } from './session'
 import { locale, t } from '../i18n'
 import { LiveMascot } from '../mascot/LiveMascot'
 import { mascotFor, type MascotView } from '../mascot/state'
@@ -29,7 +32,7 @@ const SKIN = `
 
 const THEME = { logo: 'fx/still-128.png', orb: {} }
 
-function Chat({ app, onClose }: { app: ConsoleApplication; onClose: () => void }) {
+function Chat({ app, privacy, voices, onClose }: { app: ConsoleApplication; privacy: AssistantPrivacy; voices: LocalVoice[]; onClose: () => void }) {
   const host = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<{ now: ChatState; before: ChatState; applied: boolean; greeting: boolean }>({ now: 'idle', before: 'idle', applied: false, greeting: true })
   const [chat, setChat] = useState<EvokaiChatElement | null>(null)
@@ -45,7 +48,7 @@ function Chat({ app, onClose }: { app: ConsoleApplication; onClose: () => void }
     el.setAttribute('page-context', 'off')
     el.setAttribute('storage-key', `evokai-console-assistant:${app.id}`)
     el.getToken = tokenFor(app.id)
-    el.voiceOptions = VOICE
+    el.voiceOptions = voiceOptions(voiceKind(privacy.voice, voices, locale()))
     el.theme = THEME
     el.skin = SKIN
     const onState = (e: Event) => {
@@ -80,7 +83,86 @@ function Chat({ app, onClose }: { app: ConsoleApplication; onClose: () => void }
   return (
     <div ref={host} class="assistant-host" data-state={state.now}>
       {chat ? <MascotSlot chat={chat} voice={voice} view={view} signals={chat.controller?.voice?.signals ?? null} onClipEnd={ended} /> : null}
+      {chat ? <AboutSlot chat={chat} privacy={privacy} voices={voices} /> : null}
     </div>
+  )
+}
+
+/** Under the suggestions of a new conversation: the voice in use and who viewed the person's conversations. */
+function AboutSlot(p: { chat: EvokaiChatElement; privacy: AssistantPrivacy; voices: LocalVoice[] }) {
+  const [slot] = useState(() => {
+    const div = document.createElement('div')
+    div.setAttribute('slot', 'empty')
+    div.className = 'assistant-about'
+    return div
+  })
+  useEffect(() => {
+    p.chat.append(slot)
+    return () => {
+      render(null, slot)
+      slot.remove()
+    }
+  }, [p.chat])
+  useEffect(() => {
+    render(
+      <>
+        <p>{voiceText(voiceKind(p.privacy.voice, p.voices, locale()))}</p>
+        {p.privacy.inspections.map((i) => (
+          <p key={i.at + i.conversationId} class="viewed">
+            {viewedLine(i)}
+          </p>
+        ))}
+      </>,
+      slot,
+    )
+  })
+  return null
+}
+
+/** The voices of the browser, once it lists them (some browsers list them a moment after the page loads). */
+function localVoices(): Promise<LocalVoice[]> {
+  const synth = typeof speechSynthesis === 'undefined' ? null : speechSynthesis
+  if (!synth) return Promise.resolve([])
+  const now = synth.getVoices()
+  if (now.length) return Promise.resolve(now)
+  return new Promise((resolve) => {
+    const done = () => resolve(synth.getVoices())
+    synth.addEventListener('voiceschanged', done, { once: true })
+    setTimeout(done, 800)
+  })
+}
+
+/** The first-use notice: retention, who can see, purpose, the assistant's AI nature, and who viewed what. */
+function Notice({ privacy, onAccept, onClose }: { privacy: AssistantPrivacy; onAccept: () => void; onClose: () => void }) {
+  return (
+    <section class="assistant-panel" role="dialog" aria-label={t('assistant.noticeTitle')}>
+      <header>
+        <b>{t('assistant.noticeTitle')}</b>
+        <Btn kind="ic sm ghost" label={t('common.close')} onClick={onClose}>
+          <Icon name="chev" style="rotate:90deg" />
+        </Btn>
+      </header>
+      <div class="assistant-notice">
+        <ul class="reqs">
+          {noticeLines(privacy).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        {privacy.inspections.length ? (
+          <>
+            <h3>{t('assistant.viewedTitle')}</h3>
+            {privacy.inspections.map((i) => (
+              <p key={i.at + i.conversationId} class="hint viewed">
+                {viewedLine(i)}
+              </p>
+            ))}
+          </>
+        ) : null}
+        <Btn kind="pri" onClick={onAccept}>
+          {privacy.accepted ? t('assistant.noticeSeen') : t('assistant.noticeAccept')}
+        </Btn>
+      </div>
+    </section>
   )
 }
 
@@ -111,7 +193,9 @@ export function AssistantPanel({ app, open, onClose }: { app: ConsoleApplication
   const c = useConsole()
   const [state, setState] = useState<AssistantState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [privacy, setPrivacy] = useState<{ p: AssistantPrivacy; voices: LocalVoice[] } | null>(null)
   const any = app?.id ?? c.apps[0]?.id ?? ''
+  const active = !!state?.active && !!app
 
   useEffect(() => {
     if (!open || !any) return
@@ -123,8 +207,29 @@ export function AssistantPanel({ app, open, onClose }: { app: ConsoleApplication
       .catch((e) => setError(describe(e)))
   }, [open, any])
 
+  useEffect(() => {
+    if (!open || !active || !app) return
+    setPrivacy(null)
+    Promise.all([adminJson<AssistantPrivacy>(app.id, 'GET', '/v1/console/assistant/privacy'), localVoices()])
+      .then(([p, voices]) => setPrivacy({ p, voices }))
+      .catch((e) => setError(describe(e)))
+  }, [open, active, app?.id])
+
+  const accept = async () => {
+    if (!app || !privacy) return
+    try {
+      await adminJson(app.id, 'POST', '/v1/console/assistant/privacy', { version: privacy.p.noticeVersion })
+      setPrivacy({ ...privacy, p: { ...privacy.p, accepted: true, unseen: 0 } })
+    } catch (e) {
+      setError(describe(e))
+    }
+  }
+
   if (!open) return null
-  if (state?.active && app) return <Chat app={app} onClose={onClose} />
+  if (active && app && privacy && !error) {
+    if (needsNotice(privacy.p)) return <Notice privacy={privacy.p} onAccept={() => void accept()} onClose={onClose} />
+    return <Chat app={app} privacy={privacy.p} voices={privacy.voices} onClose={onClose} />
+  }
   const system = state?.applicationId ? c.apps.find((a) => a.id === state.applicationId) : undefined
   return (
     <section class="assistant-panel" role="dialog" aria-label={t('assistant.panelTitle')}>

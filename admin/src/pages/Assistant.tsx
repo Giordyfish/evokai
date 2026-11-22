@@ -2,16 +2,20 @@
  * The built-in assistant: its state, the requirements a recommended model meets (always shown), the models with
  * their badges and measured numbers, a try of one model on the assistant's eval suite (progress and the share of the
  * eval budget, never an amount) and the activation, which asks for a second disclaimer when the model is not
- * recommended.
+ * recommended. Its owners also unlock the assistant's application and reset it, after a preview of every item the
+ * reset deletes (downloadable as JSON) and typing its slug.
  */
 import { useEffect, useState } from 'preact/hooks'
 
 import { adminJson, describe } from '../api'
 import { activateBody, type AssistantState, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../assistant/choice'
-import { num, t } from '../i18n'
+import { deleted, kindText, type ResetPreview, resetExport, slugTyped } from '../assistant/reset'
+import { fitBadge, fitReasons } from '../fit'
+import { download } from '../format'
+import { num, t, tn } from '../i18n'
 import { Empty, toast } from '../magic'
 import { setTitle, useConsole } from '../state'
-import { Bar, Btn, Hero, Panel, Tag } from '../ui'
+import { Bar, Btn, Field, Hero, Panel, Tag } from '../ui'
 
 function Numbers({ c }: { c: Candidate }) {
   const m = c.measured
@@ -27,6 +31,107 @@ function Numbers({ c }: { c: Candidate }) {
       {' · '}
       {m.source === 'try' ? t('assistant.measuredTry') : t('assistant.measuredRelease', { version: m.evokaiVersion ?? '' })}
     </span>
+  )
+}
+
+/** The assistant's application: unlock it, or reset it to the shipped definition after a preview (owners). */
+function SystemApp({ state, onChanged }: { state: AssistantState; onChanged: () => Promise<void> }) {
+  const [typed, setTyped] = useState('')
+  const [preview, setPreview] = useState<ResetPreview | null>(null)
+  const [busy, setBusy] = useState(false)
+  const app = state.applicationId ?? ''
+  const slug = state.slug ?? ''
+  const run = async (what: () => Promise<void>, fail: string) => {
+    setBusy(true)
+    try {
+      await what()
+    } catch (e) {
+      toast(fail, describe(e), null)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const unlock = () =>
+    run(async () => {
+      await adminJson(app, 'POST', '/v1/admin/application/unlock', { confirm: typed.trim() })
+      toast(t('reset.unlockedToast'), slug, null)
+      setTyped('')
+      await onChanged()
+    }, t('reset.notUnlocked'))
+  const loadPreview = () => run(async () => setPreview(await adminJson<ResetPreview>(app, 'GET', '/v1/admin/application/reset/preview')), t('reset.noPreview'))
+  const reset = () =>
+    run(async () => {
+      await adminJson(app, 'POST', '/v1/admin/application/reset', { confirm: typed.trim() })
+      toast(t('reset.doneToast'), slug, null)
+      setTyped('')
+      setPreview(null)
+      await onChanged()
+    }, t('reset.notReset'))
+  const gone = preview ? deleted(preview) : []
+  return (
+    <Panel title={t('reset.title')}>
+      <p class="hint">{state.locked ? t('reset.locked') : t('reset.unlocked')}</p>
+      {state.updateAvailable ? <p class="hint">{t('reset.updateAvailable')}</p> : null}
+      {preview ? (
+        <>
+          <p class="hint">{gone.length ? tn('reset.previewText', gone.length) : t('reset.previewNothing')}</p>
+          <div class="wx">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>{t('reset.kind')}</th>
+                  <th>{t('reset.name')}</th>
+                  <th>{t('reset.action')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.items.map((i) => (
+                  <tr key={`${i.kind}:${i.name}`}>
+                    <td>{kindText(i.kind)}</td>
+                    <td>
+                      <code>{i.name}</code>
+                    </td>
+                    <td>
+                      <Tag tone={i.action === 'delete' ? 'bad' : ''}>{i.action === 'delete' ? t('reset.delete') : t('reset.restore')}</Tag>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {gone.length ? (
+            <Btn
+              kind="ghost"
+              onClick={() => {
+                const f = resetExport(preview)
+                download(f.filename, f.text, 'application/json')
+              }}
+            >
+              {t('reset.download')}
+            </Btn>
+          ) : null}
+        </>
+      ) : null}
+      <Field label={t('reset.typeSlug', { slug })}>
+        <input class="in" value={typed} placeholder={slug} onInput={(e) => setTyped(e.currentTarget.value)} />
+      </Field>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        {state.locked ? (
+          <Btn kind="ghost" disabled={busy || !slugTyped(typed, slug)} onClick={() => void unlock()}>
+            {t('reset.unlock')}
+          </Btn>
+        ) : null}
+        {preview ? (
+          <Btn kind="pri" disabled={busy || !slugTyped(typed, slug)} onClick={() => void reset()}>
+            {t('reset.reset')}
+          </Btn>
+        ) : (
+          <Btn kind="ghost" disabled={busy} onClick={() => void loadPreview()}>
+            {t('reset.preview')}
+          </Btn>
+        )}
+      </div>
+    </Panel>
   )
 }
 
@@ -124,6 +229,7 @@ export function Assistant() {
         </ul>
         {!owner ? <p class="hint">{t('assistant.needsOwner')}</p> : null}
       </Panel>
+      {owner ? <SystemApp state={state} onChanged={load} /> : null}
       {trial ? (
         <Panel title={t('assistant.trialTitle', { model: trial.model ?? '' })}>
           <Bar value={trial.progressPct} />
@@ -152,7 +258,7 @@ export function Assistant() {
               </thead>
               <tbody>
                 {state.candidates.map((cand) => {
-                  const b = badge(cand.status)
+                  const b = cand.estimate ? fitBadge(cand.estimate) : badge(cand.status)
                   return (
                     <tr key={cand.model} aria-selected={picked?.model === cand.model}>
                       <td>
@@ -165,6 +271,7 @@ export function Assistant() {
                         <Tag tone={b.tone} dot>
                           {b.text}
                         </Tag>
+                        {cand.estimate ? <div class="s">{fitReasons(cand.estimate).join(' · ')}</div> : null}
                       </td>
                       <td>
                         <Numbers c={cand} />

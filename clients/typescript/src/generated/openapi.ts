@@ -291,6 +291,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/agents/{agent}/suitability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Suitability
+         * @description How well a model suits an agent, estimated from sourced facts (``evokai.llm.suitability``).
+         *
+         *     The agent's complexity (tier and factors) and the model's estimate: recommended, not
+         *     recommended or to verify, with its reasons. For the built-in assistant a measured model shows
+         *     its measurement instead (``basis: measured``). Never an amount.
+         *
+         *     Returns:
+         *         complexity and estimate.
+         *
+         *     Raises:
+         *         NotFound: No such agent.
+         */
+        get: operations["agent_suitability_agent_v1_admin_agents__agent__suitability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/agents/{agent}/switch-model": {
         parameters: {
             query?: never;
@@ -483,6 +513,8 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: The application is gone.
+         *         BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its
+         *             audit log kept less (400 ``system_audit_ttl``).
          */
         patch: operations["patch_application_agent_v1_admin_application_patch"];
         trace?: never;
@@ -498,15 +530,45 @@ export interface paths {
         put?: never;
         /**
          * Reset Application
-         * @description Apply a system application's shipped definition again, and lock it (owner).
+         * @description Delete what the reset preview lists and apply the shipped definition again, locked (owner).
          *
          *     Returns:
-         *         ok.
+         *         ok and deleted (how many items).
+         *
+         *     Raises:
+         *         BadRequest: The typed slug is not the application's (400 ``confirm``).
+         *         Conflict: A system application this version of Evokai does not ship.
+         */
+        post: operations["reset_application_agent_v1_admin_application_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/application/reset/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reset Preview
+         * @description Everything a reset of the system application deletes or restores (owner).
+         *
+         *     Each deleted item carries its definition without secrets (``item``), for the owner to keep
+         *     before resetting.
+         *
+         *     Returns:
+         *         slug and items (kind, name, action: ``delete`` or ``restore``, item).
          *
          *     Raises:
          *         Conflict: A system application this version of Evokai does not ship.
          */
-        post: operations["reset_application_agent_v1_admin_application_reset_post"];
+        get: operations["reset_preview_agent_v1_admin_application_reset_preview_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -625,6 +687,35 @@ export interface paths {
          *             (400 ``not_recommended_unconfirmed``).
          */
         post: operations["activate_assistant_agent_v1_admin_assistant_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Conversation
+         * @description Read another person's conversation with the assistant (owner of its application).
+         *
+         *     Read only. The reason (20 to 500 characters) is written to the audit log with who inspected and
+         *     the author's keyed subject, and the author's console lists it ("viewed by").
+         *
+         *     Returns:
+         *         The conversation, as the conversation detail returns it.
+         *
+         *     Raises:
+         *         NotFound: The assistant is off, or no such conversation.
+         */
+        post: operations["inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1144,12 +1235,16 @@ export interface paths {
          * Conversation
          * @description One conversation with its messages, turns, their traces and the reviewers' notes.
          *
+         *     On a system application only the caller's own conversation opens; an owner opens another
+         *     person's through an inspection (403 ``inspection_required``).
+         *
          *     Returns:
          *         The conversation: messages (with their turn), turns, traces (summaries by turn) and
          *         notes.
          *
          *     Raises:
          *         NotFound: Unknown, or the application keeps conversations itself.
+         *         Forbidden: Another person's conversation on a system application, for an owner.
          */
         get: operations["conversation_agent_v1_admin_conversations__conversation_id__get"];
         put?: never;
@@ -2802,6 +2897,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/console/assistant/privacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant Privacy
+         * @description What the console tells a person about the assistant, for the selected application.
+         *
+         *     The first-use notice (its version and whether this login accepted it), how long conversations
+         *     are kept, the voice in use (``online`` only when the selected application's and the
+         *     assistant's data protection allow processors outside the EU, else ``device``) and every
+         *     inspection of this person's conversations: who, when and why.
+         *
+         *     Returns:
+         *         noticeVersion, accepted, acceptedAt, ttlDays, voice, inspections, unseen.
+         *
+         *     Raises:
+         *         Forbidden: A key or the assistant itself instead of a console login.
+         *         NotFound: The assistant is off.
+         */
+        get: operations["assistant_privacy_agent_v1_console_assistant_privacy_get"];
+        put?: never;
+        /**
+         * Accept Notice
+         * @description Record that this login read the current first-use notice (and the inspections listed).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         BadRequest: Not the current version of the notice (400 ``notice_version``).
+         *         NotFound: The assistant is off.
+         *         Forbidden: A key or the assistant itself instead of a console login.
+         */
+        post: operations["accept_notice_agent_v1_console_assistant_privacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/console/assistant/session": {
         parameters: {
             query?: never;
@@ -3203,7 +3342,7 @@ export interface paths {
         };
         /**
          * Conversations
-         * @description A subject's recent conversations.
+         * @description A subject's recent conversations (on a system application, only the caller's own).
          *
          *     Returns:
          *         items.
@@ -3246,6 +3385,8 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: Not a conversation of this subject.
+         *         Conflict: A system application's conversation: it is kept until its time to live ends
+         *             (409 ``retention``).
          */
         delete: operations["delete_conversation_agent_v1_conversations__conversation_id__delete"];
         options?: never;
@@ -3432,8 +3573,16 @@ export interface paths {
          *     are deleted; usage rows and security events are de-identified, so the
          *     application's caps keep counting; every session token of the subject stops working. Idempotent.
          *
+         *     On a system application only an owner erases, and never their own conversations: the
+         *     console assistant's conversations stay until their time to live ends (403 ``role``, 409
+         *     ``retention``).
+         *
          *     Returns:
          *         ok and how many rows of each kind were deleted or de-identified.
+         *
+         *     Raises:
+         *         Forbidden: Not an owner, on a system application.
+         *         Conflict: Your own data on a system application.
          */
         post: operations["erase_agent_v1_privacy_erase_post"];
         delete?: never;
@@ -3458,8 +3607,13 @@ export interface paths {
          *     Conversations with messages and turns, memories, usage, security events (masked), bug reports
          *     and consents. Amounts only with a server or admin key.
          *
+         *     On a system application a person exports only their own data (403 ``own_data``).
+         *
          *     Returns:
          *         The export.
+         *
+         *     Raises:
+         *         Forbidden: Another person's data on a system application.
          */
         post: operations["export_agent_v1_privacy_export_post"];
         delete?: never;
@@ -5186,6 +5340,14 @@ export interface components {
             max_run_chars?: number | null;
         };
         /**
+         * Inspect
+         * @description Why the owner opens another person's conversation (kept in the audit log, shown to them).
+         */
+        Inspect: {
+            /** Reason */
+            reason: string;
+        };
+        /**
          * KeyRequest
          * @description A new key.
          */
@@ -5462,6 +5624,14 @@ export interface components {
             turnId?: string | null;
         };
         /**
+         * NoticeAccept
+         * @description The version of the notice the person read.
+         */
+        NoticeAccept: {
+            /** Version */
+            version: number;
+        };
+        /**
          * OAuthAppIn
          * @description The application's OAuth app at a provider no connector configures.
          *
@@ -5530,7 +5700,7 @@ export interface components {
         };
         /**
          * Preferences
-         * @description One person's console preferences (version 1). JSON fields are camelCase.
+         * @description One person's console preferences (version 2). JSON fields are camelCase.
          */
         Preferences: {
             /**
@@ -5564,7 +5734,7 @@ export interface components {
             language?: "auto" | "en" | "it";
             /**
              * Mascot
-             * @default on
+             * @default hidden
              * @enum {string}
              */
             mascot?: "on" | "still" | "hidden";
@@ -5599,10 +5769,10 @@ export interface components {
             underlineLinks?: boolean;
             /**
              * Version
-             * @default 1
-             * @constant
+             * @default 2
+             * @enum {integer}
              */
-            version?: 1;
+            version?: 1 | 2;
         };
         /**
          * PreviewBody
@@ -6290,7 +6460,7 @@ export interface components {
         };
         /**
          * Unlock
-         * @description The application's slug, typed by the person who unlocks it.
+         * @description The application's slug, typed by the person who unlocks or resets it.
          */
         Unlock: {
             /** Confirm */
@@ -6891,6 +7061,41 @@ export interface operations {
             };
         };
     };
+    agent_suitability_agent_v1_admin_agents__agent__suitability_get: {
+        parameters: {
+            query: {
+                model: string;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     switch_model_agent_v1_admin_agents__agent__switch_model_post: {
         parameters: {
             query?: never;
@@ -7169,6 +7374,41 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Unlock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_preview_agent_v1_admin_application_reset_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         requestBody?: never;
         responses: {
             /** @description Successful Response */
@@ -7178,7 +7418,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: boolean;
+                        [key: string]: unknown;
                     };
                 };
             };
@@ -7308,6 +7548,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Activate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Inspect"];
             };
         };
         responses: {
@@ -10446,6 +10723,63 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    assistant_privacy_agent_v1_console_assistant_privacy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    accept_notice_agent_v1_console_assistant_privacy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoticeAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

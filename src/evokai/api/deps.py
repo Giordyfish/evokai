@@ -7,6 +7,7 @@ import json
 from fastapi import Request
 
 from evokai.assistant import delegation
+from evokai.assistant.reset import own_write
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
 from evokai.identity import console
 from evokai.identity.auth import bearer
@@ -75,6 +76,9 @@ async def _console(request: Request) -> AppPrincipal | None:
         console=True,
         role=role,
         actor=login.actor,
+        subject=delegation.login_subject(
+            login.kind, login.user_id, login.key_id, login.application_id
+        ),
     )
 
 
@@ -189,23 +193,32 @@ LOCK_EXEMPT: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/v1/admin/application/reset"),
     ("POST", "/v1/admin/assistant/activate"),
     ("POST", "/v1/admin/assistant/try"),
+    ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
 })
 """Changes a locked system application accepts: unlocking and resetting it, activating the
-assistant's model and trying a model on it."""
+assistant's model, trying a model on it and an owner's inspection of a conversation."""
 
 
 async def _unlocked(request: Request, who: AppPrincipal) -> None:
-    """Refuse a change on a locked system application (409 ``locked``).
+    """Refuse a change on a system application outside its own resources, or while it is locked.
 
     Raises:
-        Conflict: The application is a locked system application and the route changes something.
+        Conflict: A system application and a change of another kind of resource (409
+            ``system_app``, locked or not: ``evokai.assistant.reset``), or a locked system
+            application and a change (409 ``locked``).
     """
     svc = services(request)
     method, path = request.method.upper(), route_of(request, svc.settings.base_path)
-    if required(method, path) == "viewer" or (method, path) in LOCK_EXEMPT:
+    if method in {"GET", "HEAD", "OPTIONS"} or required(method, path) == "viewer":
         return
     app = await svc.store.applications.get(who.application_id)
-    if app is not None and app.system and app.locked:
+    if app is None or not app.system:
+        return
+    if not own_write(path, request.path_params):
+        raise Conflict(
+            "A system application holds only the assistant's own resources.", code="system_app"
+        )
+    if app.locked and (method, path) not in LOCK_EXEMPT:
         raise Conflict(
             "This system application is locked: an owner unlocks it in the console first.",
             code="locked",

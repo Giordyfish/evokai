@@ -9,22 +9,23 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from pydantic.alias_generators import to_camel
 
 from evokai.identity.console import ConsoleLogin
 
-VERSION = 1
+VERSION = 2
+"""Version 2 made the logo the mascot's default (``hidden``); see ``Preferences._from_v1``."""
 
 
 class Preferences(BaseModel):
-    """One person's console preferences (version 1). JSON fields are camelCase."""
+    """One person's console preferences (version 2). JSON fields are camelCase."""
 
     model_config = ConfigDict(
         extra="forbid", strict=True, alias_generator=to_camel, validate_by_name=True
     )
 
-    version: Literal[1] = VERSION
+    version: Literal[1, 2] = VERSION
     language: Literal["auto", "en", "it"] = "auto"
     """``auto`` follows the browser."""
     date_format: Literal["auto", "dmy", "mdy", "ymd"] = "auto"
@@ -34,7 +35,10 @@ class Preferences(BaseModel):
     density: Literal["comfortable", "compact"] = "comfortable"
     motion: Literal["system", "reduce", "full"] = "system"
     """``system`` follows the operating system's reduced motion setting."""
-    mascot: Literal["on", "still", "hidden"] = "on"
+    mascot: Literal["on", "still", "hidden"] = "hidden"
+    """What sits next to Evokai at the top of the sidebar: the mage animated (``on``), still, or the
+    logo (``hidden``, the default). The console shows the logo whatever the choice while its
+    assistant is active; ``still`` also stills the mage elsewhere."""
     text_size: Literal[100, 112, 125] = 100
     """Percent."""
     contrast: Literal["system", "more", "normal"] = "system"
@@ -42,6 +46,22 @@ class Preferences(BaseModel):
     focus_always: bool = False
     """Show the focus outline on every focused control, also after a click."""
     underline_links: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_v1(cls, data: Any) -> Any:
+        """A version 1 document: its ``on`` mascot was the old default, not a choice: the logo.
+
+        ``still`` and ``hidden`` were choices and stay. The document becomes version 2.
+
+        Returns:
+            The data to validate.
+        """
+        if isinstance(data, dict) and data.get("version") == 1:
+            data = {**data, "version": 2}
+            if data.get("mascot", "on") == "on":
+                data["mascot"] = "hidden"
+        return data
 
     def document(self) -> dict[str, Any]:
         """The document as stored and sent (camelCase).

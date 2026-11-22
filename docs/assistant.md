@@ -17,8 +17,16 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   start. A system application has no keys (any made while it was unlocked are revoked when the shipped definition
   is applied), and its session tokens come only from the console's assistant route (`403 system_app` on
   `POST /v1/session-tokens`). An owner can unlock it (typing its slug, `POST /v1/admin/application/unlock`) to change it; it then keeps their
-  changes and records that an update is available. `POST /v1/admin/application/reset` applies the shipped definition
-  again and locks it. Neither route is a tool of the admin MCP server, and the assistant itself is refused on both.
+  changes and records that an update is available. Locked or not, it holds only the assistant's own resources: its
+  agent and that agent's evals, prompts, skills, its MCP server entry, grants, limits and settings. A change that
+  would create another kind (workflows, knowledge bases, other agents, channels, OAuth apps, capability credentials,
+  keys, other MCP servers) answers `409 system_app`.
+- **Nothing survives a reset.** `GET /v1/admin/application/reset/preview` lists every item the reset deletes or
+  restores, by kind and name (the application's settings with the values the reset sets back), each deleted item with its definition (never a secret) for the owner to keep; the
+  console offers it as a JSON download. `POST /v1/admin/application/reset` `{confirm: <slug>}` deletes exactly those
+  items, applies the shipped definition again and locks it. Conversations (they follow their retention), eval and red
+  team results, traces and the audit log are not part of the definition and stay. None of these routes is a tool of
+  the admin MCP server, and the assistant itself is refused on all of them.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
   `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only), `ask` and
   `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
@@ -44,10 +52,58 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
 The audit log records its changes as actor kind `assistant`, with the person it acted for
 (`assistant:sso:ada@example.com`).
 
-Its conversations are kept by the system application (30 days), for the person who had them (subject
-`console:<login>`); they hold what the assistant read from the application it worked on. People with a role on the
-assistant's application can review them in the console like any conversation, and its traces keep no content. A
-person's erase on another application does not reach them: erase `console:<login>` on the assistant's application.
+## Privacy of the conversations
+
+A conversation with the assistant records administrative work: what a person asked, what the assistant read from the
+application it worked on, and which changes the person confirmed. Evokai treats it as that person's record, kept for
+the security and accountability of administrative changes.
+
+- **Retention: 30 days at most.** The system application keeps conversations `conversation_ttl_days` days from when
+  they start (not from their last message: a resumed conversation does not keep older words longer), 30 by default
+  and at most (an owner may lower it; a higher value or none answers `400 system_ttl`, and
+  the shipped definition is checked at start). The hourly housekeeping deletes them for good. Within that time the
+  author cannot delete them (`409 retention` on `DELETE /v1/conversations/{id}` and on erasing one's own subject), so a
+  change made through the assistant stays accountable for as long as the conversation is kept.
+- **Each person sees only their own.** A conversation belongs to its subject, `console:<login>` (the single sign-on
+  user, the admin key, or `console:operator`). Every route that returns or touches conversation content keeps to the
+  caller's own subject on the assistant's application: the console's conversation list and detail, reviewers' notes,
+  traces, the server API's conversations, the privacy export, bug reports and security events. The assistant reads
+  through the same routes with the person's delegation, so it never lists anyone else's conversations either; keys
+  see none. Owners also see who talked to the assistant and when, without titles or messages, and the bug reports and
+  security events of everyone (security snippets are masked); viewers and operators only their own.
+- **Owners read another person's conversation only by an inspection.** `POST /v1/admin/assistant/conversations/{id}/inspect`
+  `{reason}` (an owner of the assistant's application, as a person: never the assistant) needs a written reason of 20
+  to 500 characters and returns the conversation read only. It writes the audit entry
+  `assistant.conversation.inspect` with the reason, the inspector and the author's keyed subject (never the subject in
+  clear). In the console, an owner who opens another person's conversation is asked for the reason first.
+- **The author is told.** `GET /v1/console/assistant/privacy` lists every inspection of the person's conversations
+  ("Viewed by olga@example.com on 21 Nov 2026, 09:30: reason"); the panel shows them again before the next chat.
+- **A notice on first use.** Before the first chat the panel shows a notice, accepted once per login and recorded
+  with its version (`POST /v1/console/assistant/privacy {version}`, audit `assistant.notice`): how long conversations
+  are kept, who can see them, why they are kept, and that the assistant is an AI whose answers can be wrong (AI Act
+  art. 50 asks that people know they interact with an AI system).
+- **Erasure.** A formal erasure request (GDPR art. 17) for someone's conversations is made by an owner of the
+  assistant's application with `POST /v1/privacy/erase` `{subject: "console:<login>"}`, audited. A person's erase on
+  another application does not reach them.
+
+### What a deployer tells their staff
+
+The legal basis for keeping these conversations is usually the deployer's legitimate interest in the security and
+accountability of changes to its systems (GDPR art. 6.1.f). That needs a balancing of interests, which is why the
+defaults are narrow: a short retention, no early deletion within it, nobody but the author reading
+by default, and every exception written down, audited and shown to the person concerned. A deployer still has to:
+
+- tell the people who use the console what is kept, for how long, why and who may inspect it (GDPR art. 13); the
+  first-use notice covers the assistant itself, the deployer's own staff information covers the rest;
+- decide who holds the owner role of the assistant's application, since owners can inspect;
+- check national rules on the monitoring of employees. In Italy, for example, art. 4 of the Workers' Statute (as
+  amended in 2015) allows the use of data from work tools for every purpose connected with the employment only after
+  adequate information to the worker, and the Garante has taken a restrictive view of keeping metadata of work tools
+  for long periods. Keeping the retention short and inspections exceptional is meant to make that assessment easier;
+  it does not replace it;
+- keep the deployment's audit retention (`EVOKAI_AUDIT_TTL_DAYS`) at 30 days or more, or set the assistant's
+  application's `audit_ttl_days` (it refuses less than 30, `400 system_audit_ttl`), so the author sees every
+  inspection while the conversation exists.
 
 ## Activation and the model
 
@@ -76,18 +132,28 @@ every eval. The suite covers tool choice and arguments, confirmation discipline,
 actions, and injection through what the tools return. The page shows the progress and the share of the eval budget
 used, never an amount.
 
+Each model also carries the [suitability estimate](models.md) for the assistant, which needs no measurement: the
+badge says **Recommended (estimate)**, **Not recommended (estimate)** or **To verify** with its reasons, and becomes
+**Recommended (measured)** or **Not recommended (measured)** once there are numbers. Activation still follows the
+measured requirements above: a model recommended only by the estimate opens the second disclaimer.
+
 | API | Who |
 | --- | --- |
-| `GET /v1/admin/assistant` | any console role: state, requirements, candidates, the latest try |
+| `GET /v1/admin/assistant` | any console role: state, requirements, candidates (with their estimate), the latest try |
 | `POST /v1/admin/assistant/activate` `{model, acceptNotRecommended?}` | an owner of the assistant's application |
 | `POST /v1/admin/assistant/try` `{model}` | an owner of the assistant's application |
 | `POST /v1/console/assistant/session` `{conversationId?}` | a console login on an application |
+| `GET /v1/console/assistant/privacy`, `POST` `{version}` | a console login: the notice, the voice in use, inspections of one's conversations |
+| `POST /v1/admin/assistant/conversations/{id}/inspect` `{reason}` | an owner of the assistant's application |
+| `GET /v1/admin/application/reset/preview`, `POST /v1/admin/application/reset` `{confirm}` | an owner of the assistant's application |
 
 ## The panel and the mascot
 
-The console embeds `<evokai-chat>` from the UI components, opened from the top bar. The mascot sits in the chat's
-header (the voice stage in voice mode) and follows `data-state`, the conversation's state the component exposes to
-slotted content:
+The console embeds `<evokai-chat>` from the UI components, opened from the top bar. Its mascot is the only one on
+screen: the sidebar's header shows Evokai's logo while the assistant is active, whatever the person chose in
+Preferences (Mascot: animated, still, or off, the default, which is the logo; the choice applies while the assistant is
+not active). Empty states keep their illustrations. The mascot sits in the chat's header (the voice stage in voice mode) and follows
+`data-state`, the conversation's state the component exposes to slotted content:
 
 | State | Mascot |
 | --- | --- |
@@ -100,10 +166,16 @@ slotted content:
 | listening | live: the hat perks up, a rune appears at each syllable and orbits the hat, then the runes fly into the hat tip on a pause |
 | speaking | live: the eyes light up with the voice |
 
-The live states are drawn with WebGL; the console's "mascot still" and "hidden" preferences and reduced motion are
-respected. The voice is the browser's: a Google voice when the browser has one (an online voice: the spoken text goes
-to the browser vendor's speech service, only in voice mode), pitch 1.3, rate 1.05. Piper's neural voice can do the
-same "small and bright" voice with `pitchShift` (synthesis stretched and playback sped up by the same factor).
+The live states are drawn with WebGL; the console's "still" mascot preference and reduced motion are respected.
+
+**The voice follows data protection.** The browser's online voice (Google's: the spoken text goes to the browser
+vendor's speech service, only in voice mode) is used only when both the selected application's and the assistant's
+[data protection](data-protection.md) allow processors outside the EU: no profile at all, or a profile whose
+residency includes `us` or `global` (or the country `US`), whose jurisdiction rule includes `US`, with no retention
+rule, and whose browser declaration does not turn online voices off. Otherwise the voice stays on the device: a voice
+of the operating system for the console's language when there is one, else Piper's `it_IT-serena-high` in the browser
+with `pitchShift 1.15` (synthesis stretched and playback sped up by the same factor, a small and bright voice). The
+chat says which voice is in use. Speech recognition stays on the device in every case.
 
 ## Configuration
 

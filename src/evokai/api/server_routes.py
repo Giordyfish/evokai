@@ -16,6 +16,7 @@ from evokai.agents.modules import (
     scan_module_texts,
 )
 from evokai.api.deps import server_app, services
+from evokai.assistant.privacy import own_subject
 from evokai.core.caps import CapSpec, caps_of, currency_of, rate_of, zone_of
 from evokai.core.caps import window as cap_window
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
@@ -355,11 +356,14 @@ def _storage_mode(requested: str | None, app_mode: str, grants: Grants) -> str:
 async def conversations(
     svc: Svc, app: App, subject: SubjectQ, limit: Annotated[int, Query(ge=1, le=100)] = 30
 ) -> dict[str, Any]:
-    """A subject's recent conversations.
+    """A subject's recent conversations (on a system application, only the caller's own).
 
     Returns:
         items.
     """
+    mine = await own_subject(svc, app)
+    if mine is not None and subject != mine:
+        return {"items": []}
     return {"items": await svc.store.sessions.recent(Who(app.application_id, subject), limit)}
 
 
@@ -375,6 +379,9 @@ async def conversation(
     Raises:
         NotFound: Not a conversation of this subject.
     """
+    mine = await own_subject(svc, app)
+    if mine is not None and subject != mine:
+        raise NotFound()
     who = Who(app.application_id, subject)
     sess = await svc.store.sessions.get(who, conversation_id)
     if not sess:
@@ -414,7 +421,14 @@ async def delete_conversation(
 
     Raises:
         NotFound: Not a conversation of this subject.
+        Conflict: A system application's conversation: it is kept until its time to live ends
+            (409 ``retention``).
     """
+    if await own_subject(svc, app) is not None:
+        raise Conflict(
+            "The assistant's conversations are kept until their time to live ends.",
+            code="retention",
+        )
     if not await svc.store.sessions.delete(Who(app.application_id, subject), conversation_id):
         raise NotFound()
     key = privacy.subject_key(svc.keyring.signing_key, app.application_id, subject)[:16]

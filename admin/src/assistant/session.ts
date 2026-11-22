@@ -28,11 +28,3 @@ export const tokenFor =
     const s = await assistantSession(applicationId, ctx)
     return { token: s.token, conversationId: s.conversationId, expiresAt: s.expiresAt, voiceEngine: s.voiceEngine ?? 'browser' }
   }
-
-/** The voice the owner chose: the browser's engine, a Google voice when there is one, a little higher and faster. */
-export const VOICE = {
-  ttsOptions: {
-    piper: false as const,
-    browser: { pitch: 1.3, rate: 1.05, preferVoice: 'google', allowOnlineVoices: true },
-  },
-}

@@ -13,14 +13,14 @@ import { fromBrowser, type Locale, setLocale } from './i18n'
 export type Prefs = ConsolePreferences
 
 export const DEFAULTS: Prefs = {
-  version: 1,
+  version: 2,
   language: 'auto',
   dateFormat: 'auto',
   timeFormat: 'auto',
   theme: 'system',
   density: 'comfortable',
   motion: 'system',
-  mascot: 'on',
+  mascot: 'hidden',
   textSize: 100,
   contrast: 'system',
   focusAlways: false,
@@ -48,6 +48,8 @@ export function sanitize(x: unknown): Prefs {
   const out: Record<string, unknown> = { ...DEFAULTS }
   for (const [k, allowed] of Object.entries(CHOICES)) if ((allowed as readonly unknown[]).includes(o[k])) out[k] = o[k]
   for (const k of FLAGS) if (typeof o[k] === 'boolean') out[k] = o[k]
+  // Version 1's `on` mascot was the default, not a choice: since version 2 the default is the logo.
+  if (o.version !== 2 && out.mascot === 'on') out.mascot = 'hidden'
   return out as unknown as Prefs
 }
 
@@ -147,8 +149,17 @@ function apply(p: Prefs): void {
 /** Whether animations are reduced now (the preference, or the system's when it follows the system). */
 export const reducedMotion = (): boolean => (current.motion === 'system' ? system().reducedMotion : current.motion === 'reduce')
 
-/** Whether the mascot moves: not when it is still or hidden, nor under reduced motion. */
-export const mascotMoves = (): boolean => current.mascot === 'on' && !reducedMotion()
+/** Whether the mage moves (empty states, the assistant's panel): not when it is still, nor under reduced motion. */
+export const mascotMoves = (): boolean => current.mascot !== 'still' && !reducedMotion()
+
+/**
+ * The mark beside Evokai in the sidebar header: the logo, or the mage the person chose (still under reduced motion).
+ * While the console assistant is active it is always the logo: the assistant's panel holds the one mascot on screen.
+ */
+export function brandMark(p: Prefs, assistantActive: boolean, reduced: boolean): 'logo' | 'still' | 'moving' {
+  if (assistantActive || p.mascot === 'hidden') return 'logo'
+  return p.mascot === 'still' || reduced ? 'still' : 'moving'
+}
 
 // Saving: the whole document, a moment after the last change (a run of clicks is one save and one audit entry).
 
