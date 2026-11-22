@@ -21,6 +21,7 @@ dependencies = [
     "packaging>=24.0",
     "pydantic-ai-slim[bedrock,mistral,openai]==2.69.0",
     "pydantic-ai-harness[codemode]==0.69.0",
+    "pydantic-handlebars==0.2.1",  # labels call a private method of it (evokai.tools.labels): upgrade deliberately
     "pydantic-settings>=2.16.3",
     "pyjwt>=2.15.1",
     "pypdf>=7.1.1",

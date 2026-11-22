@@ -67,6 +67,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   labels, so convert them through the API or the YAML file first. Migration `0032` adds `template_syntax` to prompt
   versions (existing rows are `legacy`).
 - Workflow approval labels keep the older grammar: leave them as they are.
+- Going back to 0.1.3 after saving Handlebars versions is not supported: 0.1.3 does not know `template_syntax`, so a
+  `{{date}}` saved by this version reaches the model as `{date}`. To go back, restore the database backup taken before
+  the upgrade, or start 0.1.3 with the YAML file you used before converting it, so its agents get versions in the old
+  syntax again.
 
 ## [0.1.3] - 2026-11-21
 
