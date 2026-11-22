@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import type { ConsoleApplication, CostAlert } from '@client/core/types'
 import { forApp, root } from './api'
-import { useAssistantActive } from './assistant/active'
-import { AssistantPanel } from './assistant/Panel'
+import { useAssistantState } from './assistant/active'
+import { assistantActive } from './assistant/choice'
+import { AssistantLauncher } from './assistant/Panel'
 import { ALERTS_CHANGED, alertText, bannerAlert } from './costs'
 import { pl } from './format'
 import { BrandMark, Empty } from './magic'
@@ -128,12 +129,12 @@ export function Shell({ route }: { route: Route }) {
   const [open, setOpen] = useState(false)
   const [pop, setPop] = useState(false)
   const [pal, setPal] = useState(false)
-  const [helper, setHelper] = useState(false)
   const dark = useDark()
   const [lastApp, setLastApp] = useState<string | null>(null)
   const fresh = app && app.slug !== lastApp
   const alerts = useCostAlerts(app)
-  const assistantOn = useAssistantActive(helper, route.view === 'assistant')
+  const assistant = useAssistantState(route.view === 'assistant')
+  const assistantOn = assistantActive(assistant)
 
   useEffect(() => {
     setOpen(false)
@@ -316,10 +317,6 @@ export function Shell({ route }: { route: Route }) {
             <span>{t('shell.goTo')}</span>
             <kbd>Ctrl K</kbd>
           </button>
-          <Btn kind="sm ghost" style="margin-left:8px" label={t('assistant.openLabel')} onClick={() => setHelper(!helper)}>
-            <Icon name="agents" />
-            {t('assistant.open')}
-          </Btn>
         </div>
         <main class={`enter ${app ? 'inapp' : ''} ${readOnly ? 'ro' : ''}`} key={route.view === 'app' ? `${route.app}/${route.tab}/${route.id}` : route.view}>
           {readOnly ? (
@@ -332,7 +329,7 @@ export function Shell({ route }: { route: Route }) {
         </main>
       </div>
       {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
-      <AssistantPanel app={app} open={helper} onClose={() => setHelper(false)} />
+      <AssistantLauncher app={app} state={assistant} dark={dark} />
     </div>
   )
 }

@@ -7,14 +7,19 @@
  * Its motion: idle it drifts (faster while a turn runs); in voice mode it follows the voice as the stage did (the user's
  * voice swells it, the agent's moves the plasma), in the launcher too while the panel is minimized, with the thinking
  * ring around it.
+ *
+ * The orb can be replaced, in this order: by one element of the page (`slot="orb"`) or by images, one per chat state
+ * (`OrbImages`). Either travels in the same box with the same flight; the component draws nothing of its own on it (no
+ * plasma, no ring, no swell): the element follows the host's `data-state`, `data-view` and `data-orb`.
  */
 import type { VNode } from 'preact'
-import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 
+import type { ChatState } from './chatstate'
 import type { Controller } from './controller'
 import { flightAt, type Rest, type Spot } from './flow'
 import { createOrb, newMotion, orbFallback, orbZoom, reducedMotion, stepMotion, swell, type OrbPhase } from './orb'
-import { orbFromStyle, type OrbColors } from './theme'
+import { orbFromStyle, orbImageFor, orbTransition, type OrbColors, type OrbImages } from './theme'
 
 /** The largest size the orb takes (CSS pixels): the canvas is drawn at this size. */
 export const ORB_MAX = 168
@@ -46,6 +51,69 @@ export interface TravelProps {
   busy: boolean
   muted: boolean
   colors?: Partial<OrbColors> | undefined
+  /** An element of the page stands in for the orb (`slot="orb"`). */
+  custom?: boolean
+  /** Images per chat state stand in for the orb (when no element does). */
+  images?: OrbImages | null | undefined
+  /** The conversation's state, for the images. */
+  state?: ChatState
+}
+
+/** The image of the state (or the one-shot image of the change that led to it); a still frame with reduced motion. */
+function OrbImage({ images, state }: { images: OrbImages; state: ChatState }): VNode {
+  const prev = useRef(state)
+  const [once, setOnce] = useState<string | null>(null)
+  const still = reducedMotion()
+  // Before the paint: the state's own image never shows for a frame ahead of the one-shot image.
+  useLayoutEffect(() => {
+    const from = prev.current
+    prev.current = state
+    const t = from === state || still ? null : orbTransition(images, from, state)
+    setOnce(t?.src ?? null)
+    if (!t) return
+    const id = setTimeout(() => setOnce(null), t.ms)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
+  // Every image is fetched once, so a change of state shows the next one at once.
+  const all = JSON.stringify(images)
+  useEffect(() => {
+    if (typeof Image === 'undefined') return
+    for (const src of [images.idle, images.still, images.listening, images.thinking, images.tool, images.confirm, images.speaking, images.done, ...Object.values(images.transitions ?? {}).map((t) => t?.src)])
+      if (src) new Image().src = src
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all])
+  const src = once ?? orbImageFor(images, state)
+  if (still && images.still) return <img class="orbimg" part="orb-image" src={images.still} alt="" data-state={state} />
+  if (still) return <StillFrame src={src} state={state} />
+  return <img class="orbimg" part="orb-image" src={src} alt="" data-state={state} />
+}
+
+/** The first frame of an image (an animated one stands still): drawn on a canvas, or the image itself without one. */
+function StillFrame({ src, state }: { src: string; state: ChatState }): VNode {
+  const cv = useRef<HTMLCanvasElement>(null)
+  const [drawn, setDrawn] = useState(true)
+  useEffect(() => {
+    const canvas = cv.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx || typeof Image === 'undefined') {
+      setDrawn(false)
+      return
+    }
+    let live = true
+    const img = new Image()
+    img.onload = () => {
+      if (!live) return
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      ctx.drawImage(img, 0, 0)
+    }
+    img.src = src
+    return () => {
+      live = false
+    }
+  }, [src])
+  return drawn ? <canvas ref={cv} class="orbimg" part="orb-image" data-state={state} /> : <img class="orbimg" part="orb-image" src={src} alt="" data-state={state} />
 }
 
 interface Flight {
@@ -67,7 +135,8 @@ export function TravelOrb(props: TravelProps): VNode {
   const pos = useRef<Spot | null>(null)
   const redraw = useRef<(() => void) | null>(null)
   const recolor = useRef<(() => void) | null>(null)
-  const key = JSON.stringify(props.colors ?? {})
+  const kind = props.custom ? 'element' : props.images ? 'images' : 'orb'
+  const key = `${kind}:${JSON.stringify(props.colors ?? {})}`
 
   const place = (p: Spot) => {
     const el = host.current
@@ -112,11 +181,12 @@ export function TravelOrb(props: TravelProps): VNode {
     const canvas = cv.current
     const rc = ring.current
     const el = host.current
-    if (!canvas || !rc || !el) return
-    const orb = createOrb(canvas, ORB_MAX, live.current.colors)
-    const ctx = rc.getContext('2d')
+    if (!el) return
+    // An element or images in place of the orb: no WebGL, only the places and the flights.
+    const orb = canvas ? createOrb(canvas, ORB_MAX, live.current.colors) : null
+    const ctx = rc?.getContext('2d') ?? null
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio) || 1)
-    const RS = (rc.width = rc.height = Math.round(ORB_MAX * 2 * dpr))
+    const RS = rc ? (rc.width = rc.height = Math.round(ORB_MAX * 2 * dpr)) : 0
     const accent = (typeof getComputedStyle === 'function' && getComputedStyle(el).getPropertyValue('--ek-accent').trim()) || '#a78bfa'
     const m = newMotion()
     const still = reducedMotion()
@@ -140,6 +210,10 @@ export function TravelOrb(props: TravelProps): VNode {
         if (p) place(p)
       }
       el.style.visibility = pos.current && !(L.hidden && !f && L.at !== 'flying') ? '' : 'hidden'
+      if (!canvas) {
+        if (!still) raf = requestAnimationFrame(frame)
+        return
+      }
       const size = pos.current?.size ?? ORB_MAX
       const voice = L.phase !== 'idle'
       const { frame: fr, mode } = stepMotion(m, { phase: L.phase, busy: L.busy, muted: L.muted, stirred: !!f, signals: voice ? L.controller.voice?.signals : null, now, dt })
@@ -172,7 +246,7 @@ export function TravelOrb(props: TravelProps): VNode {
     }
     recolor.current = () => {
       if (orb) orb.recolor(live.current.colors)
-      else canvas.style.background = orbFallback(orbFromStyle(canvas, live.current.colors))
+      else if (canvas) canvas.style.background = orbFallback(orbFromStyle(canvas, live.current.colors))
     }
     const onResize = () => redraw.current?.()
     addEventListener('resize', onResize)
@@ -210,13 +284,22 @@ export function TravelOrb(props: TravelProps): VNode {
       aria-hidden="true"
       data-at={props.at}
       data-phase={props.phase}
+      data-kind={kind}
       style={{ position: 'fixed', left: 0, top: 0, width: `${ORB_MAX}px`, height: `${ORB_MAX}px`, transformOrigin: '0 0', pointerEvents: 'none', zIndex: 'calc(var(--ek-z) + 1)' }}
     >
-      <canvas ref={ring} class="ringfx" />
-      <div ref={core} class="orbcore">
-        <canvas ref={cv} class="orbgl" style={{ background: bg }} />
-        <span class="orbr" />
-      </div>
+      {kind === 'element' ? (
+        <slot name="orb" />
+      ) : kind === 'images' && props.images ? (
+        <OrbImage images={props.images} state={props.state ?? 'idle'} />
+      ) : (
+        <>
+          <canvas ref={ring} class="ringfx" />
+          <div ref={core} class="orbcore">
+            <canvas ref={cv} class="orbgl" style={{ background: bg }} />
+            <span class="orbr" />
+          </div>
+        </>
+      )}
     </div>
   )
 }

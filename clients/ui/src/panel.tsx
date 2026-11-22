@@ -3,12 +3,14 @@
  * confirmations, the usage ring (shares only), the conversation list, starter questions, feedback, dictation and voice
  * mode (inside the panel, and minimized into the launcher orb with a speech bubble), the header menu with what the
  * agents remember, and the one-time question about memory. One orb travels between the launcher, the header and the
- * middle of the voice layer (`flow.ts`, `travel.tsx`).
+ * middle of the voice layer (`flow.ts`, `travel.tsx`); an element of the page (`slot="orb"`) or images per state can
+ * travel in its place.
  */
 import type { TargetedKeyboardEvent, TargetedMouseEvent, VNode } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 
 import type { ChatMessage, Citation, Part } from '@evokai/evokai-client/browser'
+import type { ChatState } from './chatstate'
 import type { Controller, ControllerState } from './controller'
 import { useUi } from './context'
 import { citedIndexes, Markdown } from './markdown'
@@ -20,7 +22,7 @@ import { Icon, type IconName } from './icons'
 import { ConnectCard, ConnectionsView } from './connections'
 import { MemoryAsk, MemoryView } from './memory'
 import { fill } from './strings'
-import type { OrbColors } from './theme'
+import type { OrbColors, OrbImages } from './theme'
 import { UsageRing } from './usage'
 import { AskCard, ChartView, ConfirmCard, DiagramView } from './visuals'
 
@@ -44,6 +46,14 @@ export interface PanelProps {
   keyTarget: EventTarget | null
   /** The view changed (closed, chat, voice, minimized). */
   onView?: ((view: View) => void) | undefined
+  /** Where the orb is now (a resting place, or flying). */
+  onOrb?: ((at: Look['orb']) => void) | undefined
+  /** The conversation's state (`chatstate.ts`), for an orb made of images. */
+  state?: ChatState
+  /** Images per chat state in place of the orb (a slotted `orb` element wins over them). */
+  images?: OrbImages | null | undefined
+  /** The host element, whose children fill the slots (read from the first render on). */
+  host?: Element | undefined
 }
 
 const KNOWLEDGE_TOOL = 'knowledge_search'
@@ -407,6 +417,8 @@ export function Panel(props: PanelProps): VNode {
   }, [target])
   const onView = props.onView
   useEffect(() => onView?.(target), [target, onView])
+  const onOrb = props.onOrb
+  useEffect(() => onOrb?.(look.orb), [look.orb, onOrb])
 
   // Where the focus goes after a change of view, once the place is on screen.
   const prev = useRef(target)
@@ -443,15 +455,30 @@ export function Panel(props: PanelProps): VNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [look.box])
 
-  // A slotted launcher, avatar or stage orb stands in for the orb where it rests.
+  // A slotted launcher, avatar or stage orb stands in for the orb where it rests; a slotted `orb` replaces it. The
+  // host's children are watched too: a slot that is not rendered yet fires no slotchange.
   useEffect(() => {
     const r = rootRef.current
     const on = () => slotsChanged((n) => n + 1)
     r?.addEventListener('slotchange', on)
-    return () => r?.removeEventListener('slotchange', on)
-  }, [])
+    const host = props.host ?? (r?.getRootNode() as ShadowRoot | undefined)?.host
+    // Children added or removed, or a child's slot changed; not what happens inside a slotted element.
+    const watch =
+      host && typeof MutationObserver === 'function'
+        ? new MutationObserver((recs) => {
+            if (recs.some((m) => m.target === host || m.type === 'attributes')) on()
+          })
+        : null
+    if (host) watch?.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['slot'] })
+    // The first render ran before the root existed: read the slots again now.
+    on()
+    return () => {
+      r?.removeEventListener('slotchange', on)
+      watch?.disconnect()
+    }
+  }, [props.host])
   const slotted = (name: string) => {
-    const host = (rootRef.current?.getRootNode() as ShadowRoot | undefined)?.host
+    const host = props.host ?? (rootRef.current?.getRootNode() as ShadowRoot | undefined)?.host
     return !!host && [...host.children].some((e) => e.getAttribute('slot') === name)
   }
   const custom = (r: Look['orb']) => (r === 'launcher' ? slotted('launcher') : r === 'head' ? !!props.logo || slotted('avatar') : r === 'center' ? slotted('stage-orb') : false)
@@ -905,6 +932,9 @@ export function Panel(props: PanelProps): VNode {
         busy={busy || ss.phase === 'speaking'}
         muted={st.muted || !st.micOpen}
         colors={props.orb}
+        custom={slotted('orb')}
+        images={props.images}
+        state={props.state ?? 'idle'}
       />
     </div>
   )

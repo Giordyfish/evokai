@@ -1,4 +1,6 @@
 import { setLocale } from '../src/i18n'
+import { SIDE_OFFSET, SKIN, targetApp } from '../src/assistant/launcher'
+import { ORB_MAX } from '@ui/travel'
 import { activateBody, assistantActive, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../src/assistant/choice'
 
 afterEach(() => setLocale('en'))
@@ -61,5 +63,26 @@ describe('one mascot on screen', () => {
     expect(assistantActive({ ...base, available: false, active: false })).toBe(false)
     expect(assistantActive({ ...base, available: true, active: false })).toBe(false)
     expect(assistantActive({ ...base, available: true, active: true, model: 'bedrock:eu.x' })).toBe(true)
+  })
+})
+
+describe('the mascot is the launcher', () => {
+  const apps = [{ id: 'sys' }, { id: 'shop' }, { id: 'blog' }]
+  it('acts on the application in view, else the last one opened, else the first that is not its own', () => {
+    expect(targetApp(apps[2]!, 'shop', apps, 'sys')?.id).toBe('blog')
+    expect(targetApp(null, 'shop', apps, 'sys')?.id).toBe('shop')
+    expect(targetApp(null, 'gone', apps, 'sys')?.id).toBe('shop')
+    expect(targetApp(null, null, [{ id: 'sys' }], 'sys')?.id).toBe('sys')
+    expect(targetApp(null, null, [], 'sys')).toBeNull()
+  })
+  it('keeps the launcher and the travelling orb: the skin only sizes the places the mascot rests in', () => {
+    expect(SKIN).not.toMatch(/\.dock\{display:none\}|\.orbfly\{display:none\}/)
+    expect(SKIN).toContain('.oslot.launch{')
+    expect(SKIN).toContain(`.oslot.mid{width:${ORB_MAX}px;height:${ORB_MAX}px}`)
+  })
+  it('keeps the sidebar usable and lets no voice start before the notice is read', () => {
+    expect(SKIN).toContain(`@media (min-width:901px){.dock,.panel{left:${SIDE_OFFSET}px}}`)
+    expect(SKIN).toContain(':host([data-notice]) [part~="launcher-actions"]{display:none}')
+    expect(SKIN).toContain(':host([data-notice=open]) :is(.dock,[part~="orb"]){opacity:0;pointer-events:none}')
   })
 })

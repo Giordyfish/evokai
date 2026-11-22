@@ -730,23 +730,22 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 :root[data-theme=dark]{color-scheme:dark}
 :where(.content a:not([class]):not([role])){color:var(--vi)}
 
-/* The assistant: its page (disclaimers) and its panel (activation screen, the chat's host, the mascot) */
+/* The assistant: its page (disclaimers), the first-use notice (where the chat opens, bottom left) and the mascot */
 .disclaimer{border-left:3px solid var(--vi)}
 .disclaimer.warn{border-left-color:var(--warn)}
 .reqs{margin:8px 0 4px;padding-left:20px;font-size:13.5px;line-height:1.6}
 .tick{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13.5px;cursor:pointer}
 .tick input{margin-top:3px;accent-color:var(--vi)}
-.assistant-panel{position:fixed;z-index:60;right:24px;bottom:24px;top:64px;width:min(25.5rem,calc(100vw - 32px));display:flex;flex-direction:column;background:var(--solid);border:1px solid var(--hair);border-radius:var(--r-2xl);box-shadow:var(--sh);overflow:hidden}
+.assistant-panel{position:fixed;z-index:60;left:24px;bottom:24px;top:64px;width:min(25.5rem,calc(100vw - 32px));display:flex;flex-direction:column;background:var(--solid);border:1px solid var(--hair);border-radius:var(--r-2xl);box-shadow:var(--sh);overflow:hidden}
 .assistant-panel header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--hair2);font:600 15px var(--disp)}
-.assistant-off{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center}
-.assistant-off h3{font:600 17px var(--disp);margin:6px 0 0}
-.assistant-off .hint{max-width:30ch}
 .assistant-notice{flex:1;display:flex;flex-direction:column;gap:10px;padding:16px 20px;overflow:auto}
 .assistant-notice h3{font:600 15px var(--disp);margin:8px 0 0}
 .assistant-notice .btn{align-self:flex-start;margin-top:6px}
 .assistant-about{margin:4px 0 8px;font-size:12.5px;line-height:1.5;color:var(--mu)}
 .assistant-about p{margin:4px 0}
+.assistant-about .acting{color:var(--tx);font-weight:500}
 .viewed{border-left:3px solid var(--warn);padding-left:8px}
 .mascot{display:block;position:relative}
 .mascot.live canvas{position:absolute;inset:0}
+@media (min-width:901px){.assistant-panel{left:292px}}
 @media (max-width:640px){.assistant-panel{inset:0;width:auto;border-radius:0;border:0}}

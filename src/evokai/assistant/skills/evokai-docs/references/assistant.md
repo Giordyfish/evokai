@@ -108,7 +108,7 @@ by default, and every exception written down, audited and shown to the person co
 ## Activation and the model
 
 The assistant is **inactive** until an owner of its application picks a model on the console's **Assistant** page;
-until then the panel shows the activation screen and minting a session answers `409 assistant_inactive`.
+until then the console shows no launcher for it and minting a session answers `409 assistant_inactive`.
 
 A model is **recommended** when its measured numbers meet every requirement:
 
@@ -149,11 +149,21 @@ measured requirements above: a model recommended only by the estimate opens the 
 
 ## The panel and the mascot
 
-The console embeds `<evokai-chat>` from the UI components, opened from the top bar. Its mascot is the only one on
-screen: the sidebar's header shows Evokai's logo while the assistant is active, whatever the person chose in
-Preferences (Mascot: animated, still, or off, the default, which is the logo; the choice applies while the assistant is
-not active). Empty states keep their illustrations. The mascot sits in the chat's header (the voice stage in voice mode) and follows
-`data-state`, the conversation's state the component exposes to slotted content:
+The console embeds `<evokai-chat>` from the UI components once, with its launcher at the bottom left
+(`position="bottom-left"`, past the sidebar on a wide screen) and the mascot as its orb (`slot="orb"`, see the UI components' README, "Your own orb").
+There is no button: the mascot is the launcher. A click (or Ctrl/Cmd+J) opens the chat and the mascot flies to the
+panel's header as the orb does; in voice mode it flies to the middle of the panel; minimized, the conversation goes on
+in the mascot at the bottom left with the bubble beside it and mute, restore and end above it on hover or focus. With
+reduced motion nothing flies. While the assistant is not active (or not available to the person) there is no
+launcher: it is activated from the Assistant page. The chat acts on the application the person is looking at; on a
+page without one, on the last application they opened, else the first one they can see other than the assistant's
+own, and a new conversation says which. Until the first-use notice is read, opening the chat shows the notice, and
+voice cannot be started from the launcher.
+
+The mascot is the only one on screen: the sidebar's header shows Evokai's logo while the assistant is active, whatever
+the person chose in Preferences (Mascot: animated, still, or off, the default, which is the logo; the choice applies
+while the assistant is not active). Empty states keep their illustrations. The mascot follows `data-state`, the
+conversation's state the component exposes to slotted content:
 
 | State | Mascot |
 | --- | --- |

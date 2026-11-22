@@ -28,7 +28,7 @@ export interface EvokaiCommonProps {
   unstyled?: boolean
   /** Replaced icons by name: SVG markup. */
   icons?: Partial<Record<string, string>>
-  /** Elements for the slots (`slot="launcher"`, `"avatar"`, `"empty"`, `"stage-orb"`). */
+  /** Elements for the slots (`slot="orb"`, `"launcher"`, `"avatar"`, `"empty"`, `"stage-orb"`). */
   children?: ReactNode
   strings?: Partial<Strings>
   toolLabels?: Record<string, string> | ((name: string) => string | null | undefined)

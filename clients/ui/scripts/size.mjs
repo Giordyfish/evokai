@@ -6,7 +6,8 @@ import { gzipSync } from 'node:zlib'
 const dist = new URL('../dist/', import.meta.url)
 const client = new URL('../../typescript/dist/browser/', import.meta.url)
 // +0.5 KB in November 2026: the conversation's state on the host (data-state, statechange) for slotted content.
-const BUDGET_KB = { 'index.js': 47, 'react.js': 47.5 }
+// +0.5 KB in November 2026: a custom orb (a slotted element or images per state) travelling in place of the orb.
+const BUDGET_KB = { 'index.js': 47.5, 'react.js': 48 }
 const CLIENT_BUDGET_KB = 60
 
 const gz = (url) => gzipSync(readFileSync(url)).length / 1024

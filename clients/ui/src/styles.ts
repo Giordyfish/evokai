@@ -37,6 +37,8 @@ font-family:var(--ek-font);color:var(--ek-text);font-size:14px;line-height:1.5}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 button:disabled{cursor:default;opacity:.4}
 slot{display:contents}
+slot[name=orb]::slotted(*){display:block;width:100%;height:100%;pointer-events:none}
+.orbimg{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
 `
 
 /** The default look. */
@@ -70,12 +72,13 @@ const LOOK = `
 .launcher[data-hidden]{visibility:hidden;pointer-events:none}
 .launcher:hover{transform:scale(1.05)}
 .launcher:focus-visible{outline-offset:4px}
-.vbubble{position:absolute;right:76px;bottom:6px;width:min(20rem,calc(100vw - 124px));padding:11px 14px 12px;border-radius:20px 20px 6px 20px;background:var(--ek-surface);border:1px solid var(--ek-border);box-shadow:0 22px 44px -22px rgb(0 0 0/.45);transform-origin:right bottom;animation:ekbubble .35s cubic-bezier(.2,.8,.2,1) both}
+.vbubble{position:absolute;right:calc(100% + 16px);bottom:6px;width:min(20rem,calc(100vw - 100% - 64px));padding:11px 14px 12px;border-radius:20px 20px 6px 20px;background:var(--ek-surface);border:1px solid var(--ek-border);box-shadow:0 22px 44px -22px rgb(0 0 0/.45);transform-origin:right bottom;animation:ekbubble .35s cubic-bezier(.2,.8,.2,1) both}
 .vbubble::after{content:"";position:absolute;right:-7px;bottom:16px;width:14px;height:14px;background:inherit;border-right:1px solid var(--ek-border);border-bottom:1px solid var(--ek-border);transform:rotate(-45deg);border-radius:0 0 4px 0}
 .vbubble.small{width:auto;white-space:nowrap}
-:host([position=bottom-left]) .vbubble{right:auto;left:76px;border-radius:20px 20px 20px 6px;transform-origin:left bottom}
+:host([position=bottom-left]) .vbubble{right:auto;left:calc(100% + 16px);border-radius:20px 20px 20px 6px;transform-origin:left bottom;animation-name:ekbubblel}
 :host([position=bottom-left]) .vbubble::after{right:auto;left:-7px;transform:rotate(135deg)}
 @keyframes ekbubble{from{opacity:0;transform:translateX(12px) scale(.96)}}
+@keyframes ekbubblel{from{opacity:0;transform:translateX(-12px) scale(.96)}}
 .vst{display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ek-accent)}
 .hop{display:inline-flex;gap:3px}.hop b{width:4px;height:4px;border-radius:50%;background:currentColor;animation:ekhop 1s ease-in-out infinite}
 .hop b:nth-child(2){animation-delay:.15s}.hop b:nth-child(3){animation-delay:.3s}
@@ -87,7 +90,7 @@ const LOOK = `
 .vct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vchip button{font-weight:600;color:var(--ek-accent)}
 .vchip button:hover{text-decoration:underline}
-.acts{position:absolute;left:12px;bottom:60px;padding-bottom:12px;display:flex;flex-direction:column;gap:8px;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s,transform .2s}
+.acts{position:absolute;left:50%;margin-left:-18px;bottom:100%;padding-bottom:12px;display:flex;flex-direction:column;gap:8px;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s,transform .2s}
 .dock:is([data-mini],[data-idle]):is(:hover,:has(:focus-visible)) .acts{opacity:1;transform:none;pointer-events:auto}
 .ab{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--ek-surface);box-shadow:0 0 0 1px var(--ek-border),0 8px 18px -10px rgb(0 0 0/.5);color:var(--ek-subtle)}
 .ab:hover{color:var(--ek-text)}
