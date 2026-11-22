@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Route
 
 from evokai.agents.bootstrap import bootstrap, bootstrap_apps
 from evokai.api import (
@@ -50,6 +51,7 @@ from evokai.core.config import Settings, get_settings
 from evokai.core.errors import AppError
 from evokai.core.util import utcnow
 from evokai.guard import identifiers
+from evokai.mcp_admin.server import AdminMcp
 from evokai.observability.logging import logger
 from evokai.observability.middleware import CorrelationMiddleware
 from evokai.observability.telemetry import setup_telemetry
@@ -178,7 +180,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         # A local classifier model loads now, not on the first turn that needs it.
         warm = asyncio.create_task(svc.guard.classifiers.warm_up())
         try:
-            yield
+            async with app.state.admin_mcp.lifespan():
+                yield
         finally:
             task.cancel()
             warm.cancel()
@@ -306,6 +309,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         root.include_router(voice_routes.router)
 
     app.include_router(root)
+    # The admin API as an MCP server, for AI agents acting with their caller's rights.
+    app.state.admin_mcp = AdminMcp(app, settings)
+    app.router.routes.append(Route(app.state.admin_mcp.path, app.state.admin_mcp))
     if settings.admin_ui_enabled:
         mount_console(app, settings)
     setup_telemetry(app, enabled=settings.otel_enabled, service_name=settings.service_name)
