@@ -193,7 +193,7 @@ class Session(Base):
     subject: Mapped[str] = mapped_column(SUBJECT)
     tags: Mapped[list[Any]] = mapped_column(sa.JSON, default=list)
     actor_kind: Mapped[str] = mapped_column(sa.String(16), default="agent", server_default="agent")
-    """Who answers: an agent today; an avatar fronting an agent later."""
+    """Who answers: an agent."""
     voice_engine: Mapped[str] = mapped_column(
         sa.String(16), default="browser", server_default="browser"
     )

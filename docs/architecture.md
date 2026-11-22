@@ -23,8 +23,8 @@ One service, one event vocabulary. Text and voice are two ways into the same con
   nothing reached the user yet); an MCP server that is down drops its tools for that turn; a
   failing speech provider turns the session to text; a budget that runs out ends the turn with a
   clear message.
-- **Avatar-ready, not avatar-bound.** Speech is emitted as ordered `say` segments any renderer
-  (browser TTS, server TTS, subtitles, a future avatar) can follow. A session declares its actor
+- **Renderer-agnostic speech.** Speech is emitted as ordered `say` segments that any renderer
+  (browser TTS, server TTS, subtitles, a visual) can follow. A session declares its actor
   (`agent` today).
 
 ## Hard rule: no conversations at model providers

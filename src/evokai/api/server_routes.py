@@ -103,7 +103,7 @@ class TokenRequest(BaseModel):
     conversation once created; a mode the application is not granted is refused (403
     ``storage_mode_not_granted``)."""
     actor: Literal["agent"] = "agent"
-    """Who answers. Only agents today; avatars fronting an agent later."""
+    """Who answers. Only agents today."""
     consent: Consent | None = None
     """The consent the end user gave for this session (recorded with it)."""
     exitCode: str | None = Field(default=None, min_length=4, max_length=32)

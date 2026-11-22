@@ -45,7 +45,7 @@ TURN = [
         "turnId": "t1",
         "seq": 4,
     }),
-    frame({"type": "avatar", "pose": "wave", "turnId": "t1", "seq": 5}),
+    frame({"type": "highlight", "target": "price", "turnId": "t1", "seq": 5}),
     frame({"type": "done", "reason": "end_turn", "conversationId": "c1", "turnId": "t1", "seq": 6}),
 ]
 
@@ -75,10 +75,10 @@ def test_chat_streams_typed_events_whatever_the_chunking(
     with _sync() as s:
         stream = s.chat("Hello?")
         events = list(stream)
-    assert [e.type for e in events] == ["conversation", "text", "text", "usage", "avatar", "done"]
+    assert [e.type for e in events] == ["conversation", "text", "text", "usage", "highlight", "done"]
     assert isinstance(events[3], UsageEvent)
     assert isinstance(events[4], UnknownEvent)
-    assert events[4].data["pose"] == "wave"
+    assert events[4].data["target"] == "price"
     assert stream.turn_id == "t1"
     assert stream.text == "Hello"
     assert isinstance(stream.done, DoneEvent)

@@ -48,8 +48,8 @@ class VoiceDef(BaseModel):
     prompt_rule: str = (
         "The user is talking to you and your answer is also read aloud: answer in 1-3 short, "
         "natural sentences meant to be heard, with no tables or long lists; key numbers in plain "
-        "words; put charts and details in the visuals, not in the text. Do not read tax codes, "
-        "IBANs, meter codes or personal data aloud: point to the screen instead."
+        "words; put charts and details in the visuals, not in the text. Do not read codes, "
+        "account numbers or personal data aloud: point to the screen instead."
     )
     """Added to the prompt in voice mode. Write it in the agent's language in its definition."""
     voice_id: str = ""
@@ -106,6 +106,15 @@ class PromptRef(BaseModel):
 
 
 Channel = Literal["browser", "server", "email", "teams", "slack"]
+
+_HASHED_VOICE_RULE = (
+    "The user is talking to you and your answer is also read aloud: answer in 1-3 short, "
+    "natural sentences meant to be heard, with no tables or long lists; key numbers in plain "
+    "words; put charts and details in the visuals, not in the text. Do not read tax codes, "
+    "IBANs, meter codes or personal data aloud: point to the screen instead."
+)
+"""The default voice rule the first versions were hashed with. An agent that keeps the default
+rule is hashed with this text, so rewording the default does not give it a new version."""
 
 _LATER_DEFAULTS: dict[str, Any] = {
     "preload_skills": [],
@@ -282,5 +291,9 @@ class AgentDef(BaseModel):
         Returns:
             A copy with `version` set.
         """
-        raw = json.dumps(self.content(), sort_keys=True, ensure_ascii=False)
+        content = self.content()
+        voice = content.get("voice")
+        if isinstance(voice, dict) and voice.get("prompt_rule") == VoiceDef().prompt_rule:
+            content["voice"] = {**voice, "prompt_rule": _HASHED_VOICE_RULE}
+        raw = json.dumps(content, sort_keys=True, ensure_ascii=False)
         return self.model_copy(update={"version": hashlib.sha256(raw.encode()).hexdigest()[:12]})
