@@ -237,7 +237,7 @@ async def test_an_operator_changes_agents_but_not_settings_or_security(
         and put["actorKind"] == "console"
         and put["role"] == "operator"
     )
-    assert put["before"]["instructions"] == "You are an assistant. Today is {date}."
+    assert put["before"]["instructions"] == "You are an assistant. Today is {{date}}."
     assert put["after"]["instructions"] == "Be brief."
 
 

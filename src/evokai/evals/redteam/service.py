@@ -318,7 +318,8 @@ class RedTeamService:
         instructions = agent.instructions
         if agent.prompt is not None:
             with contextlib.suppress(Exception):
-                instructions = await svc.engine._instructions(app.id, agent) or instructions
+                resolved = await svc.engine._instructions(app.id, agent)
+                instructions = resolved.text if resolved else instructions
         policy = svc.guard.policy(app, agent)
         links = policy.settings.links
         domains = content.origin_hosts(list(app.allowed_origins or [])) + list(

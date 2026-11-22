@@ -1645,6 +1645,7 @@ class PromptRepository(_Repo):
         parameters: dict[str, Any] | None = None,
         description: str = "",
         data: dict[str, Any] | None = None,
+        template_syntax: str = "handlebars",
     ) -> int:
         """Store a new version of a prompt (no-op when nothing changed).
 
@@ -1655,6 +1656,8 @@ class PromptRepository(_Repo):
             parameters: A module's parameter schema; None for a plain prompt.
             description: What the prompt is for.
             data: A module's static lookup table.
+            template_syntax: The text's syntax (``legacy`` only for versions saved before
+                Handlebars).
 
         Returns:
             The version number.
@@ -1675,6 +1678,7 @@ class PromptRepository(_Repo):
                 and last.parameters == parameters
                 and (last.description or "") == description
                 and last.data == data
+                and last.template_syntax == template_syntax
             ):
                 return last.version
             version = (last.version if last else 0) + 1
@@ -1688,6 +1692,7 @@ class PromptRepository(_Repo):
                     parameters=parameters,
                     description=description,
                     data=data,
+                    template_syntax=template_syntax,
                 )
             )
             return version

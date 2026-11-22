@@ -118,7 +118,7 @@ async def test_saving_a_new_version_compares_it_with_the_previous_one(env: Env) 
     agents = (await env.client.get("/agent/v1/admin/agents", headers=adm(env))).json()["items"]
     old = agents[0]["version"]
     helper = {k: v for k, v in agents[0].items() if k != "version"}
-    helper["instructions"] = "You are a warm assistant. Today is {date}."
+    helper["instructions"] = "You are a warm assistant. Today is {{date}}."
     env.script.add("function:primary", ["Hi, welcome!"], ["Hi."])
     saved = await env.client.put("/agent/v1/admin/agents/helper", json=helper, headers=adm(env))
     assert saved.status_code == 200 and saved.json()["created"]
@@ -144,9 +144,9 @@ async def test_saving_a_new_version_compares_it_with_the_previous_one(env: Env) 
     await env.client.patch(
         "/agent/v1/admin/application", json={"eval_on_save": False}, headers=adm(env)
     )
-    helper["instructions"] = "You are terse. Today is {date}."
+    helper["instructions"] = "You are terse. Today is {{date}}."
     again = await env.client.put("/agent/v1/admin/agents/helper", json=helper, headers=adm(env))
-    assert "evalRunId" not in again.json()
+    assert again.status_code == 200 and "evalRunId" not in again.json(), again.text
 
 
 async def test_tools_run_read_only_and_changes_stop_at_the_confirmation(env: Env) -> None:

@@ -500,7 +500,8 @@ class CostService:
         avg = {str(a): float(v or 0) for a, v in rows}
         for record in await svc.store.agents.active_all(app.id):
             agent = AgentDef.model_validate({**record.definition, "version": record.version})
-            instructions = await svc.engine._instructions(app.id, agent) or agent.instructions
+            resolved = await svc.engine._instructions(app.id, agent)
+            instructions = resolved.text if resolved else agent.instructions
             preloaded, on_demand = split_skills(
                 agent, await svc.engine._skills(app.id, agent, grants)
             )

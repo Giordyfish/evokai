@@ -19,10 +19,10 @@ from evokai.agents.definitions import AgentDef
 from evokai.agents.modules import (
     check_agent_modules,
     check_data,
-    check_module_template,
     check_parameters_schema,
 )
 from evokai.agents.skills import Skill, SkillError, check_skill, make_file, skills_in
+from evokai.agents.templates import check_agent_templates, check_prompt
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import validate as validate_connector
 from evokai.core.caps import (
@@ -219,7 +219,7 @@ async def bootstrap(
         await store.knowledge.put_base(app_id, str(raw["name"]), **knowledge_base(raw))
 
     for raw in data.get("prompts") or []:
-        await _prompt(store, app_id, raw)
+        await _prompt(store, app_id, raw, p)
 
     if "grants" in data:
         await apply_grants(store, app_id, data.get("grants") or {})
@@ -246,9 +246,18 @@ async def bootstrap(
     identifiers.of_app(app)
     grants = await grants_of(store, app) if app else None
     for raw in data.get("agents") or []:
-        agent = AgentDef.model_validate(raw).with_version()
+        agent = AgentDef.model_validate({"template_syntax": "handlebars", **raw}).with_version()
         if problems := check_rules(agent.ask_rules, set()):
             raise ConfigError(f"bootstrap: agent {agent.name}: {'; '.join(problems)}")
+        if agent.template_syntax == "legacy":
+            raise ConfigError(
+                f"bootstrap: {p}: agent {agent.name}: the file is Handlebars, "
+                "remove template_syntax: legacy"
+            )
+        try:
+            check_agent_templates(agent, None)
+        except AppError as e:
+            raise ConfigError(f"bootstrap: {p}: agent {agent.name}: {e.message}") from e
         try:
             await check_agent_modules(store, app_id, agent)
         except AppError as e:
@@ -267,7 +276,7 @@ async def bootstrap(
     return app_id
 
 
-async def _prompt(store: Store, app_id: str, raw: Any) -> None:
+async def _prompt(store: Store, app_id: str, raw: Any, path: Path) -> None:
     """Store a prompt of the application YAML (a new version only when something changed).
 
     An entry has a ``name`` and a ``text``, and optionally a ``description``; a prompt module
@@ -286,9 +295,9 @@ async def _prompt(store: Store, app_id: str, raw: Any) -> None:
         if parameters is not None:
             check_parameters_schema(parameters)
             check_data(data)
-            check_module_template(raw["text"], parameters, data)
+        check_prompt(raw["text"], parameters, data)
     except AppError as e:
-        raise ConfigError(f"bootstrap: prompt {name}: {e.message}") from e
+        raise ConfigError(f"bootstrap: {path}: prompt {name}: {e.message}") from e
     await store.prompts.put(
         app_id,
         name,

@@ -5,7 +5,7 @@ the prompt modules the session has switched on (``evokai.agents.modules``), the 
 preloaded skills and the list of the skills it can load. The volatile part follows
 it: the voice rule (in voice mode), what is remembered about the subject and what the user is
 looking at. With prompt caching (``evokai.llm.caching``) the cache point sits between the two, so
-nothing that changes per request is ever inside the cached prefix. ``{date}`` in the instructions
+nothing that changes per request is ever inside the cached prefix. ``{{date}}`` in the instructions
 changes once a day.
 """
 
@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from pydantic_ai.messages import InstructionPart
 
 from evokai.agents.definitions import AgentDef
-from evokai.agents.modules import RenderedModule, render_legacy, render_template
+from evokai.agents.modules import RenderedModule, render_template, render_text
 from evokai.agents.skills import Skill, files_listing
 from evokai.core.errors import BadRequest
 
@@ -47,6 +47,14 @@ def long_date(now: datetime, timezone: str = "UTC") -> str:
     """
     d = now.astimezone(ZoneInfo(timezone))
     return f"{d:%A} {d.day} {d:%B %Y} ({d:%Y-%m-%d})"
+
+
+@dataclass(frozen=True)
+class Instructions:
+    """The text of an agent's versioned prompt (``AgentDef.prompt``), with its version's syntax."""
+
+    text: str
+    syntax: str = "legacy"
 
 
 @dataclass(frozen=True)
@@ -94,7 +102,7 @@ def system_prompt(
     skills: list[Skill],
     page_text_chars: int,
     voice: bool,
-    instructions: str | None = None,
+    instructions: Instructions | None = None,
     timezone: str = "UTC",
     preloaded: list[Skill] | None = None,
     memory_text: str | None = None,
@@ -112,8 +120,9 @@ def system_prompt(
         skills: Skills the agent can load on demand.
         page_text_chars: Cap on the page text.
         voice: Whether the answer will be spoken.
-        instructions: The resolved prompt text, when the agent references a versioned prompt.
-        timezone: The application's time zone, for ``{date}``.
+        instructions: The resolved prompt, when the agent references a versioned prompt (with its
+            version's syntax; inline instructions follow the agent's ``template_syntax``).
+        timezone: The application's time zone, for ``{{date}}``.
         preloaded: Skills whose text goes in the prompt (``preload_skills``).
         memory_text: The recalled memories, already rendered and marked (``memory_block``);
             when given, ``memories`` is ignored.
@@ -125,10 +134,24 @@ def system_prompt(
         The prompt, in its stable and volatile parts.
     """
     values = {"date": long_date(now, timezone), "app": app_name}
-    lines = [render_legacy((instructions or agent.instructions).strip(), values)]
+    text, syntax = (
+        (instructions.text, instructions.syntax)
+        if instructions
+        else (agent.instructions, agent.template_syntax)
+    )
+    try:
+        lines = [render_text(text.strip(), syntax, values)]
+    except BadRequest:
+        # Checked when saved, so only an output over the cap gets here: the text goes as written.
+        log.warning("instructions not rendered: %s", agent.name)
+        lines = [text.strip()]
     for m in modules or []:
+        mv = {**values, "data": m.data or {}, **m.params}
         try:
-            text = render_template(m.text, {**values, "data": m.data or {}, **m.params}).strip()
+            if m.syntax == "legacy":
+                text = render_template(m.text, mv).strip()
+            else:
+                text = render_text(m.text, m.syntax, mv).strip()
         except BadRequest:
             log.warning("prompt module left out, not rendered: %s", m.name)
             continue

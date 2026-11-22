@@ -121,6 +121,9 @@ class ModuleRef(BaseModel):
 
 
 Channel = Literal["browser", "server", "email", "teams", "slack"]
+TemplateSyntax = Literal["legacy", "handlebars"]
+"""How a text is rendered: ``handlebars`` (``{{date}}``), or ``legacy`` for the versions saved
+before Handlebars (``{date}``, labels' ``{field|count}``), which keep rendering as they did."""
 
 _HASHED_VOICE_RULE = (
     "The user is talking to you and your answer is also read aloud: answer in 1-3 short, "
@@ -145,6 +148,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "subagents": [],
     "ask_rules": [],
     "modules": [],
+    "template_syntax": "legacy",
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -159,7 +163,7 @@ class AgentDef(BaseModel):
     name: str
     title: str = ""
     instructions: str = ""
-    """System prompt template (or use `prompt`). Placeholders: {date}, {app}."""
+    """System prompt template (or use `prompt`): Handlebars with ``{{date}}`` and ``{{app}}``."""
     prompt: PromptRef | None = None
     """A versioned prompt of the application, instead of inline instructions."""
     model: str
@@ -181,7 +185,7 @@ class AgentDef(BaseModel):
     confirm_labels: dict[str, str | list[str]] = Field(default_factory=dict)
     """Tool name → label template(s) for its confirmation card (evokai.tools.labels)."""
     confirm_values: dict[str, dict[str, str]] = Field(default_factory=dict)
-    """Tables of words for ``{field|map:table}`` in the label templates."""
+    """Tables of words for ``{{map field "table"}}`` in the label templates."""
     max_tool_calls_per_turn: int = 6
     model_settings: dict[str, Any] = Field(default_factory=dict)
     """Sampling, reasoning effort, priority processing (evokai.llm.policy.ALLOWED_SETTINGS)."""
@@ -222,6 +226,10 @@ class AgentDef(BaseModel):
     """Prompt modules rendered after the instructions, in this order (``evokai.agents.modules``):
     each names an application prompt, its default state and parameters, and whether a session
     token may change them."""
+    template_syntax: TemplateSyntax = "legacy"
+    """The syntax of the instructions and the confirm labels. A definition without it was saved
+    before Handlebars and stays ``legacy``; saving through the API or the YAML file makes it
+    ``handlebars`` (``evokai.agents.templates``)."""
     version: str = ""
 
     @field_validator("modules")
