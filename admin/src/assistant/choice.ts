@@ -2,6 +2,7 @@
  * Choosing the built-in assistant's model: the badges, the requirements shown in the disclaimer, and the rule that a
  * model that does not meet them needs a second disclaimer, ticked, before it can be activated.
  */
+import type { Fit } from '../fit'
 import { t } from '../i18n'
 import type { Tone } from '../ui'
 
@@ -23,6 +24,8 @@ export interface Candidate {
   status: Status
   recommended: boolean
   measured: Measured | null
+  /** The suitability for the assistant: an estimate from published facts, or the measurement. */
+  estimate?: Fit
 }
 
 export interface Requirements {

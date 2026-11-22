@@ -4,10 +4,11 @@
  * Permissions, and the server refuses a definition that references it.
  */
 import type { ComponentChildren } from 'preact'
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 
 import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, ModuleRef, PromptVersion, SkillInfo } from '@client/core/types'
-import { describe, forApp } from '../api'
+import { adminJson, describe, forApp } from '../api'
+import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
 import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
 import { done, Fx, HAT, sparkle, toast } from '../magic'
@@ -94,6 +95,39 @@ export function AgentEditor({ app, name }: { app: ConsoleApplication; name: stri
     <Loads load={load} what={isNew ? t('what.newAgent') : name}>
       {(d) => <Editor key={`${name}${d.versions[0]?.version ?? ''}`} app={app} data={d} isNew={isNew} reload={load.reload} />}
     </Loads>
+  )
+}
+
+interface Suitability {
+  complexity: { tier: 'low' | 'medium' | 'high'; factors: Record<string, number> }
+  estimate: Fit
+}
+
+/** The primary model's suitability for this agent (as saved): an estimate, or the measurement, with its reasons. */
+function ModelFit({ app, agent, model }: { app: ConsoleApplication; agent: string; model: string }) {
+  const [fit, setFit] = useState<Suitability | null>(null)
+  useEffect(() => {
+    let live = true
+    setFit(null)
+    const path = `/v1/admin/agents/${encodeURIComponent(agent)}/suitability?model=${encodeURIComponent(model)}`
+    adminJson<Suitability>(app.id, 'GET', path)
+      .then((r) => live && setFit(r))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [app.id, agent, model])
+  if (!fit) return null
+  const b = fitBadge(fit.estimate)
+  const tier = { low: t('fit.tier.low'), medium: t('fit.tier.medium'), high: t('fit.tier.high') }[fit.complexity.tier]
+  return (
+    <div class="s fit" style="margin-top:4px">
+      <Tag tone={b.tone} dot>
+        {b.text}
+      </Tag>{' '}
+      {fitReasons(fit.estimate).join(' · ')}
+      {fit.estimate.basis === 'estimate' ? <div class="s">{t('fit.forTier', { tier })}</div> : null}
+    </div>
   )
 }
 
@@ -416,6 +450,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
                     </a>
                   ) : null}
                   <div class="s" style="font:12px var(--mono);color:var(--mu);overflow:hidden;text-overflow:ellipsis">{m}</div>
+                  {i === 0 && !isNew ? <ModelFit app={app} agent={draft.name} model={m} /> : null}
                 </div>
                 <span class="grip">
                   <button type="button" aria-label={t('ag.moveUp')} onClick={() => move(i, -1)}>

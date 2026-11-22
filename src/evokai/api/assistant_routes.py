@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from evokai import audit
+from evokai.agents.definitions import AgentDef
 from evokai.api.console_routes import conversation_subject, conversation_view
 from evokai.api.deps import admin_app, console_login, services
 from evokai.api.server_routes import TokenRequest, mint
@@ -249,6 +250,36 @@ async def try_assistant_model(body: Try, svc: Svc, a: Admin) -> dict[str, Any]:
         raise Conflict("A try of the assistant is going.", code="try_running")
     run = await activation.start_trial(svc, app, model, a.key_id)
     return {"runId": run.id}
+
+
+# ── suitability: how well a model suits an agent ───────────────────────────────────────────────
+
+
+@router.get("/agents/{agent}/suitability")
+async def agent_suitability(
+    agent: str,
+    svc: Svc,
+    a: Admin,
+    model: Annotated[str, Query(min_length=3, max_length=200, pattern=MODEL_ID)],
+) -> dict[str, Any]:
+    """How well a model suits an agent, estimated from sourced facts (``evokai.llm.suitability``).
+
+    The agent's complexity (tier and factors) and the model's estimate: recommended, not
+    recommended or to verify, with its reasons. For the built-in assistant a measured model shows
+    its measurement instead (``basis: measured``). Never an amount.
+
+    Returns:
+        complexity and estimate.
+
+    Raises:
+        NotFound: No such agent.
+    """
+    app = await svc.store.applications.get(a.application_id)
+    record = await svc.store.agents.active(a.application_id, agent) if app else None
+    if app is None or record is None:
+        raise NotFound()
+    definition = AgentDef.model_validate(record.definition)
+    return await activation.suitability(svc, app, definition, model)
 
 
 # ── inspection: an owner reads another person's conversation, with a reason ──────────────────────

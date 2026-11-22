@@ -283,7 +283,7 @@ async def test_inspection_is_audited_and_visible_to_author(env: Env) -> None:
     assert len(entries) == 1
     entry = entries[0]
     assert entry.actor == "sso:olga@example.com"
-    assert entry.after["reason"] == REASON
+    assert (entry.after or {})["reason"] == REASON
     assert f"conversation:{ids['a_conv']}" in entry.target
     assert f"console:{ids['alice']}" not in str(entry.after) + entry.target
     # The author sees it; another person does not.

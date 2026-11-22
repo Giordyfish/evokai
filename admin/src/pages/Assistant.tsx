@@ -10,6 +10,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { adminJson, describe } from '../api'
 import { activateBody, type AssistantState, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../assistant/choice'
 import { deleted, kindText, type ResetPreview, resetExport, slugTyped } from '../assistant/reset'
+import { fitBadge, fitReasons } from '../fit'
 import { download } from '../format'
 import { num, t } from '../i18n'
 import { Empty, toast } from '../magic'
@@ -257,7 +258,7 @@ export function Assistant() {
               </thead>
               <tbody>
                 {state.candidates.map((cand) => {
-                  const b = badge(cand.status)
+                  const b = cand.estimate ? fitBadge(cand.estimate) : badge(cand.status)
                   return (
                     <tr key={cand.model} aria-selected={picked?.model === cand.model}>
                       <td>
@@ -270,6 +271,7 @@ export function Assistant() {
                         <Tag tone={b.tone} dot>
                           {b.text}
                         </Tag>
+                        {cand.estimate ? <div class="s">{fitReasons(cand.estimate).join(' · ')}</div> : null}
                       </td>
                       <td>
                         <Numbers c={cand} />
