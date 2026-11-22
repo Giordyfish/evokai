@@ -170,6 +170,24 @@ class Settings(BaseSettings):
     """``EVOKAI_PUBLIC_URL``: where people reach the API (base path included), for messages that
     point to the console. Default ``http://localhost:{port}{base_path}``."""
 
+    internal_url: str | None = None
+    """``EVOKAI_INTERNAL_URL``: where this service reaches itself (base path included), for the
+    built-in assistant's admin MCP server. Default ``http://127.0.0.1:{port}{base_path}``."""
+    assistant: Literal["on", "off"] = "on"
+    """``EVOKAI_ASSISTANT``: the built-in console assistant (``evokai.assistant``), a locked system
+    application created at start and inactive until an owner picks its model. ``off`` creates
+    nothing (an existing one stays as it is)."""
+
+    @property
+    def internal_base(self) -> str:
+        """Where this service reaches itself, base path included.
+
+        Returns:
+            ``EVOKAI_INTERNAL_URL``, else ``http://127.0.0.1:{port}{base_path}``.
+        """
+        url = self.internal_url or f"http://127.0.0.1:{self.port}{self.base_path}"
+        return url.rstrip("/")
+
     build_commit: str = ""
     """The commit the image was built from (``EVOKAI_BUILD_COMMIT``, set by the image build)."""
 

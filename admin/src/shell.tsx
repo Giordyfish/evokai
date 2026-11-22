@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import type { ConsoleApplication, CostAlert } from '@client/core/types'
 import { forApp, root } from './api'
+import { AssistantPanel } from './assistant/Panel'
 import { ALERTS_CHANGED, alertText, bannerAlert } from './costs'
 import { pl } from './format'
 import { Empty, Familiar, HAT } from './magic'
@@ -11,6 +12,7 @@ import { Access } from './pages/Access'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
 import { Apps } from './pages/Apps'
+import { Assistant } from './pages/Assistant'
 import { Audit } from './pages/Audit'
 import { Health } from './pages/Health'
 import { Keys } from './pages/Keys'
@@ -108,6 +110,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
       return <Health />
     case 'access':
       return <Access />
+    case 'assistant':
+      return <Assistant />
     case 'preferences':
       return <Preferences q={route.q} />
     case 'states':
@@ -123,6 +127,7 @@ export function Shell({ route }: { route: Route }) {
   const [open, setOpen] = useState(false)
   const [pop, setPop] = useState(false)
   const [pal, setPal] = useState(false)
+  const [helper, setHelper] = useState(false)
   const dark = useDark()
   const [lastApp, setLastApp] = useState<string | null>(null)
   const fresh = app && app.slug !== lastApp
@@ -182,7 +187,7 @@ export function Shell({ route }: { route: Route }) {
   else if (route.view === 'setup') crumbs.push([t('page.applications'), '#/apps'], [t('page.setup')])
   else
     crumbs.push([
-      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
+      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
         t('page.notFound'),
     ])
 
@@ -262,6 +267,7 @@ export function Shell({ route }: { route: Route }) {
           {nav('#/playground', t('page.playground'), 'play', route.view === 'playground')}
           {nav('#/usage', t('page.usage'), 'usage', route.view === 'usage')}
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
+          {nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant')}
           {c.me.deploymentOwner ? nav('#/access', t('page.access'), 'access', route.view === 'access') : null}
         </div>
         <div class="famslot">
@@ -311,6 +317,10 @@ export function Shell({ route }: { route: Route }) {
             <span>{t('shell.goTo')}</span>
             <kbd>Ctrl K</kbd>
           </button>
+          <Btn kind="sm ghost" style="margin-left:8px" label={t('assistant.openLabel')} onClick={() => setHelper(!helper)}>
+            <Icon name="agents" />
+            {t('assistant.open')}
+          </Btn>
         </div>
         <main class={`enter ${app ? 'inapp' : ''} ${readOnly ? 'ro' : ''}`} key={route.view === 'app' ? `${route.app}/${route.tab}/${route.id}` : route.view}>
           {readOnly ? (
@@ -323,6 +333,7 @@ export function Shell({ route }: { route: Route }) {
         </main>
       </div>
       {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
+      <AssistantPanel app={app} open={helper} onClose={() => setHelper(false)} />
     </div>
   )
 }

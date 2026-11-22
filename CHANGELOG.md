@@ -21,6 +21,18 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - A per-session `locale` at token mint: speech rules and messages follow the shipped pack of its language
   (400 `unknown_locale` without one).
 - The TypeScript and Python clients send `modules` and `locale` when minting, and save prompt modules and preview them.
+- An admin MCP server at `{base}/mcp/admin`: an explicit allow-list of admin routes as MCP tools, generated from the
+  OpenAPI with FastMCP and called in process with the caller's own rights, so AI agents can operate an application
+  with an admin key ([admin MCP](docs/admin-mcp.md)). The Keys page shows how to connect one.
+- The console assistant: Evokai's own assistant in the console, with the mascot, running as a locked system
+  application `evokai-assistant` that acts on the selected application through the admin MCP server with a delegation
+  token of the person's console login. Every change waits for a confirmation. It is inactive until an owner picks a
+  model on the new Assistant page, which recommends models by measured eval numbers and can try one against recorded
+  responses ([assistant](docs/assistant.md)). `EVOKAI_ASSISTANT=off` turns it off; `EVOKAI_INTERNAL_URL` says where the
+  service reaches itself.
+- `<evokai-chat>` exposes the conversation's state as `data-state` and a `statechange` event, for slotted content.
+- The browser voice takes `pitch` and `preferVoice`; Piper takes `pitchShift`.
+- The red team suite has attacks on the console assistant, run on system applications.
 
 ### Changed
 
@@ -28,7 +40,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   such as `{"ok": true}` in instructions failed to render).
 - Neutral wording: the default voice rule no longer names domain-specific codes ("codes, account numbers or personal
   data"); agents that keep the default rule keep their version.
-
+- Changes to a locked system application answer `409 locked` on every admin route.
+- Single sign-on console logins send the application they act on, like operator logins.
+- The console assistant can never change an agent's security policy, whoever it acts for.
 - The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
 

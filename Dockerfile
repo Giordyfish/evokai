@@ -19,6 +19,7 @@ WORKDIR /src
 COPY admin/package.json admin/package-lock.json admin/
 RUN --mount=type=cache,target=/root/.npm cd admin && npm ci --no-audit --no-fund
 COPY clients/typescript/src clients/typescript/src
+COPY clients/ui/src clients/ui/src
 COPY admin admin
 RUN cd admin && npm run build
 

@@ -94,6 +94,8 @@ nav:
       - Code execution: code.md
       - Evals: evals.md
       - Cost governance: costs.md
+      - Operate from an AI agent: admin-mcp.md
+      - The console assistant: assistant.md
       - Open standards:
           - AG-UI: ag-ui.md
           - OpenAI-compatible API: openai-compatible.md

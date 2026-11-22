@@ -1,13 +1,16 @@
 // The console builds to admin/dist, served by the service at {EVOKAI_BASE_PATH}/admin/. Paths are relative, so the same
-// build works under any base path. It uses the headless client's sources directly (no published package needed).
+// build works under any base path. It uses the headless client's and the UI components' sources directly (no published
+// package needed): the assistant panel embeds <evokai-chat>.
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 const client = fileURLToPath(new URL('../clients/typescript/src', import.meta.url))
+const ui = fileURLToPath(new URL('../clients/ui/src', import.meta.url))
 
 export default defineConfig({
   base: './',
-  resolve: { alias: { '@client': client } },
+  // The UI components' sources import preact: always the console's own copy (clients/ui has no node_modules in CI).
+  resolve: { alias: { '@client': client, '@ui': ui, '@evokai/evokai-client/browser': `${client}/browser/index.ts` }, dedupe: ['preact'] },
   oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   // Nothing inlined as data: URIs: the console's CSP allows fonts and scripts from its own origin only.
   build: { outDir: 'dist', emptyOutDir: true, assetsDir: 'assets', assetsInlineLimit: 0, sourcemap: false, target: 'es2022' },

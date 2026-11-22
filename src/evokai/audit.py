@@ -18,6 +18,7 @@ from fastapi import Request
 from evokai.guard import secrets
 from evokai.identity.console import ConsoleLogin
 from evokai.identity.models import AppPrincipal
+from evokai.mcp_admin.via import via_mcp
 from evokai.observability.correlation import get_correlation_id
 
 log = logging.getLogger("evokai.audit")
@@ -68,7 +69,9 @@ def actor_of(who: AppPrincipal | ConsoleLogin | None) -> tuple[str, str, str | N
     if isinstance(who, ConsoleLogin):
         kind = {"op": "operator_key", "adm": "admin_key", "sso": "sso"}.get(who.kind, who.kind)
         return who.actor, kind, "owner" if who.kind != "sso" else None
-    kind = "console" if who.console else "admin_key" if who.kind == "adm" else "server_key"
+    kind = who.via or (
+        "console" if who.console else "admin_key" if who.kind == "adm" else "server_key"
+    )
     return who.actor or f"key:{who.key_id[:8]}", kind, who.role
 
 
@@ -84,6 +87,9 @@ async def record(
 ) -> None:
     """Write an audit entry for a change."""
     actor, kind, role = actor_of(who)
+    if isinstance(who, AppPrincipal) and not who.via and via_mcp(request.headers):
+        # Through the admin MCP server (this process's own header, never one sent from outside).
+        actor, kind = f"mcp:{actor}", "mcp"
     if application_id is None and isinstance(who, AppPrincipal):
         application_id = who.application_id
     try:

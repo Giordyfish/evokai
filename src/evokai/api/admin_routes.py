@@ -488,7 +488,13 @@ async def put_agent(
         )
     current = await svc.store.agents.active(a.application_id, name)
     before = current.definition if current else None
-    if a.role != "owner" and (before or {}).get("security") != body.security:
+    latest = before
+    if a.via and current is None:
+        # Deleting and saving again must not drop a policy: the last version counts.
+        versions = await svc.store.agents.versions(a.application_id, name)
+        latest = versions[0].definition if versions else None
+    if (a.role != "owner" or a.via) and (latest or {}).get("security") != body.security:
+        # The console assistant never changes a security policy, whoever it acts for.
         raise Forbidden("Changing an agent's security policy needs the owner role.", code="role")
     await _check_ask_rules(svc, a, body)
     await check_agent_modules(svc.store, a.application_id, body)

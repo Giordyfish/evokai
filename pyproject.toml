@@ -15,6 +15,7 @@ dependencies = [
     "asyncpg>=0.32.0",
     "cryptography>=50.0.2",
     "fastapi>=0.164.0",
+    "fastmcp>=3.4,<4",
     "httpx>=0.28.1",
     "jsonschema>=4.26.0",
     "packaging>=24.0",
@@ -111,6 +112,8 @@ markers = [
 line-length = 100
 target-version = "py312"
 preview = true
+# The assistant's docs skill is a copy of docs/ (scripts/assistant_docs.py): never reformatted.
+extend-exclude = ["src/evokai/assistant/skills"]
 lint.select = [
   "E",    # pycodestyle errors
   "F",    # pyflakes

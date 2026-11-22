@@ -17,6 +17,8 @@ export interface UtteranceLike {
   text: string
   lang: string
   rate: number
+  /** 0 to 2 (1 is the voice's own pitch). */
+  pitch?: number
   voice: VoiceLike | null
   onstart?: (() => void) | null
   onend: (() => void) | null
@@ -76,6 +78,13 @@ export interface BrowserTtsOptions {
   estimate?: boolean
   /** Default rate (1.05). */
   rate?: number
+  /** Pitch of every utterance, 0 to 2 (default 1: the voice's own). */
+  pitch?: number
+  /**
+   * A voice to use when the browser has it for the language, by a part of its name (`Google`): among on-device voices,
+   * or online ones too with `allowOnlineVoices`. Otherwise the usual choice.
+   */
+  preferVoice?: string
   /**
    * Also use the browser's online voices when the device has no voice for the language (default false: on-device
    * only). Online voices send the text to the browser vendor's speech service (Google, Apple, Microsoft): an
@@ -182,12 +191,27 @@ export class BrowserTts implements TtsEngine {
     }
   }
 
+  /** The preferred voice, when the browser has it for the language and it is allowed. */
+  private preferred(voices: VoiceLike[]): VoiceLike | null {
+    const want = this.opts.preferVoice?.toLowerCase()
+    if (!want) return null
+    const base = this.lang.toLowerCase().split('-')[0] ?? this.lang
+    return (
+      voices.find(
+        (v) =>
+          v.name.toLowerCase().includes(want) &&
+          v.lang.toLowerCase().replace('_', '-').startsWith(base) &&
+          (v.localService || !!this.opts.allowOnlineVoices),
+      ) ?? null
+    )
+  }
+
   private next(): void {
     const synth = this.synth
     const item = this.queue.shift()
     if (!item) return
     const voices = synth ? synth.getVoices() : []
-    const voice = synth ? pickVoice(voices, this.lang, this.opts.allowOnlineVoices) : null
+    const voice = synth ? (this.preferred(voices) ?? pickVoice(voices, this.lang, this.opts.allowOnlineVoices)) : null
     if (synth && !voice && !voices.length && !this.waitedForVoices) {
       // The browser has not loaded its voices yet: wait for them once, then try again.
       this.waitedForVoices = true
@@ -220,6 +244,7 @@ export class BrowserTts implements TtsEngine {
     if (voice) u.voice = voice
     u.lang = voice?.lang ?? this.lang
     u.rate = item.rate
+    u.pitch = this.opts.pitch ?? 1
     u.onstart = () => {
       if (gen !== this.generation) return
       this.driver?.stop()

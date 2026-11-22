@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'preact/hooks'
 
 import type { ApiKeyInfo, ConsoleApplication } from '@client/core/types'
-import { describe, forApp } from '../api'
+import { baseUrl, describe, forApp } from '../api'
 import { ago, copy, day } from '../format'
 import { Empty, Fx, RM, sparkle, toast } from '../magic'
 import { setTitle, useConsole, useLoad } from '../state'
@@ -198,6 +198,29 @@ export function Keys({ app }: { app: ConsoleApplication }) {
           )
         }
       </Loads>
+      <AgentHint />
     </>
+  )
+}
+
+/** How to operate this application from an AI agent through the admin MCP server. */
+function AgentHint() {
+  const url = `${baseUrl}/mcp/admin`
+  const command = `claude mcp add --transport http evokai-admin ${url} --header "Authorization: Bearer evk_adm_..."`
+  return (
+    <Panel>
+      <h3 style="font:600 15.5px var(--disp)">{t('keys.agentTitle')}</h3>
+      <p class="hint">{t('keys.agentText')}</p>
+      <div class="keyrow">
+        <code class="k">{url}</code>
+      </div>
+      <p class="hint">{t('keys.agentCommand')}</p>
+      <div class="keyrow">
+        <code class="k">{command}</code>
+        <Btn sm kind="ghost" onClick={async () => toast((await copy(command)) ? t('keys.agentCopied') : t('common.copyByHand'), '', null)}>
+          {t('keys.agentCopy')}
+        </Btn>
+      </div>
+    </Panel>
   )
 }

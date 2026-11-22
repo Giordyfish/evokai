@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Route
 
 from evokai.agents.bootstrap import bootstrap, bootstrap_apps
 from evokai.api import (
@@ -21,6 +22,7 @@ from evokai.api import (
     admin_routes,
     agui_routes,
     ask_routes,
+    assistant_routes,
     capability_routes,
     channel_routes,
     compliance_routes,
@@ -46,10 +48,12 @@ from evokai.api import (
 )
 from evokai.api.console_static import mount_console
 from evokai.api.hardening import Hardening, origin_cache
+from evokai.assistant.bootstrap import ensure_assistant
 from evokai.core.config import Settings, get_settings
 from evokai.core.errors import AppError
 from evokai.core.util import utcnow
 from evokai.guard import identifiers
+from evokai.mcp_admin.server import AdminMcp
 from evokai.observability.logging import logger
 from evokai.observability.middleware import CorrelationMiddleware
 from evokai.observability.telemetry import setup_telemetry
@@ -155,6 +159,11 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         if settings.bootstrap_apps:
             ids = await bootstrap_apps(svc.store, settings.bootstrap_apps)
             logger.info("bootstrapped_from_env", extra={"applications": len(ids)})
+        # The built-in console assistant: a locked system application, inactive until activated.
+        try:
+            await ensure_assistant(svc.store, svc.keyring, settings)
+        except Exception as e:
+            logger.warning("assistant_not_ensured", extra={"error_type": type(e).__name__})
         # Every application's own identifiers are masked in logs and traces from the start.
         with contextlib.suppress(Exception):
             for application in await svc.store.applications.all():
@@ -178,7 +187,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         # A local classifier model loads now, not on the first turn that needs it.
         warm = asyncio.create_task(svc.guard.classifiers.warm_up())
         try:
-            yield
+            async with app.state.admin_mcp.lifespan():
+                yield
         finally:
             task.cancel()
             warm.cancel()
@@ -276,6 +286,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(a2a_routes.router)
     root.include_router(server_routes.router)
     root.include_router(admin_routes.router)
+    root.include_router(assistant_routes.router)
+    root.include_router(assistant_routes.console)
     root.include_router(grants_routes.router)
     root.include_router(ask_routes.router)
     root.include_router(capability_routes.router)
@@ -306,6 +318,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         root.include_router(voice_routes.router)
 
     app.include_router(root)
+    # The admin API as an MCP server, for AI agents acting with their caller's rights.
+    app.state.admin_mcp = AdminMcp(app, settings)
+    app.router.routes.append(Route(app.state.admin_mcp.path, app.state.admin_mcp))
     if settings.admin_ui_enabled:
         mount_console(app, settings)
     setup_telemetry(app, enabled=settings.otel_enabled, service_name=settings.service_name)

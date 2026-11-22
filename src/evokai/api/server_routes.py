@@ -155,6 +155,13 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
     application = await svc.store.applications.get(app.application_id)
     if application is None:
         raise NotFound()
+    if application.system and app.key_id != "console-assistant":
+        # Its sessions act with a person's delegation: only the console assistant route mints them.
+        raise Forbidden("A system application's sessions open from the console.", code="system_app")
+    if application.system and not (application.defaults or {}).get("assistant_model"):
+        raise Conflict(
+            "The assistant has no model yet: an owner activates it.", code="assistant_inactive"
+        )
     grants = await grants_of(svc.store, application)
     if not grants.channel("browser"):
         raise NotGranted("channel", "Browser sessions are not granted to this application.")

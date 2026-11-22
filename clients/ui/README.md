@@ -221,6 +221,11 @@ questions, confirmations, usage, history, dictation, voice) and redraw the compo
 - **State on the host.** `data-phase` (`idle`, `listening`, `thinking`, `speaking`, `interrupted`), `data-busy`,
   `data-voice`, `data-dictating` and `data-view` (`closed`, `chat`, `voice`, `minimized`) are kept on the element: `evokai-chat[data-phase=speaking]::part(title)`, or
   `:host([data-busy]) ...` in a skin.
+- **The conversation's state, for slotted content.** `data-state` on the host says in one word what the conversation is
+  doing: `idle`, `listening` (voice mode listens, or the person dictates), `thinking`, `tool` (a tool runs), `confirm`
+  (a change waits for the person's answer), `speaking` or `done` (the turn ended). Each change also fires a
+  `statechange` event (`detail: { state, previous }`), so a figure of your own in a slot can follow the conversation;
+  `chatState` and `fromEvent` (exported) compute it from a controller and its events.
 - **Slots.** Children of the element with `slot="launcher"` (the launcher's content), `slot="avatar"` (the header's
   orb or logo), `slot="empty"` (above the starter questions) or `slot="stage-orb"` (the sphere of voice mode) replace
   or add to those places (where a slot is filled, the travelling orb hides while it rests there); in React pass them as children. The element's `controller` gives your own pieces the state
@@ -304,6 +309,6 @@ EVOKAI_URL=http://localhost:8787/agent EVOKAI_SERVER_KEY=evk_srv_... EVOKAI_AGEN
 VITE_EVOKAI_URL=http://localhost:8787/agent npm run demo      # http://localhost:5174 (add it to the allowed origins)
 ```
 
-**Size budget** (gzip, checked by `npm run build`): the components with Preact 46.5 KB (today about 46.1 KB); the
+**Size budget** (gzip, checked by `npm run build`): the components with Preact 47 KB (today about 46.5 KB); the
 headless client is a peer dependency (its browser entry about 31 KB, budget 60 KB). The in-browser neural voice and its
 runtime load on demand and are never part of these.
