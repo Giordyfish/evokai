@@ -14,8 +14,6 @@ import type { SessionEvent, TurnPhase } from '@evokai/evokai-client/browser'
 
 export type ChatState = 'idle' | 'listening' | 'thinking' | 'tool' | 'confirm' | 'speaking' | 'done'
 
-export const CHAT_STATES: readonly ChatState[] = ['idle', 'listening', 'thinking', 'tool', 'confirm', 'speaking', 'done']
-
 /** What the controller says now. */
 export interface Snapshot {
   phase: TurnPhase

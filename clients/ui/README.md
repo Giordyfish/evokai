@@ -309,6 +309,6 @@ EVOKAI_URL=http://localhost:8787/agent EVOKAI_SERVER_KEY=evk_srv_... EVOKAI_AGEN
 VITE_EVOKAI_URL=http://localhost:8787/agent npm run demo      # http://localhost:5174 (add it to the allowed origins)
 ```
 
-**Size budget** (gzip, checked by `npm run build`): the components with Preact 46.5 KB (today about 46.1 KB); the
+**Size budget** (gzip, checked by `npm run build`): the components with Preact 47 KB (today about 46.5 KB); the
 headless client is a peer dependency (its browser entry about 31 KB, budget 60 KB). The in-browser neural voice and its
 runtime load on demand and are never part of these.

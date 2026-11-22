@@ -8,7 +8,7 @@
  * Transport, events, voice and usage come from the headless client (`@evokai/evokai-client/browser`).
  */
 export { EvokaiChatElement, EvokaiVoiceElement, defineElements } from './elements'
-export { CHAT_STATES, chatState, fromEvent, type ChatState } from './chatstate'
+export { chatState, fromEvent, type ChatState } from './chatstate'
 export { Controller, pageContext } from './controller'
 export type { ControllerOptions, ControllerState, ConversationItem, Installing, Support } from './controller'
 export { defaultFormat } from './context'
