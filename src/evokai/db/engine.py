@@ -95,8 +95,12 @@ class Database:
         if url.startswith("postgresql+asyncpg"):
             if tls is not None:
                 connect_args["ssl"] = tls
+            # Every session speaks UTC, whatever the server's or the role's time zone: the usage
+            # series groups by the text of a timestamp and reads it as UTC (costs.service.daily).
+            server_settings = {"timezone": "UTC"}
             if settings.database_schema:
-                connect_args["server_settings"] = {"search_path": settings.database_schema}
+                server_settings["search_path"] = settings.database_schema
+            connect_args["server_settings"] = server_settings
         if url.startswith("sqlite"):
             kwargs = {}
         if settings.database_schema:
