@@ -21,11 +21,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Generator, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncGenerator, Generator, Sequence
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
+import yaml
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -150,8 +152,16 @@ def build_admin_mcp(app: FastAPI, settings: Settings) -> FastMCP:
     return server
 
 
-def admin_provider(app: FastAPI, settings: Settings) -> OpenAPIProvider:
+def admin_provider(
+    app: FastAPI, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None
+) -> OpenAPIProvider:
     """The allow-listed admin routes of an app as tools.
+
+    Args:
+        app: The service.
+        settings: Deployment settings.
+        transport: Where the tools' requests go: the service in process by default; the recorded
+            answers for the assistant's evals (``recorded_transport``).
 
     Returns:
         The provider.
@@ -197,7 +207,7 @@ def admin_provider(app: FastAPI, settings: Settings) -> OpenAPIProvider:
             tool.parameters = schema
 
     client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
+        transport=transport or httpx.ASGITransport(app=app),
         base_url="http://evokai",
         auth=ForwardAuth(),
         event_hooks={"request": [_Fields(base)]},
@@ -209,6 +219,7 @@ def admin_provider(app: FastAPI, settings: Settings) -> OpenAPIProvider:
         route_maps=[RouteMap(mcp_type=MCPType.EXCLUDE)],
         route_map_fn=route_type,
         mcp_component_fn=customise,
+        validate_output=transport is None,
     )
     # A failed customisation is only logged by FastMCP: a tool without its name or annotations
     # would be exposed under another name or run without confirmation. Refuse to serve instead.
@@ -217,6 +228,30 @@ def admin_provider(app: FastAPI, settings: Settings) -> OpenAPIProvider:
     if set(tools) != names or any(t.annotations is None for t in tools.values()):
         raise RuntimeError(f"admin MCP: tools differ from the allow-list: {sorted(tools)}")
     return provider
+
+
+RECORDED = Path(__file__).resolve().parents[1] / "assistant" / "evals" / "recorded.yaml"
+
+
+def recorded_transport(base: str, path: Path = RECORDED) -> httpx.MockTransport:
+    """Answers the admin tools' requests from recorded responses (the assistant's evals).
+
+    No request leaves it: a read not recorded answers ``{"items": []}``, a change ``{"ok": true}``.
+
+    Returns:
+        The transport.
+    """
+    responses = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("responses") or {}
+    routes = [(t.method, _template(base + t.path), f"{t.method} {t.path}") for t in ADMIN_TOOLS]
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        key = next(
+            (k for m, p, k in routes if m == request.method and p.match(request.url.path)), ""
+        )
+        default: dict[str, Any] = {"items": []} if request.method == "GET" else {"ok": True}
+        return httpx.Response(200, json=responses.get(key, default))
+
+    return httpx.MockTransport(answer)
 
 
 class AdminMcp:
@@ -241,7 +276,16 @@ class AdminMcp:
             json_response=True,
             host_origin_protection=False,
         )
+        # The same tools answered from recorded responses, for the assistant's evals only.
+        self.recorded = FastMCP("evokai-admin", instructions=INSTRUCTIONS)
+        self.recorded_http = self.recorded.http_app(
+            path=self.path,
+            stateless_http=True,
+            json_response=True,
+            host_origin_protection=False,
+        )
         self._loaded = False
+        self._recorded_loaded = False
         self._lock = asyncio.Lock()
 
     @property
@@ -253,30 +297,47 @@ class AdminMcp:
         """
         return self.app.state.services
 
-    def lifespan(self) -> AbstractAsyncContextManager[Any]:
-        """The MCP transport's lifespan (chained into the service's).
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncGenerator[None]:
+        """The MCP transports' lifespan (chained into the service's).
 
-        Returns:
-            The context manager.
+        Yields:
+            While they serve.
         """
-        return self.http.router.lifespan_context(self.http)
+        async with (
+            self.http.router.lifespan_context(self.http),
+            self.recorded_http.router.lifespan_context(self.recorded_http),
+        ):
+            yield
 
-    async def _load(self) -> None:
-        if self._loaded:
+    async def _load(self, *, recorded: bool) -> None:
+        if self._recorded_loaded if recorded else self._loaded:
             return
         async with self._lock:
-            if not self._loaded:
+            if recorded and not self._recorded_loaded:
+                transport = recorded_transport(self.settings.base_path.rstrip("/"))
+                self.recorded.add_provider(
+                    admin_provider(self.app, self.settings, transport=transport)
+                )
+                self._recorded_loaded = True
+            elif not recorded and not self._loaded:
                 self.server.add_provider(admin_provider(self.app, self.settings))
                 self._loaded = True
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Serve a request: refused without a valid bearer, else passed to the MCP server."""
         headers = {k.decode().lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        if delegation.is_recorded(
+            self.services.keyring, bearer(headers.get("authorization")) or ""
+        ):
+            await self._load(recorded=True)
+            await self.recorded_http(scope, receive, send)
+            return
         try:
             await caller(self.services, headers.get("authorization"))
         except AppError as e:
             response = JSONResponse({"error": e.code, "message": e.message}, status_code=e.status)
             await response(scope, receive, send)
             return
-        await self._load()
+        await self._load(recorded=False)
         await self.http(scope, receive, send)

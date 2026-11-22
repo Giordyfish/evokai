@@ -486,6 +486,60 @@ export interface paths {
         patch: operations["patch_application_agent_v1_admin_application_patch"];
         trace?: never;
     };
+    "/agent/v1/admin/application/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Application
+         * @description Apply a system application's shipped definition again, and lock it (owner).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         Conflict: A system application this version of Evokai does not ship.
+         */
+        post: operations["reset_application_agent_v1_admin_application_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/application/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock Application
+         * @description Unlock a system application (owner): its changes are then the owner's to make.
+         *
+         *     Shipped updates are no longer applied while it is unlocked (they are recorded instead).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         BadRequest: The typed slug is not the application's (400 ``confirm``).
+         */
+        post: operations["unlock_application_agent_v1_admin_application_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/ask-rules": {
         parameters: {
             query?: never;
@@ -516,6 +570,86 @@ export interface paths {
          */
         put: operations["put_ask_rules_agent_v1_admin_ask_rules_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant State
+         * @description The built-in assistant's state.
+         *
+         *     Whether it is active, its model, the requirements a recommended model meets and the
+         *     candidates with their measured numbers (shares, never amounts).
+         *
+         *     Returns:
+         *         available, active, model, applicationId, locked, updateAvailable, requirements,
+         *         candidates, trial.
+         */
+        get: operations["assistant_state_agent_v1_admin_assistant_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Assistant
+         * @description Pick the assistant's model (owner of its application).
+         *
+         *     Returns:
+         *         ok and the model.
+         *
+         *     Raises:
+         *         BadRequest: A model that does not meet every requirement without ``acceptNotRecommended``
+         *             (400 ``not_recommended_unconfirmed``).
+         */
+        post: operations["activate_assistant_agent_v1_admin_assistant_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/try": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Try Assistant Model
+         * @description Run the assistant's eval suite on one model (owner), against the recorded admin MCP server.
+         *
+         *     Returns:
+         *         runId.
+         *
+         *     Raises:
+         *         Conflict: A try is going (409 ``try_running``).
+         */
+        post: operations["try_assistant_model_agent_v1_admin_assistant_try_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4052,6 +4186,19 @@ export interface components {
             runs_per_minute?: number | null;
         };
         /**
+         * Activate
+         * @description The model the assistant should answer with.
+         */
+        Activate: {
+            /**
+             * Acceptnotrecommended
+             * @default false
+             */
+            acceptNotRecommended?: boolean;
+            /** Model */
+            model: string;
+        };
+        /**
          * AgentDef
          * @description A versioned agent definition.
          */
@@ -6086,6 +6233,22 @@ export interface components {
             toolUse: components["schemas"]["ToolUse"];
         };
         /**
+         * Try
+         * @description The model to run the assistant's eval suite on.
+         */
+        Try: {
+            /** Model */
+            model: string;
+        };
+        /**
+         * Unlock
+         * @description The application's slug, typed by the person who unlocks it.
+         */
+        Unlock: {
+            /** Confirm */
+            confirm: string;
+        };
+        /**
          * UntrustedSettings
          * @description Untrusted content.
          */
@@ -6951,6 +7114,63 @@ export interface operations {
             };
         };
     };
+    reset_application_agent_v1_admin_application_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+    };
+    unlock_application_agent_v1_admin_application_unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Unlock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_ask_rules_agent_v1_admin_ask_rules_get: {
         parameters: {
             query?: never;
@@ -6988,6 +7208,98 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_state_agent_v1_admin_assistant_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    activate_assistant_agent_v1_admin_assistant_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Activate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    try_assistant_model_agent_v1_admin_assistant_try_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Try"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

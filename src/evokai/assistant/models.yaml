@@ -1,0 +1,14 @@
+# Measured results of the assistant's eval suite per model id pattern (evokai.assistant.activation),
+# written by scripts/assistant_evals.py at release time. A model is recommended when its numbers meet
+# every requirement; a model with no entry is "not measured" until an owner tries it.
+#
+# The entry below was measured on Evokai's default test model (test:*), which calls no tools: it is
+# here so the console has a measured, not recommended, model to show.
+models:
+- pattern: test:*
+  tool_calls_pct: 0.0
+  confirm_pct: 0.0
+  redteam_pct: 33.3
+  context_tokens: 128000
+  measured_at: '2026-11-22'
+  evokai_version: 0.1.3

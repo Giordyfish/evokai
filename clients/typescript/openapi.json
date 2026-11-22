@@ -57,6 +57,27 @@
         "title": "AbuseSettings",
         "type": "object"
       },
+      "Activate": {
+        "description": "The model the assistant should answer with.",
+        "properties": {
+          "acceptNotRecommended": {
+            "default": false,
+            "title": "Acceptnotrecommended",
+            "type": "boolean"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "Activate",
+        "type": "object"
+      },
       "AgentDef": {
         "description": "A versioned agent definition.",
         "properties": {
@@ -5304,6 +5325,37 @@
         "title": "ToolUseBlock",
         "type": "object"
       },
+      "Try": {
+        "description": "The model to run the assistant's eval suite on.",
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "Try",
+        "type": "object"
+      },
+      "Unlock": {
+        "description": "The application's slug, typed by the person who unlocks it.",
+        "properties": {
+          "confirm": {
+            "maxLength": 60,
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "Unlock",
+        "type": "object"
+      },
       "UntrustedSettings": {
         "additionalProperties": false,
         "description": "Untrusted content.",
@@ -6695,6 +6747,78 @@
         ]
       }
     },
+    "/agent/v1/admin/application/reset": {
+      "post": {
+        "description": "Apply a system application's shipped definition again, and lock it (owner).\n\nReturns:\n    ok.\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
+        "operationId": "reset_application_agent_v1_admin_application_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Reset Application Agent V1 Admin Application Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset Application",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/application/unlock": {
+      "post": {
+        "description": "Unlock a system application (owner): its changes are then the owner's to make.\n\nShipped updates are no longer applied while it is unlocked (they are recorded instead).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).",
+        "operationId": "unlock_application_agent_v1_admin_application_unlock_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Unlock"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Unlock Application Agent V1 Admin Application Unlock Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlock Application",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/agent/v1/admin/ask-rules": {
       "get": {
         "description": "The application's ask rules, with the deployment's and the agents'.\n\nReturns:\n    The view.\n\nRaises:\n    NotFound: The application is gone.",
@@ -6756,6 +6880,118 @@
           }
         },
         "summary": "Put Ask Rules",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant": {
+      "get": {
+        "description": "The built-in assistant's state.\n\nWhether it is active, its model, the requirements a recommended model meets and the\ncandidates with their measured numbers (shares, never amounts).\n\nReturns:\n    available, active, model, applicationId, locked, updateAvailable, requirements,\n    candidates, trial.",
+        "operationId": "assistant_state_agent_v1_admin_assistant_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant State Agent V1 Admin Assistant Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant State",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/activate": {
+      "post": {
+        "description": "Pick the assistant's model (owner of its application).\n\nReturns:\n    ok and the model.\n\nRaises:\n    BadRequest: A model that does not meet every requirement without ``acceptNotRecommended``\n        (400 ``not_recommended_unconfirmed``).",
+        "operationId": "activate_assistant_agent_v1_admin_assistant_activate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Activate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Assistant Agent V1 Admin Assistant Activate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Assistant",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/try": {
+      "post": {
+        "description": "Run the assistant's eval suite on one model (owner), against the recorded admin MCP server.\n\nReturns:\n    runId.\n\nRaises:\n    Conflict: A try is going (409 ``try_running``).",
+        "operationId": "try_assistant_model_agent_v1_admin_assistant_try_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Try"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Try Assistant Model Agent V1 Admin Assistant Try Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Try Assistant Model",
         "tags": [
           "admin"
         ]

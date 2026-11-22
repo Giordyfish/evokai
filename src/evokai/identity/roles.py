@@ -35,6 +35,8 @@ OWNER_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("PUT", "/v1/admin/compliance/profile"),
     ("POST", "/v1/admin/application/unlock"),
     ("POST", "/v1/admin/application/reset"),
+    ("POST", "/v1/admin/assistant/activate"),
+    ("POST", "/v1/admin/assistant/try"),
 })
 """Changes that need the owner role (application settings and policy, the deployment's voices)."""
 

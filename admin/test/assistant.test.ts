@@ -1,0 +1,55 @@
+import { setLocale } from '../src/i18n'
+import { activateBody, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../src/assistant/choice'
+
+afterEach(() => setLocale('en'))
+
+const measured = { toolCallsPct: 97, confirmPct: 100, redteamPct: 93, contextTokens: 200000, measuredAt: '2026-11-22', evokaiVersion: '0.1.3', source: 'release' as const }
+const good: Candidate = { model: 'bedrock:eu.good', label: 'Good', status: 'recommended', recommended: true, measured }
+const weak: Candidate = { model: 'bedrock:eu.weak', label: 'Weak', status: 'not_recommended', recommended: false, measured: { ...measured, confirmPct: 80 } }
+const unknown: Candidate = { model: 'bedrock:eu.new', label: 'New', status: 'not_measured', recommended: false, measured: null }
+const requirements = { toolCallsPct: 95, confirmPct: 100, redteamPct: 90, contextTokens: 128000, streaming: true, tools: true }
+
+describe('the first disclaimer', () => {
+  it('lists every requirement with its figure', () => {
+    const lines = requirementLines(requirements)
+    expect(lines).toHaveLength(5)
+    expect(lines.join(' ')).toContain('95%')
+    expect(lines.join(' ')).toContain('100%')
+    expect(lines.join(' ')).toContain('90%')
+    expect(lines.join(' ')).toContain('128k')
+  })
+  it('speaks Italian', () => {
+    setLocale('it')
+    expect(requirementLines(requirements)[1]).toContain('100%')
+    expect(badge('recommended').text).toBe('Consigliato')
+    expect(badge('not_recommended').text).toBe('Non consigliato')
+    expect(badge('not_measured').text).toBe('Non misurato')
+  })
+})
+
+describe('the second disclaimer', () => {
+  it('opens only for a model that does not meet every requirement', () => {
+    expect(needsSecondDisclaimer(good)).toBe(false)
+    expect(needsSecondDisclaimer(weak)).toBe(true)
+    expect(needsSecondDisclaimer(unknown)).toBe(true)
+  })
+  it('must be ticked before a not recommended model is activated', () => {
+    expect(canActivate(good, false)).toBe(true)
+    expect(canActivate(weak, false)).toBe(false)
+    expect(canActivate(unknown, false)).toBe(false)
+    expect(canActivate(weak, true)).toBe(true)
+    expect(activateBody(weak, true)).toEqual({ model: 'bedrock:eu.weak', acceptNotRecommended: true })
+    expect(activateBody(good, false)).toEqual({ model: 'bedrock:eu.good' })
+  })
+})
+
+describe('a try', () => {
+  it('is running until its run ends', () => {
+    const base = { available: true, active: false, model: null, requirements, candidates: [] }
+    expect(trialRunning(null)).toBe(false)
+    expect(trialRunning({ ...base, trial: null })).toBe(false)
+    const trial = { runId: 'r', model: 'm', status: 'running', progressPct: 40, budgetPct: 3, measured: null, startedAt: '' }
+    expect(trialRunning({ ...base, trial })).toBe(true)
+    expect(trialRunning({ ...base, trial: { ...trial, status: 'done' } })).toBe(false)
+  })
+})

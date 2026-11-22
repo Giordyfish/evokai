@@ -27,7 +27,8 @@ export function setMe(value: ConsoleMe | null): void {
 export function forApp(applicationId: string): EvokaiConsole {
   let c = clients.get(applicationId)
   if (!c) {
-    c = new EvokaiConsole({ baseUrl, application: me?.kind === 'op' ? applicationId : null })
+    // An operator and a single sign-on login name the application; an admin key has only its own.
+    c = new EvokaiConsole({ baseUrl, application: me && me.kind !== 'adm' ? applicationId : null })
     clients.set(applicationId, c)
   }
   return c

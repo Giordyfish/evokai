@@ -34,6 +34,8 @@ ISSUER = "evokai-delegation"
 AUDIENCE = "evokai-admin-mcp"
 DEFAULT_TTL = 900
 """Seconds a delegation token lives (a console assistant session)."""
+RECORDED = "recorded"
+"""The kind of the token of the assistant's evals: the recorded admin MCP server, no application."""
 
 
 def is_delegation(token: str) -> bool:
@@ -77,6 +79,43 @@ def mint_delegation(
     elif login.kind == "adm":
         claims["kid"] = login.key_id or ""
     return PREFIX + jwt.encode(claims, keyring.signing_key, algorithm="HS256")
+
+
+def mint_recorded(keyring: Keyring, ttl: int = 7_200) -> str:
+    """Sign a token for the recorded admin MCP server (the assistant's evals).
+
+    It opens no application: the admin API refuses it (its kind has no live login), and the admin
+    MCP server answers it from recorded responses only.
+
+    Returns:
+        The token, with its prefix.
+    """
+    now = int(time.time())
+    claims = {
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "app": "",
+        "role": "viewer",
+        "kind": RECORDED,
+        "jti": secrets.token_hex(16),
+        "iat": now,
+        "exp": now + ttl,
+    }
+    return PREFIX + jwt.encode(claims, keyring.signing_key, algorithm="HS256")
+
+
+def is_recorded(keyring: Keyring, token: str) -> bool:
+    """Whether a bearer value is a valid token for the recorded admin MCP server.
+
+    Returns:
+        True for a delegation token of kind ``recorded``.
+    """
+    if not is_delegation(token):
+        return False
+    try:
+        return _claims(keyring, token).get("kind") == RECORDED
+    except Unauthorized:
+        return False
 
 
 def _claims(keyring: Keyring, token: str) -> dict[str, Any]:
