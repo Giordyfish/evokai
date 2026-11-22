@@ -409,3 +409,23 @@ async def test_cache_suggestions_list_the_agents_that_would_gain(env: Env) -> No
     assert r.status_code == 200, r.text
     r = await env.client.get("/agent/v1/admin/costs/cache-suggestions", headers=_adm(env))
     assert [x["agent"] for x in r.json()["items"]] == ["long"]
+
+
+async def test_postgres_sessions_speak_utc_whatever_the_server_zone(env: Env) -> None:
+    """The usage series reads timestamp text as UTC: every Postgres session must be in UTC."""
+    import sqlalchemy as sa
+
+    if env.svc.db.engine.dialect.name != "postgresql":
+        pytest.skip("Postgres only (EVOKAI_TEST_DATABASE_URL)")
+    async with env.svc.db.engine.connect() as c:
+        assert (await c.execute(sa.text("SHOW timezone"))).scalar() == "UTC"
+    # A usage late in a Rome evening counts on that Rome day.
+    await _settings(env, timezone="Europe/Rome")
+    app = await env.svc.store.applications.get(env.app_id)
+    assert app is not None
+    late = datetime(2026, 11, 22, 22, 30, tzinfo=UTC)  # 23:30 in Rome, Sunday 22 November
+    await _usage(env, "u1", 1.0, late)
+    series = await env.svc.costs.daily(
+        env.app_id, late - timedelta(days=1), tz=ZoneInfo("Europe/Rome")
+    )
+    assert series[""] == {date(2026, 11, 22): 1.0}
