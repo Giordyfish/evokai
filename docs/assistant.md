@@ -147,9 +147,11 @@ measured requirements above: a model recommended only by the estimate opens the 
 
 ## The panel and the mascot
 
-The console embeds `<evokai-chat>` from the UI components, opened from the top bar. The mascot sits in the chat's
-header (the voice stage in voice mode) and follows `data-state`, the conversation's state the component exposes to
-slotted content:
+The console embeds `<evokai-chat>` from the UI components, opened from the top bar. Its mascot is the only one on
+screen: the sidebar's header shows Evokai's logo while the assistant is active, whatever the person chose in
+Preferences (Mascot: animated, still, or off, the default, which is the logo; the choice applies while the assistant is
+not active). Empty states keep their illustrations. The mascot sits in the chat's header (the voice stage in voice mode) and follows
+`data-state`, the conversation's state the component exposes to slotted content:
 
 | State | Mascot |
 | --- | --- |
@@ -162,8 +164,7 @@ slotted content:
 | listening | live: the hat perks up, a rune appears at each syllable and orbits the hat, then the runes fly into the hat tip on a pause |
 | speaking | live: the eyes light up with the voice |
 
-The live states are drawn with WebGL; the console's "mascot still" and "hidden" preferences and reduced motion are
-respected.
+The live states are drawn with WebGL; the console's "still" mascot preference and reduced motion are respected.
 
 **The voice follows data protection.** The browser's online voice (Google's: the spoken text goes to the browser
 vendor's speech service, only in voice mode) is used only when both the selected application's and the assistant's

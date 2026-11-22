@@ -6,6 +6,7 @@ import { locale, setLocale } from '../src/i18n'
 import {
   applyTo,
   attributes,
+  brandMark,
   DEFAULTS,
   detachPrefs,
   mascotMoves,
@@ -71,7 +72,7 @@ describe('on <html>', () => {
       theme: 'light',
       motion: 'full',
       contrast: 'normal',
-      mascot: 'on',
+      mascot: 'hidden',
       density: 'comfortable',
       text: '100',
       focus: 'auto',
@@ -104,6 +105,29 @@ describe('on <html>', () => {
     expect(mascotMoves()).toBe(true)
     setPrefs({ mascot: 'still' })
     expect(mascotMoves()).toBe(false)
+    // Off is the logo in the sidebar header only: the mage elsewhere still moves.
+    setPrefs({ mascot: 'hidden' })
+    expect(mascotMoves()).toBe(true)
+  })
+})
+
+describe('the mark beside Evokai', () => {
+  it('is the logo by default, and for anyone who never chose a mascot', () => {
+    expect(DEFAULTS.mascot).toBe('hidden')
+    expect(DEFAULTS.version).toBe(2)
+    expect(sanitize({ version: 1, mascot: 'on' }).mascot).toBe('hidden')
+    expect(sanitize({ version: 1, mascot: 'still' }).mascot).toBe('still')
+    expect(sanitize({ version: 2, mascot: 'on' }).mascot).toBe('on')
+    expect(sanitize({ version: 1, mascot: 'on' }).version).toBe(2)
+  })
+  it('follows the choice, reduced motion and the assistant', () => {
+    expect(brandMark({ ...DEFAULTS }, false, false)).toBe('logo')
+    expect(brandMark({ ...DEFAULTS, mascot: 'on' }, false, false)).toBe('moving')
+    expect(brandMark({ ...DEFAULTS, mascot: 'on' }, false, true)).toBe('still')
+    expect(brandMark({ ...DEFAULTS, mascot: 'still' }, false, false)).toBe('still')
+    // While the assistant is active its panel holds the one mascot on screen.
+    expect(brandMark({ ...DEFAULTS, mascot: 'on' }, true, false)).toBe('logo')
+    expect(brandMark({ ...DEFAULTS, mascot: 'still' }, true, false)).toBe('logo')
   })
 })
 

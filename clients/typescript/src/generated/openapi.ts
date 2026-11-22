@@ -5699,7 +5699,7 @@ export interface components {
         };
         /**
          * Preferences
-         * @description One person's console preferences (version 1). JSON fields are camelCase.
+         * @description One person's console preferences (version 2). JSON fields are camelCase.
          */
         Preferences: {
             /**
@@ -5733,7 +5733,7 @@ export interface components {
             language?: "auto" | "en" | "it";
             /**
              * Mascot
-             * @default on
+             * @default hidden
              * @enum {string}
              */
             mascot?: "on" | "still" | "hidden";
@@ -5768,10 +5768,10 @@ export interface components {
             underlineLinks?: boolean;
             /**
              * Version
-             * @default 1
-             * @constant
+             * @default 2
+             * @enum {integer}
              */
-            version?: 1;
+            version?: 1 | 2;
         };
         /**
          * PreviewBody

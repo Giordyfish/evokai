@@ -3381,7 +3381,7 @@
       },
       "Preferences": {
         "additionalProperties": false,
-        "description": "One person's console preferences (version 1). JSON fields are camelCase.",
+        "description": "One person's console preferences (version 2). JSON fields are camelCase.",
         "properties": {
           "contrast": {
             "default": "system",
@@ -3429,7 +3429,7 @@
             "type": "string"
           },
           "mascot": {
-            "default": "on",
+            "default": "hidden",
             "enum": [
               "on",
               "still",
@@ -3484,8 +3484,11 @@
             "type": "boolean"
           },
           "version": {
-            "const": 1,
-            "default": 1,
+            "default": 2,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Version",
             "type": "integer"
           }

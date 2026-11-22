@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import type { AudioSignal, AudioSignals } from '@client/browser/index'
-import { mascotMoves, onPrefs, prefs } from '../prefs'
+import { mascotMoves, onPrefs } from '../prefs'
 import { Listener, MAX_RUNES, newRune, type Rune, stepRunes } from './runes'
 import { CLIP_MS, clipSrc, type MascotView, stillFor } from './state'
 
@@ -265,9 +265,12 @@ function loadBody(): Promise<{ meta: Meta; body: HTMLImageElement }> {
   return metaCache
 }
 
-/** How the mascot shows now (the person's preference, and reduced motion). */
+/**
+ * How the mascot shows now: still when the person chose a still mage or reduced motion. The Preferences' "off" puts the
+ * logo beside Evokai in the sidebar; it does not hide the assistant's mage, the one mascot on screen.
+ */
 function useMascotMode(): 'moving' | 'still' | 'hidden' {
-  const read = (): 'moving' | 'still' | 'hidden' => (prefs().mascot === 'hidden' ? 'hidden' : mascotMoves() ? 'moving' : 'still')
+  const read = (): 'moving' | 'still' | 'hidden' => (mascotMoves() ? 'moving' : 'still')
   const [m, setM] = useState(read)
   useEffect(() => onPrefs(() => setM(read())), [])
   return m

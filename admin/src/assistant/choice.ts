@@ -89,5 +89,8 @@ export function activateBody(c: Candidate, ticked: boolean): { model: string; ac
   return c.recommended ? { model: c.model } : { model: c.model, acceptNotRecommended: ticked }
 }
 
+/** Whether the assistant is there for this person: available in the deployment and activated (unknown: no). */
+export const assistantActive = (s: AssistantState | null): boolean => !!(s?.available && s.active)
+
 /** Whether a try is still going. */
 export const trialRunning = (s: AssistantState | null): boolean => s?.trial?.status === 'running'

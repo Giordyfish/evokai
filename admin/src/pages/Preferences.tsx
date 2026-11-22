@@ -7,6 +7,7 @@ import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 
 import { describe, root } from '../api'
+import { useAssistantActive } from '../assistant/active'
 import { ago, clock, dateTime, day, pct1, pl } from '../format'
 import { num, t, type TextKey } from '../i18n'
 import { RM, toast } from '../magic'
@@ -242,6 +243,7 @@ function Appearance({ p }: { p: Prefs }) {
 
 function Accessibility({ p }: { p: Prefs }) {
   const sys = system()
+  const assistantOn = useAssistantActive()
   const sysWord = (on: boolean) => t(on ? 'prefs.sysOn' : 'prefs.sysOff')
   return (
     <Section id="a11y" heading="prefs.a11y">
@@ -253,7 +255,7 @@ function Accessibility({ p }: { p: Prefs }) {
           labels={{ system: t('prefs.followSystem'), reduce: t('prefs.on'), full: t('prefs.off') }}
         />
       </Row>
-      <Row label={t('prefs.mascot')} hint={t('prefs.mascotHint')}>
+      <Row label={t('prefs.mascot')} hint={assistantOn ? `${t('prefs.mascotHint')} ${t('prefs.mascotAssistant')}` : t('prefs.mascotHint')}>
         <Seg
           options={CHOICES.mascot}
           value={p.mascot}

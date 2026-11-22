@@ -7,7 +7,7 @@
 import type { ComponentChildren, CSSProperties } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { t } from './i18n'
-import { mascotMoves, onPrefs, prefs, reducedMotion } from './prefs'
+import { brandMark, mascotMoves, onPrefs, prefs, reducedMotion } from './prefs'
 
 /** Whether animations are reduced now (read at each use: the preference can change at any time). */
 export const RM = (): boolean => reducedMotion()
@@ -337,23 +337,27 @@ function wpick(a: Array<[string, number]>): string {
   return a[0]![0]
 }
 
-/** How the mascot shows now: re-rendered when the preferences or the system change. */
-function useMascot(): 'moving' | 'still' | 'hidden' {
-  const read = (): 'moving' | 'still' | 'hidden' => (prefs().mascot === 'hidden' ? 'hidden' : mascotMoves() ? 'moving' : 'still')
+/** The mark beside Evokai now: re-rendered when the preferences, the system or the assistant change. */
+function useBrandMark(assistantActive: boolean): 'logo' | 'still' | 'moving' {
+  const read = () => brandMark(prefs(), assistantActive, reducedMotion())
   const [m, setM] = useState(read)
-  useEffect(() => onPrefs(() => setM(read())), [])
+  useEffect(() => {
+    setM(read())
+    return onPrefs(() => setM(read()))
+  }, [assistantActive])
   return m
 }
 
-export function Familiar() {
-  const mode = useMascot()
+/**
+ * The mark beside Evokai in the sidebar header: the logo, or the small mage the person chose in Preferences (its idle
+ * moves and, now and then, a spell). Always the logo while the console assistant is active.
+ */
+export function BrandMark({ assistantActive }: { assistantActive: boolean }) {
+  const mode = useBrandMark(assistantActive)
   const img = useRef<HTMLImageElement>(null)
   const st = useRef({ t: 0 as ReturnType<typeof setTimeout> | 0, mode: 'idle', cur: '', spellAt: 0 })
   useEffect(() => {
-    if (mode !== 'moving') {
-      if (img.current) img.current.src = `${FX}still-128.png`
-      return
-    }
+    if (mode !== 'moving') return
     const s = st.current
     const gap = () => Date.now() + 25000 + Math.random() * 20000
     s.spellAt = gap()
@@ -382,17 +386,14 @@ export function Familiar() {
       if (s.mode === 'idle' && Date.now() >= s.spellAt - 500) spell()
       else idle()
     }
-    const spell = (k?: string) => {
+    const spell = () => {
       clearTimeout(s.t)
       const ks = Object.keys(F_SPELL)
-      const name = k ?? ks[Math.floor(Math.random() * ks.length)]!
+      const name = ks[Math.floor(Math.random() * ks.length)]!
       s.mode = 'spell'
       s.spellAt = gap()
       show(`${FX}${name}-128.webp${bust()}`)
       s.t = setTimeout(idle, F_SPELL[name]! + 80)
-    }
-    castFamiliar = () => {
-      if (s.mode !== 'spell') spell()
     }
     const vis = () => (document.hidden ? clearTimeout(s.t) : idle())
     document.addEventListener('visibilitychange', vis)
@@ -400,17 +401,10 @@ export function Familiar() {
     return () => {
       clearTimeout(s.t)
       document.removeEventListener('visibilitychange', vis)
-      castFamiliar = () => {}
     }
   }, [mode])
-  if (mode === 'hidden') return null
-  return (
-    <button class="familiar" type="button" title={mode === 'moving' ? t('shell.mascotTitle') : t('shell.mascotStillTitle')} aria-label={t('shell.mascotLabel')} onClick={() => castFamiliar()}>
-      <img ref={img} alt="" width={104} height={104} src={FX + (mode === 'moving' ? 'idle-blink-128.webp' : 'still-128.png')} />
-    </button>
-  )
+  if (mode === 'logo') return <img src={HAT} alt="" />
+  return <img ref={img} class="bmage" alt="" width={44} height={44} src={FX + (mode === 'moving' ? 'idle-blink-128.webp' : 'still-128.png')} />
 }
-
-let castFamiliar: () => void = () => {}
 
 export const HAT = 'brand/hat.png'
