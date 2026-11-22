@@ -6824,7 +6824,7 @@
         ]
       },
       "patch": {
-        "description": "Change caps, origins, models, storage mode or the default voice engine (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: The application is gone.\n    BadRequest: A system application kept longer than 30 days (400 ``system_ttl``).",
+        "description": "Change caps, origins, models, storage mode or the default voice engine (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: The application is gone.\n    BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its\n        audit log kept less (400 ``system_audit_ttl``).",
         "operationId": "patch_application_agent_v1_admin_application_patch",
         "requestBody": {
           "content": {

@@ -513,7 +513,8 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: The application is gone.
-         *         BadRequest: A system application kept longer than 30 days (400 ``system_ttl``).
+         *         BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its
+         *             audit log kept less (400 ``system_audit_ttl``).
          */
         patch: operations["patch_application_agent_v1_admin_application_patch"];
         trace?: never;
