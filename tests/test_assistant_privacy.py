@@ -377,3 +377,35 @@ async def test_first_use_notice_is_accepted_once_per_login(env: Env) -> None:
     # Another login has not accepted.
     _sign_in(env, ids["bob"], "bob", {SLUG: "operator"})
     assert (await env.client.get(url, headers=h)).json()["accepted"] is False
+
+
+def test_online_voice_only_when_data_protection_allows_processors_outside_the_eu() -> None:
+    from types import SimpleNamespace
+
+    from evokai.assistant.privacy import online_voice_allowed
+
+    def app(dp: dict | None = None, residency: dict | None = None) -> SimpleNamespace:
+        return SimpleNamespace(data_protection=dp, residency=residency)
+
+    assert online_voice_allowed(app()) is True
+    assert online_voice_allowed(None) is False
+    assert online_voice_allowed(app({"residency": {"geographies": ["eu"]}})) is False
+    assert online_voice_allowed(app({"residency": {"countries": ["IT", "DE"]}})) is False
+    assert online_voice_allowed(app({"residency": {"geographies": ["eu", "us"]}})) is True
+    assert online_voice_allowed(app({"jurisdiction": ["eu"]})) is False
+    assert online_voice_allowed(app({"retention": "zero_retention"})) is False
+    assert online_voice_allowed(app({"browser": {"online_voices": False}})) is False
+    assert online_voice_allowed(app({"browser": {"online_voices": True}})) is True
+    assert online_voice_allowed(app(residency={"model_regions": ["eu"]})) is False
+    assert online_voice_allowed(app(residency={"model_regions": ["global"]})) is True
+
+
+async def test_privacy_route_says_which_voice(env: Env) -> None:
+    ids = await _two_people(env)
+    _sign_in(env, ids["alice"], "alice", {SLUG: "viewer"})
+    url = "/agent/v1/console/assistant/privacy"
+    assert (await env.client.get(url, headers=_on(ids["app"]))).json()["voice"] == "online"
+    await env.svc.store.applications.update(
+        ids["app"], data_protection={"residency": {"geographies": ["eu"]}}
+    )
+    assert (await env.client.get(url, headers=_on(ids["app"]))).json()["voice"] == "device"

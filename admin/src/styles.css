@@ -746,6 +746,12 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .assistant-off{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center}
 .assistant-off h3{font:600 17px var(--disp);margin:6px 0 0}
 .assistant-off .hint{max-width:30ch}
+.assistant-notice{flex:1;display:flex;flex-direction:column;gap:10px;padding:16px 20px;overflow:auto}
+.assistant-notice h3{font:600 15px var(--disp);margin:8px 0 0}
+.assistant-notice .btn{align-self:flex-start;margin-top:6px}
+.assistant-about{margin:4px 0 8px;font-size:12.5px;line-height:1.5;color:var(--mu)}
+.assistant-about p{margin:4px 0}
+.viewed{border-left:3px solid var(--warn);padding-left:8px}
 .mascot{display:block;position:relative}
 .mascot.live canvas{position:absolute;inset:0}
 @media (max-width:640px){.assistant-panel{inset:0;width:auto;border-radius:0;border:0}}

@@ -596,7 +596,10 @@ export interface ParsedSkill {
 export interface AdminConversation {
   id: string
   subject: string
-  title: string
+  /** Null for another person's conversation with the console assistant (an owner's list shows no content). */
+  title: string | null
+  /** On the assistant's system application: whether it is the caller's own conversation. */
+  own?: boolean
   agent: string
   agentVersion: string
   status: string
