@@ -68,7 +68,9 @@ def actor_of(who: AppPrincipal | ConsoleLogin | None) -> tuple[str, str, str | N
     if isinstance(who, ConsoleLogin):
         kind = {"op": "operator_key", "adm": "admin_key", "sso": "sso"}.get(who.kind, who.kind)
         return who.actor, kind, "owner" if who.kind != "sso" else None
-    kind = "console" if who.console else "admin_key" if who.kind == "adm" else "server_key"
+    kind = who.via or (
+        "console" if who.console else "admin_key" if who.kind == "adm" else "server_key"
+    )
     return who.actor or f"key:{who.key_id[:8]}", kind, who.role
 
 

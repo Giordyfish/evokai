@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from evokai.assistant import delegation
 from evokai.core.errors import AppError, Forbidden, NotFound, Unauthorized
 from evokai.identity import console
 from evokai.identity.auth import bearer
@@ -74,6 +75,21 @@ async def _console(request: Request) -> AppPrincipal | None:
     )
 
 
+async def _delegated(request: Request, token: str) -> AppPrincipal:
+    """The console assistant's delegation token: the live login's rights, checked like the console.
+
+    An expired or forged token, or one whose login ended, is refused (401); a role that does not
+    allow the route is refused (403 ``role``).
+
+    Returns:
+        The principal.
+    """
+    svc = services(request)
+    who = await delegation.principal(svc, token)
+    authorize(request, who.role, svc.settings.base_path)
+    return who
+
+
 async def console_login(request: Request) -> console.ConsoleLogin:
     """The console login of a request (cookie and CSRF header), still backed by a live key.
 
@@ -116,6 +132,8 @@ async def server_app(request: Request) -> AppPrincipal:
         if (c := await _console(request)) is not None:
             return c
         raise Unauthorized()
+    if delegation.is_delegation(token):
+        return await _delegated(request, token)
     return await services(request).auth.application(token)
 
 
@@ -133,6 +151,8 @@ async def admin_app(request: Request) -> AppPrincipal:
         if (c := await _console(request)) is not None:
             return c
         raise Unauthorized()
+    if delegation.is_delegation(token):
+        return await _delegated(request, token)
     return await services(request).auth.application(token, admin=True)
 
 
