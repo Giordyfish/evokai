@@ -655,6 +655,9 @@ class SessionRepository(_Repo):
     async def purge_expired(self, now: datetime | None = None) -> int:
         """Delete conversations past their application's time to live, for good.
 
+        The time to live counts from the last message, and for a system application from the
+        conversation's start.
+
         Messages, summaries, events, turns, pending actions, threads and the conversation go; usage
         records stay (budgets keep counting) without their link to the conversation or turn; bug
         reports lose the link too.
@@ -671,11 +674,15 @@ class SessionRepository(_Repo):
                         m.Application.id,
                         m.Application.conversation_ttl_days,
                         m.Application.storage_mode,
+                        m.Application.system,
                     ).where(m.Application.conversation_ttl_days.is_not(None))
                 )
             ).all()
-        for app_id, ttl, app_mode in apps:
+        for app_id, ttl, app_mode, system in apps:
             cutoff = now - timedelta(days=int(ttl or 0))
+            # A system application's conversations (the console assistant's) go that many days
+            # after they started, however long they are resumed: what was said is kept no longer.
+            since = m.Session.created_at if system else m.Session.updated_at
             while True:
                 async with self.db.session() as s:
                     ids = list(
@@ -685,7 +692,7 @@ class SessionRepository(_Repo):
                                 .select(m.Session.id)
                                 .where(
                                     m.Session.application_id == app_id,
-                                    m.Session.updated_at <= cutoff,
+                                    since <= cutoff,
                                     _stored_here(str(app_mode or "evokai")),
                                 )
                                 .limit(500)

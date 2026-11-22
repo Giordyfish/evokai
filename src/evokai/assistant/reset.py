@@ -21,7 +21,9 @@ import sqlalchemy as sa
 
 from evokai.agents.skills import skills_in
 from evokai.assistant import bootstrap as shipped
+from evokai.assistant.activation import MEASURED_KEY
 from evokai.audit import scrub
+from evokai.core.caps import DEFAULT_MONTHLY_USD
 from evokai.db import models as m
 
 if TYPE_CHECKING:
@@ -62,6 +64,53 @@ OWN_WRITES: dict[str, Mapping[str, str] | None] = {
 """Admin routes that change only the system application's own resources (a path parameter, when
 given, must name the assistant's own agent or MCP server). The deployment's voices are not the
 application's: an owner changes them whatever application is selected."""
+
+
+FRESH: dict[str, Any] = {
+    "monthly_cap_usd": DEFAULT_MONTHLY_USD,
+    "daily_cap_usd": None,
+    "currency": "USD",
+    "exchange_rate": None,
+    "caps": None,
+    "conversation_ttl_days": None,
+    "allowed_origins": [],
+    "allowed_models": [],
+    "storage_mode": "evokai",
+    "security": None,
+    "ask_rules": None,
+    "residency": None,
+    "data_protection": None,
+    "security_event_ttl_days": None,
+    "audit_ttl_days": None,
+}
+"""Every application setting as a new application has it: a reset sets them all back before the
+shipped definition sets its own (a test keeps this list complete as columns are added)."""
+IDENTITY = frozenset({
+    "id",
+    "slug",
+    "name",
+    "status",
+    "system",
+    "locked",
+    "system_version",
+    "created_at",
+})
+"""Columns that say which application it is, not how it is set."""
+KEPT_DEFAULTS = (shipped.MODEL_KEY, MEASURED_KEY)
+"""Defaults a reset keeps: the activated model and the owner's measured tries (results, not
+settings). Every other default goes, the shipped definition writes its own."""
+
+
+def _settings_changed(app: m.Application) -> dict[str, Any]:
+    """The settings a reset sets back: columns not as a new application has them, and defaults.
+
+    Returns:
+        Their current values, scrubbed like an audit entry (credentials masked).
+    """
+    out = {k: getattr(app, k) for k, v in FRESH.items() if getattr(app, k) != v}
+    out |= {k: v for k, v in (app.defaults or {}).items() if k not in KEPT_DEFAULTS}
+    masked = {k: "***" if v and any(h in k for h in SECRETISH) else v for k, v in out.items()}
+    return scrub(masked)
 
 
 def own_write(path: str, params: Mapping[str, Any]) -> bool:
@@ -168,8 +217,9 @@ async def plan(svc: Services, app_id: str) -> list[dict[str, Any]]:
         if key.revoked_at is None:
             kept = {"kind": key.kind, "prefix": key.prefix, "label": key.label}
             items.append(_item("key", key.id, "delete", kept))
+    app = await store.applications.get(app_id)
     items += [
-        _item("settings", "application", "restore"),
+        _item("settings", "application", "restore", _settings_changed(app) if app else None),
         _item("settings", "grants", "restore"),
         _item("settings", "security", "restore"),
     ]
@@ -205,6 +255,11 @@ async def reset(svc: Services, app_id: str, model: str | None) -> list[dict[str,
             await store.connections.delete_app(app_id, name)
         elif kind == "capability_credential":
             await store.capability_credentials.delete(app_id, name)
+    # Every setting back to a new application's, keeping the activation and the measured tries;
+    # the shipped definition then writes its own.
+    app = await store.applications.get(app_id)
+    kept = {k: v for k, v in ((app.defaults if app else None) or {}).items() if k in KEPT_DEFAULTS}
+    await store.applications.update(app_id, **FRESH, defaults=kept)
     # Agents, MCP servers, skills and keys the definition does not ship go with it.
     await shipped.apply_shipped(svc.store, svc.keyring, svc.settings, model=model)
     return items

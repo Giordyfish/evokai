@@ -429,3 +429,37 @@ async def test_a_new_inspection_shows_the_notice_again(env: Env) -> None:
     assert body["inspections"][0]["at"].endswith("+00:00")
     await env.client.post(url, json={"version": 1}, headers=_on(ids["app"]))
     assert (await env.client.get(url, headers=_on(ids["app"]))).json()["unseen"] == 0
+
+
+async def test_system_app_audit_outlives_its_conversations(env: Env) -> None:
+    app_id = await _system(env)
+    await env.svc.store.applications.update(app_id, locked=False)
+    owner = await _user(env, "olga", {SLUG: "owner"})
+    _sign_in(env, owner, "olga", {SLUG: "owner"})
+    url = "/agent/v1/admin/application"
+    r = await env.client.patch(url, json={"audit_ttl_days": 1}, headers=_on(app_id))
+    assert r.status_code == 400 and r.json()["error"] == "system_audit_ttl", r.text
+    r = await env.client.patch(url, json={"audit_ttl_days": 30}, headers=_on(app_id))
+    assert r.status_code == 200, r.text
+
+
+async def test_assistant_conversations_go_30_days_after_they_start(env: Env) -> None:
+    import sqlalchemy as sa
+
+    from evokai.db import models as m
+
+    ids = await _two_people(env)
+    old = await _seed(env, env.app_id, "u-other-app", "kept by its own ttl")
+    await env.svc.store.applications.update(env.app_id, conversation_ttl_days=30)
+    started = utcnow() - timedelta(days=31)
+    async with env.svc.db.session() as s:
+        await s.execute(
+            sa
+            .update(m.Session)
+            .where(m.Session.id.in_([ids["a_conv"], old[0]]))
+            .values(created_at=started, updated_at=utcnow())
+        )
+    assert await env.svc.store.sessions.purge_expired() == 1
+    assert not await env.svc.store.sessions.exists(ids["a_conv"])
+    assert await env.svc.store.sessions.exists(ids["b_conv"])
+    assert await env.svc.store.sessions.exists(old[0])

@@ -22,7 +22,7 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   would create another kind (workflows, knowledge bases, other agents, channels, OAuth apps, capability credentials,
   keys, other MCP servers) answers `409 system_app`.
 - **Nothing survives a reset.** `GET /v1/admin/application/reset/preview` lists every item the reset deletes or
-  restores, by kind and name, each deleted item with its definition (never a secret) for the owner to keep; the
+  restores, by kind and name (the application's settings with the values the reset sets back), each deleted item with its definition (never a secret) for the owner to keep; the
   console offers it as a JSON download. `POST /v1/admin/application/reset` `{confirm: <slug>}` deletes exactly those
   items, applies the shipped definition again and locks it. Conversations (they follow their retention), eval and red
   team results, traces and the audit log are not part of the definition and stay. None of these routes is a tool of
@@ -58,8 +58,9 @@ A conversation with the assistant records administrative work: what a person ask
 application it worked on, and which changes the person confirmed. Evokai treats it as that person's record, kept for
 the security and accountability of administrative changes.
 
-- **Retention: 30 days at most.** The system application keeps conversations `conversation_ttl_days` days after their
-  last message, 30 by default and at most (an owner may lower it; a higher value or none answers `400 system_ttl`, and
+- **Retention: 30 days at most.** The system application keeps conversations `conversation_ttl_days` days from when
+  they start (not from their last message: a resumed conversation does not keep older words longer), 30 by default
+  and at most (an owner may lower it; a higher value or none answers `400 system_ttl`, and
   the shipped definition is checked at start). The hourly housekeeping deletes them for good. Within that time the
   author cannot delete them (`409 retention` on `DELETE /v1/conversations/{id}` and on erasing one's own subject), so a
   change made through the assistant stays accountable for as long as the conversation is kept.
@@ -89,7 +90,7 @@ the security and accountability of administrative changes.
 
 The legal basis for keeping these conversations is usually the deployer's legitimate interest in the security and
 accountability of changes to its systems (GDPR art. 6.1.f). That needs a balancing of interests, which is why the
-defaults are narrow: a short retention, no early deletion only within it, nobody but the author reading
+defaults are narrow: a short retention, no early deletion within it, nobody but the author reading
 by default, and every exception written down, audited and shown to the person concerned. A deployer still has to:
 
 - tell the people who use the console what is kept, for how long, why and who may inspect it (GDPR art. 13); the
@@ -100,8 +101,9 @@ by default, and every exception written down, audited and shown to the person co
   adequate information to the worker, and the Garante has taken a restrictive view of keeping metadata of work tools
   for long periods. Keeping the retention short and inspections exceptional is meant to make that assessment easier;
   it does not replace it;
-- keep the assistant's application's audit retention (`audit_ttl_days`) at least as long as its conversations, so
-  the author can see every inspection while the conversation exists.
+- keep the deployment's audit retention (`EVOKAI_AUDIT_TTL_DAYS`) at 30 days or more, or set the assistant's
+  application's `audit_ttl_days` (it refuses less than 30, `400 system_audit_ttl`), so the author sees every
+  inspection while the conversation exists.
 
 ## Activation and the model
 

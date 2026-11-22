@@ -9,6 +9,7 @@ const preview: ResetPreview = {
     { kind: 'agent', name: 'assistant', action: 'restore' },
     { kind: 'prompt', name: 'extra', action: 'delete', item: { text: 'Say hello.' } },
     { kind: 'workflow', name: 'flow', action: 'delete', item: { steps: [] } },
+    { kind: 'settings', name: 'application', action: 'restore', item: { locale: 'it', eval_credential: '***' } },
     { kind: 'settings', name: 'grants', action: 'restore' },
   ],
 }
@@ -22,6 +23,7 @@ describe('the reset preview', () => {
     expect(data.deleted).toEqual(deleted(preview))
     expect(data.deleted.map((i: { name: string }) => i.name)).toEqual(['extra', 'flow'])
     expect(data.deleted[0].item.text).toBe('Say hello.')
+    expect(data.settings).toEqual({ locale: 'it', eval_credential: '***' })
   })
   it('needs the typed slug', () => {
     expect(slugTyped('', 'evokai-assistant')).toBe(false)

@@ -279,7 +279,8 @@ async def patch_application(
 
     Raises:
         NotFound: The application is gone.
-        BadRequest: A system application kept longer than 30 days (400 ``system_ttl``).
+        BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its
+            audit log kept less (400 ``system_audit_ttl``).
     """
     before = await get_application(svc, a)
     fields = body.model_dump(exclude_unset=True)
@@ -292,6 +293,14 @@ async def patch_application(
         raise BadRequest(
             f"A system application keeps conversations {MAX_TTL_DAYS} days at most.",
             code="system_ttl",
+        )
+    audit_ttl = fields.get("audit_ttl_days")
+    if current.system and audit_ttl is not None and audit_ttl < MAX_TTL_DAYS:
+        # Inspections of the assistant's conversations live in the audit log: they must outlive
+        # the conversations, so their authors can see them.
+        raise BadRequest(
+            f"A system application keeps its audit log {MAX_TTL_DAYS} days at least.",
+            code="system_audit_ttl",
         )
     if "residency" in fields:
         fields["residency"] = body.residency.stored() if body.residency else None

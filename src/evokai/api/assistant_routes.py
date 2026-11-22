@@ -150,7 +150,7 @@ class Try(BaseModel):
     model: str = Field(min_length=3, max_length=200, pattern=MODEL_ID)
 
 
-async def _owned_assistant(svc: Services, a: AppPrincipal) -> Any:
+async def _owned_assistant(svc: Services, a: AppPrincipal, what: str = "activates") -> Any:
     """The assistant's system application, when the caller acts on it as a person.
 
     Returns:
@@ -162,14 +162,12 @@ async def _owned_assistant(svc: Services, a: AppPrincipal) -> Any:
         NotFound: The assistant is off.
     """
     if a.via:
-        raise Forbidden("A person activates the assistant in the console.", code="person")
+        raise Forbidden(f"A person {what} the assistant in the console.", code="person")
     app = await activation.system_app(svc)
     if app is None:
         raise NotFound("The assistant is off in this deployment.", code="assistant_off")
     if a.application_id != app.id:
-        raise Forbidden(
-            "Activate the assistant from its own application, as its owner.", code="system_app"
-        )
+        raise Forbidden("Select the assistant's own application, as its owner.", code="system_app")
     return app
 
 
@@ -315,7 +313,7 @@ async def inspect_conversation(
     Raises:
         NotFound: The assistant is off, or no such conversation.
     """
-    app = await _owned_assistant(svc, a)
+    app = await _owned_assistant(svc, a, "inspects the conversations of")
     subject = await conversation_subject(svc, app.id, conversation_id)
     if subject is None:
         raise NotFound()

@@ -184,3 +184,47 @@ async def test_reset_export_contains_the_deleted_items(env: Env) -> None:
     assert items["mcp_server", "extra-mcp"]["item"]["url"] == "https://mcp.example/mcp"
     assert items["skill", "extra-skill"]["item"]["body"] == "Body"
     assert items["agent", "extra-agent"]["item"]["name"] == "extra-agent"
+
+
+async def test_reset_restores_the_settings_an_owner_changed(env: Env) -> None:
+    app_id = await _system(env)
+    await _owner(env)
+    h = _on(app_id)
+    await env.svc.store.applications.update(app_id, locked=False)
+    changes = {
+        "allowed_origins": ["https://elsewhere.example"],
+        "data_protection": {"residency": {"geographies": ["eu"]}},
+        "audit_ttl_days": 60,
+        "locale": "it",
+    }
+    r = await env.client.patch("/agent/v1/admin/application", json=changes, headers=h)
+    assert r.status_code == 200, r.text
+    app = await env.svc.store.applications.get(app_id)
+    assert app is not None
+    extra = {"assistant_model": "function:primary", "eval_credential": "x"}
+    await env.svc.store.applications.update(app_id, defaults={**(app.defaults or {}), **extra})
+    preview = (await env.client.get(PREVIEW, headers=h)).json()["items"]
+    settings = next(i for i in preview if (i["kind"], i["name"]) == ("settings", "application"))
+    assert settings["action"] == "restore"
+    assert {"allowed_origins", "data_protection", "audit_ttl_days", "locale"} <= set(
+        settings["item"]
+    )
+    assert settings["item"]["eval_credential"] == "***"
+    r = await env.client.post(RESET, json={"confirm": SLUG}, headers=h)
+    assert r.status_code == 200, r.text
+    app = await env.svc.store.applications.get(app_id)
+    assert app is not None and app.locked
+    assert app.allowed_origins == [] and app.data_protection is None
+    assert app.audit_ttl_days is None
+    assert "locale" not in (app.defaults or {}) and "eval_credential" not in (app.defaults or {})
+    # The activated model stays: a reset brings back the definition, not an inactive assistant.
+    assert (app.defaults or {}).get("assistant_model") == "function:primary"
+    assert app.conversation_ttl_days == 30
+
+
+def test_every_application_setting_is_restored_by_a_reset() -> None:
+    from evokai.assistant.reset import FRESH, IDENTITY
+    from evokai.db import models as m
+
+    columns = {c.key for c in m.Application.__table__.columns}
+    assert columns == set(FRESH) | IDENTITY | {"defaults"}, columns ^ (set(FRESH) | IDENTITY)

@@ -74,8 +74,8 @@ The verdict:
   older or smaller models well below (o4-mini 56.9, GPT-4.1 54.7, GPT-4.1-mini 53.0).
 - **τ²-bench 50 as a floor for a medium agent**: below it a model fails more than half of such tasks.
 
-Benchmarks move and their settings differ (the reasoning effort and the benchmark version are recorded with each
-result); the estimate is a starting point to pick models to try, not a substitute for an agent's own evals
+Benchmarks move and their settings differ: the reasoning effort and the benchmark version are recorded with each
+result, and the profiles mix results of τ²-bench 0.1.3 and 1.0.1, which are not strictly comparable; the estimate is a starting point to pick models to try, not a substitute for an agent's own evals
 ([evals](evals.md)).
 
 ### Keeping the profiles current
