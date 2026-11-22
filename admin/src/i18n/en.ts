@@ -2780,6 +2780,14 @@ export const en = {
   "assistant.trialDone": "Done: the numbers are in the list",
   "assistant.trialEnded": "Ended: {status}",
   "assistant.trialBudget": "{pct}% of the eval budget used",
+  "assistant.panelTitle": "Evokai assistant",
+  "assistant.open": "Assistant",
+  "assistant.openLabel": "Open the Evokai assistant",
+  "assistant.offTitle": "The assistant is not active yet",
+  "assistant.offText": "It runs on a model an owner picks, after reading what the assistant may and may not do. Until then it stays off.",
+  "assistant.offActivate": "Choose its model",
+  "assistant.offAskOwner": "Ask an owner of the assistant's application to choose its model.",
+  "assistant.pickApp": "Open an application: the assistant works on the application you are looking at.",
   // (new sections above this line)
 } satisfies Record<string, string | Plural>
 

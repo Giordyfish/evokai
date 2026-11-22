@@ -355,6 +355,8 @@ async def test_a_viewer_is_refused_on_every_change(env: Env, idp: FakeIdp) -> No
             continue  # an outside system's signed webhook or channel delivery, not a console route
         if path == "/agent/v1/console/me/preferences":
             continue  # the viewer's own console preferences, not the deployment's
+        if path == "/agent/v1/console/assistant/session":
+            continue  # the viewer's own assistant session: it acts with the viewer's role
         for method in set(operations) - {"get", "head"}:
             r = await env.client.request(method.upper(), _fill(path), json={}, headers=_app(env))
             assert r.status_code in {401, 403}, (method, path, r.status_code, r.text)

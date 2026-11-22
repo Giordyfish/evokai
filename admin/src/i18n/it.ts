@@ -2778,5 +2778,13 @@ export const it: Messages = {
   "assistant.trialDone": "Fatto: i valori sono nell'elenco",
   "assistant.trialEnded": "Terminata: {status}",
   "assistant.trialBudget": "{pct}% del budget degli evals usato",
+  "assistant.panelTitle": "Assistente di Evokai",
+  "assistant.open": "Assistente",
+  "assistant.openLabel": "Apri l'assistente di Evokai",
+  "assistant.offTitle": "L'assistente non è ancora attivo",
+  "assistant.offText": "Funziona con un modello scelto da un owner, dopo aver letto cosa l'assistente può e non può fare. Fino ad allora resta spento.",
+  "assistant.offActivate": "Scegli il modello",
+  "assistant.offAskOwner": "Chiedi a un owner dell'applicazione dell'assistente di sceglierne il modello.",
+  "assistant.pickApp": "Apri un'applicazione: l'assistente lavora sull'applicazione che stai guardando.",
   // (new sections above this line)
 }

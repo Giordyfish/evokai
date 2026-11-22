@@ -2801,6 +2801,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/console/assistant/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assistant Session
+         * @description A session token for the console assistant, acting on the selected application.
+         *
+         *     It needs a console login (the cookie, its header and the application it acts on): its
+         *     forwarded credential is a delegation token for that application with the login's role, which
+         *     the admin MCP server checks against the live login on every call. The session belongs to the
+         *     assistant's system application, for the subject ``console:<login>``, with browser speech.
+         *
+         *     Returns:
+         *         What minting a session token returns, and applicationId (the assistant's).
+         *
+         *     Raises:
+         *         Forbidden: A key or the assistant itself instead of a console login (``console_required``).
+         *         NotFound: The assistant is off.
+         */
+        post: operations["assistant_session_agent_v1_console_assistant_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/console/audit": {
         parameters: {
             query?: never;
@@ -5935,6 +5967,14 @@ export interface components {
              * @enum {string}
              */
             decision: "approve" | "reject";
+        };
+        /**
+         * SessionBody
+         * @description The conversation to continue (a token refresh); omitted = a new one.
+         */
+        SessionBody: {
+            /** Conversationid */
+            conversationId?: string | null;
         };
         /**
          * SkillBody
@@ -10398,6 +10438,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    assistant_session_agent_v1_console_assistant_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SessionBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -287,6 +287,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(server_routes.router)
     root.include_router(admin_routes.router)
     root.include_router(assistant_routes.router)
+    root.include_router(assistant_routes.console)
     root.include_router(grants_routes.router)
     root.include_router(ask_routes.router)
     root.include_router(capability_routes.router)

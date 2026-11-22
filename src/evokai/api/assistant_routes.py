@@ -13,10 +13,13 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from evokai import audit
-from evokai.api.deps import admin_app, services
+from evokai.api.deps import admin_app, console_login, services
+from evokai.api.server_routes import TokenRequest, mint
 from evokai.assistant import activation
 from evokai.assistant import bootstrap as shipped
+from evokai.assistant.delegation import mint_delegation
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
+from evokai.identity.console import ConsoleLogin
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
 
@@ -217,3 +220,65 @@ async def try_assistant_model(body: Try, svc: Svc, a: Admin) -> dict[str, Any]:
         raise Conflict("A try of the assistant is going.", code="try_running")
     run = await activation.start_trial(svc, app, model, a.key_id)
     return {"runId": run.id}
+
+
+# ── the console's assistant session ─────────────────────────────────────────────────────────────
+
+console = APIRouter(prefix="/v1/console", tags=["console"])
+
+
+class SessionBody(BaseModel):
+    """The conversation to continue (a token refresh); omitted = a new one."""
+
+    conversationId: str | None = Field(default=None, max_length=64)
+
+
+def _login_id(login: ConsoleLogin) -> str:
+    return {"sso": login.user_id, "adm": login.key_id}.get(login.kind) or "operator"
+
+
+@console.post("/assistant/session")
+async def assistant_session(
+    svc: Svc, a: Admin, request: Request, body: SessionBody | None = None
+) -> dict[str, Any]:
+    """A session token for the console assistant, acting on the selected application.
+
+    It needs a console login (the cookie, its header and the application it acts on): its
+    forwarded credential is a delegation token for that application with the login's role, which
+    the admin MCP server checks against the live login on every call. The session belongs to the
+    assistant's system application, for the subject ``console:<login>``, with browser speech.
+
+    Returns:
+        What minting a session token returns, and applicationId (the assistant's).
+
+    Raises:
+        Forbidden: A key or the assistant itself instead of a console login (``console_required``).
+        NotFound: The assistant is off.
+    """
+    if not a.console or a.via:
+        raise Forbidden("The assistant is opened from the console.", code="console_required")
+    login = await console_login(request)
+    system = await activation.system_app(svc)
+    if system is None:
+        raise NotFound("The assistant is off in this deployment.", code="assistant_off")
+    credential = mint_delegation(
+        svc.keyring,
+        login,
+        a.application_id,
+        a.role,  # ty: ignore[invalid-argument-type]
+        ttl=svc.settings.session_token_max_ttl,
+    )
+    token = TokenRequest(
+        subject=f"console:{_login_id(login)}",
+        agent=shipped.AGENT,
+        conversationId=body.conversationId if body else None,
+        forwardCredential=credential,
+        voiceEngine="browser",
+        ttlSeconds=svc.settings.session_token_max_ttl,
+        tags=["evokai:console"],
+    )
+    who = AppPrincipal(
+        application_id=system.id, kind="srv", key_id="console-assistant", actor=a.actor
+    )
+    minted = await mint(token, svc, who)
+    return {**minted, "applicationId": system.id}

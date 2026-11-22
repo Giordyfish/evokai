@@ -44,8 +44,10 @@ READ_ONLY_POSTS: frozenset[str] = frozenset({
     "/v1/console/skills/parse",
     "/v1/admin/knowledge/{name}/search",
     "/v1/admin/workflows/validate",
+    "/v1/console/assistant/session",
 })
-"""POST routes that change nothing (they parse what they are sent)."""
+"""POST routes that change nothing of the application (they parse what they are sent, or open the
+console assistant's own session, which acts with the caller's role)."""
 
 
 def at_least(role: str | None, needed: str) -> bool:

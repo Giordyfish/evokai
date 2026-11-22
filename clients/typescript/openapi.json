@@ -4480,6 +4480,25 @@
         "title": "ServerDecisionBody",
         "type": "object"
       },
+      "SessionBody": {
+        "description": "The conversation to continue (a token refresh); omitted = a new one.",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          }
+        },
+        "title": "SessionBody",
+        "type": "object"
+      },
       "SkillBody": {
         "description": "A skill: its description, the body of SKILL.md and, optionally, its files.",
         "properties": {
@@ -12116,6 +12135,57 @@
           }
         },
         "summary": "Console Applications",
+        "tags": [
+          "console"
+        ]
+      }
+    },
+    "/agent/v1/console/assistant/session": {
+      "post": {
+        "description": "A session token for the console assistant, acting on the selected application.\n\nIt needs a console login (the cookie, its header and the application it acts on): its\nforwarded credential is a delegation token for that application with the login's role, which\nthe admin MCP server checks against the live login on every call. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.",
+        "operationId": "assistant_session_agent_v1_console_assistant_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant Session Agent V1 Console Assistant Session Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Session",
         "tags": [
           "console"
         ]

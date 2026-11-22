@@ -6,6 +6,7 @@
 import { render, type VNode } from 'preact'
 
 import type { CreateVoiceOptions, EvokaiSession, FetchLike, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
+import { type ChatState, chatState, fromEvent } from './chatstate'
 import { Ui, defaultFormat, type UiContext, type ValueFormatter } from './context'
 import { Controller, type ConversationItem } from './controller'
 import { Panel, useController } from './panel'
@@ -51,6 +52,7 @@ abstract class EvokaiBase extends HTMLBase {
   private icons_: Partial<Record<string, string>> | null = null
   private watched: Controller | null = null
   private unwatch: (() => void) | null = null
+  private state_: ChatState = 'idle'
   private controller_: Controller | null = null
   private configKey = ''
   private theme_: Theme | string | null = null
@@ -162,9 +164,23 @@ abstract class EvokaiBase extends HTMLBase {
     this.watched = null
   }
 
+  /** The conversation's state in one word (`chatstate.ts`): also `data-state` on the host. */
+  get chatState(): ChatState {
+    return this.state_
+  }
+
+  /** A new state: `data-state` on the host and a `statechange` event (`detail: { state, previous }`). */
+  private setState(next: ChatState): void {
+    if (next === this.state_) return
+    const previous = this.state_
+    this.state_ = next
+    this.setAttribute('data-state', next)
+    this.dispatchEvent(new CustomEvent('statechange', { detail: { state: next, previous }, bubbles: true, composed: true }))
+  }
+
   /**
-   * The conversation's state on the host, for your styles: `data-phase`, `data-busy`, `data-voice`, `data-dictating`
-   * (and `data-view` on `<evokai-chat>`).
+   * The conversation's state on the host, for your styles and for slotted content: `data-phase`, `data-busy`,
+   * `data-voice`, `data-dictating`, `data-state` (and `data-view` on `<evokai-chat>`).
    */
   private reflect(c: Controller | null): void {
     if (c === this.watched) return
@@ -178,9 +194,16 @@ abstract class EvokaiBase extends HTMLBase {
       this.toggleAttribute('data-busy', st.session.busy)
       this.toggleAttribute('data-voice', st.voiceOn)
       this.toggleAttribute('data-dictating', st.dictating)
+      this.setState(chatState(this.state_, { phase: st.session.phase, busy: st.session.busy, voiceOn: st.voiceOn, dictating: st.dictating }))
     }
+    if (!this.hasAttribute('data-state')) this.setAttribute('data-state', this.state_)
     put(c.state)
-    this.unwatch = c.subscribe(put)
+    const offState = c.subscribe(put)
+    const offEvents = c.session.on('*', (e: SessionEvent) => this.setState(fromEvent(this.state_, e)))
+    this.unwatch = () => {
+      offState()
+      offEvents()
+    }
   }
 
   attributeChangedCallback(): void {
