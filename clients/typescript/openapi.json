@@ -202,6 +202,14 @@
             "title": "Models",
             "type": "array"
           },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleRef"
+            },
+            "maxItems": 20,
+            "title": "Modules",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2927,6 +2935,49 @@
           }
         },
         "title": "ModerationSettings",
+        "type": "object"
+      },
+      "ModuleRef": {
+        "description": "A prompt module the agent may use (``evokai.agents.modules``), with its defaults.",
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "session": {
+            "default": false,
+            "title": "Session",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ModuleRef",
         "type": "object"
       },
       "NavigateDef": {
@@ -6252,7 +6303,7 @@
         ]
       },
       "put": {
-        "description": "Create or update an agent; a changed definition becomes a new active version.\n\nReturns:\n    version and whether it is new.\n\nRaises:\n    BadRequest: Name mismatch, or a model outside the deployment's allow-list.\n    NotGrantedInAgent: The definition references a model, MCP server, skill, client tool or\n        channel the application is not granted (400 ``not_granted``, with ``problems``).\n    NotFound: The application is gone.\n    AppError: A model outside the application's data residency (400 ``residency``).\n    Forbidden: A console operator changing the agent's security policy (owner only).\n    Conflict: The red team gate blocked this version (409 ``redteam_blocked``).",
+        "description": "Create or update an agent; a changed definition becomes a new active version.\n\nReturns:\n    version and whether it is new.\n\nRaises:\n    BadRequest: Name mismatch, or a model outside the deployment's allow-list.\n    NotGrantedInAgent: The definition references a model, MCP server, skill, client tool or\n        channel the application is not granted (400 ``not_granted``, with ``problems``).\n    NotFound: The application is gone.\n    AppError: A model outside the application's data residency (400 ``residency``).\n    Forbidden: A console operator changing the agent's security policy (owner only).\n    Conflict: The red team gate blocked this version (409 ``redteam_blocked``).\n    BadRequest: A prompt module that does not exist or whose parameters do not fit\n        (``unknown_module``, ``module_params``).",
         "operationId": "put_agent_agent_v1_admin_agents__name__put",
         "parameters": [
           {

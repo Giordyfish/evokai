@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jsonschema import Draft202012Validator
 from pydantic_handlebars import HandlebarsError, check_template_compatibility
 
 from evokai.core.errors import BadRequest
+
+if TYPE_CHECKING:
+    from evokai.agents.definitions import AgentDef
+    from evokai.db.repositories import Store
 
 MAX_PROPERTIES = 20
 """Parameters of a module."""
@@ -215,12 +219,16 @@ def check_module_template(
         raise BadRequest(f"Template: {e}", code="module_template") from e
 
 
-def validate_params(schema: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+def validate_params(
+    schema: dict[str, Any], params: dict[str, Any], *, partial: bool = False
+) -> dict[str, Any]:
     """Fill the defaults of a module's parameters and validate the values.
 
     Args:
         schema: The module's parameter schema.
         params: The values given (agent defaults, a session's choice).
+        partial: Do not require the ``required`` ones (an agent's defaults, which a session
+            token may complete).
 
     Returns:
         The values with the schema's defaults for the ones not given.
@@ -235,6 +243,8 @@ def validate_params(schema: dict[str, Any], params: dict[str, Any]) -> dict[str,
     for name, prop in schema.get("properties", {}).items():
         if name not in full and "default" in prop:
             full[name] = prop["default"]
+    if partial:
+        schema = {k: v for k, v in schema.items() if k != "required"}
     errors = sorted(Draft202012Validator(schema).iter_errors(full), key=lambda e: list(e.path))
     if errors:
         e = errors[0]
@@ -265,3 +275,28 @@ def free_text_params(schema: dict[str, Any], params: dict[str, Any]) -> list[str
             if isinstance(value, str) and value:
                 out.append(value)
     return out
+
+
+async def check_agent_modules(store: Store, application_id: str, agent: AgentDef) -> None:
+    """Check the modules an agent lists, when it is saved.
+
+    Each names an existing application prompt (at its pinned version, if any). A prompt without a
+    parameter schema is a module without parameters; the agent's values must fit the schema
+    (required ones may be left to the session).
+
+    Raises:
+        BadRequest: ``unknown_module`` or ``module_params``.
+    """
+    for ref in agent.modules:
+        row = await store.prompts.get(application_id, ref.name, ref.version)
+        if row is None:
+            at = f" v{ref.version}" if ref.version else ""
+            raise BadRequest(f"Unknown prompt module: {ref.name}{at}.", code="unknown_module")
+        if row.parameters is None:
+            if ref.params:
+                raise BadRequest(f"Module {ref.name} has no parameters.", code="module_params")
+            continue
+        try:
+            validate_params(row.parameters, ref.params, partial=True)
+        except BadRequest as e:
+            raise BadRequest(f"Module {ref.name}: {e.message}", code="module_params") from e

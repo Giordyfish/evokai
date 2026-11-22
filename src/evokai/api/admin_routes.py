@@ -14,7 +14,12 @@ from pydantic import BaseModel, Field
 from evokai import audit
 from evokai.agents import skills as sk
 from evokai.agents.definitions import AgentDef
-from evokai.agents.modules import check_data, check_module_template, check_parameters_schema
+from evokai.agents.modules import (
+    check_agent_modules,
+    check_data,
+    check_module_template,
+    check_parameters_schema,
+)
 from evokai.api.deps import admin_app, services
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
@@ -450,6 +455,8 @@ async def put_agent(
         AppError: A model outside the application's data residency (400 ``residency``).
         Forbidden: A console operator changing the agent's security policy (owner only).
         Conflict: The red team gate blocked this version (409 ``redteam_blocked``).
+        BadRequest: A prompt module that does not exist or whose parameters do not fit
+            (``unknown_module``, ``module_params``).
     """
     if body.name != name:
         raise BadRequest("The name in the path and in the body must be the same.")
@@ -478,6 +485,7 @@ async def put_agent(
     if a.role != "owner" and (before or {}).get("security") != body.security:
         raise Forbidden("Changing an agent's security policy needs the owner role.", code="role")
     await _check_ask_rules(svc, a, body)
+    await check_agent_modules(svc.store, a.application_id, body)
     agent = body.with_version()
     gate, _minimum = gate_of(app)
     existing = await svc.store.agents.version(a.application_id, name, agent.version)

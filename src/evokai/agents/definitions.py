@@ -105,6 +105,21 @@ class PromptRef(BaseModel):
     version: int | None = None
 
 
+class ModuleRef(BaseModel):
+    """A prompt module the agent may use (``evokai.agents.modules``), with its defaults."""
+
+    name: str = Field(min_length=1, max_length=80)
+    """An application prompt; a module when it has a parameter schema."""
+    version: int | None = Field(default=None, ge=1)
+    """None: the latest version when a conversation starts, then pinned for that conversation."""
+    on: bool = True
+    """Whether the module is in the prompt unless a session token switches it."""
+    params: dict[str, Any] = Field(default_factory=dict)
+    """The agent's values for the module's parameters (the schema's defaults fill the rest)."""
+    session: bool = False
+    """Whether a session token may switch the module or change its parameters."""
+
+
 Channel = Literal["browser", "server", "email", "teams", "slack"]
 
 _HASHED_VOICE_RULE = (
@@ -129,6 +144,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "capabilities": {},
     "subagents": [],
     "ask_rules": [],
+    "modules": [],
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -202,7 +218,19 @@ class AgentDef(BaseModel):
     """Rules that make calls of this agent's tools wait for the person's confirmation, on top of
     the deployment's and the application's (in this list the last match wins;
     ``evokai.guard.ask``). They only add confirmations: never lift an ``ask`` of another level."""
+    modules: list[ModuleRef] = Field(default_factory=list, max_length=20)
+    """Prompt modules rendered after the instructions, in this order (``evokai.agents.modules``):
+    each names an application prompt, its default state and parameters, and whether a session
+    token may change them."""
     version: str = ""
+
+    @field_validator("modules")
+    @classmethod
+    def _modules(cls, v: list[ModuleRef]) -> list[ModuleRef]:
+        names = [m.name for m in v]
+        if len(set(names)) != len(names):
+            raise ValueError("each module may be listed only once")
+        return v
 
     @field_validator("handoff_to", "subagents")
     @classmethod
