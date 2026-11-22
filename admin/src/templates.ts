@@ -13,6 +13,17 @@ export const isLegacy = (d: { template_syntax?: string | null } | null | undefin
 export const isLegacyPrompt = (v: { templateSyntax?: string | null } | null | undefined): boolean =>
   !!v && (v.templateSyntax ?? 'legacy') === 'legacy'
 
+/** A label field of the old grammar (`{field}`, `{field|count}`, `{field|map:table}`), as the service refuses it. */
+const OLD_LABEL = /(?<!\{)\{[A-Za-z0-9_.]+(?:\|(?:count|map:[A-Za-z0-9_]+))?\}(?!\})/
+
+/**
+ * Whether an agent's confirm labels still use the old grammar. The console does not edit labels, and the service
+ * refuses a Handlebars save while they do, so the editor says to convert them through the API or the YAML file.
+ */
+export function hasLegacyLabels(d: { confirm_labels?: Record<string, string | string[]> | null }): boolean {
+  return Object.values(d.confirm_labels ?? {}).some((v) => (Array.isArray(v) ? v : [v]).some((x) => OLD_LABEL.test(x)))
+}
+
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 /**

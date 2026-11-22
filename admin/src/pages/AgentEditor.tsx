@@ -18,7 +18,7 @@ import { Loads } from './common'
 import { RulesEditor } from './AskRules'
 import { ParamsForm } from './ModuleParams'
 import { capDescription } from '../capabilityText'
-import { isLegacy, withSyntax } from '../templates'
+import { hasLegacyLabels, isLegacy, withSyntax } from '../templates'
 import { t, tn, type TextKey } from '../i18n'
 
 type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
@@ -394,7 +394,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
         {!isNew && isLegacy(base) ? (
           <p class="hint">
             <Tag tone="warn">{t('tpl.legacy')}</Tag> {t('tpl.legacyHint')}
-            {Object.keys(base.confirm_labels ?? {}).length ? <> {t('tpl.legacyLabels')}</> : null}
+            {hasLegacyLabels(base) ? <> {t('tpl.legacyLabels')}</> : null}
           </p>
         ) : null}
       </Panel>

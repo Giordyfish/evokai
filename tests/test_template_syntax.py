@@ -71,6 +71,20 @@ def test_handlebars_instructions_render_date_and_app() -> None:
     assert _stable(ref, instructions=text) == "Shop Bookshop."
 
 
+async def test_an_empty_referenced_prompt_falls_back_to_the_instructions(env: Env) -> None:
+    # As before: a referenced prompt whose text is empty leaves the inline instructions.
+    await env.svc.store.prompts.put(env.app_id, "empty", "")
+    agent = AgentDef.model_validate({
+        "name": "helper",
+        "instructions": "Inline {{app}}.",
+        "prompt": {"name": "empty"},
+        "model": "f:x",
+        "template_syntax": "handlebars",
+    })
+    resolved = await env.svc.engine._instructions(env.app_id, agent)
+    assert _stable(agent, instructions=resolved) == "Inline Bookshop."
+
+
 def test_handlebars_escape_keeps_literal_braces() -> None:
     values = {"date": "D", "app": "A"}
     assert render_text(r"Write \{{name}} literally on {{date}}.", "handlebars", values) == (

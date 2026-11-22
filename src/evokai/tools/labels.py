@@ -38,6 +38,10 @@ from evokai.i18n import message
 _FIELD = re.compile(r"\{([A-Za-z0-9_.]+)(?:\|(count|map:[A-Za-z0-9_]+))?\}")
 _MAP_TABLE = re.compile(r"(?:\{\{~?|\()\s*map\s+[^\s(){}]+\s+([^\s(){}~]+)")
 """The table argument of each ``map`` call (a mustache or a subexpression)."""
+_BARE_HELPER = re.compile(r"\{\{\{?~?\s*(count|map|if|unless|each|with|lookup|log)\s*~?\}?\}\}")
+"""A helper's name alone: Handlebars calls the helper, never prints the argument of that name."""
+_LOG = re.compile(r"(?:\{\{[#~]?|\()\s*log\b")
+"""The ``log`` helper (not available in labels: it would write the arguments to the log)."""
 
 
 def _value(args: dict[str, Any], path: str) -> Any:
@@ -145,6 +149,17 @@ def check_labels(labels: dict[str, str | list[str]], tables: dict[str, dict[str,
                 deps = extract_dependencies(template, helpers=set(LABEL_HELPERS))
             except HandlebarsError as e:
                 raise BadRequest(f"{where}: {e}", code="label_template") from e
+            if _LOG.search(template):
+                raise BadRequest(
+                    f"{where}: the log helper is not available.", code="label_template"
+                )
+            if bare := _BARE_HELPER.search(template):
+                name = bare[1]
+                raise BadRequest(
+                    f"{where}: {{{{{name}}}}} calls a helper; write {{{{this.{name}}}}} for the "
+                    f"argument {name}.",
+                    code="label_template",
+                )
             for name in deps:
                 # A name that is no longer a field once known as a helper is only ever called.
                 if name not in extract_dependencies(template, helpers={*LABEL_HELPERS, name}):

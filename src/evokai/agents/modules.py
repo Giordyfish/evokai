@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from pydantic_handlebars import (
     HandlebarsEnvironment,
     HandlebarsError,
+    HandlebarsRuntimeError,
     HelperOptions,
     check_template_compatibility,
 )
@@ -65,13 +66,19 @@ LABEL_HELPERS = frozenset({"count", "map", "if", "unless", "each", "with", "look
 """What a confirm label may call."""
 
 
-def _label_count(*args: Any, options: HelperOptions) -> str:  # ruff: ignore[unused-function-argument]
+def _label_count(*args: Any, options: HelperOptions) -> str:
     """``{{count field}}``: the length of a list, 1 for one value.
 
     Returns:
         The count, as text.
+
+    Raises:
+        HandlebarsRuntimeError: Called without a field (a bare {{count}} gets the context), so
+            the template is incomplete.
     """
-    return str(len(args[0])) if args and isinstance(args[0], list) else "1"
+    if not args or args[0] is options.data.get("root"):
+        raise HandlebarsRuntimeError("count needs a field")
+    return str(len(args[0])) if isinstance(args[0], list) else "1"
 
 
 def _label_map(*args: Any, options: HelperOptions) -> str:
@@ -79,8 +86,13 @@ def _label_map(*args: Any, options: HelperOptions) -> str:
 
     Returns:
         The words, joined with commas.
+
+    Raises:
+        HandlebarsRuntimeError: Called without a field and a table (a bare {{map}}).
     """
-    value, table = (*args, None, None)[:2]
+    if len(args) < 2:
+        raise HandlebarsRuntimeError("map needs a field and a table")
+    value, table = args[0], args[1]
     words = (options.data.get("root") or {}).get(LABEL_TABLES, {}).get(str(table), {})
     items = value if isinstance(value, list) else [value]
     return ", ".join(words.get(str(v), str(v)) for v in items)
@@ -91,6 +103,7 @@ LABELS = HandlebarsEnvironment(auto_escape=False, max_output_size=2000, strict=T
 (``evokai.tools.labels``), with ``count`` and ``map``."""
 LABELS.register_helper("count", _label_count)
 LABELS.register_helper("map", _label_map)
+LABELS.unregister_helper("log")  # it would write the call's arguments to the log
 _LEGACY = re.compile(r"\{\{|\}\}|\{(date|app)\}")
 _NESTED_QUANTIFIER = re.compile(r"\([^()]*[*+?}][^()]*\)\s*[*+?{]")
 """A quantified group that holds a quantifier (``(a+)+``): it can backtrack for minutes."""

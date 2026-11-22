@@ -1156,7 +1156,7 @@ export const en = {
   'ag.insHint': 'Sent with every turn. Markdown is fine. A Handlebars template: {{date}} is today, {{app}} the application\'s name, a backslash before {{ writes the braces as they are.',
   'tpl.legacy': 'Legacy syntax',
   'tpl.legacyHint': 'Saved before Handlebars: this version keeps working as it is. A change is saved in Handlebars: write {{date}} and {{app}} instead of single braces.',
-  'tpl.legacyLabels': 'Its confirm labels use the old fields too: in Handlebars they are {{field}}, {{count field}} and {{map field "table"}}.',
+  'tpl.legacyLabels': 'Its confirm labels still use the old fields, and the console does not edit them: convert them through the API or the YAML file first ({{field}}, {{count field}}, {{map field "table"}}), or a change of the instructions is refused.',
   'ag.modelTitle': 'Model and fallbacks',
   'ag.fallback': 'fallback',
   'ag.primary': 'primary',

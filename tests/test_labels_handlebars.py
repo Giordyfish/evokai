@@ -92,6 +92,20 @@ async def test_unknown_table_refused_by_the_api(env: Env) -> None:
     assert r.status_code == 400 and r.json()["error"] == "label_template", r.text
 
 
+def test_an_argument_named_like_a_helper_is_never_shadowed() -> None:
+    # Handlebars calls a helper for a bare {{count}}: the card would say 1 for count=50.
+    with pytest.raises(BadRequest, match=r"this\.count") as e:
+        check_labels({"create": "Create {{count}} items"}, TABLES)
+    assert e.value.code == "label_template"
+    check_labels({"create": "Create {{this.count}} items"}, TABLES)
+    agent = _agent({"create": ["Create {{count}} items", "Create {{this.count}} items"]})
+    assert confirm_label(agent, "create", {"count": 50}) == "Create 50 items"
+    # The log helper would write the arguments to the service's log.
+    with pytest.raises(BadRequest) as e:
+        check_labels({"create": "{{log count}} Create"}, TABLES)
+    assert e.value.code == "label_template"
+
+
 def test_legacy_labels_unchanged() -> None:
     legacy = [
         "Refund {orderIds|count} orders{onlyUnshipped|map:unshipped} as {reason|map:reasons}",

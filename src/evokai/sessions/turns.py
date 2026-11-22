@@ -2468,7 +2468,8 @@ class TurnEngine:
         row = await self.store.prompts.get(application_id, agent.prompt.name, agent.prompt.version)
         if row is None:
             raise ConfigError(f"prompt not found: {agent.prompt.name}")
-        return Instructions(row.text, row.template_syntax)
+        # An empty prompt leaves the inline instructions, as it always did.
+        return Instructions(row.text, row.template_syntax) if row.text else None
 
     async def _skills(
         self, application_id: str, agent: AgentDef, grants: Grants | None = None

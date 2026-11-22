@@ -1154,7 +1154,7 @@ export const it: Messages = {
   'ag.insHint': "Inviato a ogni turno. Il Markdown va bene. È un template Handlebars: {{date}} è la data di oggi, {{app}} il nome dell'applicazione, una barra rovesciata prima di {{ scrive le graffe come sono.",
   'tpl.legacy': 'Sintassi vecchia',
   'tpl.legacyHint': "Salvata prima di Handlebars: questa versione continua a funzionare così com'è. Una modifica si salva in Handlebars: scrivi {{date}} e {{app}} al posto delle graffe singole.",
-  'tpl.legacyLabels': 'Anche le sue etichette di conferma usano i campi vecchi: in Handlebars sono {{field}}, {{count field}} e {{map field "table"}}.',
+  'tpl.legacyLabels': 'Le sue etichette di conferma usano ancora i campi vecchi e la console non le modifica: convertile prima tramite l\'API o il file YAML ({{field}}, {{count field}}, {{map field "table"}}), altrimenti una modifica delle istruzioni viene rifiutata.',
   'ag.modelTitle': 'Modello e fallback',
   'ag.fallback': 'fallback',
   'ag.primary': 'principale',

@@ -49,7 +49,8 @@ confirm_values:
   in the application's language.
 
 When the agent is saved each template is checked: it must parse, call only `count`, `map` and the block helpers, and
-`map` must name a table of `confirm_values` in quotes; otherwise 400 `label_template`.
+`map` must name a table of `confirm_values` in quotes; otherwise 400 `label_template`. A helper's name alone calls the
+helper, so an argument named `count` (or `map`, `if`...) is written `{{this.count}}`, and `{{count}}` is refused.
 
 Workflow approvals still write their `label` with the older grammar (`{field}`, `{field|count}`, `{field|map:table}`,
 [workflows](workflows.md#approvals)).
@@ -77,7 +78,9 @@ What to write instead:
 
 Two saves keep a legacy agent as it is: restoring a stored version from its history, and saving it again with
 `template_syntax: legacy` while its instructions, prompt reference and labels are unchanged (another model, other
-settings), which is what the console and `POST /v1/admin/agents/{name}/switch-model` do. The application YAML is always
+settings), which is what the console and `POST /v1/admin/agents/{name}/switch-model` do. The console does not edit
+confirm labels: while an agent's labels use the old fields, a change of its instructions is refused until the labels
+are converted through the API or the YAML file (the editor says so). The application YAML is always
 Handlebars: a file with old placeholders, or with `template_syntax: legacy`, stops the start-up with a message that
 names the file and the agent or prompt.
 

@@ -63,7 +63,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   brace become single braces. JSON examples need no change. `config/bookshop.yaml` and the examples are converted.
 - Nothing else needs doing: versions already stored stay legacy and keep working, and can still be restored or saved
   with another model. The first change of an agent's or prompt's text through the API or the console is saved in
-  Handlebars. Migration `0032` adds `template_syntax` to prompt versions (existing rows are `legacy`).
+  Handlebars, and is refused while the agent's confirm labels still use the old fields: the console does not edit
+  labels, so convert them through the API or the YAML file first. Migration `0032` adds `template_syntax` to prompt
+  versions (existing rows are `legacy`).
+- Workflow approval labels keep the older grammar: leave them as they are.
 
 ## [0.1.3] - 2026-11-21
 

@@ -1,4 +1,13 @@
-import { isLegacy, isLegacyPrompt, withSyntax } from '../src/templates'
+import { hasLegacyLabels, isLegacy, isLegacyPrompt, withSyntax } from '../src/templates'
+
+describe('legacy labels', () => {
+  it('finds the old label fields the console cannot edit (they block a text change)', () => {
+    expect(hasLegacyLabels({ confirm_labels: { a: ['Run {{x}}', 'Refund {ids|count}'] } })).toBe(true)
+    expect(hasLegacyLabels({ confirm_labels: { a: 'Close {ret.id}' } })).toBe(true)
+    expect(hasLegacyLabels({ confirm_labels: { a: 'Run {{x}} as {"json": 1}' } })).toBe(false)
+    expect(hasLegacyLabels({})).toBe(false)
+  })
+})
 
 describe('template syntax', () => {
   it('marks the versions saved before Handlebars as legacy (the badge)', () => {
