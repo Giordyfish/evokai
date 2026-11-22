@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import Request
 
 from evokai.assistant import delegation
-from evokai.core.errors import AppError, Conflict, Forbidden, NotFound, Unauthorized
+from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
 from evokai.identity import console
 from evokai.identity.auth import bearer
 from evokai.identity.models import AppPrincipal, SessionPrincipal
@@ -90,6 +92,7 @@ async def _delegated(request: Request, token: str) -> AppPrincipal:
 
     Raises:
         Forbidden: A route or a field outside the admin MCP server's allow-list.
+        BadRequest: A body that is not a JSON object.
     """
     svc = services(request)
     who = await delegation.principal(svc, token)
@@ -98,8 +101,13 @@ async def _delegated(request: Request, token: str) -> AppPrincipal:
     if spec is None:
         raise Forbidden("The assistant cannot use this route.", code="assistant_route")
     if spec.fields is not None:
-        body = await request.json() if await request.body() else {}
-        if isinstance(body, dict) and set(body) - set(spec.fields):
+        try:
+            body = json.loads(await request.body() or b"{}")
+        except ValueError:
+            raise BadRequest("Invalid JSON.") from None
+        if not isinstance(body, dict):
+            raise BadRequest("The body is a JSON object.")
+        if set(body) - set(spec.fields):
             raise Forbidden("The assistant cannot change these fields.", code="assistant_field")
     return who
 

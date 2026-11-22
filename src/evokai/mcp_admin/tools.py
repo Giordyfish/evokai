@@ -3,8 +3,9 @@
 A route not listed here is never a tool. Left out on purpose (``tests/test_admin_mcp.py`` asserts
 it): keys, secrets and capability credentials, connections and channels, console users, sign-in
 and the deployment's routes, the security policy and ask rules as changes, the audit log, personal
-data (erase, export, transcripts and trace contents), the configuration export, and the routes that
-unlock or reset a system application.
+data (erase, export, transcripts and trace contents), the configuration export, the routes that
+unlock or reset a system application, and publishing an older version (it could bring back a
+weaker security policy or override the red team gate).
 
 Some changes take only part of their body (``fields``): the server refuses any other field before
 the request reaches the route, and the tool's schema shows only those.
@@ -80,9 +81,6 @@ ADMIN_TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec("DELETE", "/v1/admin/agents/{name}", "delete_agent"),
     ToolSpec("GET", "/v1/admin/agents/{name}/versions", "list_agent_versions"),
     ToolSpec("GET", "/v1/admin/agents/{name}/version-stats", "get_agent_version_stats"),
-    ToolSpec(
-        "POST", "/v1/admin/agents/{agent}/versions/{version}/publish", "publish_agent_version"
-    ),
     ToolSpec("POST", "/v1/admin/agents/{agent}/switch-model", "switch_agent_model"),
     ToolSpec("GET", "/v1/admin/agents/{agent}/model-recommendations", "get_model_recommendations"),
     # Evals and red team.

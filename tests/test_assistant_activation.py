@@ -64,18 +64,15 @@ async def _measured(env: Env, app_id: str, model: str, numbers: dict[str, Any]) 
     await env.svc.store.applications.update(app_id, defaults=defaults)
 
 
-async def _mint(env: Env, app_id: str) -> httpx.Response:
-    return await env.client.post(
-        "/agent/v1/session-tokens",
-        json={"subject": "console:cy", "agent": "assistant"},
-        headers=_on(app_id),
-    )
+async def _mint(env: Env) -> httpx.Response:
+    """A session of the assistant from the console, on the selected application."""
+    return await env.client.post("/agent/v1/console/assistant/session", headers=_on(env.app_id))
 
 
 async def test_inactive_assistant_refuses_sessions(env: Env) -> None:
-    app_id = await _system(env)
+    await _system(env)
     await _console_as(env, {"*": "owner"})
-    r = await _mint(env, app_id)
+    r = await _mint(env)
     assert r.status_code == 409 and r.json()["error"] == "assistant_inactive", r.text
     state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(env.app_id))).json()
     assert state["active"] is False and state["model"] is None
@@ -100,7 +97,7 @@ async def test_activate_recommended_model(env: Env) -> None:
     app = await env.svc.store.applications.get(app_id)
     assert agent is not None and agent.definition["model"] == "function:primary"
     assert app is not None and app.locked
-    r = await _mint(env, app_id)
+    r = await _mint(env)
     assert r.status_code == 200, r.text
 
 

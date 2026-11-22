@@ -18,7 +18,7 @@ The tools are generated from Evokai's OpenAPI, restricted to an explicit allow-l
 | Area | Tools |
 | --- | --- |
 | The application | `get_application`, `update_application` (a subset of the settings, below), `get_health`, `get_usage_summary` |
-| Agents | `list_agents`, `put_agent`, `delete_agent`, `list_agent_versions`, `get_agent_version_stats`, `publish_agent_version`, `switch_agent_model`, `get_model_recommendations` |
+| Agents | `list_agents`, `put_agent`, `delete_agent`, `list_agent_versions`, `get_agent_version_stats`, `switch_agent_model`, `get_model_recommendations` |
 | Evals and red team | `list_eval_cases`, `put_eval_case`, `delete_eval_case`, `list_eval_runs`, `start_eval_run`, `get_eval_run`, `list_redteam_runs`, `start_redteam_run`, `get_redteam_run` |
 | Prompts and skills | `list_prompts`, `put_prompt`, `list_skills`, `get_skill`, `put_skill`, `delete_skill`, `get_skill_file`, `put_skill_file`, `delete_skill_file` |
 | MCP servers | `list_mcp_servers`, `put_mcp_server` (configuration only), `delete_mcp_server`, `list_connectors` |
@@ -28,7 +28,8 @@ The tools are generated from Evokai's OpenAPI, restricted to an explicit allow-l
 Left out on purpose, so no agent can reach them through this server: API keys (create, rotate, revoke), secrets and
 capability credentials, per-user connections and messaging channels, console users and single sign-on, the security
 policy and ask rules as changes, the audit log, personal data (erase, export, transcripts, trace contents), the
-configuration export, and the routes that unlock or reset a system application.
+configuration export, publishing an older agent version (it could bring back a weaker security policy), and the
+routes that unlock or reset a system application.
 
 Some changes take only part of their body; any other field is refused before the request reaches the route:
 
@@ -83,11 +84,11 @@ claude mcp add --transport http evokai-admin https://HOST/agent/mcp/admin \
 }
 ```
 
-A raw request, to check the connection:
+A raw request, to check the connection (with the key in `EVOKAI_ADMIN_KEY`):
 
 ```bash
 curl -s https://HOST/agent/mcp/admin \
-  -H "Authorization: Bearer evk_adm_..." \
+  -H "Authorization: Bearer $EVOKAI_ADMIN_KEY" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```

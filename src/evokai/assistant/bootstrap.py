@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from evokai.agents.bootstrap import bootstrap
+from evokai.agents.definitions import AgentDef
 from evokai.agents.skills import skills_in
 from evokai.core.errors import ConfigError
 
@@ -105,7 +106,9 @@ async def apply_shipped(
     Returns:
         The application id.
     """
-    data = rendered(path, settings, model)
+    # The model is set after the bootstrap: the bootstrap reads ${...} in its file as environment
+    # variables, and a model id comes from a request.
+    data = rendered(path, settings, None)
     # The skills are stored as they are: the bootstrap reads ${...} as environment variables, and
     # the documentation quotes such variables (their values must never end up in a skill).
     skills = skills_in(path.parent / "skills")
@@ -133,12 +136,52 @@ async def apply_shipped(
     for agent in await store.agents.active_all(app_id):
         if agent.name not in shipped_agents:
             await store.agents.deactivate(app_id, agent.name)
+    if model:
+        await set_model(store, app_id, model, by="config")
+    # A system application has no keys: one made while it was unlocked does not survive.
+    for key in await store.applications.keys(app_id):
+        if key.revoked_at is None:
+            await store.applications.revoke_key(app_id, key.id)
     app = await store.applications.get(app_id)
     defaults = {k: v for k, v in ((app.defaults if app else None) or {}).items() if k != UPDATE_KEY}
     await store.applications.update(
         app_id, system=True, locked=True, system_version=shipped_hash(path), defaults=defaults
     )
     return app_id
+
+
+async def set_model(store: Store, app_id: str, model: str, *, by: str) -> None:
+    """Save a version of the assistant's agent with this model (the rest of it unchanged)."""
+    record = await store.agents.active(app_id, AGENT)
+    if record is None:
+        return
+    data = {**record.definition, "model": model}
+    data.pop("version", None)
+    agent = AgentDef.model_validate(data).with_version()
+    await store.agents.put(app_id, agent.name, agent.version, agent.content(), created_by=by[:80])
+
+
+async def forwards_only_to_admin_mcp(store: Store, settings: Settings, app_id: str) -> bool:
+    """Whether the assistant forwards the person's credential only to this service's admin MCP.
+
+    The active agent must use only ``evokai-admin``, which must be ``forward_user`` at
+    ``EVOKAI_INTERNAL_URL/mcp/admin``, and that address must be HTTPS or this machine.
+
+    Returns:
+        True when a delegation token may be handed to the assistant.
+    """
+    from urllib.parse import urlsplit
+
+    record = await store.agents.active(app_id, AGENT)
+    if record is None or list(record.definition.get("mcp_servers") or []) != [MCP_SERVER]:
+        return False
+    servers = {s.name: s for s in await store.mcp_servers.all(app_id)}
+    server = servers.get(MCP_SERVER)
+    target = f"{settings.internal_base}/mcp/admin"
+    if server is None or server.auth != "forward_user" or server.url != target:
+        return False
+    parts = urlsplit(target)
+    return parts.scheme == "https" or parts.hostname in {"127.0.0.1", "localhost", "::1"}
 
 
 async def ensure_assistant(

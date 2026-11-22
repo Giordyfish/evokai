@@ -105,10 +105,14 @@ async def reset_application(svc: Svc, a: Admin, request: Request) -> dict[str, b
 # ── the assistant: state, activation and tries ──────────────────────────────────────────────────
 
 
+MODEL_ID = r"^[A-Za-z0-9_.:/@-]+$"
+"""A model id: letters, digits and ``_.:/@-`` only (never ``${...}``, nothing a template reads)."""
+
+
 class Activate(BaseModel):
     """The model the assistant should answer with."""
 
-    model: str = Field(min_length=3, max_length=200)
+    model: str = Field(min_length=3, max_length=200, pattern=MODEL_ID)
     acceptNotRecommended: bool = False
     """The owner read the second disclaimer: the model does not meet every requirement."""
 
@@ -116,7 +120,7 @@ class Activate(BaseModel):
 class Try(BaseModel):
     """The model to run the assistant's eval suite on."""
 
-    model: str = Field(min_length=3, max_length=200)
+    model: str = Field(min_length=3, max_length=200, pattern=MODEL_ID)
 
 
 async def _owned_assistant(svc: Services, a: AppPrincipal) -> Any:
@@ -192,7 +196,7 @@ async def activate_assistant(
             code="not_recommended_unconfirmed",
         )
     before = (app.defaults or {}).get(shipped.MODEL_KEY)
-    await activation.activate(svc, app, model)
+    await activation.activate(svc, app, model, by=a.key_id)
     await audit.record(
         request,
         a,
@@ -254,6 +258,7 @@ async def assistant_session(
     Raises:
         Forbidden: A key or the assistant itself instead of a console login (``console_required``).
         NotFound: The assistant is off.
+        Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).
     """
     if not a.console or a.via:
         raise Forbidden("The assistant is opened from the console.", code="console_required")
@@ -261,6 +266,11 @@ async def assistant_session(
     system = await activation.system_app(svc)
     if system is None:
         raise NotFound("The assistant is off in this deployment.", code="assistant_off")
+    if not await shipped.forwards_only_to_admin_mcp(svc.store, svc.settings, system.id):
+        raise Conflict(
+            "The assistant's MCP servers were changed: an owner resets it in the console.",
+            code="assistant_altered",
+        )
     credential = mint_delegation(
         svc.keyring,
         login,

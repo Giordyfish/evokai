@@ -20,6 +20,9 @@ application:
       input.injection: enforce
       untrusted.spotlight: enforce
   ask_rules: []
+  # Its conversations read other applications' data: traces keep timings and counts only.
+  tracing:
+    content: none
 mcp_servers:
   - name: evokai-admin
     url: "http://127.0.0.1:8787/agent/mcp/admin"

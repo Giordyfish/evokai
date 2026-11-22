@@ -14,7 +14,9 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   prompt `prompt.md`, and the docs skill generated from `docs/` by `scripts/assistant_docs.py`) and created at start.
   It is **locked**: every change to it through the admin API answers `409 locked`, a check made once in `admin_app`
   for every admin route, routes added later included. While it is locked, a newer shipped definition is applied at
-  start. An owner can unlock it (typing its slug, `POST /v1/admin/application/unlock`) to change it; it then keeps their
+  start. A system application has no keys (any made while it was unlocked are revoked when the shipped definition
+  is applied), and its session tokens come only from the console's assistant route (`403 system_app` on
+  `POST /v1/session-tokens`). An owner can unlock it (typing its slug, `POST /v1/admin/application/unlock`) to change it; it then keeps their
   changes and records that an update is available. `POST /v1/admin/application/reset` applies the shipped definition
   again and locks it. Neither route is a tool of the admin MCP server, and the assistant itself is refused on both.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
@@ -29,6 +31,9 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   assistant only reads; an operator's cannot change the owner's settings. Even used directly, the token opens only
   the routes of the admin MCP server's allow-list and the body fields its tools may send (`403 assistant_route`,
   `403 assistant_field` otherwise), and the server API (session tokens, a person's data) refuses it.
+- **Only to the admin MCP server.** A session opens only while the assistant's agent forwards the person's
+  credential to this service's own admin MCP server (`EVOKAI_INTERNAL_URL/mcp/admin`, HTTPS or this machine) and to
+  nothing else; after an owner changed its MCP servers it answers `409 assistant_altered` until a reset.
 - **Every change is confirmed.** The admin MCP server marks every tool that is not a read `destructiveHint`; Evokai
   asks the person before running such a tool, as for any agent. The assistant never changes an agent's security
   policy, whoever it acts for.
@@ -38,6 +43,11 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
 
 The audit log records its changes as actor kind `assistant`, with the person it acted for
 (`assistant:sso:ada@example.com`).
+
+Its conversations are kept by the system application (30 days), for the person who had them (subject
+`console:<login>`); they hold what the assistant read from the application it worked on. People with a role on the
+assistant's application can review them in the console like any conversation, and its traces keep no content. A
+person's erase on another application does not reach them: erase `console:<login>` on the assistant's application.
 
 ## Activation and the model
 

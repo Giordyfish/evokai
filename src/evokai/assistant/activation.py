@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from evokai.agents.definitions import AgentDef
 from evokai.assistant import bootstrap as shipped
 from evokai.assistant.delegation import mint_recorded
 from evokai.core.util import new_id
@@ -248,7 +247,7 @@ async def state(svc: Services) -> dict[str, Any]:
     }
 
 
-async def activate(svc: Services, app: m.Application, model: str) -> None:
+async def activate(svc: Services, app: m.Application, model: str, by: str = "console") -> None:
     """Make a model the assistant's.
 
     Locked, the shipped definition is applied with it; unlocked, the owner's agent gets a new
@@ -259,14 +258,7 @@ async def activate(svc: Services, app: m.Application, model: str) -> None:
     if app.locked:
         await shipped.apply_shipped(svc.store, svc.keyring, svc.settings, model=model)
     else:
-        record = await svc.store.agents.active(app.id, shipped.AGENT)
-        if record is not None:
-            data = {**record.definition, "model": model}
-            data.pop("version", None)
-            agent = AgentDef.model_validate(data).with_version()
-            await svc.store.agents.put(
-                app.id, agent.name, agent.version, agent.content(), created_by="assistant"
-            )
+        await shipped.set_model(svc.store, app.id, model, by=by)
     svc.agents.invalidate(app.id, shipped.AGENT)
     svc.mcp.forget(app.id)
 
