@@ -25,6 +25,14 @@ describe('EvokaiServer', () => {
     expect(call.body).toEqual({ subject: 'u-42', agent: 'assistant', tags: ['beta'], ttlSeconds: 600, limits: { subject_daily_usd: 1 }, voiceEngine: 'server' })
   })
 
+  test('mints a token with prompt modules and a locale, sent unchanged', async () => {
+    const m = mockFetch({ 'POST /agent/v1/session-tokens': () => json({ token: 'tok', expiresAt: 1, conversationId: 'c1' }) })
+    const srv = new EvokaiServer({ baseUrl: BASE, serverKey: 'srv_x', fetch: m.fetch })
+    const modules = { tone: { params: { style: 'detailed', shelf_name: 'New arrivals' } }, reader_level: { on: false } }
+    await srv.mintSessionToken({ subject: 'u-42', agent: 'assistant', modules, locale: 'it-IT' })
+    expect(m.calls[0]!.body).toEqual({ subject: 'u-42', agent: 'assistant', modules, locale: 'it-IT' })
+  })
+
   test('errors are typed from {error, message}', async () => {
     const m = mockFetch({
       'POST /agent/v1/session-tokens': [
@@ -87,8 +95,19 @@ describe('EvokaiServer', () => {
     expect(m.calls[0]!.headers.authorization).toBe('Bearer adm')
     expect(await srv.admin.agents.put({ name: 'helper', model: 'anthropic:x' })).toEqual({ version: 'v2', created: true })
     expect(await srv.admin.prompts.put('p', 'text')).toBe(4)
+    expect(m.calls.at(-1)!.body).toEqual({ text: 'text' })
+    const parameters = { type: 'object', properties: { style: { type: 'string', enum: ['brief'] } } }
+    expect(await srv.admin.prompts.put('p', { text: '{{lookup data style}}', parameters, data: { brief: 'Brief.' } })).toBe(4)
+    expect(m.calls.at(-1)!.body).toEqual({ text: '{{lookup data style}}', parameters, data: { brief: 'Brief.' } })
     const noAdmin = new EvokaiServer({ baseUrl: BASE, serverKey: 'srv', fetch: m.fetch })
     await expect(noAdmin.admin.keys.list()).rejects.toMatchObject({ code: 'no_admin_key' })
+  })
+
+  test('a prompt preview posts the sample values and returns the text', async () => {
+    const m = mockFetch({ 'POST /agent/v1/admin/prompts/tone/preview': () => json({ text: 'Brief.' }) })
+    const srv = new EvokaiServer({ baseUrl: BASE, serverKey: 'srv', adminKey: 'adm', fetch: m.fetch })
+    expect(await srv.admin.prompts.preview('tone', { params: { style: 'brief' } })).toBe('Brief.')
+    expect(m.calls[0]!.body).toEqual({ params: { style: 'brief' } })
   })
 
   test('a transport failure is an EvokaiError with status 0', async () => {

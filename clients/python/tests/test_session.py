@@ -75,7 +75,14 @@ def test_chat_streams_typed_events_whatever_the_chunking(
     with _sync() as s:
         stream = s.chat("Hello?")
         events = list(stream)
-    assert [e.type for e in events] == ["conversation", "text", "text", "usage", "highlight", "done"]
+    assert [e.type for e in events] == [
+        "conversation",
+        "text",
+        "text",
+        "usage",
+        "highlight",
+        "done",
+    ]
     assert isinstance(events[3], UsageEvent)
     assert isinstance(events[4], UnknownEvent)
     assert events[4].data["target"] == "price"

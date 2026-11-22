@@ -106,6 +106,10 @@ admin console ── OIDC (code + PKCE) ──▶ /v1/console/sso/* ──▶ th
   optional per-subject caps, optional model and voice, **voice engine**, and whether a credential
   was forwarded. The forwarded credential itself is stored encrypted (Fernet) for the token's life
   and purged after it.
+- The mint may also choose the session's **prompt modules** (`modules`: which of the agent's
+  modules are on, with which parameters) and its **locale** (a BCP 47 tag with a shipped language
+  pack). They are checked (free-text parameters by the guard) and stored on the conversation, not
+  in the token: the browser never sees or changes them ([Prompt modules](prompt-modules.md)).
 - A session can record the **consent** the user gave (version, time, notice hash) and, for kiosks,
   a hashed **exit code** (`POST /v1/session/exit`: 204, 403 wrong, 429 too many attempts).
 

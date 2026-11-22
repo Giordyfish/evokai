@@ -234,6 +234,37 @@ CASES = [
         check=_token,
     ),
     Case(
+        "mint-modules",
+        lambda c: c.mint_session_token(
+            "user-1",
+            "assistant",
+            modules={
+                "tone": {"params": {"style": "detailed", "shelf_name": "New arrivals"}},
+                "reader_level": {"on": False},
+            },
+            locale="it-IT",
+        ),
+        "POST",
+        "/v1/session-tokens",
+        {
+            "token": "tok",
+            "expiresAt": 1,
+            "conversationId": "c1",
+            "usage": SHARES,
+            "suggestions": ["Hi?"],
+        },
+        body={
+            "subject": "user-1",
+            "agent": "assistant",
+            "modules": {
+                "tone": {"params": {"style": "detailed", "shelf_name": "New arrivals"}},
+                "reader_level": {"on": False},
+            },
+            "locale": "it-IT",
+        },
+        check=_token,
+    ),
+    Case(
         "mint-memory",
         lambda c: c.mint_session_token("user-1", "assistant", memory_consent=True),
         "POST",
@@ -865,6 +896,43 @@ CASES = [
         body={"text": "Be brief."},
         admin=True,
         check=_eq(3),
+    ),
+    Case(
+        "admin.prompts.put-module",
+        lambda c: c.admin.prompts.put(
+            "tone",
+            "{{lookup data style}}",
+            parameters={
+                "type": "object",
+                "properties": {"style": {"type": "string", "enum": ["a"]}},
+            },
+            description="How long the answers are.",
+            data={"a": "Brief."},
+        ),
+        "PUT",
+        "/v1/admin/prompts/tone",
+        {"version": 1},
+        body={
+            "text": "{{lookup data style}}",
+            "parameters": {
+                "type": "object",
+                "properties": {"style": {"type": "string", "enum": ["a"]}},
+            },
+            "description": "How long the answers are.",
+            "data": {"a": "Brief."},
+        },
+        admin=True,
+        check=_eq(1),
+    ),
+    Case(
+        "admin.prompts.preview",
+        lambda c: c.admin.prompts.preview("tone", params={"style": "a"}),
+        "POST",
+        "/v1/admin/prompts/tone/preview",
+        {"text": "Brief."},
+        body={"params": {"style": "a"}},
+        admin=True,
+        check=_eq("Brief."),
     ),
     Case(
         "admin.voices.put",

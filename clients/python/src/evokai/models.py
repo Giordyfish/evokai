@@ -408,6 +408,15 @@ class Consent(WireModel):
     notice_hash: str | None = None
 
 
+class ModuleChoice(WireModel):
+    """A session's choice for one prompt module of the agent (only with the server key)."""
+
+    on: bool | None = None
+    """Switch the module on or off; omitted keeps the agent's default."""
+    params: dict[str, Any] | None = None
+    """Parameter values over the agent's defaults."""
+
+
 class TokenRequest(WireModel):
     """The body of ``POST /v1/session-tokens``."""
 
@@ -428,6 +437,10 @@ class TokenRequest(WireModel):
     groups: list[str] | None = None
     memory_consent: bool | None = None
     """The person's answer to long-term memory, asked in the application's own interface."""
+    modules: dict[str, ModuleChoice] | None = None
+    """Prompt modules of the agent to switch and fill for this session, by name."""
+    locale: str | None = None
+    """The session's language (a BCP 47 tag with a shipped pack: ``en``, ``it``)."""
 
 
 class SessionToken(WireModel):
@@ -1072,9 +1085,24 @@ class SkillDetail(WireModel):
 
 
 class PromptBody(SnakeModel):
-    """A prompt's text; a changed text becomes the next version."""
+    """A prompt; a changed text, schema, description or data becomes the next version."""
 
     text: str
+    parameters: dict[str, Any] | None = None
+    """A prompt module's parameter schema (its text is then a Handlebars template)."""
+    description: str | None = None
+    data: dict[str, str] | None = None
+    """A module's lookup table, read in its template with ``{{lookup data <parameter>}}``."""
+
+
+class PreviewBody(SnakeModel):
+    """Sample values for a prompt preview, and optionally a draft to render instead."""
+
+    params: dict[str, Any] | None = None
+    version: int | None = None
+    text: str | None = None
+    parameters: dict[str, Any] | None = None
+    data: dict[str, str] | None = None
 
 
 class PromptVersion(WireModel):
@@ -1082,6 +1110,11 @@ class PromptVersion(WireModel):
 
     name: str
     version: int
+    text: str | None = None
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+    """A module's parameter schema, or None for a plain prompt."""
+    data: dict[str, str] | None = None
     created_at: str | None = None
 
 
