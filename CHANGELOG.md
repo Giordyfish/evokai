@@ -92,6 +92,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Changed
 
+- `<evokai-chat>`: the orb no longer flies across the page. Opening fades the launcher orb out while the panel rises a
+  little into place and the orb fades in on its header; closing does the reverse; between chat and voice mode it fades
+  from one place to the other. The same applies to an orb of your own (`slot="orb"`) or orb images; `data-orb` still
+  reads `flying` while it is between places. The landing splash is gone.
 - Numbers read aloud (`say.spoken`) come from num2words, driven by each pack's new `speech.numbers` block (separators,
   decimal word, per cent, currency, date and time shapes), in every language but English, which is spoken as written.
   Italian keeps its own cardinal speller. Spoken ordinals («la deuxième») are matched without accents on the server

@@ -484,16 +484,6 @@ export function Panel(props: PanelProps): VNode {
     el.focus()
   }, [look])
 
-  // The box opens and closes around the orb: its transform origin is the orb's place, measured before it moves.
-  useLayoutEffect(() => {
-    const p = panelRef.current
-    if (!p || (look.box !== 'pre' && look.box !== 'out')) return
-    const sp = spotOf(slot(look.layer === 'voice' ? 'center' : 'head'))
-    const pr = p.getBoundingClientRect()
-    if (sp) p.style.setProperty('--ek-origin', `${(sp.x - pr.left).toFixed(1)}px ${(sp.y - pr.top).toFixed(1)}px`)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [look.box])
-
   // A slotted launcher, avatar or stage orb stands in for the orb where it rests; a slotted `orb` replaces it. The
   // host's children are watched too: a slot that is not rendered yet fires no slotchange.
   useEffect(() => {

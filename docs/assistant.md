@@ -151,10 +151,9 @@ measured requirements above: a model recommended only by the estimate opens the 
 
 The console embeds `<evokai-chat>` from the UI components once, with its launcher at the bottom left
 (`position="bottom-left"`, past the sidebar on a wide screen) and the mascot as its orb (`slot="orb"`, see the UI components' README, "Your own orb").
-There is no button: the mascot is the launcher. A click (or Ctrl/Cmd+J) opens the chat and the mascot flies to the
-panel's header as the orb does; in voice mode it flies to the middle of the panel; minimized, the conversation goes on
-in the mascot at the bottom left with the bubble beside it and mute, restore and end above it on hover or focus. With
-reduced motion nothing flies. While the assistant is not active (or not available to the person) there is no
+There is no button: the mascot is the launcher. A click (or Ctrl/Cmd+J) opens the chat and the mascot moves to the
+panel's header as the orb does; in voice mode, to the middle of the panel; minimized, the conversation goes on in the
+mascot at the bottom left with the bubble beside it and mute, restore and end above it on hover or focus. While the assistant is not active (or not available to the person) there is no
 launcher: it is activated from the Assistant page. The chat acts on the application the person is looking at; on a
 page without one, on the last application they opened, else the first one they can see other than the assistant's
 own, and a new conversation says which. Until the first-use notice is read, opening the chat shows the notice, and

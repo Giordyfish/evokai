@@ -7,10 +7,12 @@
  *   voice      the panel open on voice mode, the orb in the middle
  *   minimized  voice goes on with the panel closed: the launcher orb speaks, with a bubble beside it
  *
- * There is only ever one orb on screen: it rests in one of three places (`launcher`, `head`, `center`) or flies.
- * Opening moves the orb first and the panel's box appears around it once it has landed; closing shuts the box first
- * and the orb travels after. Switching between chat and voice inside an open panel flies the orb while the two layers
- * crossfade. Without motion (reduced motion, or no animation support) every change is instant.
+ * There is only ever one orb on screen: it rests in one of three places (`launcher`, `head`, `center`) or is between
+ * two (`flying`). It never travels across the page: it fades out where it was and fades in where it goes (a hop).
+ * Opening fades the launcher orb out while the panel's box rises into place, and the orb appears in its new place;
+ * closing lowers the box while the orb fades out, and it appears again in the launcher. Switching between chat and
+ * voice inside an open panel hops the orb while the two layers crossfade. Without motion (reduced motion, or no
+ * animation support) every change is instant.
  */
 
 export type View = 'closed' | 'chat' | 'voice' | 'minimized'
@@ -52,16 +54,13 @@ export function viewOf(open: boolean, voiceOn: boolean, own: boolean): View {
   return voiceOn && own ? 'minimized' : 'closed'
 }
 
-/** How long each flight lasts (ms). */
-export function flightMs(from: View, to: View): number {
-  if (from === 'closed' && to === 'chat') return 700
-  if (from === 'voice' && to === 'minimized') return 820
-  if (boxed(from) && boxed(to)) return 720
-  return 760
-}
-
+/** How long a hop lasts (ms): the orb fades out where it was, then fades in where it goes. */
+export const HOP_MS = 460
+/** The box rises into place (opening) or sinks away (closing). */
 export const BOX_IN_MS = 320
 export const BOX_OUT_MS = 240
+/** Opening: the box starts rising this long after the orb started fading out of the launcher. */
+const BOX_AFTER_MS = 120
 
 /** What the sequencer needs from the page. */
 export interface FlowIO {
@@ -69,6 +68,7 @@ export interface FlowIO {
   show(look: Look): Promise<void> | void
   /** Where a resting place is now (null when it is not on screen). */
   spot(rest: Rest): Spot | null
+  /** Move the orb between two places (a hop: out at one, in at the other). */
   fly(from: Spot, to: Spot, ms: number): Promise<void>
   wait(ms: number): Promise<void>
   /** False for instant changes. */
@@ -131,91 +131,46 @@ export class Flow {
       await this.set(settled(to))
       return
     }
-    const ms = flightMs(from, to)
     const a = io.spot(restOf(from))
+    const hop = async (to_: Rest) => {
+      const b = io.spot(to_)
+      if (a && b) await io.fly(a, b, HOP_MS)
+    }
     if (boxed(from) && boxed(to)) {
-      // Inside the open panel: the layers crossfade while the orb flies.
+      // Inside the open panel: the layers crossfade while the orb hops.
       await this.set({ layer: layerOf(to), orb: 'flying' })
-      const b = io.spot(restOf(to))
-      if (a && b) await io.fly(a, b, ms)
+      await hop(restOf(to))
     } else if (boxed(to)) {
-      // Opening: the box is laid out unseen, the orb flies to its place, then the box opens around it.
+      // Opening: the box is laid out unseen (to measure where the orb goes), the launcher orb fades out, the box rises
+      // into place and the orb fades in on it.
       await this.set({ box: 'pre', layer: layerOf(to), orb: 'flying', bubble: false })
-      const b = io.spot(restOf(to))
-      if (a && b) await io.fly(a, b, ms)
-      await this.set({ box: 'in', orb: restOf(to) })
-      await io.wait(BOX_IN_MS)
+      const moved = hop(restOf(to))
+      await io.wait(BOX_AFTER_MS)
+      await this.set({ box: 'in' })
+      await Promise.all([moved, io.wait(BOX_IN_MS)])
     } else {
-      // Closing: the box shuts around the orb, then the orb flies down to the launcher.
-      await this.set({ box: 'out' })
-      await io.wait(BOX_OUT_MS)
-      await this.set({ box: 'none', orb: 'flying' })
-      const b = io.spot(restOf(to))
-      if (a && b) await io.fly(a, b, ms)
+      // Closing: the box sinks away while the orb fades out, and the orb fades in again in the launcher.
+      await this.set({ box: 'out', orb: 'flying' })
+      await Promise.all([hop(restOf(to)), io.wait(BOX_OUT_MS)])
     }
     await this.set(settled(to))
   }
 }
 
-/** A CSS cubic-bezier easing as a function of time (0 to 1). */
-export function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t: number) => number {
-  const cx = 3 * x1
-  const bx = 3 * (x2 - x1) - cx
-  const ax = 1 - cx - bx
-  const cy = 3 * y1
-  const by = 3 * (y2 - y1) - cy
-  const ay = 1 - cy - by
-  const x = (s: number) => ((ax * s + bx) * s + cx) * s
-  const y = (s: number) => ((ay * s + by) * s + cy) * s
-  const dx = (s: number) => (3 * ax * s + 2 * bx) * s + cx
-  return (t) => {
-    if (t <= 0) return 0
-    if (t >= 1) return 1
-    let s = t
-    for (let i = 0; i < 6; i++) {
-      const d = dx(s)
-      if (Math.abs(d) < 1e-6) break
-      s -= (x(s) - t) / d
-    }
-    // Bisection when Newton strays.
-    if (s < 0 || s > 1 || Math.abs(x(s) - t) > 1e-4) {
-      let lo = 0
-      let hi = 1
-      s = t
-      for (let i = 0; i < 30; i++) {
-        if (x(s) < t) lo = s
-        else hi = s
-        s = (lo + hi) / 2
-      }
-    }
-    return y(s)
+const easeIn = (t: number) => t * t
+const easeOut = (t: number) => 1 - (1 - t) * (1 - t)
+/** The hop's parts, as fractions of it: fading out until `OUT`, unseen until `IN`, then fading in. */
+const OUT = 0.39
+const IN = 0.48
+
+/** Where the orb is at time `t` (0 to 1) of a hop from `a` to `b`, how large (a factor of the place) and how opaque. */
+export function hopAt(a: Spot, b: Spot, t: number): { spot: Spot; scale: number; opacity: number } {
+  const u = Math.min(1, Math.max(0, t))
+  if (u < OUT) {
+    const k = easeIn(u / OUT)
+    return { spot: a, scale: 1 - 0.4 * k, opacity: 1 - k }
   }
-}
-
-const EASE = cubicBezier(0.45, 0.05, 0.25, 1)
-
-/**
- * Where the orb is at time `t` (0 to 1) of a flight from `a` to `b`: a slight arc (lifted halfway), a small overshoot
- * before landing, eased as a whole.
- */
-export function flightAt(a: Spot, b: Spot, t: number): Spot {
-  const p = EASE(Math.min(1, Math.max(0, t)))
-  const dx = a.x - b.x
-  const dy = a.y - b.y
-  const s = a.size / b.size
-  const lift = Math.min(90, Math.hypot(dx, dy) * 0.18) * (dy > 0 ? -1 : 1)
-  // Keyframes (offset, dx, dy, scale), as offsets from where it lands.
-  const keys: Array<[number, number, number, number]> = [
-    [0, dx, dy, s],
-    [0.5, dx * 0.42 + lift * 0.6, dy * 0.42 + lift, s + (1 - s) * 0.7],
-    [0.86, 0, 0, 1.06],
-    [1, 0, 0, 1],
-  ]
-  let i = 0
-  while (i < keys.length - 2 && p > (keys[i + 1] as [number, number, number, number])[0]) i++
-  const k0 = keys[i] as [number, number, number, number]
-  const k1 = keys[i + 1] as [number, number, number, number]
-  const f = (p - k0[0]) / (k1[0] - k0[0])
-  const mix = (u: number, v: number) => u + (v - u) * f
-  return { x: b.x + mix(k0[1], k1[1]), y: b.y + mix(k0[2], k1[2]), size: b.size * mix(k0[3], k1[3]) }
+  if (u < IN) return { spot: b, scale: 0.6, opacity: 0 }
+  const k = easeOut((u - IN) / (1 - IN))
+  return { spot: b, scale: 0.6 + 0.4 * k, opacity: k }
 }
