@@ -5,9 +5,9 @@
  */
 import { render, type VNode } from 'preact'
 
-import { localePack, type CreateVoiceOptions, type EvokaiSession, type FetchLike, type PageContext, type SessionEvent, type TokenInfo, type TokenRequestContext } from '@evokai/evokai-client/browser'
+import { localePack, type ClientToolHandler, type CreateVoiceOptions, type EvokaiSession, type FetchLike, type PageContext, type SessionEvent, type TokenInfo, type TokenRequestContext } from '@evokai/evokai-client/browser'
 import { type ChatState, chatState, fromEvent } from './chatstate'
-import { Ui, defaultFormat, type UiContext, type ValueFormatter } from './context'
+import { Ui, defaultFormat, type ToolRenderer, type UiContext, type ValueFormatter } from './context'
 import { Controller, type ConversationItem } from './controller'
 import { Panel, useController } from './panel'
 import { VoiceStage } from './stage'
@@ -40,6 +40,13 @@ abstract class EvokaiBase extends HTMLBase {
   voiceOptions?: CreateVoiceOptions
   /** Labels for tool activity, by tool name (or a function). */
   toolLabels?: Record<string, string> | ((name: string) => string | null | undefined)
+  /**
+   * Your own cards for tools, by tool name: `(part) => HTMLElement | null` draws that tool's activity or result in the
+   * chat instead of the default line (server, MCP and client tools alike; `ui_chart` and `ui_diagram` replace the
+   * built-in visuals). A part carries only what the events carry: a client tool's arguments and result, a server
+   * tool's name and status. Return null to keep the default.
+   */
+  toolRenderers?: Record<string, ToolRenderer>
   /** How chart values are written (default: plain numbers, `pct` with %). */
   formatValue?: ValueFormatter
   /** The fetch used for Evokai and your token and conversation endpoints (default: the global one). */
@@ -57,7 +64,28 @@ abstract class EvokaiBase extends HTMLBase {
   private configKey = ''
   private theme_: Theme | string | null = null
   private strings_: Partial<Strings> | null = null
+  private tools_: Record<string, ClientToolHandler> | null = null
+  private unhandle: Array<() => void> = []
   private scheduled = false
+
+  /**
+   * Your custom client tools, by name (`docs/client-tools.md`): each function gets the call's arguments, and what it
+   * returns is the result of a tool that waits.
+   */
+  get tools(): Record<string, ClientToolHandler> | null {
+    return this.tools_
+  }
+
+  set tools(v: Record<string, ClientToolHandler> | null) {
+    this.tools_ = v
+    const c = this.controller_
+    if (c) this.handleTools(c.session)
+  }
+
+  private handleTools(session: EvokaiSession): void {
+    for (const off of this.unhandle) off()
+    this.unhandle = Object.entries(this.tools_ ?? {}).map(([name, fn]) => session.handleTool(name, fn))
+  }
 
   /** The theme: a preset name (`evokai`) or a `Theme` object. */
   get theme(): Theme | string | null {
@@ -134,12 +162,14 @@ abstract class EvokaiBase extends HTMLBase {
       this.dispatchEvent(new CustomEvent('evokai-event', { detail: e, bubbles: true, composed: true }))
       if (e.type === 'navigate') this.navigate(e.path)
     })
+    this.handleTools(c.session)
     this.controller_ = c
     return c
   }
 
   set controller(c: Controller | null) {
     this.controller_ = c
+    if (c) this.handleTools(c.session)
     this.configKey = JSON.stringify([...CONFIG.map((a) => this.getAttribute(a)), !!this.getToken, !!this.session])
     this.update()
   }
@@ -241,6 +271,7 @@ abstract class EvokaiBase extends HTMLBase {
       toolLabel: (name) => (typeof labels === 'function' ? labels(name) : labels?.[name]) ?? name,
       names: { title: this.getAttribute('title') ?? 'Assistant', app: this.getAttribute('app-name') ?? '' },
       icons: this.icons_ ?? undefined,
+      toolRenderer: (name) => this.toolRenderers?.[name],
     }
     render(<Ui.Provider value={ctx}>{this.view(theme)}</Ui.Provider>, this.mount as HTMLDivElement)
   }

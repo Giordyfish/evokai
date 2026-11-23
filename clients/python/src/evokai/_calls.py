@@ -563,6 +563,15 @@ def session_feedback(message_id: str, value: int | None) -> Call[None]:
     )
 
 
+def session_tool_result(call_id: str, result: Any, error: str | None) -> Call[None]:
+    body: dict[str, Any] = {"callId": call_id}
+    if error is not None:
+        body["error"] = error
+    else:
+        body["result"] = result
+    return Call("POST", "/v1/session/tool-results", nothing, body=body)
+
+
 def session_exit(code: str) -> Call[None]:
     return Call("POST", "/v1/session/exit", nothing, body={"code": code})
 

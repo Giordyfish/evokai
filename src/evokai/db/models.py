@@ -219,6 +219,9 @@ class Session(Base):
     prompt_options: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
     """The prompt modules and locale chosen at token mint: ``{"modules": {name: {"on", "params",
     "version"}}, "locale"}`` (``evokai.agents.modules``); None follows the agent's defaults."""
+    client_tools: Mapped[list[dict[str, Any]] | None] = mapped_column(sa.JSON)
+    """Custom client tools the session token declared (``evokai.tools.custom``): too big for the
+    token, kept with the conversation and replaced by a later mint that sends them."""
     status: Mapped[str] = mapped_column(sa.String(16), default="active")
     last_seq: Mapped[int] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)

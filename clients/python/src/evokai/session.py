@@ -9,9 +9,18 @@ and the service cancels that turn.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Generator,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from types import TracebackType
 from typing import Any, Literal, NoReturn
 
@@ -23,6 +32,7 @@ from evokai._http import AsyncTransport, SyncTransport
 from evokai.errors import EvokaiConnectionError, EvokaiError
 from evokai.events import (
     ChatResult,
+    ClientToolEvent,
     DoneEvent,
     Event,
     SessionConversation,
@@ -46,6 +56,7 @@ __all__ = ["AsyncChatStream", "AsyncEvokaiSession", "ChatMode", "ChatStream", "E
 
 ChatMode = Literal["text", "voice"]
 CHAT_PATH = "/v1/session/chat"
+REGENERATE_PATH = "/v1/session/regenerate"
 
 
 def chat_body(
@@ -152,9 +163,10 @@ class ChatStream:
         events: Every event yielded so far.
     """
 
-    def __init__(self, session: EvokaiSession, body: dict[str, Any]) -> None:
+    def __init__(self, session: EvokaiSession, body: dict[str, Any], path: str = CHAT_PATH) -> None:
         self._session = session
         self._body = body
+        self._path = path
         self._state = _StreamState(session.last_seq)
         self._gen: Generator[Any, None, None] | None = None
 
@@ -230,7 +242,7 @@ class ChatStream:
     def _run(self) -> Generator[Any, None, None]:
         s = self._session
         state = self._state
-        with s._transport.stream(CHAT_PATH, self._body, s.token) as response:
+        with s._transport.stream(self._path, self._body, s.token) as response:
             state.turn_id = response.headers.get("x-turn-id") or None
             yield _OPENED
             parser = SseParser()
@@ -241,6 +253,8 @@ class ChatStream:
                         if event is None or not state.accept(event, replay=False):
                             continue
                         s._seen(event)
+                        if isinstance(event, ClientToolEvent):
+                            s._run_tool(event)
                         yield event
                         if state.done is not None:
                             return
@@ -272,9 +286,12 @@ class AsyncChatStream:
         events: Every event yielded so far.
     """
 
-    def __init__(self, session: AsyncEvokaiSession, body: dict[str, Any]) -> None:
+    def __init__(
+        self, session: AsyncEvokaiSession, body: dict[str, Any], path: str = CHAT_PATH
+    ) -> None:
         self._session = session
         self._body = body
+        self._path = path
         self._state = _StreamState(session.last_seq)
         self._gen: AsyncGenerator[Any, None] | None = None
 
@@ -350,7 +367,7 @@ class AsyncChatStream:
     async def _run(self) -> AsyncGenerator[Any, None]:
         s = self._session
         state = self._state
-        async with s._transport.stream(CHAT_PATH, self._body, s.token) as response:
+        async with s._transport.stream(self._path, self._body, s.token) as response:
             state.turn_id = response.headers.get("x-turn-id") or None
             yield _OPENED
             parser = SseParser()
@@ -361,6 +378,8 @@ class AsyncChatStream:
                         if event is None or not state.accept(event, replay=False):
                             continue
                         s._seen(event)
+                        if isinstance(event, ClientToolEvent):
+                            await s._run_tool(event)
                         yield event
                         if state.done is not None:
                             return
@@ -409,6 +428,16 @@ class _SessionBase:
         self.last_seq = 0
         self.replay_attempts = replay_attempts
         self.replay_delay = replay_delay
+        self._tools: dict[str, Callable[[dict[str, Any]], Any]] = {}
+
+    def on_tool(self, name: str, fn: Callable[[dict[str, Any]], Any]) -> None:
+        """Run a custom client tool when the agent calls it (``docs/client-tools.md``).
+
+        ``fn`` gets the call's arguments; for a tool that waits, what it returns (or the message
+        of what it raises) is posted as the result while the stream goes on. With the async
+        session ``fn`` may be a coroutine function.
+        """
+        self._tools[name] = fn
 
     def use_token(self, token: str | SessionToken) -> None:
         """Replace the session token (a refreshed one, for the same conversation)."""
@@ -552,6 +581,32 @@ class EvokaiSession(_SessionBase):
         )
         return ChatStream(self, body)
 
+    def regenerate(
+        self,
+        *,
+        page: PageContext | Mapping[str, Any] | None = None,
+        mode: ChatMode = "text",
+        history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
+    ) -> ChatStream:
+        """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+        The stream starts with ``conversation`` and ``rewritten``. Refused with
+        :class:`ConflictError` ``not_regenerable`` when there is nothing to regenerate, the last
+        turn changed data or ran a client tool, or a turn is running (``done.regenerable`` and
+        ``regenerable`` on a stored message say when it is allowed).
+
+        Args:
+            page: The page the user is looking at.
+            mode: ``text`` or ``voice``.
+            history: External storage: the conversation so far, oldest first (with the last
+                question and the answer to replace).
+
+        Returns:
+            The stream of the new turn's events.
+        """
+        body = chat_body(page=page, mode=mode, history=history)
+        return ChatStream(self, body, REGENERATE_PATH)
+
     def confirm(
         self,
         action_id: str,
@@ -640,6 +695,25 @@ class EvokaiSession(_SessionBase):
     def feedback(self, message_id: str, value: Literal[1, -1] | None) -> None:
         """Thumbs up (1), down (-1) or none (None) on a stored assistant message."""
         self._transport.send(calls.session_feedback(message_id, value), self.token)
+
+    def tool_result(self, call_id: str, result: Any = None, *, error: str | None = None) -> None:
+        """Answer a waiting custom client tool call (once): a JSON result, or an error."""
+        self._transport.send(calls.session_tool_result(call_id, result, error), self.token)
+
+    def _run_tool(self, event: ClientToolEvent) -> None:
+        fn = self._tools.get(event.name)
+        if fn is None:
+            return
+        try:
+            result, error = fn(event.args), None
+        except Exception as e:
+            result, error = None, str(e) or type(e).__name__
+        if event.wait:
+            try:
+                self.tool_result(event.call_id, result, error=error)
+            except EvokaiError:
+                # Answered late (the turn's timeout) or refused: the stream goes on.
+                pass
 
     def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""
@@ -844,6 +918,32 @@ class AsyncEvokaiSession(_SessionBase):
         )
         return AsyncChatStream(self, body)
 
+    def regenerate(
+        self,
+        *,
+        page: PageContext | Mapping[str, Any] | None = None,
+        mode: ChatMode = "text",
+        history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
+    ) -> AsyncChatStream:
+        """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+        The stream starts with ``conversation`` and ``rewritten``. Refused with
+        :class:`ConflictError` ``not_regenerable`` when there is nothing to regenerate, the last
+        turn changed data or ran a client tool, or a turn is running (``done.regenerable`` and
+        ``regenerable`` on a stored message say when it is allowed).
+
+        Args:
+            page: The page the user is looking at.
+            mode: ``text`` or ``voice``.
+            history: External storage: the conversation so far, oldest first (with the last
+                question and the answer to replace).
+
+        Returns:
+            The stream of the new turn's events.
+        """
+        body = chat_body(page=page, mode=mode, history=history)
+        return AsyncChatStream(self, body, REGENERATE_PATH)
+
     def confirm(
         self,
         action_id: str,
@@ -932,6 +1032,29 @@ class AsyncEvokaiSession(_SessionBase):
     async def feedback(self, message_id: str, value: Literal[1, -1] | None) -> None:
         """Thumbs up (1), down (-1) or none (None) on a stored assistant message."""
         await self._transport.send(calls.session_feedback(message_id, value), self.token)
+
+    async def tool_result(
+        self, call_id: str, result: Any = None, *, error: str | None = None
+    ) -> None:
+        """Answer a waiting custom client tool call (once): a JSON result, or an error."""
+        await self._transport.send(calls.session_tool_result(call_id, result, error), self.token)
+
+    async def _run_tool(self, event: ClientToolEvent) -> None:
+        fn = self._tools.get(event.name)
+        if fn is None:
+            return
+        try:
+            result, error = fn(event.args), None
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as e:
+            result, error = None, str(e) or type(e).__name__
+        if event.wait:
+            try:
+                await self.tool_result(event.call_id, result, error=error)
+            except EvokaiError:
+                # Answered late (the turn's timeout) or refused: the stream goes on.
+                pass
 
     async def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""

@@ -10,10 +10,11 @@ import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBa
 import { adminJson, describe, forApp } from '../api'
 import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
-import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
+import { capabilityItems, capabilityUsable, channelGranted, builtinGranted, clientGranted, codeGranted, grantedModels, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
 import { done, Fx, HAT, sparkle, toast } from '../magic'
 import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { rulesOf, toRow, type RuleRow } from '../askRules'
+import { blankTool, type ClientTool, type ClientToolRow, fromRow, MAX_TOOLS, toolProblems, toRow as toolRow } from '../clientTools'
 import { Btn, Field, Hero, KV, Panel, StatusTag, Switch, Tag } from '../ui'
 import { Loads } from './common'
 import { RulesEditor } from './AskRules'
@@ -21,6 +22,9 @@ import { ParamsForm } from './ModuleParams'
 import { capDescription } from '../capabilityText'
 import { hasLegacyLabels, isLegacy, withSyntax } from '../templates'
 import { t, tn, type TextKey } from '../i18n'
+
+const BUILTIN_KINDS = ['web_search', 'web_fetch', 'code_execution', 'image_generation', 'file_search', 'mcp_server', 'memory']
+const STORING_KINDS = ['file_search', 'memory']
 
 type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
 const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
@@ -143,6 +147,8 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
   const [schemaText, setSchemaText] = useState(draft.output_schema ? JSON.stringify(draft.output_schema, null, 2) : '')
   const [settingsText, setSettingsText] = useState(JSON.stringify(draft.model_settings ?? {}, null, 2))
   const [askRows, setAskRows] = useState<RuleRow[]>((draft.ask_rules ?? []).map(toRow))
+  const [toolRows, setToolRows] = useState<ClientToolRow[]>(((draft.client_tools?.custom ?? []) as ClientTool[]).map(toolRow))
+  const toolIssues = toolProblems(toolRows)
   /** The tools rules can name (as last listed), and whether each changes data. */
   const ruleTools = data.servers.flatMap((s) =>
     (s.tools ?? []).map((x) => ({ name: `${s.tool_prefix ?? ''}${x.name}`, mutating: !!x.destructive || x.readOnly === false })),
@@ -203,6 +209,12 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
       setProblems(t('ag.badJson'))
       return
     }
+    if (toolIssues.some((x) => x !== null) || toolRows.length > MAX_TOOLS) {
+      setProblems(t('ag.customFix'))
+      setSec('tools')
+      return
+    }
+    body = { ...body, client_tools: { ...(body.client_tools ?? {}), custom: toolRows.map(fromRow) } }
     if (!body.name || !/^[A-Za-z0-9_-]+$/.test(body.name)) {
       setProblems(t('ag.badName'))
       setSec('ins')
@@ -651,6 +663,33 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
               !clientGranted(g, 'confirm'),
             )}
             <p class="hint">{t('ag.confirmCardHint')}</p>
+            <h4>{t('ag.customTools')}</h4>
+            <p class="hint">{t('ag.customToolsHint')}</p>
+            {toolRows.map((r, i) => {
+              const edit = (patch: Partial<ClientToolRow>) => setToolRows(toolRows.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+              const issue = toolIssues[i]
+              return (
+                <div key={i} class="opt" style="display:block">
+                  <Field label={t('ag.customNameLabel')}>
+                    <input class="in mono" value={r.name} onInput={(e) => edit({ name: e.currentTarget.value })} />
+                  </Field>
+                  <Field label={t('ag.customDescriptionLabel')}>
+                    <textarea class="in" value={r.description} onInput={(e) => edit({ description: e.currentTarget.value })} />
+                  </Field>
+                  <Field label={t('ag.customParameters')}>
+                    <textarea class="in mono" spellcheck={false} style="min-height:120px" value={r.parameters} onInput={(e) => edit({ parameters: e.currentTarget.value })} />
+                  </Field>
+                  {row(t('ag.customWait'), t('ag.customWaitHint'), <Switch on={r.wait} aria={t('ag.customWait')} onChange={(v) => edit({ wait: v })} />)}
+                  {issue ? <p class="hint bad">{t(issue)}</p> : null}
+                  <Btn onClick={() => setToolRows(toolRows.filter((_, j) => j !== i))}>{t('ag.customRemove')}</Btn>
+                </div>
+              )
+            })}
+            {toolRows.length >= MAX_TOOLS ? (
+              <p class="hint">{t('ag.customTooMany')}</p>
+            ) : (
+              <Btn onClick={() => setToolRows([...toolRows, blankTool()])}>{t('ag.customAdd')}</Btn>
+            )}
           </Panel>
         ) : (
           <Panel title={t('ag.clientTools')}>
@@ -789,6 +828,58 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             t('ag.code'),
             ok ? t('ag.codeSub') : code.granted ? t('ag.codeNoSandbox') : t('ag.codeNotGranted'),
             ok ? <Switch on={!!draft.code?.enabled} aria={t('ag.code')} onChange={(v) => set({ code: { enabled: v } })} /> : locked,
+            !ok,
+          )
+        })()}
+        <h4>{t('ag.builtinTools')}</h4>
+        <p class="hint">{t('ag.builtinToolsHint')}</p>
+        {BUILTIN_KINDS.map((kind) => {
+          const ok = builtinGranted(g, kind)
+          const list = (draft.builtin_tools ?? []) as Array<{ kind: string; config?: Record<string, unknown> }>
+          const cur = list.find((x) => x.kind === kind)
+          const others = list.filter((x) => x.kind !== kind)
+          return (
+            <div key={kind}>
+              {row(
+                t(`ag.builtin.${kind}` as TextKey),
+                ok ? (STORING_KINDS.includes(kind) ? t('ag.builtinKeeps') : kind) : t('ag.builtinNotGranted'),
+                ok ? (
+                  <Switch
+                    on={!!cur}
+                    aria={kind}
+                    onChange={(v) => set({ builtin_tools: (v ? [...others, { kind, config: {} }] : others) as AgentDef['builtin_tools'] })}
+                  />
+                ) : (
+                  locked
+                ),
+                !ok,
+              )}
+              {cur && ok ? (
+                <Field label={t('ag.builtinConfig')} hint={t('ag.builtinConfigHint')}>
+                  <textarea
+                    class="in mono"
+                    spellcheck={false}
+                    value={JSON.stringify(cur.config ?? {}, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const config = JSON.parse(e.currentTarget.value) as Record<string, unknown>
+                        set({ builtin_tools: [...others, { kind, config }] as AgentDef['builtin_tools'] })
+                      } catch {
+                        toast(t('ag.builtinBadJson'), '')
+                      }
+                    }}
+                  />
+                </Field>
+              ) : null}
+            </div>
+          )
+        })}
+        {(() => {
+          const ok = openaiConfirmGranted(g)
+          return row(
+            t('ag.openaiConfirm'),
+            ok ? t('ag.openaiConfirmSub') : t('ag.openaiConfirmNotGranted'),
+            ok ? <Switch on={!!draft.openai_confirm} aria={t('ag.openaiConfirm')} onChange={(v) => set({ openai_confirm: v })} /> : locked,
             !ok,
           )
         })()}

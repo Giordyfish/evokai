@@ -169,7 +169,29 @@ Properties: `getToken(ctx)`, `session` (an `EvokaiSession` of yours), `listConve
 `theme`, `strings` (any text, see `Strings`), `toolLabels` (a map or a function), `formatValue(value, unit, locale)`
 (how chart values are written: plain numbers by default, `pct` with a percent sign; units such as `eur` are your
 application's business figures, never Evokai's costs), `voiceOptions` (microphone sound, rate, barge-in), `skin`
-(your CSS inside the component), `icons` (replaced icons) and `fetcher`.
+(your CSS inside the component), `icons` (replaced icons), `tools` (your [client tools](#your-client-tools-and-tool-cards))
+`toolRenderers` (your own tool cards) and `fetcher`.
+
+### Your client tools and tool cards
+
+`tools` answers the agent's [custom client tools](https://giordyfish.github.io/evokai/client-tools/); `toolRenderers`
+draws a tool's activity with your own element instead of the default line (server, MCP and client tools alike;
+`ui_chart` and `ui_diagram` replace the built-in visuals). A card gets only what the events carry: a client tool's
+arguments and the result your handler returned, a server tool's name and status. Return `null` to keep the default.
+
+```js
+chat.tools = { kiosk_light: ({ on }) => lights.set(on) }
+chat.toolRenderers = {
+  kiosk_light: (part) => {
+    const card = document.createElement('my-light-card')
+    card.state = part.status === 'done' ? part.result : null
+    return card
+  },
+}
+```
+
+The regenerate button under the last answer appears while the service says it can be regenerated
+(`ChatMessage.regenerable`).
 
 Events (bubbling, composed): `evokai-open`, `evokai-close` (also when voice is minimized), `evokai-event` (every session event, `detail` is the
 event), `evokai-navigate` (`detail.path`, cancelable: by default a relative path is opened with `location.assign`;

@@ -11,6 +11,7 @@ from evokai import (
     AskEvent,
     AsyncEvokaiServer,
     AsyncEvokaiSession,
+    ClientToolEvent,
     ConfirmEvent,
     DoneEvent,
     EvokaiAuthError,
@@ -194,6 +195,89 @@ def test_confirm_streams_the_resumed_turn(router: respx.MockRouter) -> None:
         "confirm": {"actionId": "act_1", "approve": True},
         "page": {"path": "/x"},
     }
+
+
+def _tool_turn() -> list[str]:
+    def call(cid: str, name: str, wait: bool, seq: int) -> str:
+        return frame({
+            "type": "client_tool",
+            "callId": cid,
+            "name": name,
+            "args": {"on": True},
+            "wait": wait,
+            "turnId": "t1",
+            "seq": seq,
+        })
+
+    return [
+        call("c1", "kiosk_light", True, 1),
+        call("c2", "kiosk_light", False, 2),
+        call("c3", "kiosk_print", True, 3),
+        frame({"type": "done", "reason": "end_turn", "turnId": "t1", "seq": 4}),
+    ]
+
+
+def _posted(route: respx.Route) -> list[Any]:
+    return [json.loads(c.request.content) for c in route.calls]
+
+
+def test_on_tool_runs_client_tools_and_posts_the_results(router: respx.MockRouter) -> None:
+    response, _ = sse_response(_tool_turn())
+    router.post("/v1/session/chat").mock(return_value=response)
+    results = router.post("/v1/session/tool-results").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+    lit: list[Any] = []
+
+    def light(args: dict[str, Any]) -> Any:
+        lit.append(args)
+        return {"lit": True}
+
+    def paper(_args: dict[str, Any]) -> Any:
+        raise RuntimeError("No paper")
+
+    with _sync() as s:
+        s.on_tool("kiosk_light", light)
+        s.on_tool("kiosk_print", paper)
+        events = list(s.chat("go"))
+        s.tool_result("c9", error="Too late")
+    assert [e.type for e in events] == ["client_tool"] * 3 + ["done"]
+    assert isinstance(events[0], ClientToolEvent) and events[0].call_id == "c1"
+    assert lit == [{"on": True}, {"on": True}]
+    assert _posted(results) == [
+        {"callId": "c1", "result": {"lit": True}},
+        {"callId": "c3", "error": "No paper"},
+        {"callId": "c9", "error": "Too late"},
+    ]
+
+
+def test_a_refused_tool_answer_never_breaks_the_stream(router: respx.MockRouter) -> None:
+    response, _ = sse_response(_tool_turn())
+    router.post("/v1/session/chat").mock(return_value=response)
+    router.post("/v1/session/tool-results").mock(
+        return_value=httpx.Response(404, json={"error": "unknown_call", "message": "Late."})
+    )
+    with _sync() as s:
+        s.on_tool("kiosk_light", lambda _args: {"lit": True})
+        events = list(s.chat("go"))
+    assert events[-1].type == "done"
+
+
+async def test_async_on_tool_awaits_coroutine_handlers(router: respx.MockRouter) -> None:
+    response, _ = sse_response(_tool_turn())
+    router.post("/v1/session/chat").mock(return_value=response)
+    results = router.post("/v1/session/tool-results").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+
+    async def light(args: dict[str, Any]) -> Any:  # ruff: ignore[unused-async] (a coroutine handler)
+        return {"lit": args["on"]}
+
+    async with _async() as s:
+        s.on_tool("kiosk_light", light)
+        events = [e async for e in s.chat("go")]
+    assert len(events) == 4
+    assert _posted(results) == [{"callId": "c1", "result": {"lit": True}}]
 
 
 @pytest.mark.parametrize(("option", "text"), [("Second", "Second"), (["A", "C"], "A, C")])

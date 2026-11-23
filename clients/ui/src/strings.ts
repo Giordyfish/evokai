@@ -60,6 +60,8 @@ export interface Strings {
   confirmAskTitle: string
   /** Editing the last question (it replaces the last turn). */
   edit: string
+  /** Regenerate the last answer. */
+  regenerate: string
   editing: string
   cancelEdit: string
   confirmed: string
@@ -235,6 +237,7 @@ export const en: Strings = {
   confirmTitle: 'Confirm this change?',
   confirmAskTitle: 'Go ahead?',
   edit: 'Edit',
+  regenerate: 'Regenerate the answer',
   editing: 'Editing your last message',
   cancelEdit: 'Cancel',
   confirmed: 'Change confirmed',
@@ -387,6 +390,7 @@ export const it: Strings = {
   confirmTitle: 'Confermi questa modifica?',
   confirmAskTitle: 'Procedo?',
   edit: 'Modifica',
+  regenerate: 'Rigenera la risposta',
   editing: 'Modifichi il tuo ultimo messaggio',
   cancelEdit: 'Annulla',
   confirmed: 'Modifica confermata',

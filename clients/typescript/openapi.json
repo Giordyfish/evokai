@@ -95,6 +95,14 @@
             "title": "Ask Rules",
             "type": "array"
           },
+          "builtin_tools": {
+            "items": {
+              "$ref": "#/components/schemas/BuiltinToolDef"
+            },
+            "maxItems": 7,
+            "title": "Builtin Tools",
+            "type": "array"
+          },
           "capabilities": {
             "additionalProperties": {
               "$ref": "#/components/schemas/CapabilityUse"
@@ -235,6 +243,11 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "openai_confirm": {
+            "default": false,
+            "title": "Openai Confirm",
+            "type": "boolean"
           },
           "output_schema": {
             "anyOf": [
@@ -1128,6 +1141,34 @@
         "title": "BugReportBody",
         "type": "object"
       },
+      "BuiltinToolDef": {
+        "description": "A provider built-in tool (``evokai.engine.builtin_tools``).",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "web_search",
+              "web_fetch",
+              "code_execution",
+              "image_generation",
+              "file_search",
+              "mcp_server",
+              "memory"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "BuiltinToolDef",
+        "type": "object"
+      },
       "Candidate": {
         "description": "A trickled ICE candidate.",
         "properties": {
@@ -1582,6 +1623,17 @@
             "title": "Reason",
             "type": "string"
           },
+          "regenerable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regenerable"
+          },
           "replacedFrom": {
             "anyOf": [
               {
@@ -1651,6 +1703,38 @@
         "title": "ChunkSettings",
         "type": "object"
       },
+      "ClientToolDef": {
+        "description": "A custom client tool: the client application runs it (``client_tool`` event).",
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{1,47}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "wait": {
+            "default": false,
+            "title": "Wait",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ClientToolDef",
+        "type": "object"
+      },
       "ClientToolsDef": {
         "description": "Which client tools the agent has.",
         "properties": {
@@ -1663,6 +1747,14 @@
             "default": true,
             "title": "Chart",
             "type": "boolean"
+          },
+          "custom": {
+            "items": {
+              "$ref": "#/components/schemas/ClientToolDef"
+            },
+            "maxItems": 32,
+            "title": "Custom",
+            "type": "array"
           },
           "diagram": {
             "default": true,
@@ -1774,6 +1866,26 @@
           "approve"
         ],
         "title": "Confirm",
+        "type": "object"
+      },
+      "ConfirmAnswer": {
+        "description": "A button's answer to a pending confirmation (instead of typing yes or no).",
+        "properties": {
+          "actionId": {
+            "maxLength": 200,
+            "title": "Actionid",
+            "type": "string"
+          },
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "actionId",
+          "approve"
+        ],
+        "title": "ConfirmAnswer",
         "type": "object"
       },
       "Connection": {
@@ -2043,6 +2155,17 @@
             ],
             "title": "Jurisdiction"
           },
+          "provider_tool_storage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Tool Storage"
+          },
           "residency": {
             "anyOf": [
               {
@@ -2177,8 +2300,18 @@
         "type": "object"
       },
       "EvokaiOptions": {
-        "description": "Evokai's extension of the request (server key only).",
+        "description": "Evokai's extension of the request (``tags`` and ``groups``: server key only).",
         "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "groups": {
             "items": {
               "type": "string"
@@ -3692,6 +3825,58 @@
         "title": "RedTeamBody",
         "type": "object"
       },
+      "RegenerateBody": {
+        "description": "Regenerate the last answer (the question is the conversation's own).",
+        "properties": {
+          "endOfSpeechAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endofspeechat"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HistoryMessage"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          },
+          "mode": {
+            "default": "text",
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "RegenerateBody",
+        "type": "object"
+      },
       "Residency": {
         "additionalProperties": false,
         "description": "Where an application's data lives and where its models may run.",
@@ -4083,6 +4268,14 @@
             "title": "Attachments",
             "type": "array"
           },
+          "clientTools": {
+            "items": {
+              "$ref": "#/components/schemas/ClientToolDef"
+            },
+            "maxItems": 33,
+            "title": "Clienttools",
+            "type": "array"
+          },
           "groups": {
             "items": {
               "maxLength": 100,
@@ -4175,6 +4368,14 @@
               "type": "object"
             },
             "title": "Citations",
+            "type": "array"
+          },
+          "clientToolCalls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Clienttoolcalls",
             "type": "array"
           },
           "conversationId": {
@@ -4972,6 +5173,21 @@
             "title": "Agent",
             "type": "string"
           },
+          "clientTools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClientToolDef"
+                },
+                "maxItems": 33,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clienttools"
+          },
           "consent": {
             "anyOf": [
               {
@@ -5217,6 +5433,37 @@
           "toolResult"
         ],
         "title": "ToolResultBlock",
+        "type": "object"
+      },
+      "ToolResultBody": {
+        "description": "The client's answer to a ``client_tool`` call that waits.",
+        "properties": {
+          "callId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Callid",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "result": {
+            "title": "Result"
+          }
+        },
+        "required": [
+          "callId"
+        ],
+        "title": "ToolResultBody",
         "type": "object"
       },
       "ToolSettings": {
@@ -14419,6 +14666,104 @@
           }
         },
         "summary": "Feedback",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/regenerate": {
+      "post": {
+        "description": "Regenerate the last answer: the last question runs again and replaces the last turn.\n\nLike a rewrite with the same question (a ``rewritten`` event, then the new answer), with the\nsame caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409\n``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a\ncustom client tool, or a turn is running.\n\nReturns:\n    The event stream, or the turn as JSON (``Accept: application/json``).",
+        "operationId": "regenerate_agent_v1_session_regenerate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResult"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/tool-results": {
+      "post": {
+        "description": "Answer a custom client tool call the running turn waits for (once).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: No call of this session waits under that id here (answered, timed out, or the\n        turn runs on another task) (``unknown_call``).\n    AppError: The result is larger than 32 KB (413 ``too_large``).",
+        "operationId": "tool_result_agent_v1_session_tool_results_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolResultBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Tool Result Agent V1 Session Tool Results Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "413": {
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tool Result",
         "tags": [
           "session"
         ]

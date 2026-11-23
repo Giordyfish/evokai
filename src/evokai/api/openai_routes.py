@@ -7,7 +7,9 @@
   request must come from an allowed origin, like every session call).
 - **Semantics of a server run** (``evokai.sessions.runs``): the agent's read-only tools run on the
   server and the client gets the final answer; tools that change data are not offered, since nobody
-  could confirm them. Client tools (``tools`` in the request) are not supported. The application's
+  could confirm them, unless the application is granted ``openai:confirm`` and the agent turns
+  ``openai_confirm`` on (``evokai.api.openai_confirm``: the change waits for a yes in the next
+  request). Client tools (``tools`` in the request) are not supported. The application's
   grants, its security policy (guard), its caps and its abuse limits apply exactly as to a run.
 - **Stateless**: the client sends the conversation (``messages``) every time and nothing is stored.
   ``system`` and ``developer`` messages are ignored: the agent's own instructions are the system
@@ -32,7 +34,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from evokai.api import deps
+from evokai.api import deps, openai_confirm
 from evokai.api.deps import services
 from evokai.core.errors import AppError, BadRequest, Forbidden, NotFound, Unauthorized
 from evokai.core.security import parse_key
@@ -44,7 +46,7 @@ from evokai.identity.models import SessionPrincipal
 from evokai.llm.catalog import bare
 from evokai.services import Services
 from evokai.sessions.limits import cap_state
-from evokai.sessions.runs import AgentRunner, RunChannel, RunResult, check_channel
+from evokai.sessions.runs import AgentRunner, Resume, RunChannel, RunResult, check_channel
 
 log = logging.getLogger("evokai.openai")
 
@@ -147,13 +149,23 @@ class StreamOptions(BaseModel):
     include_usage: bool = False
 
 
+class ConfirmAnswer(BaseModel):
+    """A button's answer to a pending confirmation (instead of typing yes or no)."""
+
+    actionId: str = Field(max_length=200)
+    approve: bool
+
+
 class EvokaiOptions(BaseModel):
-    """Evokai's extension of the request (server key only)."""
+    """Evokai's extension of the request (``tags`` and ``groups``: server key only)."""
 
     tags: list[str] = Field(default_factory=list, max_length=20)
     """Usage tags of the run."""
     groups: list[str] = Field(default_factory=list, max_length=50)
     """The subject's groups, for knowledge bases restricted to some groups."""
+    confirm: ConfirmAnswer | None = None
+    """The answer to the confirmation the last assistant message asked for (``openai:confirm``):
+    the message must still be sent unmodified."""
 
 
 class ChatCompletionRequest(BaseModel):
@@ -234,6 +246,12 @@ class _Prepared:
     subject: str
     tags: list[str]
     groups: list[str]
+    confirm: bool = False
+    """Changes may wait for a yes (``openai:confirm`` and the agent's ``openai_confirm``)."""
+    resume: Resume | None = None
+    """The person's answer to a pending change, being carried out."""
+    convo: list[dict[str, Any]] | None = None
+    """The request's whole conversation (a question the run asks follows it)."""
 
 
 async def _prepare(svc: Services, who: Caller, body: ChatCompletionRequest) -> _Prepared:
@@ -256,17 +274,29 @@ async def _prepare(svc: Services, who: Caller, body: ChatCompletionRequest) -> _
         check_channel(agent, grants, who.channel)
     except Forbidden as e:
         raise NotFound(f"Unknown model: {body.model}", code="model_not_found") from e
+    ext = body.evokai or EvokaiOptions()
     if s is not None:
         claims = s.claims
-        return _Prepared(
+        p = _Prepared(
             who, agent, text, messages, claims.subject, list(claims.tags), list(claims.groups)
         )
-    ext = body.evokai or EvokaiOptions()
-    subject = body.user or f"system:{agent.name}"
-    return _Prepared(who, agent, text, messages, subject, ext.tags, ext.groups)
+    else:
+        subject = body.user or f"system:{agent.name}"
+        p = _Prepared(who, agent, text, messages, subject, ext.tags, ext.groups)
+    p.convo = openai_confirm.conversation(text, messages)
+    named = s is not None or bool(body.user)
+    if openai_confirm.allowed(grants, agent, named=named):
+        p.confirm = True
+        explicit = ext.confirm.model_dump() if ext.confirm else None
+        decision = await openai_confirm.decide(
+            svc.store, who.app, agent, p.subject, messages, explicit
+        )
+        if decision is not None:
+            p.resume, p.text, p.messages = decision.resume, decision.text, decision.messages
+    return p
 
 
-async def _run(svc: Services, p: _Prepared, on_event: Any = None) -> RunResult:
+async def _run(svc: Services, p: _Prepared, on_event: Any = None, on_text: Any = None) -> RunResult:
     """Run the prepared request.
 
     Returns:
@@ -288,6 +318,9 @@ async def _run(svc: Services, p: _Prepared, on_event: Any = None) -> RunResult:
         model=s.claims.model if s else None,
         on_event=on_event,
         groups=p.groups,
+        on_text=on_text,
+        confirm=p.confirm,
+        resume=p.resume,
     )
 
 
@@ -376,6 +409,13 @@ async def chat_completions(
     created = int(time.time())
     if not body.stream:
         result = await _run(svc, p)
+        extension = await _extension(svc, p, result)
+        content = _content(result)
+        if result.waiting:
+            asked = await openai_confirm.ask(
+                svc.store, p.caller.app, p.agent, p.subject, result, "", p.convo or []
+            )
+            content, extension["confirm"] = asked["content"], asked["confirm"]
         return {
             "id": f"chatcmpl-{result.run_id}",
             "object": "chat.completion",
@@ -384,13 +424,13 @@ async def chat_completions(
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": _content(result), "refusal": None},
+                    "message": {"role": "assistant", "content": content, "refusal": None},
                     "finish_reason": "stop",
                     "logprobs": None,
                 }
             ],
             "usage": _usage(result),
-            "evokai": await _extension(svc, p, result),
+            "evokai": extension,
         }
     include_usage = bool(body.stream_options and body.stream_options.include_usage)
     return StreamingResponse(
@@ -406,13 +446,21 @@ async def _stream(
     """The chunks of a streamed answer.
 
     The agent's progress (tool calls) comes as chunks with an empty delta and an ``evokai.tool``
-    extension; the answer comes in one content chunk once the guard has checked it whole.
+    extension. The answer streams as it is written: token by token when no output control of the
+    security policy rewrites text, else sentence by sentence, each sentence through the output
+    guard first (``evokai.guard.output.SentenceGate``). A sentence the guard stops (the agent's
+    instructions repeated) ends the stream with an error chunk. A structured answer
+    (``output_schema``) comes in one chunk at the end.
 
     Yields:
         Server-sent events.
     """
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-    task = asyncio.create_task(_run(svc, p, queue.put_nowait))
+
+    def on_text(piece: str) -> None:
+        queue.put_nowait({"type": "text", "delta": piece})
+
+    task = asyncio.create_task(_run(svc, p, queue.put_nowait, on_text))
     task.add_done_callback(lambda _: queue.put_nowait(None))
     cid = f"chatcmpl-{new_id()}"  # one id for every chunk (the run's id is in ``evokai``)
 
@@ -427,6 +475,8 @@ async def _stream(
         }
         return f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
 
+    streamed = False
+    shown = ""
     try:
         yield chunk({"role": "assistant", "content": ""})
         while True:
@@ -437,6 +487,11 @@ async def _stream(
                 continue
             if e is None:
                 break
+            if e["type"] == "text":
+                streamed = True
+                shown += e["delta"]
+                yield chunk({"content": e["delta"]})
+                continue
             yield chunk({}, evokai={"tool": {"name": e["name"], "status": e["status"]}})
         try:
             result = task.result()
@@ -449,8 +504,18 @@ async def _stream(
             yield f"data: {json.dumps(error_body(500, 'internal', 'Something went wrong.'))}\n\n"
             yield "data: [DONE]\n\n"
             return
-        yield chunk({"content": _content(result)})
-        yield chunk({}, "stop", evokai=await _extension(svc, p, result))
+        extension = await _extension(svc, p, result)
+        if result.waiting:
+            app = p.caller.app
+            asked = await openai_confirm.ask(
+                svc.store, app, p.agent, p.subject, result, shown, p.convo or []
+            )
+            extension["confirm"] = asked["confirm"]
+            question = asked["question"]
+            yield chunk({"content": f"\n\n{question}" if shown.strip() else question})
+        elif not streamed:
+            yield chunk({"content": _content(result)})
+        yield chunk({}, "stop", evokai=extension)
         if include_usage:
             yield (
                 "data: "
