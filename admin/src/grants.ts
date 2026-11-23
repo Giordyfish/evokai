@@ -68,6 +68,8 @@ export function codeGranted(view: GrantView): { granted: boolean; enabled: boole
 }
 /** A provider built-in tool (`builtin:web_search`...). */
 export const builtinGranted = (view: GrantView, kind: string): boolean => flag(group(view, 'builtin').find((x) => x.name === kind))
+/** Files people attach to chat messages (`attachments:*`). */
+export const attachmentsGranted = (view: GrantView): boolean => flag(group(view, 'attachments').find((x) => x.name === '*'))
 /** Confirmations over the OpenAI-compatible API (`openai:confirm`). */
 export const openaiConfirmGranted = (view: GrantView): boolean => flag(group(view, 'openai').find((x) => x.name === 'confirm'))
 /** Capabilities of the catalog an agent may turn on: granted, offered by the deployment, installed and

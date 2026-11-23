@@ -989,7 +989,7 @@ export interface BugReport {
 
 export type GrantKind =
   | 'model' | 'mcp' | 'tool' | 'skill' | 'client' | 'voice' | 'stt' | 'tts' | 'storage' | 'channel' | 'knowledge'
-  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin'
+  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin' | 'attachments'
 export type ModelGrant = 'any' | 'fallback' | 'off'
 export type GrantValue = boolean | ModelGrant
 export type ClientToolName = 'navigate' | 'chart' | 'diagram' | 'ask' | 'confirm' | 'memory'

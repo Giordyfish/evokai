@@ -10,7 +10,7 @@ import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBa
 import { adminJson, describe, forApp } from '../api'
 import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
-import { capabilityItems, capabilityUsable, channelGranted, builtinGranted, clientGranted, codeGranted, grantedModels, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
+import { capabilityItems, capabilityUsable, channelGranted, builtinGranted, clientGranted, codeGranted, grantedModels, attachmentsGranted, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
 import { done, Fx, HAT, sparkle, toast } from '../magic'
 import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { rulesOf, toRow, type RuleRow } from '../askRules'
@@ -31,13 +31,15 @@ const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
   ins: ['name', 'title', 'instructions', 'channels', 'a2a'],
   mod: ['modules'],
   model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'model_settings', 'temperature', 'prompt_cache'],
-  tools: ['mcp_servers', 'client_tools', 'ask_rules'],
+  tools: ['mcp_servers', 'client_tools', 'ask_rules', 'attachments'],
   skills: ['skills', 'preload_skills'],
   kb: ['knowledge', 'code', 'capabilities', 'subagents'],
   voice: ['voice'],
   out: ['output_schema'],
   ver: [],
 }
+const ATTACHMENT_KINDS = ['png', 'jpeg', 'webp', 'gif', 'pdf', 'docx', 'pptx', 'txt', 'md', 'csv'] as const
+type AttachmentKind = (typeof ATTACHMENT_KINDS)[number]
 const CLIENT_TOOLS: Array<[string, TextKey]> = [
   ['navigate', 'ag.ct.navigate'],
   ['chart', 'ag.ct.chart'],
@@ -698,6 +700,54 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             </p>
           </Panel>
         )}
+        {browser
+          ? (() => {
+              const ok = attachmentsGranted(g)
+              const a = draft.attachments ?? { enabled: false }
+              const kinds: AttachmentKind[] = a.types ?? [...ATTACHMENT_KINDS]
+              const put = (p: Partial<NonNullable<AgentDef['attachments']>>) => set({ attachments: { ...a, ...p } })
+              const num = (key: 'max_file_mb' | 'max_files' | 'max_conversation_mb', label: string, max: number, dflt: number) => (
+                <Field label={label}>
+                  <input class="in num" type="number" min={1} max={max} value={a[key] ?? dflt} onInput={(e) => put({ [key]: Number(e.currentTarget.value) })} />
+                </Field>
+              )
+              return (
+                <>
+                  <div style="height:16px" />
+                  <Panel title={t('ag.attachments')}>
+                    {row(
+                      t('ag.attachmentsOn'),
+                      ok ? t('ag.attachmentsSub') : t('ag.attachmentsNotGranted'),
+                      ok ? <Switch on={!!a.enabled} aria={t('ag.attachmentsOn')} onChange={(v) => put({ enabled: v })} /> : locked,
+                      !ok,
+                    )}
+                    {ok && a.enabled ? (
+                      <>
+                        <Field label={t('ag.attachmentsTypes')} hint={t('ag.attachmentsTypesHint')}>
+                          <div class="flags">
+                            {ATTACHMENT_KINDS.map((k) => (
+                              <Switch
+                                key={k}
+                                label={k}
+                                on={kinds.includes(k)}
+                                disabled={kinds.length === 1 && kinds.includes(k)}
+                                onChange={(v) => put({ types: v ? [...kinds, k] : kinds.filter((x) => x !== k) })}
+                              />
+                            ))}
+                          </div>
+                        </Field>
+                        <div class="grid g3">
+                          {num('max_file_mb', t('ag.attachmentsFileMb'), 50, 10)}
+                          {num('max_files', t('ag.attachmentsFiles'), 10, 5)}
+                          {num('max_conversation_mb', t('ag.attachmentsConversationMb'), 1000, 50)}
+                        </div>
+                      </>
+                    ) : null}
+                  </Panel>
+                </>
+              )
+            })()
+          : null}
       </>
     ),
     skills: (
