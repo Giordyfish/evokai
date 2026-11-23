@@ -184,6 +184,35 @@ class CodeDef(BaseModel):
     grant)."""
 
 
+AttachmentKind = Literal["png", "jpeg", "webp", "gif", "pdf", "docx", "pptx", "txt", "md", "csv"]
+"""Kinds of files a person may attach (``evokai.attachments.KINDS``)."""
+_ALL_ATTACHMENT_KINDS: list[AttachmentKind] = [
+    "png", "jpeg", "webp", "gif", "pdf", "docx", "pptx", "txt", "md", "csv"
+]  # fmt: skip
+
+
+class AttachmentsDef(BaseModel):
+    """Files people attach to their chat messages (``evokai.attachments``)."""
+
+    enabled: bool = False
+    """Accept attachments (also needs the application's ``attachments`` grant)."""
+    types: list[AttachmentKind] = Field(default_factory=lambda: list(_ALL_ATTACHMENT_KINDS))
+    """The kinds accepted, detected from the bytes (never the name or the declared type)."""
+    max_file_mb: int = Field(default=10, ge=1, le=50)
+    """Largest file, in MB."""
+    max_files: int = Field(default=5, ge=1, le=10)
+    """Files in one message."""
+    max_conversation_mb: int = Field(default=50, ge=1, le=1000)
+    """Everything kept for one conversation, in MB (Evokai storage)."""
+
+    @field_validator("types")
+    @classmethod
+    def _types(cls, v: list[AttachmentKind]) -> list[AttachmentKind]:
+        if not v:
+            raise ValueError("attachments.types needs at least one kind")
+        return list(dict.fromkeys(v))
+
+
 class CapabilityUse(BaseModel):
     """One capability of the catalog (``evokai.capabilities``) as the agent uses it."""
 
@@ -246,6 +275,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "template_syntax": "legacy",
     "builtin_tools": [],
     "openai_confirm": False,
+    "attachments": None,
     "markup": None,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
@@ -316,6 +346,9 @@ class AgentDef(BaseModel):
     openai_confirm: bool = False
     """Over the OpenAI-compatible API, offer the tools that change data: a call waits for the
     person's yes in the next request (needs the grant ``openai:confirm``)."""
+    attachments: AttachmentsDef | None = None
+    """Files people may attach to chat messages, which kinds and how large (needs the grant
+    ``attachments``)."""
 
     @field_validator("builtin_tools")
     @classmethod

@@ -84,7 +84,8 @@ def is_question(msg: Any) -> bool:
         return True
     blocks = [b for b in _get(msg, "content") or [] if isinstance(b, dict)]
     return not any("toolResult" in b for b in blocks) and any(
-        str(b.get("text") or "").strip() and not b.get("summary") for b in blocks
+        str(b.get("text") or "").strip() and not b.get("summary") and "file" not in b
+        for b in blocks
     )
 
 
@@ -167,7 +168,9 @@ def question_text(msg: Any) -> str:
     if text:
         return text
     blocks = [b for b in _get(msg, "content") or [] if isinstance(b, dict)]
-    return "\n".join(str(b.get("text") or "") for b in blocks if not b.get("summary")).strip()
+    return "\n".join(
+        str(b.get("text") or "") for b in blocks if not b.get("summary") and "file" not in b
+    ).strip()
 
 
 @dataclass

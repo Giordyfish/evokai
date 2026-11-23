@@ -12,6 +12,7 @@ import {
   localePack,
   recognitionSupport,
   timeline,
+  type AttachmentOffer,
   type CreateVoiceOptions,
   unlockAudio,
   type FetchLike,
@@ -63,6 +64,8 @@ export type Installing = 'no' | 'downloading' | 'done' | 'failed'
 export interface ControllerState {
   session: SessionState
   suggestions: string[]
+  /** What the person may attach (null: nothing; the paper clip shows only otherwise). */
+  files: AttachmentOffer | null
   /** The delimiters of the answers' inline markup, hidden in what the chat shows (null without). */
   markup: MarkupView | null
   history: ConversationItem[] | null
@@ -171,6 +174,7 @@ export class Controller {
     this.st = {
       session: this.session.state,
       suggestions: [],
+      files: null,
       markup: null,
       history: null,
       support: 'checking',
@@ -291,6 +295,7 @@ export class Controller {
         if (info.suggestions?.length) this.patch({ suggestions: info.suggestions })
         this.patch({ markup: info.markup ?? null })
         this.noteMemory(info.memory)
+        this.patch({ files: info.attachments ?? null })
         read = true
       }
       this.patch({ error: null })
@@ -299,7 +304,7 @@ export class Controller {
         void this.session.info().then(
           (i) => {
             this.noteMemory(i.memory)
-            this.patch({ markup: i.markup ?? null })
+            this.patch({ markup: i.markup ?? null, files: i.attachments ?? null })
           },
           () => undefined,
         )
@@ -312,10 +317,12 @@ export class Controller {
     }
   }
 
-  async send(text: string, answer = false): Promise<void> {
+  /** Send a message. Resolves false when the service refused it or could not be reached (not when stopped). */
+  async send(text: string, answer = false, files: File[] = []): Promise<boolean> {
     const t = text.trim()
-    if (!t) return
-    await this.session.chat({ text: t, mode: this.st.voiceOn ? 'voice' : 'text', ...(answer ? { answer } : {}) })
+    if (!t) return false
+    const done = await this.session.chat({ text: t, mode: this.st.voiceOn ? 'voice' : 'text', ...(answer ? { answer } : {}), ...(files.length ? { files } : {}) })
+    return done !== null || !this.session.state.error
   }
 
   /** Edit the last question: it and its answer are replaced by a new turn (refused once it changed data). */

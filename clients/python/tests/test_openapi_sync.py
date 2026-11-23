@@ -39,6 +39,8 @@ REQUESTS: dict[type[BaseModel], str] = {
     models.PageContext: "PageContext",
     models.HistoryMessage: "HistoryMessage",
     models.TextBlock: "TextBlock",
+    models.FileBlock: "FileBlock",
+    models.FileRef: "FileRef",
     models.ToolUseBlock: "ToolUseBlock",
     models.ToolUse: "ToolUse",
     models.ToolResultBlock: "ToolResultBlock",

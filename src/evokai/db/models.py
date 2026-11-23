@@ -261,6 +261,29 @@ class Message(Base):
     __table_args__ = (sa.Index("ix_evokai_messages_thread", "thread_id", "position"),)
 
 
+class Attachment(Base):
+    """A file a person attached to a chat message (``evokai.attachments``), Evokai storage only.
+
+    Kept with its conversation: deleted with it (time to live, erase, deletion). A rewritten
+    question keeps its attachments; they go when its rewrite never stores a new question. Images
+    are stored without their metadata.
+    """
+
+    __tablename__ = "evokai_attachments"
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    application_id: Mapped[str] = mapped_column(ID)
+    subject: Mapped[str] = mapped_column(SUBJECT)
+    session_id: Mapped[str] = mapped_column(ID)
+    message_id: Mapped[str | None] = mapped_column(ID)
+    name: Mapped[str] = mapped_column(sa.String(200))
+    media_type: Mapped[str] = mapped_column(sa.String(100))
+    size: Mapped[int] = mapped_column(sa.Integer)
+    sha256: Mapped[str] = mapped_column(sa.String(64))
+    data: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    __table_args__ = (sa.Index("ix_evokai_attachments_session", "session_id"),)
+
+
 class ConversationSummary(Base):
     """The summary that stands in for a conversation's older messages (context compaction).
 

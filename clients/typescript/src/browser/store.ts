@@ -6,6 +6,7 @@
  */
 import type {
   AskEvent,
+  AttachmentRef,
   CapShare,
   Chart,
   Citation,
@@ -79,6 +80,8 @@ export interface ChatMessage {
   local?: string
   /** Knowledge passages the answer may cite as `[n]`, by number. */
   citations?: Citation[]
+  /** A user message: the files attached to it. */
+  attachments?: AttachmentRef[]
 }
 
 export interface OpenAsk {
@@ -127,7 +130,7 @@ export type Action =
   | { type: 'voice'; activity: VoiceActivity | null }
   | { type: 'interrupted' }
   | { type: 'loaded'; conversation: SessionConversation; conversationId?: string | null }
-  | { type: 'user'; local: string; text?: string; answer?: boolean; rewrite?: boolean }
+  | { type: 'user'; local: string; text?: string; answer?: boolean; rewrite?: boolean; attachments?: AttachmentRef[] }
   | { type: 'bind'; local: string; turnId: string }
   | { type: 'event'; event: EvokaiEvent }
   | { type: 'decided'; actionId: string; approve: boolean }
@@ -430,6 +433,7 @@ export function fromStored(stored: StoredMessage[], pending: PendingConfirmation
       ...(m.id ? { messageId: m.id } : {}),
       ...(m.role === 'user' && m.rewritable !== undefined ? { rewritable: m.rewritable } : {}),
       ...(m.role === 'assistant' && m.regenerable ? { regenerable: true } : {}),
+      ...(m.role === 'user' && m.attachments?.length ? { attachments: m.attachments } : {}),
       feedback: m.feedback ?? null,
       ...(m.interrupted ? { interrupted: true } : {}),
     })
@@ -459,6 +463,9 @@ export function fromHistory(history: HistoryMessage[]): ChatMessage[] {
       events: (h.events ?? []) as unknown as StoredMessage['events'],
       feedback: null,
       interrupted: h.interrupted ?? false,
+      attachments: (h.content ?? []).flatMap((b) =>
+        'file' in b ? [{ id: b.file.id, name: b.file.name, mediaType: b.file.mediaType, size: b.file.size ?? 0 }] : [],
+      ),
     })),
     null,
   ).map((m) => {
@@ -550,7 +557,14 @@ function reduceRaw(state: SessionState, action: Action): SessionState {
       }
       const added: ChatMessage[] = []
       if (action.text !== undefined) {
-        added.push({ id: localId(), role: 'user', parts: [{ kind: 'text', text: action.text }], local: action.local, ...(action.answer ? { answer: true } : {}) })
+        added.push({
+          id: localId(),
+          role: 'user',
+          parts: [{ kind: 'text', text: action.text }],
+          local: action.local,
+          ...(action.answer ? { answer: true } : {}),
+          ...(action.attachments?.length ? { attachments: action.attachments } : {}),
+        })
       }
       added.push({ id: localId(), role: 'assistant', parts: [], local: action.local })
       return {

@@ -31,6 +31,7 @@ const GROUPS: Record<string, { title: TextKey; note: TextKey }> = {
   workflows: { title: 'perms.g.workflows', note: 'perms.g.workflowsNote' },
   code: { title: 'perms.g.code', note: 'perms.g.codeNote' },
   openai: { title: 'perms.g.openai', note: 'perms.g.openaiNote' },
+  attachments: { title: 'perms.g.attachments', note: 'perms.g.attachmentsNote' },
   builtin: { title: 'perms.g.builtin', note: 'perms.g.builtinNote' },
   connections: { title: 'perms.g.connections', note: 'perms.g.connectionsNote' },
   capabilities: { title: 'perms.g.capabilities', note: 'perms.g.capabilitiesNote' },
@@ -86,6 +87,7 @@ function label(x: GrantItem): string {
   if (x.kind === 'workflow') return t(x.name === '*' ? 'perms.workflowsAll' : 'perms.workflowsAutonomous')
   if (x.kind === 'code') return t('perms.code')
   if (x.kind === 'openai') return t('perms.openaiConfirm')
+  if (x.kind === 'attachments') return t('perms.attachments')
   if (x.kind === 'builtin') return t(`ag.builtin.${x.name}` as TextKey)
   return x.label ?? x.name
 }
@@ -145,6 +147,8 @@ function sub(x: GrantItem, appName: string): string {
       ]
         .filter(Boolean)
         .join(', ')
+    case 'attachments':
+      return x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''
     case 'module':
       return [t('perms.moduleSub'), x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''].filter(Boolean).join(', ')
     case 'code':

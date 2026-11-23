@@ -54,6 +54,7 @@ CAPABILITY = "capability"
 MODULE = "module"
 OPENAI = "openai"
 BUILTIN = "builtin"
+ATTACHMENTS = "attachments"
 KINDS = (
     MODEL,
     MCP,
@@ -73,6 +74,7 @@ KINDS = (
     MODULE,
     OPENAI,
     BUILTIN,
+    ATTACHMENTS,
 )
 KNOWLEDGE_ALL = "*"
 """The knowledge grant of the whole capability (each base is also an item of its own)."""
@@ -86,6 +88,9 @@ CODE_ITEMS = ("*",)
 OPENAI_ITEMS = ("confirm",)
 """The OpenAI-compatible API: ``confirm``, changes wait for a yes in the next request (off until
 granted, and the agent turns it on with ``openai_confirm``)."""
+ATTACHMENT_ITEMS = ("*",)
+"""Files people attach to chat messages (``evokai.attachments``), off until granted; the agent's
+``attachments`` turns them on and sets the kinds and sizes."""
 
 CLIENT_TOOLS = ("navigate", "chart", "diagram", "ask", "confirm", "memory")
 CLIENT_SESSION = "session"
@@ -118,13 +123,15 @@ OFF_BY_DEFAULT = frozenset(
     | {(CODE, "*")}
     | {(CLIENT, CLIENT_SESSION)}
     | {(OPENAI, "confirm")}
+    | {(ATTACHMENTS, "*")}
     | {(BUILTIN, k) for k in BUILTIN_KINDS}
 )
 """Items an application does not have until it is granted them: A2A publishes agents to anyone
 holding the server key, autonomous workflows change data without a person deciding, channels
 beyond the web panel let outsiders write to an agent, connections let an agent act as a person in
-a third-party system, and code execution sends conversation data to a sandbox, so all of them are
-opt-in. Every ``capability`` of the catalog is off until granted too (``Grants.default``)."""
+a third-party system, code execution sends conversation data to a sandbox, and attachments let
+people send files to the model, so all of them are opt-in. Every ``capability`` of the catalog is
+off until granted too (``Grants.default``)."""
 MODEL_LEVELS = ("any", "fallback", "off")
 
 YAML_SECTIONS = {
@@ -146,6 +153,7 @@ YAML_SECTIONS = {
     "modules": MODULE,
     "openai": OPENAI,
     "builtin_tools": BUILTIN,
+    "attachments": ATTACHMENTS,
 }
 """Sections of ``grants:`` in an application YAML (and ``EVOKAI_BOOTSTRAP_APPS``) → kinds."""
 
@@ -203,6 +211,7 @@ def check_value(kind: str, name: str, value: Any) -> Any:
         CONNECTION: CONNECTION_ITEMS,
         OPENAI: OPENAI_ITEMS,
         BUILTIN: BUILTIN_KINDS,
+        ATTACHMENTS: ATTACHMENT_ITEMS,
     }
     if kind in fixed and name not in fixed[kind]:
         raise BadRequest(f"Unknown {kind}: {name}", code="grant")
@@ -425,6 +434,14 @@ class Grants:
         """
         return self._flag(OPENAI, name)
 
+    def attachments(self) -> bool:
+        """Whether people may attach files to chat messages; off until granted.
+
+        Returns:
+            True if granted.
+        """
+        return self._flag(ATTACHMENTS, "*")
+
     def builtin(self, kind: str) -> bool:
         """Whether agents may use a provider built-in tool (``web_search``...).
 
@@ -505,12 +522,16 @@ class Grants:
         code = agent.code
         if code is not None and code.enabled and not self.code():
             code = code.model_copy(update={"enabled": False})
+        files = agent.attachments
+        if files is not None and files.enabled and not self.attachments():
+            files = files.model_copy(update={"enabled": False})
         return agent.model_copy(
             update={
                 "client_tools": tools,
                 "mcp_servers": [s for s in agent.mcp_servers if self.mcp(s)],
                 "knowledge": knowledge,
                 "code": code,
+                "attachments": files,
             }
         )
 
@@ -587,6 +608,8 @@ class Grants:
             for t in agent.builtin_tools
             if not self.builtin(t.kind)
         ]
+        if agent.attachments is not None and agent.attachments.enabled and not self.attachments():
+            out.append("attachments are not granted")
         if agent.openai_confirm and not self.openai("confirm"):
             out.append("confirmations over the OpenAI-compatible API are not granted")
         out += [

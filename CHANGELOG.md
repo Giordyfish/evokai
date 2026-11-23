@@ -10,6 +10,18 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- Attachments in the browser chat: a person attaches images (PNG, JPEG, WebP, GIF) and documents (PDF, Word,
+  PowerPoint, text, Markdown, CSV) to a message, inline as base64 in `POST /v1/session/chat` (`attachments`). Off until
+  granted (`attachments:*`) and turned on per agent (`attachments`: kinds, size per file, files per message, total per
+  conversation). The kind is read from the bytes; SVG, HTML and XML are refused; image metadata (EXIF, GPS, XMP) is
+  stripped before anything is kept or sent. Models that read images or PDF get the file, the others the extracted text,
+  scanned and marked as untrusted data. Files are kept with the conversation (Evokai storage) and follow its time to
+  live, export and erasure; with external storage nothing is kept beyond the turn. The history lists each question's
+  files and serves its images through `GET /v1/session/attachments/{id}`; traces keep only name, type, size and hash.
+  The TypeScript client (`chat({ text, files })`, `attachment(id)`), the Python client (`chat(..., attachments=[...])`),
+  `<evokai-chat>` (paper clip, drop, paste, previews; UI size budget +1.5 KB) and the console (agent editor,
+  Permissions) follow. `EVOKAI_ATTACHMENTS_REQUEST_MB` (default 50) sets the chat body limit of a session that may
+  attach files, read from its token before the body; every other session keeps 2 MB. See `docs/attachments.md`.
 - Prompt modules: versioned application prompts with a restricted JSON Schema of parameters and an optional data table,
   rendered as Handlebars templates (pydantic-handlebars, no HTML escaping) after an agent's instructions. Agents list
   the modules they use with defaults and whether a session may change them; the application backend switches and

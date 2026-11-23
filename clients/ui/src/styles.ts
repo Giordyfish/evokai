@@ -169,6 +169,13 @@ a.src-title:hover{text-decoration:underline;color:var(--ek-brand)}
 @keyframes ekblink{50%{opacity:.3}}
 .nav{font-size:12px;color:var(--ek-subtle)}
 .err{font-size:12px;color:var(--ek-danger)}
+.files{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.composer>.files{padding:0 8px 8px}
+.bubble .files{margin-bottom:6px}
+.file{display:inline-flex;align-items:center;gap:6px;max-width:200px;padding:4px 8px;border-radius:10px;font-size:12px;box-shadow:inset 0 0 0 1px var(--ek-border)}
+.file img{width:28px;height:28px;object-fit:cover;border-radius:6px}
+.fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shot{max-width:160px;max-height:160px;border-radius:12px;object-fit:cover}
 .fb{display:flex;gap:4px;color:color-mix(in oklab,var(--ek-subtle) 70%,transparent)}
 .fb button{padding:4px;border-radius:6px}.fb button:hover{color:var(--ek-text)}
 .fb button[aria-pressed=true]{color:var(--ek-accent)}

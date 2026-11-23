@@ -14,6 +14,7 @@ import {
   type RequestOptions,
 } from '../core/http'
 import type {
+  AttachmentRef,
   ChatMode,
   ClientToolEvent,
   ToolPart,
@@ -112,6 +113,11 @@ export interface ChatInput {
   rewrite?: boolean
   /** Regenerate the last answer instead of sending `text` (use `EvokaiSession.regenerate`). */
   regenerate?: boolean
+  /**
+   * Files for the model (`docs/attachments.md`): images and documents, as the session's `attachments` allows. The
+   * service reads their kind from the bytes and refuses what the agent does not take (`attachment_*` codes).
+   */
+  files?: Array<File | Blob>
   signal?: AbortSignal
 }
 
@@ -132,6 +138,8 @@ export class EvokaiSession {
   private readonly renderers = new Map<string, (part: ToolPart) => void>()
   private readonly controllers = new Set<AbortController>()
   private replaying: Promise<void> | null = null
+  /** Local preview URLs of images just sent, revoked once no message shows them (`fileRef`). */
+  private readonly previews = new Set<string>()
 
   constructor(opts: EvokaiSessionOptions) {
     if (!opts.baseUrl) throw new Error('EvokaiSession: baseUrl is required')
@@ -144,7 +152,12 @@ export class EvokaiSession {
     // Client-side events derived from the state: the turn phase and the usage shares.
     let phase: TurnPhase = this.state.phase
     let usage = this.state.usage
+    let messages = this.state.messages
     this.store.subscribe((st) => {
+      if (st.messages !== messages) {
+        messages = st.messages
+        if (this.previews.size) this.revokePreviews(st.messages)
+      }
       if (st.phase !== phase) {
         const previous = phase
         phase = st.phase
@@ -200,6 +213,16 @@ export class EvokaiSession {
     this.renderEvent(event)
     if (event.type === 'client_tool') void this.runTool(event)
     if (event.type === 'done' && event.messages?.length) this.opts.onMessages?.(event.messages, event)
+  }
+
+  /** Revoke the preview URLs no message shows any more (a reload, a new conversation, a refused rewrite). */
+  private revokePreviews(messages: SessionState['messages']): void {
+    const shown = new Set(messages.flatMap((m) => m.attachments?.flatMap((a) => (a.url ? [a.url] : [])) ?? []))
+    for (const url of this.previews) {
+      if (shown.has(url)) continue
+      this.previews.delete(url)
+      URL.revokeObjectURL(url)
+    }
   }
 
   private emit(event: SessionEvent): void {
@@ -323,6 +346,9 @@ export class EvokaiSession {
     const text = input.text?.trim()
     if (input.confirm) this.store.dispatch({ type: 'decided', actionId: input.confirm.actionId, approve: input.confirm.approve })
     const rewrite = input.rewrite && text !== undefined && !input.confirm
+    const files = !input.confirm && !input.regenerate ? (input.files ?? []) : []
+    const attachments = files.map(fileRef)
+    for (const a of attachments) if (a.url) this.previews.add(a.url)
     // The question being rewritten (Evokai storage: the service refuses it if it is no longer the last one).
     const editing = rewrite ? [...this.state.messages].reverse().find((m) => m.role === 'user' && m.local === undefined) : undefined
     this.store.dispatch({
@@ -331,6 +357,7 @@ export class EvokaiSession {
       ...(text !== undefined && !input.confirm ? { text } : {}),
       ...(input.answer ? { answer: true } : {}),
       ...(rewrite ? { rewrite: true } : {}),
+      ...(attachments.length ? { attachments } : {}),
     })
     const history = input.history !== undefined ? input.history : await this.opts.getHistory?.()
     const page = input.page !== undefined ? input.page : this.opts.getPage?.()
@@ -342,6 +369,11 @@ export class EvokaiSession {
     if (page) body.page = page
     if (history) body.history = history
     if (input.endOfSpeechAt) body.endOfSpeechAt = input.endOfSpeechAt
+    if (files.length) {
+      body.attachments = await Promise.all(
+        files.map(async (f, i) => ({ name: attachments[i]?.name ?? 'file', mediaType: f.type, data: await base64(f) })),
+      )
+    }
     if (rewrite && !input.regenerate) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
     const path = input.regenerate ? '/v1/session/regenerate' : '/v1/session/chat'
 
@@ -395,6 +427,20 @@ export class EvokaiSession {
       this.controllers.delete(ctrl)
       this.store.dispatch({ type: 'settled', local })
     }
+  }
+
+  /**
+   * An image attached to this conversation (`AttachmentRef.id`), fetched with the session token: show it with
+   * `URL.createObjectURL`. Documents are never served back (404 `unknown_attachment`).
+   */
+  async attachment(id: string): Promise<Blob> {
+    const path = `/v1/session/attachments/${encodeURIComponent(id)}`
+    const get = async (token: string) =>
+      this.fetchFn(joinUrl(this.baseUrl, path), { headers: { Authorization: `Bearer ${token}` } })
+    let res = await get(await this.getAccessToken())
+    if (res.status === 401 && this.opts.getToken) res = await get(await this.getAccessToken(true))
+    if (!res.ok) throw await errorFromResponse(res)
+    return res.blob()
   }
 
   private async post(body: Record<string, unknown>, token: string, signal: AbortSignal, path = '/v1/session/chat'): Promise<Response> {
@@ -698,4 +744,19 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 /** Whether an `error` event is a spending cap that blocked the turn (`limit` says which). */
 export function isLimitError(e: SessionEvent): e is LimitErrorEvent {
   return e.type === 'error' && e.code === 'limit'
+}
+
+/** What a question shows of a file before the service keeps it: an image gets a local preview. */
+function fileRef(f: File | Blob): AttachmentRef {
+  const name = 'name' in f && f.name ? f.name : 'file'
+  const url = f.type.startsWith('image/') && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(f) : undefined
+  return { name, mediaType: f.type, size: f.size, ...(url ? { url } : {}) }
+}
+
+/** A file's bytes as base64 (in slices: a large file would overflow the call stack in one go). */
+async function base64(f: Blob): Promise<string> {
+  const bytes = new Uint8Array(await f.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
 }

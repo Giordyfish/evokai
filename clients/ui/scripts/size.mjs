@@ -8,7 +8,8 @@ const client = new URL('../../typescript/dist/browser/', import.meta.url)
 // +0.5 KB in November 2026: the conversation's state on the host (data-state, statechange) for slotted content.
 // +0.5 KB in November 2026: a custom orb (a slotted element or images per state) travelling in place of the orb.
 // +0.5 KB in November 2026: client tools, your own tool cards (toolRenderers) and regenerating the last answer.
-const BUDGET_KB = { 'index.js': 48, 'react.js': 48.5 }
+// +1.5 KB in November 2026: attachments (the paper clip, drop and paste, previews, the files of each question, EN+IT).
+const BUDGET_KB = { 'index.js': 49.5, 'react.js': 50 }
 const CLIENT_BUDGET_KB = 60
 
 const gz = (url) => gzipSync(readFileSync(url)).length / 1024

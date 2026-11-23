@@ -385,12 +385,31 @@ export interface SessionInfo {
   markup?: MarkupView | null
   /** The server speech engines the token chose, null for the deployment's defaults. */
   speech?: SpeechChoice | null
+  /** What the person may attach to a message (`docs/attachments.md`); null when nothing. */
+  attachments?: AttachmentOffer | null
 }
 
 /** The server speech engines of a session (`speech` at token mint). */
 export interface SpeechChoice {
   tts: string | null
   stt: string | null
+}
+
+/** The files a session accepts: kinds read from the bytes, sizes in bytes. */
+export interface AttachmentOffer {
+  kinds: string[]
+  mediaTypes: string[]
+  maxFileBytes: number
+  maxFiles: number
+}
+
+/** A file attached to a question: `id` once the service keeps it, `url` a local preview of an image just sent. */
+export interface AttachmentRef {
+  id?: string
+  name: string
+  mediaType: string
+  size: number
+  url?: string
 }
 
 export interface StoredMessage {
@@ -404,6 +423,8 @@ export interface StoredMessage {
   rewritable?: boolean
   /** The last assistant message, when it can still be regenerated (`EvokaiSession.regenerate`). */
   regenerable?: boolean
+  /** User messages: the files attached to them (images are shown with `EvokaiSession.attachment`). */
+  attachments?: AttachmentRef[]
 }
 
 export interface PendingConfirmation { actionId: string; items: string[]; why?: ConfirmReason[] }
@@ -1008,7 +1029,7 @@ export interface BugReport {
 
 export type GrantKind =
   | 'model' | 'mcp' | 'tool' | 'skill' | 'client' | 'voice' | 'stt' | 'tts' | 'storage' | 'channel' | 'knowledge'
-  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin'
+  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin' | 'attachments'
 export type ModelGrant = 'any' | 'fallback' | 'off'
 export type GrantValue = boolean | ModelGrant
 export type ClientToolName = 'navigate' | 'chart' | 'diagram' | 'ask' | 'confirm' | 'memory'

@@ -155,6 +155,9 @@ result = session.chat_json("Summarise my week")  # Accept: application/json, wai
 result.text, result.reason, result.events
 ```
 
+Files go with `attachments=[...]`: paths, `(name, bytes)` pairs or `Attachment(name, data)`, when the agent takes them
+(`session.info().attachments`, see the service's `docs/attachments.md`).
+
 External storage (the application keeps the conversation): pass `history=[...]` (`HistoryMessage` or plain dicts)
 to `chat`, `confirm`, `answer` or `chat_json`, and append `done.messages` (or `result.messages`) to your copy. A
 rewrite (`session.rewrite(text, history=...)`, `chat_json(text, history=..., rewrite=True)`) says where its messages go:

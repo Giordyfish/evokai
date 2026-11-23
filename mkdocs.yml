@@ -92,6 +92,7 @@ nav:
       - Inline markup: markup.md
       - Server speech: voice.md
       - Client tools: client-tools.md
+      - Attachments: attachments.md
       - Provider built-in tools: builtin-tools.md
       - Knowledge bases: knowledge.md
       - Long-term memory: memory.md

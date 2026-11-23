@@ -297,6 +297,10 @@ class Settings(BaseSettings):
     application's data residency applies on top)."""
     embedding_model: str = "bedrock:amazon.titan-embed-text-v2:0"
     """The embedding model of a new knowledge base that does not choose one."""
+    attachments_request_mb: int = Field(default=50, ge=1, le=200)
+    """Largest total of the files attached to one chat message, in megabytes: the body limit of
+    ``POST /v1/session/chat`` follows it (base64 adds a third) when the session's application is
+    granted attachments and its agent has them on, 2 MB otherwise. Agents set lower limits."""
     knowledge_max_file_mb: int = Field(default=20, ge=1, le=200)
     """Largest document accepted (upload, address or connector), in megabytes."""
     knowledge_fetch_allow: list[str] = Field(default_factory=list)

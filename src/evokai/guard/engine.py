@@ -613,6 +613,10 @@ class TurnGuard:
                         tu.get("input") or {}, lambda t: protect(t, found)
                     )
                     blocks.append({"toolUse": tu})
+                elif "file" in b and b.get("text"):
+                    # A document the person attached: read from a file, so it is data.
+                    source = f"attachment:{(b.get('file') or {}).get('name', '')}"
+                    blocks.append({**b, "text": self.mark(protect(b["text"], found), source)})
                 elif b.get("text") and b.get("summary"):
                     # The summary of older messages (compaction): written by a model from the
                     # conversation and its tool results, so it is data, never the person's words.
@@ -627,6 +631,14 @@ class TurnGuard:
             out.append(Stored(role=msg.role, content=blocks))
         self._pii_event("pii.model", found)
         return out
+
+    def has_pii(self, text: str) -> bool:
+        """Whether a text holds identifiers the policy looks for (an attachment's text).
+
+        Returns:
+            True when one is found.
+        """
+        return bool(text) and bool(pii.find(text, self._types(), self.declared))
 
     def protect_text(self, text: str) -> str:
         """Protect one text on its way to the model (page text, a run's input).
@@ -718,7 +730,7 @@ class TurnGuard:
                 found[k] = found.get(k, 0) + n
             return pii.mask(t, types, self.declared) if spans and p.enforced("pii.history") else t
 
-        blocks = [pii.transform_any(b, scan) for b in content_blocks]
+        blocks = [_stored_block(b, scan) for b in content_blocks]
         text = scan(text) if text else text
         self._pii_event("pii.history", found, add=True)
         return blocks, text
@@ -1333,3 +1345,21 @@ class Guard:
             await self.store.security_events.add_many(list(rows))
         except Exception as e:
             log.warning("security_events_not_stored", extra={"error": type(e).__name__})
+
+
+def _stored_block(block: Any, scan: Any) -> Any:
+    """A content block with its identifiers masked.
+
+    An attachment keeps its id, type and hash (only its name and text are scanned), so it still
+    finds its file.
+
+    Returns:
+        The block.
+    """
+    if isinstance(block, dict) and isinstance(block.get("file"), dict):
+        f = block["file"]
+        out = {**block, "file": {**f, "name": scan(str(f.get("name") or ""))}}
+        if block.get("text"):
+            out["text"] = scan(block["text"])
+        return out
+    return pii.transform_any(block, scan)

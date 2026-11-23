@@ -9,8 +9,10 @@ and the service cancels that turn.
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import json
+import os
 import time
 from collections.abc import (
     AsyncGenerator,
@@ -40,6 +42,7 @@ from evokai.events import (
     parse_event,
 )
 from evokai.models import (
+    Attachment,
     Connection,
     ConnectionStarted,
     HistoryMessage,
@@ -65,6 +68,8 @@ from evokai.sse import SseMessage, SseParser
 __all__ = ["AsyncChatStream", "AsyncEvokaiSession", "ChatMode", "ChatStream", "EvokaiSession"]
 
 ChatMode = Literal["text", "voice"]
+AttachmentInput = Attachment | str | os.PathLike[str] | tuple[str, bytes]
+"""A file for ``chat(..., attachments=[...])``: :class:`Attachment`, a path, ``(name, bytes)``."""
 CHAT_PATH = "/v1/session/chat"
 REGENERATE_PATH = "/v1/session/regenerate"
 
@@ -78,11 +83,13 @@ def chat_body(
     history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
     end_of_speech_at: float | None = None,
     rewrite: bool | str = False,
+    attachments: Sequence[AttachmentInput] | None = None,
 ) -> dict[str, Any]:
     """The body of ``POST /v1/session/chat``.
 
     ``rewrite``: replace the last question with ``text`` (True), or name the stored message being
     edited (its id; the service refuses it when it is no longer the last question).
+    ``attachments``: files for the model (``docs/attachments.md``), sent as base64.
 
     Returns:
         The JSON body.
@@ -101,6 +108,26 @@ def chat_body(
         out["endOfSpeechAt"] = end_of_speech_at
     if rewrite and confirm is None:
         out["rewrite"] = {"messageId": rewrite} if isinstance(rewrite, str) else {}
+    if attachments and confirm is None:
+        out["attachments"] = [_attachment_body(a) for a in attachments]
+    return out
+
+
+def _attachment_body(item: AttachmentInput) -> dict[str, Any]:
+    """An attachment as the chat body carries it.
+
+    Returns:
+        name, data (base64) and mediaType when given.
+    """
+    if isinstance(item, tuple):
+        item = Attachment(name=item[0], data=item[1])
+    elif not isinstance(item, Attachment):
+        path = os.fspath(item)
+        with open(path, "rb") as f:
+            item = Attachment(name=os.path.basename(path), data=f.read())
+    out: dict[str, Any] = {"name": item.name, "data": base64.b64encode(item.data).decode()}
+    if item.media_type:
+        out["mediaType"] = item.media_type
     return out
 
 
@@ -540,6 +567,7 @@ class EvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         end_of_speech_at: float | None = None,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> ChatStream:
         """Send a message and stream the turn.
 
@@ -549,12 +577,19 @@ class EvokaiSession(_SessionBase):
             mode: ``voice`` for a transcript the answer of which is read aloud.
             history: External storage: the conversation so far, oldest first.
             end_of_speech_at: Seconds since the epoch when the user stopped speaking.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``
+                (the agent's ``attachments`` and the ``attachments`` grant decide what is taken).
 
         Returns:
             The stream of the turn's events (iterate it, or use it in a ``with`` block).
         """
         body = chat_body(
-            text=text, page=page, mode=mode, history=history, end_of_speech_at=end_of_speech_at
+            text=text,
+            page=page,
+            mode=mode,
+            history=history,
+            end_of_speech_at=end_of_speech_at,
+            attachments=attachments,
         )
         return ChatStream(self, body)
 
@@ -671,6 +706,7 @@ class EvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         rewrite: bool | str = False,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> ChatResult:
         """Run one turn and wait for its end (``Accept: application/json``).
 
@@ -682,12 +718,19 @@ class EvokaiSession(_SessionBase):
             history: External storage: the conversation so far, oldest first.
             rewrite: Replace the last question with ``text`` (True, or the edited message's id);
                 with external storage drop your history from ``result.replaced_from``.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``.
 
         Returns:
             The whole turn: its text, events, reason and (external storage) new messages.
         """
         body = chat_body(
-            text=text, confirm=confirm, page=page, mode=mode, history=history, rewrite=rewrite
+            text=text,
+            confirm=confirm,
+            page=page,
+            mode=mode,
+            history=history,
+            rewrite=rewrite,
+            attachments=attachments,
         )
         result = self._transport.send(calls.session_chat_json(body), self.token)
         for e in result.events:
@@ -925,6 +968,7 @@ class AsyncEvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         end_of_speech_at: float | None = None,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> AsyncChatStream:
         """Send a message and stream the turn (``async for`` or ``async with``).
 
@@ -934,12 +978,19 @@ class AsyncEvokaiSession(_SessionBase):
             mode: ``voice`` for a transcript the answer of which is read aloud.
             history: External storage: the conversation so far, oldest first.
             end_of_speech_at: Seconds since the epoch when the user stopped speaking.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``
+                (the agent's ``attachments`` and the ``attachments`` grant decide what is taken).
 
         Returns:
             The stream of the turn's events.
         """
         body = chat_body(
-            text=text, page=page, mode=mode, history=history, end_of_speech_at=end_of_speech_at
+            text=text,
+            page=page,
+            mode=mode,
+            history=history,
+            end_of_speech_at=end_of_speech_at,
+            attachments=attachments,
         )
         return AsyncChatStream(self, body)
 
@@ -1056,6 +1107,7 @@ class AsyncEvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         rewrite: bool | str = False,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> ChatResult:
         """Run one turn and wait for its end (``Accept: application/json``).
 
@@ -1067,12 +1119,19 @@ class AsyncEvokaiSession(_SessionBase):
             history: External storage: the conversation so far, oldest first.
             rewrite: Replace the last question with ``text`` (True, or the edited message's id);
                 with external storage drop your history from ``result.replaced_from``.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``.
 
         Returns:
             The whole turn: its text, events, reason and (external storage) new messages.
         """
         body = chat_body(
-            text=text, confirm=confirm, page=page, mode=mode, history=history, rewrite=rewrite
+            text=text,
+            confirm=confirm,
+            page=page,
+            mode=mode,
+            history=history,
+            rewrite=rewrite,
+            attachments=attachments,
         )
         result = await self._transport.send(calls.session_chat_json(body), self.token)
         for e in result.events:

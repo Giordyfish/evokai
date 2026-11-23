@@ -33,7 +33,8 @@ tools, skills), its security policy, its caps and its abuse limits apply exactly
 - **The agent's own settings.** `temperature`, `max_tokens`, `top_p`, `response_format`... are not taken from the
   request: the agent definition sets them. An agent with an `output_schema` answers with its JSON as the message
   content.
-- **Text only.** Content parts other than `text` are refused (`400 unsupported_content`).
+- **Text only.** Content parts other than `text` are refused (`400 unsupported_content`); files go through the
+  browser chat ([attachments](attachments.md)).
 - **Client tools are not supported** ([custom client tools](client-tools.md) run on the session's own stream): a request with `tools` is refused (`400 tools_not_supported`); `n` above 1 is
   refused (`400 n_not_supported`).
 

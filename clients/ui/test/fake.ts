@@ -31,6 +31,9 @@ export function fakeEvokai(
   turns: Array<Array<Partial<EvokaiEvent> & { type: string }>>,
   mem: FakeMemory = { mode: 'on', consent: 'unknown', items: [] },
   connections: Connection[] = [],
+  attachments: unknown = null,
+  /** HTTP errors the next chat requests get, in order, before any scripted turn. */
+  refusals: Array<{ status: number; code: string }> = [],
 ) {
   const calls: Call[] = []
   let seq = 0
@@ -42,7 +45,7 @@ export function fakeEvokai(
     calls.push({ method, url, body })
     const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } })
     if (url.endsWith('/token')) return json({ token: 'tok', conversationId: 'c1', expiresAt: Date.now() / 1000 + 600, usage, suggestions: ['How did last week go?', 'What ships this week?'] })
-    if (url.endsWith('/v1/session')) return json({ conversationId: 'c1', agent: 'helper', expiresAt: Date.now() / 1000 + 600, usage, memories: [], memory: memoryState(mem) })
+    if (url.endsWith('/v1/session')) return json({ conversationId: 'c1', agent: 'helper', expiresAt: Date.now() / 1000 + 600, usage, memories: [], memory: memoryState(mem), attachments })
     if (url.endsWith('/v1/session/memories') && method === 'GET') return json({ memory: memoryState(mem), items: memoryState(mem).active ? mem.items : [] })
     if (url.endsWith('/v1/session/memory-consent')) {
       if (mem.mode === 'off') return json({ error: 'memory_off', message: 'Memory is off for this application.' }, 409)
@@ -77,6 +80,8 @@ export function fakeEvokai(
     }
     if (url.endsWith('/v1/session/conversation')) return json({ messages: [], pending: null, lastSeq: 0, runningTurnId: null })
     if (url.endsWith('/v1/session/chat') || url.endsWith('/v1/session/regenerate')) {
+      const refused = refusals.shift()
+      if (refused) return json({ error: refused.code, message: 'Refused.' }, refused.status)
       const events = (turns.shift() ?? [{ type: 'text', delta: 'ok' }]).map((e) => ({ ...e, seq: ++seq, turnId: `t${seq}` }))
       // Every turn is 'tt' unless the test names its own (a regeneration replaces an earlier turn).
       const named = events.find((e) => 'turn' in e) as { turn?: string } | undefined

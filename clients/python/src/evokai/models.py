@@ -12,6 +12,7 @@ the routes and the TypeScript client's types.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -28,6 +29,8 @@ __all__ = [
     "ApiKeyInfo",
     "AppPatch",
     "Application",
+    "Attachment",
+    "AttachmentOffer",
     "BugReport",
     "CapConfig",
     "CapPeriod",
@@ -39,6 +42,8 @@ __all__ = [
     "ConversationSummary",
     "EraseResult",
     "ExportedConfig",
+    "FileBlock",
+    "FileRef",
     "GrantChange",
     "GrantChanges",
     "GrantGroup",
@@ -318,6 +323,38 @@ class TextBlock(WireModel):
     text: str
 
 
+class FileRef(WireModel):
+    """An attachment as a message keeps it: never its bytes."""
+
+    id: str
+    name: str
+    media_type: str
+    size: int = 0
+    sha256: str = ""
+
+
+class FileBlock(WireModel):
+    """An attachment of a question, with the text the model read of it (a document).
+
+    Without text, the model read the file itself.
+    """
+
+    file: FileRef
+    text: str | None = None
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """A file to send with a message (``chat(..., attachments=[...])``).
+
+    A path or a ``(name, bytes)`` pair works too. The service reads the kind from the bytes.
+    """
+
+    name: str
+    data: bytes
+    media_type: str | None = None
+
+
 class ToolUse(WireModel):
     """A tool call of the model."""
 
@@ -350,7 +387,7 @@ class ToolResultBlock(WireModel):
     tool_result: ToolResult
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+ContentBlock = FileBlock | TextBlock | ToolUseBlock | ToolResultBlock
 
 
 class HistoryMessage(WireModel):
@@ -473,6 +510,15 @@ class SessionToken(WireModel):
     """Whether memory is on for the person, and whether to ask them."""
 
 
+class AttachmentOffer(WireModel):
+    """The files a session accepts: kinds read from the bytes, sizes in bytes."""
+
+    kinds: list[str] = Field(default_factory=list)
+    media_types: list[str] = Field(default_factory=list)
+    max_file_bytes: int = 0
+    max_files: int = 0
+
+
 class SessionInfo(WireModel):
     """``GET /v1/session``: conversation, agent, usage shares and memories."""
 
@@ -484,6 +530,8 @@ class SessionInfo(WireModel):
     memory: MemoryState | None = None
     """Whether memory is on for the person and whether to ask them (None: no application)."""
     suggestions: list[str] = Field(default_factory=list)
+    attachments: AttachmentOffer | None = None
+    """What the person may attach to a message (None: nothing)."""
     markup: dict[str, Any] | None = None
     """The delimiters of the answers' inline markup (``cue``, ``speech``), None without."""
 

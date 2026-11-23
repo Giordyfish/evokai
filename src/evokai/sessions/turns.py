@@ -48,6 +48,7 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.tools import DeferredToolResults, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
+from evokai import attachments as files_
 from evokai.agents.definitions import AgentDef
 from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import (
@@ -67,7 +68,14 @@ from evokai.audio.speech.numbers import spell_numbers
 from evokai.audio.speech.replies import spoken_decision, spoken_option
 from evokai.audio.speech.speakable import SentenceSplitter, speakable
 from evokai.core.config import Settings
-from evokai.core.errors import ConfigError, Conflict, Forbidden, NotFound, Unauthorized
+from evokai.core.errors import (
+    BadRequest,
+    ConfigError,
+    Conflict,
+    Forbidden,
+    NotFound,
+    Unauthorized,
+)
 from evokai.core.util import clip, new_id, utcnow
 from evokai.db import models as m
 from evokai.db.repositories import DEFAULT_TITLE, Store, Who
@@ -186,6 +194,11 @@ class TurnInput:
     regenerate: bool = False
     """Regenerate the last answer: the last question (its stored or sent text) runs again as a
     rewrite (409 ``not_regenerable`` when it cannot)."""
+    files: list[files_.Upload] = field(default_factory=list)
+    """Attachments of the message (``evokai.attachments``), checked when the turn opens."""
+    kept_files: list[dict[str, Any]] = field(default_factory=list)
+    """A rewrite or a regeneration: the replaced question's attachment blocks, which the new
+    question keeps."""
 
 
 @dataclass
@@ -227,6 +240,10 @@ class TurnRun:
     replaced_from: int | None = None
     """A rewrite with external storage: the index of the sent history the new messages replace
     from."""
+    files: list[files_.Prepared] = field(default_factory=list)
+    """The message's attachments, checked and prepared (``evokai.attachments``)."""
+    dropped: bool = False
+    """A rewrite deleted the question it replaces (Evokai storage)."""
 
 
 class _Cancelled(Exception):
@@ -359,6 +376,7 @@ class TurnEngine:
         if inp.channel != "browser" and inp.channel not in agent.channels:
             raise Forbidden(f"This agent is not reached over {inp.channel}.", code="channel")
         plan, replaced_from = await self._rewrite_check(inp, app, who, session, storage)
+        attached = await self._attachments(inp, app, grants, agent, session, storage)
         turn_id = new_id()
         guard = self.guard.turn(
             app,
@@ -410,6 +428,7 @@ class TurnEngine:
         return TurnRun(
             rewrite=plan,
             replaced_from=replaced_from,
+            files=attached,
             guard=guard,
             trace=guard.trace,
             rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
@@ -460,6 +479,7 @@ class TurnEngine:
             if index is not None and inp.regenerate:
                 index, inp.text = self._regenerated(dumped, index)
             if index is not None:
+                inp.kept_files = _attached_blocks(dumped[index].get("content"))
                 inp.history = sent[:index]
         elif session is None:
             code = rewrite.NOTHING
@@ -471,12 +491,137 @@ class TurnEngine:
             index, code = rewrite.check(rows, inp.rewrite.get("messageId"))
             if index is not None and inp.regenerate:
                 index, inp.text = self._regenerated(rows, index)
+            if index is not None:
+                inp.kept_files = _attached_blocks(rows[index].content)
         if code is not None or index is None:
             code = rewrite.NOT_REGENERABLE if inp.regenerate else code or rewrite.NOTHING
             raise Conflict(message(app, rewrite.MESSAGE_KEYS[code], session=session), code=code)
         if storage == "external":
             return None, index
         return rewrite.plan_of(rows, index), None
+
+    async def _attachments(
+        self,
+        inp: TurnInput,
+        app: m.Application,
+        grants: Grants,
+        agent: AgentDef,
+        session: m.Session | None,
+        storage: str,
+    ) -> list[files_.Prepared]:
+        """The message's attachments, checked before anything is kept (``evokai.attachments``).
+
+        Returns:
+            The prepared files.
+
+        Raises:
+            BadRequest: Attachments sent with a decision (``attachment_invalid``).
+        """
+        if not inp.files:
+            return []
+        if inp.confirm is not None:
+            raise BadRequest("A decision carries no attachments.", code="attachment_invalid")
+        restricted = grants.restrict(agent)
+        chain = self._candidates(restricted, app, inp.principal.claims.model, grants)
+        used = None
+        if storage == "evokai":
+            used = (
+                0
+                if session is None
+                else await self.store.attachments.total(inp.principal.who, session.id)
+            )
+        # Stripping and reading a file takes a while: off the event loop, so other streams go on.
+        return await asyncio.to_thread(
+            files_.check,
+            inp.files,
+            granted=grants.attachments(),
+            config=restricted.attachments,
+            models=[self.catalog.get(n) for n in chain],
+            carried=len(inp.kept_files),
+            used_bytes=used,
+        )
+
+    def models_for(
+        self, agent: AgentDef, app: m.Application, requested: str | None, grants: Grants
+    ) -> list[Any]:
+        """The model objects of the chain a turn of this agent would try.
+
+        Returns:
+            pydantic-ai models, in order.
+        """
+        chain = self._candidates(grants.restrict(agent), app, requested, grants)
+        return [self.catalog.get(n) for n in chain]
+
+    async def _file_blocks(
+        self, run: TurnRun, inp: TurnInput, guard: TurnGuard
+    ) -> list[dict[str, Any]]:
+        """The question's attachment blocks: kept ones first, then the new ones.
+
+        A document's text is scanned for hidden instructions (``untrusted.injection``); a PDF
+        whose scan removed something goes as its cleaned text instead of the file.
+
+        Returns:
+            The blocks.
+        """
+        blocks = list(inp.kept_files)
+        for p in run.files:
+            meta = p.meta()
+            if p.text is not None:
+                cleaned = files_.clip(await guard.untrusted(p.text, f"attachment:{p.name}"))
+                # A PDF goes as its text when the scan removed something, or when it holds
+                # personal data the policy protects towards the model (the file cannot be masked).
+                protects = guard.policy.enforced("pii.model") and guard.has_pii(cleaned)
+                if not p.native or cleaned != p.text or protects:
+                    p.native = False
+                    blocks.append({"file": meta, "text": cleaned})
+                    continue
+            blocks.append({"file": meta})
+        if blocks:
+            self._trace(run, inp).root.set(
+                attachments=[{**b["file"], "native": "text" not in b} for b in blocks]
+            )
+        return blocks
+
+    async def _keep_files(self, run: TurnRun, inp: TurnInput, message_id: str | None) -> None:
+        """Keep the new attachments with their message (Evokai storage only)."""
+        if run.storage != "evokai":
+            return
+        await self.store.attachments.add(run.who, run.session.id, message_id, run.files)
+        kept = [str(b["file"]["id"]) for b in inp.kept_files]
+        await self.store.attachments.relink(run.who, run.session.id, kept, message_id)
+        inp.kept_files = []
+
+    async def _drop_unkept(self, run: TurnRun, inp: TurnInput) -> None:
+        """Drop the attachments of a replaced question that no new question kept (never raises).
+
+        A rewrite whose new question was never stored (refused, cancelled) deleted the question:
+        its attachments go with it.
+        """
+        if run.storage != "evokai" or not run.dropped or not inp.kept_files:
+            return
+        ids = [str(b["file"]["id"]) for b in inp.kept_files]
+        try:
+            await self.store.attachments.delete(run.who, run.session.id, ids)
+        except Exception as e:
+            log.warning(
+                "attachments_not_dropped", extra={"turnId": run.turn_id, "error": error_class(e)}
+            )
+
+    async def _file_bytes(self, run: TurnRun, stored: list[Any], models: list[Any]) -> Any:
+        """The files of the history the models read as they are, by id (``history.file_part``).
+
+        Returns:
+            id to ``BinaryContent``.
+        """
+        if not run.grants.attachments():
+            return {}  # revoked: earlier files are no longer sent (their text stays in the history)
+        images, pdf = files_.readable(models)
+        wanted = files_.native_files(stored, images=images, pdf=pdf)
+        data = {p.id: p.data for p in run.files}
+        missing = [str(f["id"]) for f in wanted if str(f["id"]) not in data]
+        if missing and run.storage == "evokai":
+            data.update(await self.store.attachments.data_of(run.who, run.session.id, missing))
+        return files_.binaries(wanted, data)
 
     @staticmethod
     def _regenerated(messages: list[Any], index: int) -> tuple[int | None, str | None]:
@@ -733,6 +878,7 @@ class TurnEngine:
                 "message": message(run.app, "turn.failed", session=run.session),
             })
         finally:
+            await self._drop_unkept(run, inp)
             # The turn is over: its capability workers' call tokens stop working.
             await self.mcp.end_run(run.turn_id)
             run.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -931,12 +1077,14 @@ class TurnEngine:
                 ]
                 await store.pending.close(who, pending.id, "superseded")
             question = open_question(shown)
+            content += await self._file_blocks(run, inp, guard)
             content.append({
                 "text": clip(
                     f'Answer to your question "{question}": {text}' if question else text, 8_000
                 )
             })
-            await self._add(run, role="user", content=content, text=text)
+            message_id = await self._add(run, role="user", content=content, text=text)
+            await self._keep_files(run, inp, message_id)
 
         # 2. Tools: the app's (as the user) and our own. If an app server does not answer, the agent
         # goes on without it.
@@ -1051,6 +1199,9 @@ class TurnEngine:
 
         # 3. Model and tools: pydantic-ai's Agent runs the loop, Evokai's capability and toolset
         # apply caps, guard, confirmations, traces and usage.
+        files: dict[str, Any] = {}
+        """Attachments the models read as they are, by id (filled once the history is known)."""
+
         def view(messages: list[Any]) -> list[Any]:
             fold = rs.extra.get("fold")
             if fold is not None:
@@ -1067,7 +1218,7 @@ class TurnEngine:
                 # providers refuse tool calls in a history sent without tools.
                 model_history = flatten_tools(model_history, set())
             rs.extra["traceInput"] = _new_messages(model_history)
-            return to_model_messages(system, model_history)
+            return to_model_messages(system, model_history, files)
 
         rs.view = view
         rs.before_call = lambda: self._before_call(run, inp, rs, candidates, emit, say)
@@ -1089,6 +1240,7 @@ class TurnEngine:
             stored = await self._compacted(run, inp, rs, plan, system, tools)
         else:
             stored = [Stored(role=x.role, content=x.content) for x in await self._history(run)]
+        files.update(await self._file_bytes(run, stored, [x for _, x in rs.models]))
         history = to_model_messages(system, stored if resume else repair(stored))
         results = None
         if resume is not None:
@@ -1147,6 +1299,7 @@ class TurnEngine:
         plan = run.rewrite
         if plan is not None:
             await rewrite.drop(self.store, run.who, run.session.id, run.thread_id, plan)
+            run.dropped = True
             event.update(replaced=plan.turn_ids, messageId=plan.message_id)
         if run.replaced_from is not None:
             event["replacedFrom"] = run.replaced_from
@@ -3022,7 +3175,19 @@ def _new_messages(history: list[Any]) -> list[dict[str, Any]]:
         if x.role == "assistant":
             break
         tail.append(x)
-    return [{"role": x.role, "content": x.content} for x in reversed(tail)]
+    # An attachment's text never goes in a trace: its name, type, size and hash do.
+    return [
+        {"role": x.role, "content": [files_.traced(b) for b in x.content]} for x in reversed(tail)
+    ]
+
+
+def _attached_blocks(content: Any) -> list[dict[str, Any]]:
+    """The attachment blocks of a message's content.
+
+    Returns:
+        The blocks.
+    """
+    return [b for b in content or [] if isinstance(b, dict) and "file" in b]
 
 
 def _result(
