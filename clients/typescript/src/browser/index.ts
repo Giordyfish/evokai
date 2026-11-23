@@ -16,7 +16,7 @@ export type { FetchLike } from '../core/http'
 
 // session and state
 export { EvokaiSession, isLimitError } from './session'
-export type { ChatInput, EvokaiSessionOptions, TokenInfo, TokenRequestContext } from './session'
+export type { ChatInput, ClientToolHandler, EvokaiSessionOptions, TokenInfo, TokenRequestContext } from './session'
 export { SessionStore, reduce, initialState, fromStored, fromHistory, phaseOf, usageOf, seen } from './store'
 export type { Action, ChatMessage, ConfirmState, OpenAsk, Part, SessionState } from './store'
 export { confirmReasonText } from './reasons'

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, model_validator
 
 from evokai import audit, privacy
+from evokai.agents.definitions import AgentDef, ClientToolDef
 from evokai.agents.modules import (
     ModuleChoice,
     check_session_modules,
@@ -31,6 +32,8 @@ from evokai.privacy import residency_allows
 from evokai.protection import protection
 from evokai.services import Services
 from evokai.sessions.limits import app_shares, cap_state, caps_set, report_shares, windows_of
+from evokai.tools.custom import MAX_TOOLS as MAX_CLIENT_TOOLS
+from evokai.tools.custom import check_tools
 
 router = APIRouter(prefix="/v1", tags=["server"])
 Svc = Annotated[Services, Depends(services)]
@@ -131,6 +134,11 @@ class TokenRequest(BaseModel):
     """The session's language, a BCP 47 tag (``it-IT``): speech rules and messages use the shipped
     pack of its language (400 ``unknown_locale`` without one). Omitted = the application's locale,
     or the conversation's earlier choice."""
+    clientTools: list[ClientToolDef] | None = Field(default=None, max_length=MAX_CLIENT_TOOLS + 1)
+    """Custom client tools of this session (``docs/client-tools.md``), beside the agent's own:
+    each ``{name, description, parameters, wait}``. They need the grant ``client:session`` (403
+    ``client_not_granted``) and are kept with the conversation; on a continued conversation a
+    list replaces the earlier one (``[]`` clears it), omitted keeps it."""
 
 
 @router.post("/session-tokens")
@@ -185,6 +193,7 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         existing = await svc.store.sessions.get(who, body.conversationId)
         if not existing:
             raise NotFound("Unknown conversation.", code="unknown_conversation")
+    session_tools = _session_tools(body, agent, grants)
     stored = (existing.prompt_options if existing else None) or {}
     options = await _prompt_options(svc, application, agent, grants, body, stored)
     if existing:
@@ -201,6 +210,8 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
             await svc.store.sessions.set_voice_engine(existing.id, engine)
         if options is not None and options != stored:
             await svc.store.sessions.set_prompt_options(existing.id, options)
+        if session_tools is not None:
+            await svc.store.sessions.set_client_tools(existing.id, session_tools or None)
     else:
         sess, _ = await svc.store.sessions.create(
             who,
@@ -213,6 +224,7 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
             voice_engine=engine,
             storage_mode=mode,
             prompt_options=options,
+            client_tools=session_tools or None,
         )
         conversation_id = sess.id
     claims: dict[str, Any] = {
@@ -305,6 +317,27 @@ async def _prompt_options(
         "modules": modules or {},
         "locale": body.locale if body.locale is not None else stored.get("locale"),
     }
+
+
+def _session_tools(
+    body: TokenRequest, agent: AgentDef, grants: Grants
+) -> list[dict[str, Any]] | None:
+    """The custom client tools a token declares, checked against the limits and the grants.
+
+    Returns:
+        The tools to keep (None: the token sent none, keep what the conversation has).
+
+    Raises:
+        NotGranted: ``client:session`` or a tool's name is not granted (``check_tools`` refuses
+            more than 32 tools with the agent's, or a name twice, with 400).
+    """
+    if body.clientTools is None:
+        return None
+    check_tools([*agent.client_tools.custom, *body.clientTools])
+    for t in body.clientTools:
+        if not grants.client_tool(t.name, static=False):
+            raise NotGranted("client", f"The client tool {t.name} is not granted to sessions.")
+    return [t.model_dump() for t in body.clientTools]
 
 
 def _voice_engine(body: TokenRequest, app: Any, grants: Grants, stt: str) -> str:

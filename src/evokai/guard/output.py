@@ -293,3 +293,72 @@ def restore_output(value: Any, vault: identifiers.Vault | None) -> Any:
         The value with real values.
     """
     return vault.restore_any(value) if vault is not None else value
+
+
+_SENTENCE_END = re.compile(r"[.!?…](?=\s)|\n")
+
+
+@dataclass
+class SentenceGate:
+    """Streams an answer through the output filter, in whole sentences when the filter rewrites.
+
+    With no enforced output control the filter changes nothing and every delta goes out as it
+    comes (token by token). Otherwise only finished sentences leave, each already filtered: the
+    filter keeps the tail of what it has seen in its scan, so a secret split across two deltas or
+    two sentences is still caught whole, and a leak found in a later sentence stops the answer
+    (``blocked``) before that sentence goes out.
+    """
+
+    filter: OutputFilter
+    _pending: str = ""
+
+    @property
+    def token_by_token(self) -> bool:
+        """Whether deltas pass as they come (nothing to rewrite).
+
+        Returns:
+            True when no enforced control changes the text.
+        """
+        return not self.filter.rules.changes_text
+
+    @property
+    def blocked(self) -> bool:
+        """Whether the answer leaked the instructions: nothing more goes out.
+
+        Returns:
+            True once blocked.
+        """
+        return self.filter.blocked
+
+    def push(self, delta: str) -> list[str]:
+        """Take a delta of the answer.
+
+        Returns:
+            The pieces that may go out now.
+        """
+        out = self.filter.push(delta)
+        if self.token_by_token:
+            return [out] if out else []
+        if self.filter.blocked:
+            self._pending = ""
+            return []
+        self._pending += out
+        ends = [m.end() for m in _SENTENCE_END.finditer(self._pending)]
+        if not ends:
+            return []
+        starts = [0, *ends[:-1]]
+        pieces = [self._pending[a:b] for a, b in zip(starts, ends, strict=True)]
+        self._pending = self._pending[ends[-1] :]
+        return [p for p in pieces if p]
+
+    def flush(self) -> list[str]:
+        """The end of the answer: what is left, unless the end leaked.
+
+        Returns:
+            The last pieces.
+        """
+        out = self.filter.flush()
+        rest, self._pending = self._pending + out, ""
+        if self.filter.blocked or not rest:
+            return []
+        return [rest]

@@ -28,6 +28,90 @@ class NavigateDef(BaseModel):
     """Only paths that match are sent to the client; anything else is refused."""
 
 
+CLIENT_TOOL_NAME = r"^[a-z][a-z0-9_]{1,47}$"
+"""The name of a custom client tool (the model sees it as ``client_<name>``)."""
+RESERVED_CLIENT_TOOLS = frozenset({"navigate", "chart", "diagram", "ask", "confirm", "memory"})
+"""Names of the built-in client tools and grant items, refused for a custom tool (``session``
+too: it is the grant of session-declared tools)."""
+MAX_CLIENT_TOOL_SCHEMA = 16_384
+"""Bytes of a custom client tool's parameters schema (as compact JSON)."""
+
+
+class ClientToolDef(BaseModel):
+    """A custom client tool: the client application runs it (``client_tool`` event)."""
+
+    name: str = Field(pattern=CLIENT_TOOL_NAME)
+    description: str = Field(min_length=1, max_length=1_000)
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    """The JSON Schema of the arguments (checked as a schema, at most 16 KB)."""
+    wait: bool = False
+    """False: Evokai sends the event and answers ``ok`` to the model at once. True: the turn waits
+    for the client's result (``POST /v1/session/tool-results``), up to the timeout."""
+
+    @field_validator("name")
+    @classmethod
+    def _not_reserved(cls, v: str) -> str:
+        if v in RESERVED_CLIENT_TOOLS or v == "session":
+            raise ValueError(f"{v} is reserved for a built-in client tool or grant")
+        return v
+
+    @field_validator("parameters")
+    @classmethod
+    def _schema(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if v.get("type") != "object":
+            raise ValueError("parameters: the schema is an object (type: object), as tools take")
+        if len(json.dumps(v, separators=(",", ":"))) > MAX_CLIENT_TOOL_SCHEMA:
+            raise ValueError("parameters: the schema is larger than 16 KB")
+        try:
+            Draft202012Validator.check_schema(v)
+        except Exception as e:  # jsonschema's SchemaError
+            raise ValueError(f"parameters: not a valid JSON Schema ({clip_message(e)})") from e
+        return v
+
+
+def clip_message(e: Exception) -> str:
+    """The first line of an error, short.
+
+    Returns:
+        At most 200 characters.
+    """
+    return str(getattr(e, "message", e)).splitlines()[0][:200]
+
+
+BUILTIN_KINDS = (
+    "web_search",
+    "web_fetch",
+    "code_execution",
+    "image_generation",
+    "file_search",
+    "mcp_server",
+    "memory",
+)
+
+
+class BuiltinToolDef(BaseModel):
+    """A provider built-in tool (``evokai.engine.builtin_tools``)."""
+
+    kind: Literal[
+        "web_search",
+        "web_fetch",
+        "code_execution",
+        "image_generation",
+        "file_search",
+        "mcp_server",
+        "memory",
+    ]
+    config: dict[str, Any] = Field(default_factory=dict)
+    """pydantic-ai's settings of the tool (``max_uses``, ``file_store_ids``...); never a secret."""
+
+    @model_validator(mode="after")
+    def _valid(self) -> BuiltinToolDef:
+        from evokai.engine.builtin_tools import build
+
+        build(self.kind, self.config)
+        return self
+
+
 class ClientToolsDef(BaseModel):
     """Which client tools the agent has."""
 
@@ -36,6 +120,16 @@ class ClientToolsDef(BaseModel):
     diagram: bool = True
     ask: bool = True
     memory: bool = True
+    custom: list[ClientToolDef] = Field(default_factory=list, max_length=32)
+    """Client tools of the application's own (``docs/client-tools.md``)."""
+
+    @field_validator("custom")
+    @classmethod
+    def _unique(cls, v: list[ClientToolDef]) -> list[ClientToolDef]:
+        names = [t.name for t in v]
+        if len(names) != len(set(names)):
+            raise ValueError("a custom client tool is declared twice")
+        return v
 
 
 class VoiceDef(BaseModel):
@@ -149,6 +243,8 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "ask_rules": [],
     "modules": [],
     "template_syntax": "legacy",
+    "builtin_tools": [],
+    "openai_confirm": False,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -211,6 +307,20 @@ class AgentDef(BaseModel):
     ``handoff`` tool, and the conversation goes on with the other agent from the next turn."""
     code: CodeDef | None = None
     """Isolated code execution: ``code_run`` for analysis of data the conversation has."""
+    builtin_tools: list[BuiltinToolDef] = Field(default_factory=list, max_length=len(BUILTIN_KINDS))
+    """Provider built-in tools (web search, code execution...), each granted (``builtin``)."""
+    openai_confirm: bool = False
+    """Over the OpenAI-compatible API, offer the tools that change data: a call waits for the
+    person's yes in the next request (needs the grant ``openai:confirm``)."""
+
+    @field_validator("builtin_tools")
+    @classmethod
+    def _one_of_each(cls, v: list[BuiltinToolDef]) -> list[BuiltinToolDef]:
+        kinds = [t.kind for t in v]
+        if len(kinds) != len(set(kinds)):
+            raise ValueError("a built-in tool is listed twice")
+        return v
+
     capabilities: dict[str, CapabilityUse] = Field(default_factory=dict)
     """Capabilities of the catalog the agent turns on, with their settings (``code_mode``,
     ``compaction``, ``subagents`` and the pydantic-ai-harness ones): each also needs the deployment
@@ -319,6 +429,9 @@ class AgentDef(BaseModel):
         for key, default in _LATER_DEFAULTS.items():
             if out.get(key) == default:
                 out.pop(key, None)
+        ct = out.get("client_tools")
+        if isinstance(ct, dict) and not ct.get("custom"):
+            ct.pop("custom", None)  # custom client tools came later
         return out
 
     def with_version(self) -> AgentDef:

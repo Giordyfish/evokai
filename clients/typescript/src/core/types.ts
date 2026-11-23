@@ -129,6 +129,30 @@ export interface AskEvent extends EventMeta {
   other: boolean
 }
 export interface NavigateEvent extends EventMeta { type: 'navigate'; path: string }
+/**
+ * A custom client tool the agent called (`docs/client-tools.md`). With `wait`, the turn waits until the client posts
+ * the result (`EvokaiSession.handleTool` does it for you); without, the model was already told `ok`.
+ */
+/**
+ * One tool's activity as a page draws it (`EvokaiSession.renderTool`, `<evokai-chat>` `toolRenderers`): only what the
+ * events already carry. A server or MCP tool has its name and status (never its arguments or output); a client tool
+ * also has its arguments and the result your own handler returned; `ui_chart` and `ui_diagram` have the visual.
+ */
+export interface ToolPart {
+  name: string
+  status: 'start' | 'done' | 'error'
+  callId?: string
+  args?: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+export interface ClientToolEvent extends EventMeta {
+  type: 'client_tool'
+  callId: string
+  name: string
+  args: Record<string, unknown>
+  wait: boolean
+}
 /** The i18n key of why a call waits for the person (`confirmReasonText` turns it into a sentence). */
 export type ConfirmReasonKey = 'confirm.why.writes' | 'confirm.why.rule' | 'confirm.why.policy'
 /**
@@ -189,6 +213,8 @@ export interface DoneEvent extends EventMeta {
   replacedFrom?: number
   /** Whether the conversation's last question can still be rewritten (absent from older services). */
   rewritable?: boolean
+  /** Whether the conversation's last answer can still be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
 }
 /** Server voice: speech went off (provider failure); the session goes on in text. */
 export interface SpeechEvent extends EventMeta { type: 'speech'; enabled: boolean; reason?: string; message?: string }
@@ -239,7 +265,7 @@ export interface ConnectEvent extends EventMeta { type: 'connect'; provider: Con
 export type EvokaiEvent =
   | ConversationEvent | TextEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
   | ConfirmEvent | ConfirmedEvent | UsageEvent | ErrorEvent | DoneEvent | SpeechEvent | CitationEvent | HandoffEvent
-  | ConnectEvent | RewrittenEvent
+  | ConnectEvent | RewrittenEvent | ClientToolEvent
 
 export type EventType = EvokaiEvent['type']
 
@@ -341,6 +367,8 @@ export interface StoredMessage {
   interrupted?: boolean
   /** User messages: whether this is the last question and can still be rewritten (`EvokaiSession.rewrite`). */
   rewritable?: boolean
+  /** The last assistant message, when it can still be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
 }
 
 export interface PendingConfirmation { actionId: string; items: string[]; why?: ConfirmReason[] }
@@ -940,7 +968,7 @@ export interface BugReport {
 
 export type GrantKind =
   | 'model' | 'mcp' | 'tool' | 'skill' | 'client' | 'voice' | 'stt' | 'tts' | 'storage' | 'channel' | 'knowledge'
-  | 'workflow' | 'code' | 'connection' | 'capability' | 'module'
+  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin'
 export type ModelGrant = 'any' | 'fallback' | 'off'
 export type GrantValue = boolean | ModelGrant
 export type ClientToolName = 'navigate' | 'chart' | 'diagram' | 'ask' | 'confirm' | 'memory'
@@ -1286,6 +1314,8 @@ export interface DataProtectionReport {
   empty: boolean
   processors: ProcessorVerdict[]
   browser: { online_voices: boolean; online_recognition: boolean; vendors?: string[] | null } | null
+  /** The agents' provider built-in tools, and whether the profile lets the ones that keep data at the provider run. */
+  builtinTools?: Array<{ agent: string; kind: string; keepsData: boolean; allowed: boolean }>
 }
 export interface ProviderEndpointView {
   id: string

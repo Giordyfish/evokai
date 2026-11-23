@@ -1,4 +1,5 @@
 /** What every component reads: texts, number formatting and labels. */
+import type { ToolPart } from '@evokai/evokai-client/browser'
 import { createContext } from 'preact'
 import { useContext } from 'preact/hooks'
 
@@ -16,6 +17,9 @@ export const defaultFormat: ValueFormatter = (value, unit, locale) => {
   return unit === 'pct' ? `${nf.format(value)}%` : nf.format(value)
 }
 
+/** Draws one tool's activity: an element of the page's own, or null for the default line. */
+export type ToolRenderer = (part: ToolPart) => HTMLElement | null
+
 export interface UiContext {
   s: Strings
   /** BCP 47 language of numbers and dates. */
@@ -25,6 +29,8 @@ export interface UiContext {
   toolLabel: (name: string) => string
   /** `{title}` and `{app}` for the texts. */
   names: { title: string; app: string }
+  /** Your own card for a tool's activity, by tool name (`toolRenderers` on the element). */
+  toolRenderer?: ((name: string) => ToolRenderer | undefined) | undefined
   /** Replaced icons, by name: SVG markup (a whole `<svg>` or its content in a 24 by 24 box). */
   icons?: Partial<Record<string, string>> | undefined
 }

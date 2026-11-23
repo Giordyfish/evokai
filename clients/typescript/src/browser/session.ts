@@ -15,6 +15,8 @@ import {
 } from '../core/http'
 import type {
   ChatMode,
+  ClientToolEvent,
+  ToolPart,
   Connection,
   ConnectionProvider,
   ConnectionStarted,
@@ -38,6 +40,9 @@ import type {
 import { readSse } from './sse'
 import { localePack, type LocaleCode, type LocalePack } from '../locales'
 import { localId, seen, SessionStore, type SessionState } from './store'
+
+/** Runs a custom client tool: gets the call's arguments (and the event); its return value is the result. */
+export type ClientToolHandler = (args: Record<string, unknown>, event: ClientToolEvent) => unknown
 
 /** A token, or the session-token response of your backend (its other fields are used when present). */
 export type TokenInfo =
@@ -88,6 +93,8 @@ export interface ChatInput {
    * external storage, `onMessages` gets `done.replacedFrom`: drop your history from that index before appending.
    */
   rewrite?: boolean
+  /** Regenerate the last answer instead of sending `text` (use `EvokaiSession.regenerate`). */
+  regenerate?: boolean
   signal?: AbortSignal
 }
 
@@ -103,6 +110,8 @@ export class EvokaiSession {
   private tok: { token: string; expiresAt?: number } | null = null
   private engine: VoiceEngineKind
   private readonly listeners = new Map<string, Set<EventListener>>()
+  private readonly tools = new Map<string, ClientToolHandler>()
+  private readonly renderers = new Map<string, (part: ToolPart) => void>()
   private readonly controllers = new Set<AbortController>()
   private replaying: Promise<void> | null = null
 
@@ -170,6 +179,8 @@ export class EvokaiSession {
     if (typeof event.seq === 'number' && seen(this.state, event.seq)) return
     this.store.dispatch({ type: 'event', event })
     this.emit(event)
+    this.renderEvent(event)
+    if (event.type === 'client_tool') void this.runTool(event)
     if (event.type === 'done' && event.messages?.length) this.opts.onMessages?.(event.messages, event)
   }
 
@@ -304,12 +315,15 @@ export class EvokaiSession {
     const history = input.history !== undefined ? input.history : await this.opts.getHistory?.()
     const page = input.page !== undefined ? input.page : this.opts.getPage?.()
     const body: Record<string, unknown> = { mode: input.mode ?? 'text' }
-    if (input.confirm) body.confirm = input.confirm
+    if (input.regenerate) {
+      // The service runs its own copy of the question again.
+    } else if (input.confirm) body.confirm = input.confirm
     else if (text !== undefined) body.text = text
     if (page) body.page = page
     if (history) body.history = history
     if (input.endOfSpeechAt) body.endOfSpeechAt = input.endOfSpeechAt
-    if (rewrite) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
+    if (rewrite && !input.regenerate) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
+    const path = input.regenerate ? '/v1/session/regenerate' : '/v1/session/chat'
 
     const ctrl = new AbortController()
     this.controllers.add(ctrl)
@@ -318,8 +332,8 @@ export class EvokaiSession {
     let turnId: string | null = null
     let done: DoneEvent | null = null
     try {
-      let res = await this.post(body, await this.getAccessToken(), ctrl.signal)
-      if (res.status === 401 && this.opts.getToken) res = await this.post(body, await this.getAccessToken(true), ctrl.signal)
+      let res = await this.post(body, await this.getAccessToken(), ctrl.signal, path)
+      if (res.status === 401 && this.opts.getToken) res = await this.post(body, await this.getAccessToken(true), ctrl.signal, path)
       if (!res.ok || !res.body) throw await errorFromResponse(res)
       const header = res.headers.get('X-Turn-Id')
       if (header) {
@@ -363,9 +377,9 @@ export class EvokaiSession {
     }
   }
 
-  private async post(body: Record<string, unknown>, token: string, signal: AbortSignal): Promise<Response> {
+  private async post(body: Record<string, unknown>, token: string, signal: AbortSignal, path = '/v1/session/chat'): Promise<Response> {
     try {
-      return await this.fetchFn(joinUrl(this.baseUrl, '/v1/session/chat'), {
+      return await this.fetchFn(joinUrl(this.baseUrl, path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -438,6 +452,17 @@ export class EvokaiSession {
     return this.chat({ ...opts, text, rewrite: true })
   }
 
+  /**
+   * Regenerate the last answer: the last question runs again and its new answer replaces the last one (a `rewritten`
+   * event, then the new turn). Allowed while `ChatMessage.regenerable` (the service refuses with `not_regenerable`
+   * after a turn that changed data or ran a client tool); resolves with the new turn's `done`, or null.
+   */
+  regenerate(opts: Omit<ChatInput, 'confirm' | 'text' | 'rewrite' | 'regenerate'> = {}): Promise<DoneEvent | null> {
+    const question = [...this.state.messages].reverse().find((m) => m.role === 'user' && m.parts.some((p) => p.kind === 'text'))
+    const text = question?.parts.map((p) => (p.kind === 'text' ? p.text : '')).join('') ?? ''
+    return this.chat({ ...opts, text, rewrite: true, regenerate: true })
+  }
+
   /** Approve or reject an open confirmation. */
   confirm(actionId: string, approve: boolean, opts: Omit<ChatInput, 'confirm' | 'text'> = {}): Promise<DoneEvent | null> {
     return this.chat({ ...opts, confirm: { actionId, approve } })
@@ -447,6 +472,80 @@ export class EvokaiSession {
   answer(askId: string, labels: string[], opts: Omit<ChatInput, 'confirm' | 'text'> = {}): Promise<DoneEvent | null> {
     this.store.dispatch({ type: 'answered', askId, labels })
     return this.chat({ ...opts, text: labels.join(', '), answer: true })
+  }
+
+  // ── client tools ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Run a custom client tool when the agent calls it (`docs/client-tools.md`). For a tool that waits, what `fn`
+   * returns (or throws) is posted as its result; for one that does not, `fn` just runs. Returns an unregister
+   * function. A tool without a handler that waits gets an error result, so the turn does not wait for nothing.
+   */
+  handleTool(name: string, fn: ClientToolHandler): () => void {
+    this.tools.set(name, fn)
+    return () => {
+      if (this.tools.get(name) === fn) this.tools.delete(name)
+    }
+  }
+
+  /**
+   * Draw a tool's activity with your own UI code: `render` gets a `ToolPart` each time the tool starts and ends (and
+   * a client tool's result once your handler answered). Server and MCP tools give their name and status only; use
+   * `ui_chart` and `ui_diagram` for the visuals. Returns an unregister function.
+   */
+  renderTool(name: string, render: (part: ToolPart) => void): () => void {
+    this.renderers.set(name, render)
+    return () => {
+      if (this.renderers.get(name) === render) this.renderers.delete(name)
+    }
+  }
+
+  private render(part: ToolPart): void {
+    const fn = this.renderers.get(part.name)
+    if (!fn) return
+    try {
+      fn(part)
+    } catch {
+      // The page's own drawing code: its failure never stops the session.
+    }
+  }
+
+  private renderEvent(e: EvokaiEvent): void {
+    if (e.type === 'tool') this.render({ name: e.name, status: e.status })
+    else if (e.type === 'client_tool') this.render({ name: e.name, status: e.wait ? 'start' : 'done', callId: e.callId, args: e.args })
+    else if (e.type === 'chart') this.render({ name: 'ui_chart', status: 'done', result: e.chart })
+    else if (e.type === 'diagram') this.render({ name: 'ui_diagram', status: 'done', result: e.diagram })
+  }
+
+  /** Answer a waiting client tool call yourself (when you listen to `client_tool` events instead of `handleTool`). */
+  async toolResult(callId: string, answer: { result: unknown } | { error: string }): Promise<void> {
+    await this.call('/v1/session/tool-results', { method: 'POST', body: { callId, ...answer } })
+  }
+
+  private async runTool(event: ClientToolEvent): Promise<void> {
+    const fn = this.tools.get(event.name)
+    if (!fn) {
+      if (event.wait && this.listenerCount('client_tool') === 0) {
+        await this.toolResult(event.callId, { error: `No handler for ${event.name} in this client.` }).catch(() => undefined)
+      }
+      return
+    }
+    let answer: { result: unknown } | { error: string }
+    try {
+      answer = { result: (await fn(event.args, event)) ?? null }
+    } catch (e) {
+      answer = { error: e instanceof Error ? e.message : String(e) }
+    }
+    if (event.wait) {
+      const status = 'result' in answer ? 'done' : 'error'
+      this.store.dispatch({ type: 'toolResult', callId: event.callId, status, ...answer })
+      this.render({ name: event.name, status, callId: event.callId, args: event.args, ...answer })
+      await this.toolResult(event.callId, answer).catch(() => undefined)
+    }
+  }
+
+  private listenerCount(type: string): number {
+    return this.listeners.get(type)?.size ?? 0
   }
 
   /** Thumbs up (1), down (-1) or none (null) on a stored assistant message. */

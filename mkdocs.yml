@@ -89,6 +89,8 @@ nav:
       - Capabilities: capabilities.md
       - Templates: templates.md
       - Prompt modules: prompt-modules.md
+      - Client tools: client-tools.md
+      - Provider built-in tools: builtin-tools.md
       - Knowledge bases: knowledge.md
       - Long-term memory: memory.md
       - Workflows: workflows.md
@@ -101,6 +103,7 @@ nav:
       - Open standards:
           - AG-UI: ag-ui.md
           - OpenAI-compatible API: openai-compatible.md
+          - AI SDK: ai-sdk.md
           - A2A: a2a.md
   - Security & compliance:
       - Security of agents: security.md

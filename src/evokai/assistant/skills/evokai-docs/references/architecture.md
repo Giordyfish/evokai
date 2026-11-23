@@ -242,6 +242,24 @@ an open or answered confirmation), and runs a new turn on the new text (`evokai.
   (in `done` and in the JSON answer): the application drops its copy from that index and appends `messages`. Nothing
   is kept at rest, as for every external turn.
 
+### Regenerating the last answer
+
+`POST /v1/session/regenerate` (session token; body `{page?, mode?, history?}`) runs the last question again and its
+new answer replaces the last one. It is a rewrite with the same question, so everything above applies: the stream
+(or the JSON answer with `Accept: application/json`) starts with `conversation` and `rewritten`, the caps, the guard
+and the traces are a turn's, and the replaced answer stays only in its turn's trace, not in the visible history.
+
+- **Refused** with 409 `not_regenerable` (`turn.notRegenerable` in the language packs) when there is no question yet,
+  the last turn changed data (a `wrote` result or an approved change), it ran a custom
+  [client tool](client-tools.md) (the client acted on it, and running it again could act twice), or a turn is
+  running.
+- **The flag.** Every `done` event carries `regenerable`, and in `GET /v1/session/conversation` the last assistant
+  message has `regenerable: true` while it can be regenerated and no turn runs. The TypeScript client's
+  `session.regenerate()` and `ChatMessage.regenerable`, `<evokai-chat>`'s regenerate button on the last answer, and
+  the Python client's `regenerate()` use them.
+- **External storage.** Send the history with the last question and the answer to replace: Evokai answers with
+  `replacedFrom` as for a rewrite.
+
 ## Protocol (HTTP + SSE)
 
 Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/openapi.json`.
@@ -261,6 +279,8 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | POST | `/v1/session/memory-consent` | session | the person's answer (a no deletes what was remembered) |
 | GET | `/v1/session/conversation` | session | messages, open confirmation, last seq, running turn |
 | POST | `/v1/session/chat` | session | a turn: `{text?, confirm?, rewrite?, page?, mode: text\|voice, history?, endOfSpeechAt?}` → SSE (or JSON); `rewrite` replaces the last question ([below](#rewriting-the-last-question)) |
+| POST | `/v1/session/regenerate` | session | regenerate the last answer: `{page?, mode?, history?}` → SSE (or JSON), 409 `not_regenerable` ([regenerating](#regenerating-the-last-answer)) |
+| POST | `/v1/session/tool-results` | session | answer a waiting custom client tool: `{callId, result \| error}` ([client tools](client-tools.md)) |
 | POST | `/v1/session/turns/{id}/cancel` | session | cancel a turn (barge-in) |
 | GET | `/v1/session/events?after=` | session | replay after a reconnect |
 | POST | `/v1/session/messages/{id}/feedback` | session | thumbs |

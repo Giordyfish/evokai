@@ -109,6 +109,17 @@ class DataProtection(BaseModel):
     """``eu`` (controlled from the EU or EEA) and/or ISO country codes; unset: any."""
     retention: Literal["any", "no_training", "zero_retention"] | None = None
     browser: BrowserDeclaration | None = None
+    provider_tool_storage: bool | None = None
+    """Built-in tools may keep data at the model's provider (``file_search`` with its vector
+    stores, ``memory``): off unless set, and never with ``zero_retention``."""
+
+    @model_validator(mode="after")
+    def _storage_needs_retention(self) -> DataProtection:
+        if self.provider_tool_storage and self.retention == "zero_retention":
+            raise ValueError(
+                "provider_tool_storage keeps data at the provider: not with zero_retention"
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -517,12 +528,25 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
                 processor_verdict(prof, "observability-exporter"),
             )
         )
+    from evokai.engine.builtin_tools import STORING, storage_allowed
+
+    builtin = [
+        {
+            "agent": a.name,
+            "kind": str(t.get("kind")),
+            "keepsData": t.get("kind") in STORING,
+            "allowed": t.get("kind") not in STORING or storage_allowed(prof),
+        }
+        for a in agents
+        for t in a.definition.get("builtin_tools") or []
+    ]
     return {
         "profile": stored_profile(app.data_protection),
         "residency": app.residency,
         "empty": profile_of(app).empty,
         "processors": out,
         "browser": rule.browser.model_dump() if rule and rule.browser else None,
+        "builtinTools": builtin,
     }
 
 
