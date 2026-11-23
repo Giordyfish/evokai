@@ -23,6 +23,8 @@
     "turn.rewriteNotLast": "Solo se puede editar tu último mensaje.",
     "turn.rewriteAfterWrite": "Este mensaje ya no se puede editar: su respuesta ya ha cambiado datos.",
     "turn.rewriteRunning": "Espera la respuesta, o detenla, antes de editar tu mensaje.",
+    "openai.confirmPrompt": "Antes de continuar, confirma: {items}. Responde sí o no.",
+    "turn.notRegenerable": "Esta respuesta ya no se puede regenerar.",
     "voice.speechOff": "La voz no está disponible: seguiré respondiendo por escrito.",
     "confirm.default": "Ejecutar {tool}",
     "chart.other": "Otros",

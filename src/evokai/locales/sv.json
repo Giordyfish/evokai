@@ -23,6 +23,8 @@
     "turn.rewriteNotLast": "Bara ditt senaste meddelande kan redigeras.",
     "turn.rewriteAfterWrite": "Det här meddelandet kan inte längre redigeras: svaret har redan ändrat data.",
     "turn.rewriteRunning": "Vänta på svaret, eller stoppa det, innan du redigerar ditt meddelande.",
+    "openai.confirmPrompt": "Innan jag fortsätter, bekräfta: {items}. Svara ja eller nej.",
+    "turn.notRegenerable": "Det här svaret kan inte längre genereras om.",
     "voice.speechOff": "Rösten är inte tillgänglig: jag fortsätter att svara i text.",
     "confirm.default": "Kör {tool}",
     "chart.other": "Övrigt",

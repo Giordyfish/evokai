@@ -23,6 +23,8 @@
     "turn.rewriteNotLast": "Doar ultimul dumneavoastră mesaj poate fi editat.",
     "turn.rewriteAfterWrite": "Acest mesaj nu mai poate fi editat: răspunsul lui a modificat deja date.",
     "turn.rewriteRunning": "Așteptați răspunsul sau opriți-l înainte de a vă edita mesajul.",
+    "openai.confirmPrompt": "Înainte să continui, vă rog să confirmați: {items}. Răspundeți cu da sau nu.",
+    "turn.notRegenerable": "Acest răspuns nu mai poate fi regenerat.",
     "voice.speechOff": "Vocea nu este disponibilă: voi continua să răspund în scris.",
     "confirm.default": "Rulează {tool}",
     "chart.other": "Altele",

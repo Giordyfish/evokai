@@ -23,6 +23,8 @@
     "turn.rewriteNotLast": "Nur Ihre letzte Nachricht kann bearbeitet werden.",
     "turn.rewriteAfterWrite": "Diese Nachricht kann nicht mehr bearbeitet werden: Ihre Antwort hat bereits Daten geändert.",
     "turn.rewriteRunning": "Warten Sie die Antwort ab oder stoppen Sie sie, bevor Sie Ihre Nachricht bearbeiten.",
+    "openai.confirmPrompt": "Bevor ich fortfahre, bestätigen Sie bitte: {items}. Antworten Sie mit Ja oder Nein.",
+    "turn.notRegenerable": "Diese Antwort kann nicht mehr neu erzeugt werden.",
     "voice.speechOff": "Die Sprachausgabe ist nicht verfügbar: Ich antworte weiter schriftlich.",
     "confirm.default": "{tool} ausführen",
     "chart.other": "Sonstige",

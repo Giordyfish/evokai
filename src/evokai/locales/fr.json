@@ -23,6 +23,8 @@
     "turn.rewriteNotLast": "Seul votre dernier message peut être modifié.",
     "turn.rewriteAfterWrite": "Ce message ne peut plus être modifié : sa réponse a déjà modifié des données.",
     "turn.rewriteRunning": "Attendez la réponse, ou arrêtez-la, avant de modifier votre message.",
+    "openai.confirmPrompt": "Avant de continuer, merci de confirmer : {items}. Répondez oui ou non.",
+    "turn.notRegenerable": "Cette réponse ne peut plus être régénérée.",
     "voice.speechOff": "La voix n’est pas disponible : je continue à répondre par écrit.",
     "confirm.default": "Exécuter {tool}",
     "chart.other": "Autres",
