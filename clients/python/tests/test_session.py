@@ -251,6 +251,18 @@ def test_on_tool_runs_client_tools_and_posts_the_results(router: respx.MockRoute
     ]
 
 
+def test_a_refused_tool_answer_never_breaks_the_stream(router: respx.MockRouter) -> None:
+    response, _ = sse_response(_tool_turn())
+    router.post("/v1/session/chat").mock(return_value=response)
+    router.post("/v1/session/tool-results").mock(
+        return_value=httpx.Response(404, json={"error": "unknown_call", "message": "Late."})
+    )
+    with _sync() as s:
+        s.on_tool("kiosk_light", lambda _args: {"lit": True})
+        events = list(s.chat("go"))
+    assert events[-1].type == "done"
+
+
 async def test_async_on_tool_awaits_coroutine_handlers(router: respx.MockRouter) -> None:
     response, _ = sse_response(_tool_turn())
     router.post("/v1/session/chat").mock(return_value=response)

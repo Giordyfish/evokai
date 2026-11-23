@@ -82,10 +82,10 @@ WORKFLOW_ITEMS = ("*", "autonomous")
 may change data without an approval (default off)."""
 
 CODE_ITEMS = ("*",)
+"""Isolated code execution (``code_run``) as a whole, off until granted."""
 OPENAI_ITEMS = ("confirm",)
 """The OpenAI-compatible API: ``confirm``, changes wait for a yes in the next request (off until
 granted, and the agent turns it on with ``openai_confirm``)."""
-"""Isolated code execution (``code_run``) as a whole, off until granted."""
 
 CLIENT_TOOLS = ("navigate", "chart", "diagram", "ask", "confirm", "memory")
 CLIENT_SESSION = "session"

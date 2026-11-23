@@ -142,7 +142,9 @@ function OwnPart({ render, part, children }: { render: ToolRenderer; part: ToolP
     } catch {
       return null
     }
-  }, [render, part])
+    // The part is a new object on every render: its fields say whether it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [render, part.name, part.status, part.callId, part.args, part.result, part.error])
   return el ? <Own el={el} /> : children
 }
 

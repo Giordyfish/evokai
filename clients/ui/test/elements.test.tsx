@@ -204,6 +204,23 @@ describe('<evokai-chat>', () => {
     expect($$('[part~="tool"]').map((x) => x.textContent)).toEqual(['stock_report'])
   })
 
+  test('a tool card is drawn again only when its part changes, not on every token', async () => {
+    const deltas = Array.from({ length: 12 }, (_, i) => ({ type: 'text' as const, delta: `w${i} ` }))
+    const { el, $ } = await mounted([[{ type: 'tool', name: 'orders_month', status: 'done' }, ...deltas]])
+    let drawn = 0
+    el.toolRenderers = {
+      orders_month: () => {
+        drawn++
+        return document.createElement('div')
+      },
+    }
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('orders')
+    await until(() => $('.panel')!.textContent!.includes('w11'))
+    expect(drawn).toBeLessThanOrEqual(2)
+  })
+
   test('the tools property answers custom client tools', async () => {
     const { el, evokai, $ } = await mounted([[{ type: 'client_tool', callId: 'c1', name: 'kiosk_light', args: { on: true }, wait: true }]])
     const got: unknown[] = []

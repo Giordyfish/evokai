@@ -709,7 +709,11 @@ class EvokaiSession(_SessionBase):
         except Exception as e:
             result, error = None, str(e) or type(e).__name__
         if event.wait:
-            self.tool_result(event.call_id, result, error=error)
+            try:
+                self.tool_result(event.call_id, result, error=error)
+            except EvokaiError:
+                # Answered late (the turn's timeout) or refused: the stream goes on.
+                pass
 
     def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""
@@ -1046,7 +1050,11 @@ class AsyncEvokaiSession(_SessionBase):
         except Exception as e:
             result, error = None, str(e) or type(e).__name__
         if event.wait:
-            await self.tool_result(event.call_id, result, error=error)
+            try:
+                await self.tool_result(event.call_id, result, error=error)
+            except EvokaiError:
+                # Answered late (the turn's timeout) or refused: the stream goes on.
+                pass
 
     async def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""
