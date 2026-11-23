@@ -109,6 +109,17 @@ class DataProtection(BaseModel):
     """``eu`` (controlled from the EU or EEA) and/or ISO country codes; unset: any."""
     retention: Literal["any", "no_training", "zero_retention"] | None = None
     browser: BrowserDeclaration | None = None
+    provider_tool_storage: bool | None = None
+    """Built-in tools may keep data at the model's provider (``file_search`` with its vector
+    stores, ``memory``): off unless set, and never with ``zero_retention``."""
+
+    @model_validator(mode="after")
+    def _storage_needs_retention(self) -> DataProtection:
+        if self.provider_tool_storage and self.retention == "zero_retention":
+            raise ValueError(
+                "provider_tool_storage keeps data at the provider: not with zero_retention"
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -501,10 +512,12 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
             )
         )
     if st.voice_enabled:
-        for kind, engine in (("stt", st.voice_stt), ("tts", st.voice_tts)):
-            out.append(
-                verdict_view(f"{kind}:{engine}", kind, processor_verdict(prof, f"{kind}:{engine}"))
-            )
+        from evokai.audio.choice import stt_engines, tts_engines
+
+        for kind, engines in (("stt", stt_engines(st)), ("tts", tts_engines(st))):
+            for engine in engines:
+                pid = f"{kind}:{engine}"
+                out.append(verdict_view(pid, kind, processor_verdict(prof, pid)))
     for provider, pid in CONNECTIONS.items():
         row = verdict_view(provider, "connection", processor_verdict(prof, pid))
         row["processor"] = pid
@@ -517,12 +530,39 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
                 processor_verdict(prof, "observability-exporter"),
             )
         )
+    from types import SimpleNamespace
+
+    from evokai.engine.builtin_tools import REACHING, STORING, storage_allowed
+
+    def egress(agent: Any, kind: str) -> str | None:
+        # Whether a tool that reaches the network is held to an egress allow-list: without one
+        # (or with the control off) it reaches any address, like every other tool.
+        if kind not in REACHING:
+            return None
+        policy = svc.guard.policy(app, SimpleNamespace(security=agent.definition.get("security")))
+        tools = policy.settings.tools
+        held = tools is not None and tools.egress_allow is not None
+        on = policy.on("tools.egress") if kind == "mcp_server" else policy.enforced("tools.egress")
+        return "allow_list" if held and on else "unrestricted"
+
+    builtin = [
+        {
+            "agent": a.name,
+            "kind": str(t.get("kind")),
+            "keepsData": t.get("kind") in STORING,
+            "allowed": t.get("kind") not in STORING or storage_allowed(prof),
+            "egress": egress(a, str(t.get("kind"))),
+        }
+        for a in agents
+        for t in a.definition.get("builtin_tools") or []
+    ]
     return {
         "profile": stored_profile(app.data_protection),
         "residency": app.residency,
         "empty": profile_of(app).empty,
         "processors": out,
         "browser": rule.browser.model_dump() if rule and rule.browser else None,
+        "builtinTools": builtin,
     }
 
 

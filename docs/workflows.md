@@ -91,8 +91,9 @@ refused (400 `invalid_input`), an automatic one is recorded as a failed run.
 ## Approvals
 
 An approval step stops the run until a person decides. It carries the question, what will happen (`summary`, or the
-labels of the tool steps it authorises, written like agents' `confirm_labels`: `{field}`, `{field|count}`,
-`{field|map:table}` over the tool's arguments), facts (`details`), who may decide and until when.
+labels of the tool steps it authorises, in the label grammar agents used before Handlebars: `{field}`, `{field|count}`,
+`{field|map:table}` over the tool's arguments), facts (`details`), who may decide and until when. Agents'
+`confirm_labels` are now Handlebars ([Templates](templates.md)).
 
 - In the console, **Approvals** («Approvazioni») lists them with the question, the summary and the facts; approve or
   reject with a comment. A login may decide when its role on the application is one of the step's `approvers.roles` or

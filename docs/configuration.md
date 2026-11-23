@@ -28,10 +28,15 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PRICE_EUR_USD` | `1.2` | Dollars per euro for the catalog's prices in euros, so every cost is recorded in USD; an assumption that errs high, set your own ([costs](costs.md#prices)) |
 | `EVOKAI_HISTORY_MESSAGES` / `_CHARS` | `30` / `60000` | History window sent to the model |
 | `EVOKAI_MAX_OUTPUT_TOKENS` | `1200` | Output cap per model call |
+| `EVOKAI_CLIENT_TOOL_TIMEOUT_SECONDS` | `120` | How long a turn waits for the result of a custom client tool that waits ([client tools](client-tools.md)) |
 | `EVOKAI_FILLER_AFTER_MS` | `700` | Spoken filler when a tool is slow (voice) |
 | `EVOKAI_VOICE_ENABLED` | `false` | Server voice (Pipecat over WebRTC); needs the `voice` extra |
 | `EVOKAI_ASK_RULES` | `[]` | JSON list: the deployment's default [ask rules](security.md#ask-rules), read before every application's and agent's; checked at start |
-| `EVOKAI_VOICE_STT` / `_TTS` | `fake` | Speech providers: a registered name or `module:factory` |
+| `EVOKAI_VOICE_STT` / `_TTS` | `fake` | Speech engines: a registered name or `module:factory` ([server speech](voice.md)) |
+| `EVOKAI_VOICE_STT_ENGINES` / `_TTS_ENGINES` | `[]` | More engines a session token may choose (`speech` at mint) |
+| `EVOKAI_SPEECH_MAX_CHARS` | `2000` | The longest text `POST /v1/session/speech` speaks |
+| `EVOKAI_TRANSCRIBE_MAX_BYTES` / `_MAX_SECONDS` | `10000000` / `120` | The largest and longest recording `POST /v1/session/transcribe` takes |
+| `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` / `_IDLE_SECONDS` | `300` / `30` | The longest streaming recognition (audio, and wall-clock time plus 10 s), and how long it may receive no audio |
 | `EVOKAI_VOICE_SMART_TURN` | `true` | End of turn by Smart Turn v3 (else VAD silence) |
 | `EVOKAI_VOICE_ICE_SERVERS` | `[]` | STUN/TURN URLs for WebRTC |
 | `EVOKAI_OTEL_ENABLED` | `false` | OpenTelemetry: request spans, metrics and every turn's trace with the GenAI conventions (exporters read `OTEL_*`; [traces](#traces-and-opentelemetry)) |
@@ -63,6 +68,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PROMPT_GUARD_TIMEOUT_MS` | `3000` | After this no further 512-token window of a text starts; the windows scored count |
 | `EVOKAI_EMBEDDING_ALLOW` | `["bedrock:amazon.titan-embed-text-v2:0","test:*"]` | Embedding models knowledge bases may use (the data residency applies on top) ([knowledge](knowledge.md)) |
 | `EVOKAI_EMBEDDING_MODEL` | `bedrock:amazon.titan-embed-text-v2:0` | The embedding model of a new knowledge base |
+| `EVOKAI_ATTACHMENTS_REQUEST_MB` | `50` | Largest total of the files attached to one chat message; the body limit of `POST /v1/session/chat` follows it for a session whose application is granted attachments and whose agent has them on, 2 MB otherwise ([attachments](attachments.md)) |
 | `EVOKAI_KNOWLEDGE_MAX_FILE_MB` | `20` | Largest knowledge document (upload, address or connector file) |
 | `EVOKAI_KNOWLEDGE_FETCH_ALLOW` | `[]` | Domains documents may be fetched from by address (with their subdomains); empty: off |
 | `EVOKAI_KNOWLEDGE_LINK_TTL` | `600` | Seconds a citation's signed link to a file stays valid |
@@ -247,7 +253,7 @@ which choices exist, and the console grants or revokes them one by one.
 | `mcp` (`mcp_servers`) | a registered MCP server | true / false | true |
 | `tool` (`tools`) | `server/tool` (the server's own tool name) | true / false | true |
 | `skill` (`skills`) | a skill | true / false | true |
-| `client` (`client_tools`) | `navigate`, `chart`, `diagram`, `ask`, `confirm`, `memory` | true / false | true |
+| `client` (`client_tools`) | `navigate`, `chart`, `diagram`, `ask`, `confirm`, `memory`; `session` (custom client tools a session token or a server run declares); a custom client tool's name or a pattern (`kiosk_*`) ([client tools](client-tools.md)) | true / false | true; `session` false |
 | `voice` (`voice`) | `browser` (on-device speech), `server` (Pipecat) | true / false | true |
 | `stt` (`stt`) | a server speech-to-text engine (`EVOKAI_VOICE_STT`) | true / false | true |
 | `tts` (`tts`) | `browser/<voice id>` or `server/<voice id>` | true / false | true |
@@ -257,6 +263,9 @@ which choices exist, and the console grants or revokes them one by one.
 | `workflow` (`workflows`) | `*` (workflows run at all), `autonomous` (tool steps marked `safe` change data without an approval) | true / false | true; `autonomous` false |
 | `code` (`code`) | `*` (isolated code execution, [code](code.md)) | true / false | false |
 | `connection` (`connections`) | a provider people may connect (`microsoft365`, `google`) or one of its tool families (`microsoft365/mail`, `/calendar`, `/files`) | true / false | providers false; families true (they need their provider) |
+| `openai` (`openai`) | `confirm` (tools that change data over the OpenAI-compatible API, with a typed yes: [confirmations in text](openai-compatible.md#confirmations-in-text)) | true / false | false |
+| `attachments` (`attachments`) | `*` (files people attach to chat messages: [attachments](attachments.md)) | true / false | false |
+| `builtin` (`builtin_tools`) | a provider built-in tool: `web_search`, `web_fetch`, `code_execution`, `image_generation`, `file_search`, `mcp_server`, `memory` ([built-in tools](builtin-tools.md)) | true / false | false |
 | `capability` (`capabilities`) | a capability of the catalog (`code_mode`, `compaction`, `subagents`, every pydantic-ai-harness one: [capabilities](capabilities.md)) | true / false | false |
 
 Every item either follows its default or is overridden for the application, and an override can be reset. The

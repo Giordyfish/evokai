@@ -319,3 +319,12 @@ def test_prompt_cache_and_preload_in_definitions() -> None:
     assert "prompt_cache" not in plain.content() and "preload_skills" not in plain.content()
     cached = AgentDef.model_validate({**base, "prompt_cache": "1h"})
     assert cached.with_version().version != plain.with_version().version
+
+
+def test_voice_rule_rewording_keeps_agent_versions() -> None:
+    # Versions computed before the default voice rule was reworded (literal hashes).
+    base = {"name": "helper", "instructions": "Help with books.", "model": "function:x"}
+    assert AgentDef.model_validate(base).with_version().version == "fb266d5fe85b"
+    own = {**base, "voice": {"prompt_rule": "Speak briefly."}}
+    assert AgentDef.model_validate(own).with_version().version == "f5e72e5f835f"
+    assert "account numbers" in AgentDef.model_validate(base).voice.prompt_rule

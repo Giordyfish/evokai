@@ -14,7 +14,21 @@ from pydantic import BaseModel, Field
 from evokai import audit
 from evokai.agents import skills as sk
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import (
+    check_agent_modules,
+    check_data,
+    check_parameters_schema,
+    check_prompt_in_use,
+    render_legacy,
+    render_template,
+    render_text,
+    validate_params,
+)
+from evokai.agents.prompts import long_date
+from evokai.agents.templates import check_agent_templates, check_prompt, syntax_to_save
 from evokai.api.deps import admin_app, services
+from evokai.assistant.privacy import MAX_TTL_DAYS, lists_everyone, own_subject
+from evokai.audio.speech.markup import MarkupDef
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
 from evokai.connectors import validate as validate_connector
@@ -28,6 +42,7 @@ from evokai.core.caps import (
 )
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.security import generate_key
+from evokai.core.util import utcnow
 from evokai.evals.redteam.service import gate_of
 from evokai.grants import explicit_client_tools, grants_of
 from evokai.i18n import locale_of, pack
@@ -128,6 +143,9 @@ class AppPatch(BaseModel):
     identifiers masked, secrets removed) or ``full`` (secrets removed; read as ``masked`` while
     ``pii.history`` or ``pii.model`` is enforced). External storage keeps none, whatever this
     says."""
+    markup: MarkupDef | None = None
+    """Inline markup the agents may write: ``cue`` (``{wave}``, delivered as marks on the
+    spoken segments) and ``speech`` (``[laughs]``, for expressive voices); null removes it."""
 
 
 EVAL_KEYS = ("eval_monthly_usd", "eval_judge_model", "eval_on_save", "eval_credential")
@@ -154,6 +172,7 @@ DEFAULT_KEYS = frozenset({
     "timezone",
     "messages",
     "tracing_content",
+    "markup",
 })
 """Application settings kept in its defaults."""
 
@@ -240,6 +259,7 @@ async def get_application(svc: Svc, a: Admin) -> dict[str, Any]:
         "eval_on_save": (app.defaults or {}).get("eval_on_save", True),
         "hasEvalCredential": bool((app.defaults or {}).get("eval_credential")),
         "tracing_content": (app.defaults or {}).get("tracing_content", "masked"),
+        "markup": (app.defaults or {}).get("markup"),
         "memory_mode": (app.defaults or {}).get("memory_mode", "on"),
         "memory_ttl_days": (app.defaults or {}).get("memory_ttl_days"),
         "redteam_gate": (app.defaults or {}).get("redteam_gate", "off"),
@@ -265,6 +285,8 @@ async def patch_application(
 
     Raises:
         NotFound: The application is gone.
+        BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its
+            audit log kept less (400 ``system_audit_ttl``).
     """
     before = await get_application(svc, a)
     fields = body.model_dump(exclude_unset=True)
@@ -272,6 +294,22 @@ async def patch_application(
     if current is None:
         raise NotFound()
     _check_caps(body, fields, current)
+    ttl = fields.get("conversation_ttl_days", -1)
+    if current.system and "conversation_ttl_days" in fields and not (ttl and ttl <= MAX_TTL_DAYS):
+        raise BadRequest(
+            f"A system application keeps conversations {MAX_TTL_DAYS} days at most.",
+            code="system_ttl",
+        )
+    audit_ttl = fields.get("audit_ttl_days")
+    if current.system and audit_ttl is not None and audit_ttl < MAX_TTL_DAYS:
+        # Inspections of the assistant's conversations live in the audit log: they must outlive
+        # the conversations, so their authors can see them.
+        raise BadRequest(
+            f"A system application keeps its audit log {MAX_TTL_DAYS} days at least.",
+            code="system_audit_ttl",
+        )
+    if "markup" in fields:
+        fields["markup"] = body.markup.model_dump(exclude_none=True) if body.markup else None
     if "residency" in fields:
         fields["residency"] = body.residency.stored() if body.residency else None
     if "data_protection" in fields:
@@ -426,10 +464,31 @@ async def list_agents(svc: Svc, a: Admin) -> dict[str, Any]:
     """Active agents with their definitions.
 
     Returns:
-        items.
+        items, each with its ``template_syntax`` (``legacy`` for a version saved before
+        Handlebars).
     """
     rows = await svc.store.agents.active_all(a.application_id)
-    return {"items": [{**r.definition, "version": r.version} for r in rows]}
+    return {
+        "items": [{"template_syntax": "legacy", **r.definition, "version": r.version} for r in rows]
+    }
+
+
+def _check_builtin_tools(app: Any, body: AgentDef) -> None:
+    """Built-in tools that keep data at the provider need the data protection's consent.
+
+    Raises:
+        AppError: 400 ``provider_storage``.
+    """
+    from evokai.engine.builtin_tools import STORING, storage_allowed
+
+    keeping = [t.kind for t in body.builtin_tools if t.kind in STORING]
+    if keeping and not storage_allowed(protection(app)):
+        raise AppError(
+            f"{', '.join(keeping)} would keep data at the model's provider: the application's "
+            "data protection does not allow it (provider_tool_storage).",
+            code="provider_storage",
+            status=400,
+        )
 
 
 @router.put("/agents/{name}")
@@ -449,9 +508,13 @@ async def put_agent(
         AppError: A model outside the application's data residency (400 ``residency``).
         Forbidden: A console operator changing the agent's security policy (owner only).
         Conflict: The red team gate blocked this version (409 ``redteam_blocked``).
+        BadRequest: A prompt module that does not exist or whose parameters do not fit
+            (``unknown_module``, ``module_params``).
     """
     if body.name != name:
         raise BadRequest("The name in the path and in the body must be the same.")
+    # What is saved now is Handlebars; a body that is exactly a stored legacy version is a restore.
+    body = await syntax_to_save(svc.store, a.application_id, body)
     for model in (body.model, *body.fallbacks, *body.models):
         if not svc.catalog.allowed(model):
             raise BadRequest(f"Model not allowed: {model}", code="model")
@@ -461,6 +524,7 @@ async def put_agent(
     problems = (await grants_of(svc.store, app)).problems(body, explicit_client_tools(body))
     if problems:
         raise NotGrantedInAgent(problems)
+    _check_builtin_tools(app, body)
     outside = [
         x
         for x in dict.fromkeys((body.model, *body.fallbacks, *body.models))
@@ -474,9 +538,18 @@ async def put_agent(
         )
     current = await svc.store.agents.active(a.application_id, name)
     before = current.definition if current else None
-    if a.role != "owner" and (before or {}).get("security") != body.security:
+    latest = before
+    if a.via and current is None:
+        # Deleting and saving again must not drop a policy: the last version counts.
+        versions = await svc.store.agents.versions(a.application_id, name)
+        latest = versions[0].definition if versions else None
+    if (a.role != "owner" or a.via) and (latest or {}).get("security") != body.security:
+        # The console assistant never changes a security policy, whoever it acts for.
         raise Forbidden("Changing an agent's security policy needs the owner role.", code="role")
+    stored = await svc.store.agents.version(a.application_id, name, body.with_version().version)
+    check_agent_templates(body, before, stored=stored is not None)
     await _check_ask_rules(svc, a, body)
+    await check_agent_modules(svc.store, a.application_id, body)
     agent = body.with_version()
     gate, _minimum = gate_of(app)
     existing = await svc.store.agents.version(a.application_id, name, agent.version)
@@ -973,25 +1046,111 @@ SKILL_LIMITS = {
 
 
 class PromptBody(BaseModel):
-    """A prompt's text; saving a different text makes a new version."""
+    """A prompt's text; saving a different text, schema, description or data makes a new version."""
 
     text: str = Field(min_length=1, max_length=60_000)
+    parameters: dict[str, Any] | None = None
+    """A prompt module's parameter schema (``evokai.agents.modules``); the text is then a
+    Handlebars template checked against it."""
+    description: str = Field("", max_length=500)
+    data: dict[str, str] | None = None
+    """A module's lookup table (key to text, at most 256 KB), read in the template as ``data``."""
 
 
 @router.put("/prompts/{name}")
 async def put_prompt(
     name: str, body: PromptBody, svc: Svc, a: Admin, request: Request
 ) -> dict[str, int]:
-    """Save a prompt (a changed text becomes the next version).
+    """Save a prompt (a changed text, schema, description or data becomes the next version).
 
     Returns:
         The version.
+
+    Raises:
+        BadRequest: A schema, template or data table that does not pass the module checks, or
+            a new version whose parameters no longer fit an agent's values (``module_in_use``).
     """
-    version = await svc.store.prompts.put(a.application_id, name, body.text)
+    # What the body leaves out stays as the latest version has it: a text-only save (an older
+    # client) keeps a module a module. Send ``parameters: null`` to make it a plain prompt.
+    last = await svc.store.prompts.get(a.application_id, name)
+    sent = body.model_fields_set
+    keep = last is not None
+    parameters = body.parameters if "parameters" in sent or not keep else last.parameters
+    data = body.data if "data" in sent or not keep else last.data
+    description = (
+        body.description if "description" in sent or not keep else (last.description or "")
+    )
+    if parameters is not None:
+        check_parameters_schema(parameters)
+        check_data(data)
+    elif data is not None:
+        raise BadRequest("A data table needs parameters (a module).", code="module_data")
+    check_prompt(body.text, parameters, data)
+    await check_prompt_in_use(svc.store, a.application_id, name, parameters)
+    version = await svc.store.prompts.put(
+        a.application_id,
+        name,
+        body.text,
+        parameters=parameters,
+        description=description,
+        data=data,
+    )
     await audit.record(
-        request, a, "prompt.put", target=f"{name} v{version}", after={"text": body.text}
+        request,
+        a,
+        "prompt.put",
+        target=f"{name} v{version}",
+        after={"text": body.text, "parameters": parameters},
     )
     return {"version": version}
+
+
+class PreviewBody(BaseModel):
+    """Sample values for a prompt preview, and optionally an unsaved draft to preview instead."""
+
+    params: dict[str, Any] = Field(default_factory=dict)
+    version: int | None = Field(default=None, ge=1)
+    """A saved version (default: the latest), when no draft is sent."""
+    text: str | None = Field(default=None, min_length=1, max_length=60_000)
+    """A draft text: checked like a save (with ``parameters`` and ``data``) and rendered."""
+    parameters: dict[str, Any] | None = None
+    data: dict[str, str] | None = None
+
+
+@router.post("/prompts/{name}/preview")
+async def preview_prompt(name: str, body: PreviewBody, svc: Svc, a: Admin) -> dict[str, str]:
+    """Render a prompt (a saved version or a draft) with sample parameter values.
+
+    The values get the parameters' defaults and are checked against the schema; required ones may
+    be left out. ``date`` and ``app`` are today's date and the application's name.
+
+    Returns:
+        text: the rendered prompt.
+
+    Raises:
+        NotFound: No such prompt (and no draft) or application. A draft or values that do not
+            pass the module checks are refused as when saving (400 ``module_*``).
+    """
+    app = await svc.store.applications.get(a.application_id)
+    if app is None:
+        raise NotFound()
+    if body.text is not None:
+        text, parameters, data, syntax = body.text, body.parameters, body.data, "handlebars"
+        if parameters is not None:
+            check_parameters_schema(parameters)
+            check_data(data)
+        check_prompt(text, parameters, data)
+    else:
+        row = await svc.store.prompts.get(a.application_id, name, body.version)
+        if row is None:
+            raise NotFound("Unknown prompt.", code="unknown_prompt")
+        text, parameters, data, syntax = row.text, row.parameters, row.data, row.template_syntax
+    params = validate_params(parameters, body.params, partial=True) if parameters else {}
+    timezone = str((app.defaults or {}).get("timezone") or "UTC")
+    values = {"date": long_date(utcnow(), timezone), "app": app.name, "data": data or {}, **params}
+    if syntax != "legacy":
+        return {"text": render_text(text, syntax, values)}
+    return {"text": render_template(text, values) if parameters else render_legacy(text, values)}
 
 
 @router.get("/prompts")
@@ -999,12 +1158,22 @@ async def list_prompts(svc: Svc, a: Admin) -> dict[str, Any]:
     """Every version of every prompt.
 
     Returns:
-        items: name, version, createdAt.
+        items: name, version, text, description, parameters (a module's schema, or null), data,
+        templateSyntax and createdAt.
     """
     rows = await svc.store.prompts.all(a.application_id)
     return {
         "items": [
-            {"name": r.name, "version": r.version, "createdAt": r.created_at.isoformat()}
+            {
+                "name": r.name,
+                "version": r.version,
+                "text": r.text,
+                "description": r.description or "",
+                "parameters": r.parameters,
+                "data": r.data,
+                "templateSyntax": r.template_syntax,
+                "createdAt": r.created_at.isoformat(),
+            }
             for r in rows
         ]
     }
@@ -1043,6 +1212,9 @@ async def bug_reports(svc: Svc, a: Admin) -> dict[str, Any]:
         items.
     """
     rows = await svc.store.bug_reports.all(a.application_id)
+    mine = await own_subject(svc, a)
+    if mine is not None and not lists_everyone(a):
+        rows = [r for r in rows if r.subject == mine]
     return {
         "items": [
             {

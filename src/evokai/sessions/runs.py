@@ -35,16 +35,23 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    PartDeltaEvent,
+    PartStartEvent,
     SystemPromptPart,
+    TextPart,
+    TextPartDelta,
     ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tool_manager import ToolManager
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
-from evokai.agents.definitions import AgentDef
-from evokai.agents.prompts import split_skills, system_prompt
+from evokai.agents.definitions import AgentDef, ClientToolDef
+from evokai.agents.modules import protected, resolve_modules
+from evokai.agents.prompts import Instructions, split_skills, system_prompt
 from evokai.agents.skills import load as load_skill
 from evokai.core.errors import AppError, BadRequest, Forbidden
 from evokai.core.util import clip, new_id
@@ -55,6 +62,8 @@ from evokai.engine.state import RunState, Scope
 from evokai.engine.tools import EvokaiToolset, GuardedToolset, ToolSpec
 from evokai.grants import NotGranted, grants_of
 from evokai.guard import TurnGuard
+from evokai.guard.output import SentenceGate
+from evokai.i18n import locale_of, message
 from evokai.knowledge.tool import (
     CITE_NOTE,
     format_results,
@@ -74,13 +83,18 @@ from evokai.sandbox.tool import NOTE as CODE_NOTE
 from evokai.sandbox.tool import TOOL_NAME as CODE_TOOL
 from evokai.sandbox.tool import tool_def as code_tool
 from evokai.sessions.limits import cap_state, limit_message
+from evokai.tools import custom
 from evokai.tools.client_tools import SKILL_LOAD
+from evokai.tools.labels import confirm_label
 
 log = logging.getLogger("evokai.runs")
 
 OUTPUT_TOOL = "final_result"
 NO_CHARTS = "describe the results in words."
 MAX_SCHEMA_RETRIES = 1
+STEP_SEPARATOR = "\n\n"
+"""Between the texts of two steps of a run (text, a tool call, more text): the same in a streamed
+and a whole answer, and in the stored conversation."""
 
 RunChannel = Literal["server", "a2a", "browser", "email"]
 """How a run was reached: a server run, an A2A call, an OpenAI-compatible call with a session
@@ -97,6 +111,12 @@ class LimitReached(AppError):
     status, code = 429, "limit"
 
 
+class GuardStopped(AppError):
+    """The output guard stopped a streamed answer (it repeated the agent's instructions)."""
+
+    status, code = 400, "guard"
+
+
 class InvalidOutput(AppError):
     """The model did not produce an answer that fits the schema."""
 
@@ -110,6 +130,19 @@ class Attachment:
     name: str
     media_type: str
     text: str
+
+
+@dataclass
+class Resume:
+    """A confirmation being carried out in a run (the OpenAI-compatible API)."""
+
+    calls: list[dict[str, Any]]
+    """The waiting calls, with their stored arguments (never regenerated)."""
+    ready: list[dict[str, Any]]
+    """What ran in the same step before the confirmation (id, name, ok, text)."""
+    approve: bool
+    waited_ms: int = 0
+    channel: str = "openai"
 
 
 @dataclass
@@ -131,6 +164,12 @@ class RunResult:
     timings: dict[str, Any] = field(default_factory=dict)
     citations: list[dict[str, Any]] = field(default_factory=list)
     """The knowledge passages found, as ``citation`` events (numbered as the answer cites them)."""
+    waiting: list[dict[str, Any]] = field(default_factory=list)
+    """Calls that change data and wait for the person's yes (``confirm`` runs): id, name, input,
+    label. The run ended on them; ``ready`` holds what ran in the same step."""
+    ready: list[dict[str, Any]] = field(default_factory=list)
+    client_calls: list[dict[str, Any]] = field(default_factory=list)
+    """Custom client tool calls (``callId``, ``name``, ``args``), for the caller to carry out."""
 
 
 class AgentRunner:
@@ -165,6 +204,12 @@ class AgentRunner:
         conversation_id: str | None = None,
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
+        prompt_options: dict[str, Any] | None = None,
+        client_tools: Sequence[ClientToolDef] = (),
+        on_text: Callable[[str], None] | None = None,
+        confirm: bool = False,
+        resume: Resume | None = None,
+        offer_client_tools: bool = False,
     ) -> RunResult:
         """Run the agent to its answer.
 
@@ -194,6 +239,20 @@ class AgentRunner:
                 ``PGTaskDurability``).
             usage_key: Makes the run's usage records idempotent: each model call's record is keyed
                 by it and the call's number (a durable step: its pgtask task).
+            prompt_options: The prompt modules and locale the caller chose (already checked,
+                ``evokai.agents.modules``); None renders the agent's defaults.
+            client_tools: Custom client tools the caller declares for this run (already checked
+                and granted; none waits): their calls come back in ``client_calls``.
+            offer_client_tools: Offer custom client tools at all (a server run returns their
+                calls; the other callers have nobody to deliver them to).
+            confirm: Offer the tools that change data: a call ends the run waiting for the
+                person (``RunResult.waiting``), as over the OpenAI-compatible API with
+                ``openai:confirm``. An agent with an ``output_schema`` never waits.
+            resume: Carry out a confirmation: the stored calls run (approved) or are cancelled
+                without a model call.
+            on_text: Streams the answer as it is written (an answer without ``output_schema``):
+                called with each piece once the output guard let it through, token by token when
+                no output control rewrites text, else sentence by sentence (``SentenceGate``).
 
         Returns:
             The result.
@@ -231,7 +290,7 @@ class AgentRunner:
             session_id=None,
             turn_id=run_id,
             channel=guard_channel,
-            instructions=instructions or agent.instructions,
+            instructions=instructions.text if instructions else agent.instructions,
             tags=tags,
         )
         trace = guard.trace = eng.new_trace(
@@ -248,6 +307,12 @@ class AgentRunner:
         )
         await eng.guard.admit(guard)
         status, reason, result = "done", "end_turn", None
+        modules = protected(
+            await resolve_modules(eng.store, app.id, agent, prompt_options), guard.protect_text
+        )
+        if modules:
+            # Which modules at which versions; never their parameters.
+            trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})
         try:
             result = await self._run(
                 app,
@@ -272,6 +337,12 @@ class AgentRunner:
                 conversation_id=conversation_id,
                 extra_capabilities=extra_capabilities,
                 usage_key=usage_key,
+                modules=modules,
+                client_tools=client_tools,
+                on_text=on_text,
+                confirm=confirm,
+                resume=resume,
+                offer_client_tools=offer_client_tools,
             )
             return result
         except LimitReached:
@@ -329,7 +400,7 @@ class AgentRunner:
         agent: AgentDef,
         guard: TurnGuard,
         run_id: str,
-        instructions: str | None,
+        instructions: Instructions | None,
         candidates: list[str],
         grants: Any,
         who: Who,
@@ -348,6 +419,12 @@ class AgentRunner:
         conversation_id: str | None = None,
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
+        modules: list[Any] | None = None,
+        client_tools: Sequence[ClientToolDef] = (),
+        on_text: Callable[[str], None] | None = None,
+        confirm: bool = False,
+        resume: Resume | None = None,
+        offer_client_tools: bool = False,
     ) -> RunResult:
         """The run itself, under its guard, on the same engine as the turns.
 
@@ -362,6 +439,9 @@ class AgentRunner:
             UnexpectedModelBehavior: The model kept answering what could not be used (no schema).
         """
         eng = self.engine
+        confirm = (confirm or resume is not None) and not agent.output_schema
+        if resume is not None and not resume.approve:
+            return self._cancelled(app, guard, run_id, candidates[0], resume)
         self._check_size(guard, text, messages, attachments)
         toolbox = await eng.mcp.toolbox(
             app.id,
@@ -376,13 +456,14 @@ class AgentRunner:
         )
         # Nobody can confirm in a server run: tools that change data, and tools an ask rule may
         # make wait for the person, are not offered.
+        mutating = {
+            t.name for t in toolbox.tools if t.mutating or guard.forced_confirmation(t.name)
+        }
         read_only = [
             t
             for t in toolbox.tools
-            if not t.mutating
-            and guard.offered(t.name)
-            and not guard.forced_confirmation(t.name)
-            and not guard.askable(t.name)
+            if guard.offered(t.name)
+            and (confirm or (t.name not in mutating and not guard.askable(t.name)))
         ]
         skills = await eng._skills(app.id, agent, grants)
         preloaded, on_demand = split_skills(agent, skills)
@@ -428,9 +509,20 @@ class AgentRunner:
             groups,
             result,
             loadable=bool(on_demand) or any(s.files for s in preloaded),
+            mutating=mutating if confirm else set(),
         )
-        specs = [s for s in specs if not guard.askable(s.name)]
+        names = {s.name for s in specs}
+        specs += [
+            s
+            for s in (self._client_tools(agent, client_tools, result) if offer_client_tools else [])
+            if s.name not in names and guard.offered(s.name)
+        ]
+        if not confirm:
+            specs = [s for s in specs if not guard.askable(s.name)]
         rs.tools = {s.name: s for s in specs}
+        if confirm:
+            rs.label = lambda name, args: confirm_label(agent, name, args, app)
+            rs.locale = locale_of(app)
         if on_event is not None:
             rs.on_tool = lambda name, status: on_event({
                 "type": "tool",
@@ -450,6 +542,7 @@ class AgentRunner:
             timezone=str((app.defaults or {}).get("timezone") or "UTC"),
             preloaded=preloaded,
             scripts_runnable=bool(script_skills),
+            modules=modules,
         )
         notes = guard.system_notes()
         if kbs:
@@ -497,7 +590,7 @@ class AgentRunner:
         rs.before_call = before_call
         rs.on_response = on_response
         schema = agent.output_schema
-        output_type: Any = str
+        output_type: Any = [str, DeferredToolRequests] if confirm else str
         if schema:
             output_type = ToolOutput(
                 StructuredDict(schema),
@@ -541,6 +634,29 @@ class AgentRunner:
                     raise ModelRetry(f"Invalid answer, fix it: {feedback}")
                 return output
 
+        gate = SentenceGate(guard.output_filter()) if on_text is not None and not schema else None
+        stopped = GuardStopped(message(app, "turn.guardStopped"))
+        deferred = None
+        if resume is not None:
+            history.extend(self._resumed(resume, rs))
+            deferred = DeferredToolResults(approvals={c["toolUseId"]: True for c in resume.calls})
+
+        steps = StepText()
+
+        async def stream(_ctx: Any, events: Any) -> None:
+            # Called once per step (each model request's events).
+            assert gate is not None and on_text is not None  # ruff: ignore[assert] (set together)
+            steps.step()
+            async for ev in events:
+                delta = steps.text(ev)
+                if not delta:
+                    continue
+                for piece in gate.push(delta):
+                    on_text(piece)
+                if gate.blocked:
+                    guard.after_output(gate.filter)
+                    raise stopped
+
         try:
             with ToolManager.parallel_execution_mode("sequential"):
                 answer = await runner.run(
@@ -551,6 +667,8 @@ class AgentRunner:
                     usage_limits=UsageLimits(
                         request_limit=agent.max_tool_calls_per_turn + MAX_SCHEMA_RETRIES + 1
                     ),
+                    event_stream_handler=stream if gate is not None else None,
+                    deferred_tool_results=deferred,
                 )
         except UsageLimitExceeded as e:
             raise InvalidOutput("The agent did not finish within its step limit.") from e
@@ -558,10 +676,26 @@ class AgentRunner:
             if schema:
                 raise InvalidOutput("The answer did not match the output schema.") from e
             raise
-        if schema:
+        if gate is not None and on_text is not None:
+            # Streamed: every piece already passed the output filter on its way out.
+            for piece in gate.flush():
+                on_text(piece)
+            guard.after_output(gate.filter)
+            if gate.blocked:
+                raise stopped
+        if isinstance(answer.output, DeferredToolRequests):
+            # A change waits for the person: the caller asks and keeps the calls.
+            result.waiting = list(rs.waiting)
+            result.ready = _ready(answer.all_messages(), rs.ok)
+            result.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
+            guard.trace.root.set(confirm="asked")
+            return result
+        if gate is not None:
+            result.text = result.output = gate.filter.shown
+        elif schema:
             result.output = guard.check_final(dict(answer.output))
         else:
-            result.text = guard.check_final(str(answer.output))
+            result.text = guard.check_final(_answer_text(answer.new_messages(), str(answer.output)))
             result.output = result.text
 
         result.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -599,8 +733,12 @@ class AgentRunner:
         result: RunResult,
         *,
         loadable: bool,
+        mutating: set[str] | None = None,
     ) -> list[ToolSpec]:
         """The tools of a run: read-only MCP tools, skills, knowledge, code, skill scripts.
+
+        With ``mutating`` (a run that may ask for confirmations) those MCP tools are offered too
+        and wait for the person.
 
         Every result goes back to the model marked as data, its identifiers protected.
 
@@ -628,7 +766,8 @@ class AgentRunner:
                 run=app_tool(t.name),
                 kind="app",
                 server=toolbox.server_of(t.name),
-                read_only=True,
+                mutating=t.name in (mutating or set()),
+                read_only=t.name not in (mutating or set()),
                 return_schema=t.output_schema,
             )
             for t in read_only
@@ -735,6 +874,106 @@ class AgentRunner:
                 )
             )
         return specs
+
+    @staticmethod
+    def _resumed(resume: Resume, rs: RunState) -> list[ModelMessage]:
+        """The step a confirmation resumes.
+
+        The model's calls with their stored arguments, then what had already run.
+
+        Returns:
+            Messages to append to the run's history.
+        """
+        rs.confirm = {"approve": True, "waitedMs": resume.waited_ms, "channel": resume.channel}
+        for c in resume.calls:
+            rs.args[c["toolUseId"]] = c["input"]
+        for r in resume.ready:
+            rs.ok[r["toolUseId"]] = r["ok"]
+        out: list[ModelMessage] = [
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=x["name"], args=x.get("input") or {}, tool_call_id=x["toolUseId"]
+                    )
+                    for x in [*resume.ready, *resume.calls]
+                ]
+            )
+        ]
+        if resume.ready:
+            out.append(
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name=r["name"],
+                            content=r["text"] or ("ok" if r["ok"] else "error"),
+                            tool_call_id=r["toolUseId"],
+                        )
+                        for r in resume.ready
+                    ]
+                )
+            )
+        return out
+
+    def _cancelled(
+        self, app: m.Application, guard: TurnGuard, run_id: str, model: str, resume: Resume
+    ) -> RunResult:
+        """A confirmation the person did not give: nothing runs and no model is called.
+
+        Returns:
+            The fixed answer.
+        """
+        tr = guard.trace
+        for c in resume.calls:
+            with tr.span(
+                "tool",
+                f"execute_tool {c['name']}",
+                tool=c["name"],
+                callId=c["toolUseId"],
+                confirmed=False,
+                confirmChannel=resume.channel,
+                waitedMs=resume.waited_ms,
+            ) as ts:
+                tr.put(ts, args=c["input"])
+                ts.set(outcome="rejected")
+        tr.root.set(confirm="rejected", confirmChannel=resume.channel)
+        text = message(app, "turn.refusal")
+        return RunResult(run_id=run_id, output=text, text=text, model=model)
+
+    @staticmethod
+    def _client_tools(
+        agent: AgentDef, extra: Sequence[ClientToolDef], result: RunResult
+    ) -> list[ToolSpec]:
+        """Custom client tools of a run: the agent's that do not wait, then the caller's.
+
+        Nobody can answer in the middle of a run: a call is recorded for the caller (the
+        response's ``clientToolCalls``) and the model reads ``ok``.
+
+        Returns:
+            Their tool specs.
+        """
+
+        def handler(name: str) -> Any:
+            async def handle(  # ruff: ignore[unused-async] (a handler is awaited)
+                args: dict[str, Any], cid: str, span: Any
+            ) -> ToolResult:
+                result.client_calls.append({"callId": cid, "name": name, "args": args})
+                if span is not None:
+                    span.set(outcome="ok", type="client")
+                return ToolResult(True, custom.OK_TEXT)
+
+            return handle
+
+        own = [t for t in agent.client_tools.custom if not t.wait]
+        return [
+            ToolSpec(
+                name=custom.model_name(t.name),
+                description=t.description,
+                schema=t.parameters,
+                run=handler(t.name),
+                kind="client",
+            )
+            for t in custom.merged(own, list(extra))
+        ]
 
     async def _knowledge(
         self,
@@ -928,6 +1167,104 @@ class AgentRunner:
                 interrupted=False,
             )
         return sess.id
+
+
+class StepText:
+    """The text a run streams, set apart as the whole answer is (``_answer_text``).
+
+    Each step's text follows the one before it after ``STEP_SEPARATOR``; within a step, a text
+    part that starts after another kind of part (a built-in tool's call) is set apart the same
+    way, as ``ModelResponse.text`` joins them.
+    """
+
+    def __init__(self) -> None:
+        """Before the first step."""
+        self.said = False
+        """Some text was streamed already."""
+        self.first = True
+        """No text yet in this step."""
+        self.gap = False
+        """Another kind of part started after this step's text."""
+        self.pending = False
+        """The next text starts a new part after a gap."""
+
+    def step(self) -> None:
+        """A new step (model request) begins."""
+        self.first, self.gap, self.pending = True, False, False
+
+    def text(self, ev: Any) -> str | None:
+        """The text an event adds, with its separator.
+
+        Returns:
+            The text, or None for an event without any.
+        """
+        if isinstance(ev, PartStartEvent):
+            if not isinstance(ev.part, TextPart):
+                self.gap = self.gap or not self.first
+                return None
+            self.pending, self.gap = self.pending or self.gap, False
+            delta = ev.part.content
+        elif isinstance(ev, PartDeltaEvent) and isinstance(ev.delta, TextPartDelta):
+            delta = ev.delta.content_delta
+        else:
+            return None
+        if not delta:
+            return None
+        if (self.first and self.said) or self.pending:
+            delta = STEP_SEPARATOR + delta
+        self.first, self.pending, self.said = False, False, True
+        return delta
+
+
+def _answer_text(messages: list[ModelMessage], output: str) -> str:
+    """A run's whole answer: what each step said before its tool calls, then its output.
+
+    A stream sends the text of each step as it is written (``STEP_SEPARATOR`` between steps), so
+    a whole answer says the same, not only the last step's text. A response without tool calls
+    that the run did not end on (a draft a capability refined) is not part of it.
+
+    Returns:
+        The text.
+    """
+    steps = [
+        m.text or ""
+        for m in messages
+        if isinstance(m, ModelResponse)
+        and any(isinstance(p, ToolCallPart) and p.tool_name != OUTPUT_TOOL for p in m.parts)
+    ]
+    return STEP_SEPARATOR.join([t for t in (*steps, output) if t])
+
+
+def _ready(messages: list[ModelMessage], ok: dict[str, bool]) -> list[dict[str, Any]]:
+    """What ran in the step that ended waiting for a confirmation.
+
+    Returns:
+        ``toolUseId``, ``name``, ``input``, ``ok`` and ``text`` of each call that has a result.
+    """
+    last = max((i for i, x in enumerate(messages) if isinstance(x, ModelResponse)), default=-1)
+    if last < 0:
+        return []
+    step = messages[last]
+    assert isinstance(step, ModelResponse)  # ruff: ignore[assert] (found above)
+    calls = {p.tool_call_id: p for p in step.parts if isinstance(p, ToolCallPart)}
+    out = []
+    returns = [
+        p
+        for msg in messages[last + 1 :]
+        if isinstance(msg, ModelRequest)
+        for p in msg.parts
+        if isinstance(p, ToolReturnPart) and p.tool_call_id in calls
+    ]
+    for p in returns:
+        call = calls[p.tool_call_id]
+        out.append({
+            "toolUseId": p.tool_call_id,
+            "name": p.tool_name,
+            "input": call.args_as_dict(),
+            "ok": ok.get(p.tool_call_id, True),
+            "text": str(p.content),
+        })
+    return out
 
 
 def check_channel(agent: AgentDef, grants: Any, channel: str) -> None:

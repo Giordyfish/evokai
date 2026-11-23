@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     page_text_chars: int = 6_000
     tool_result_chars: int = 12_000
     max_output_tokens: int = 1_200
+    client_tool_timeout_seconds: float = Field(default=120.0, gt=0)
+    """How long a turn waits for the client's result of a custom client tool with ``wait``; then
+    the model reads that no answer came."""
 
     # Voice
     voice_enabled: bool = False
@@ -145,6 +148,24 @@ class Settings(BaseSettings):
     """Speech-to-text provider: a registered name or ``module:factory``."""
     voice_tts: str = "fake"
     """Text-to-speech provider: a registered name or ``module:factory``."""
+    voice_tts_engines: list[str] = Field(default_factory=list)
+    """More speech engines a session token may choose (``speech.tts``) besides ``voice_tts``."""
+    voice_stt_engines: list[str] = Field(default_factory=list)
+    """More recognition engines a session token may choose (``speech.stt``), besides
+    ``voice_stt``."""
+    speech_max_chars: int = 2_000
+    """The longest text ``POST /v1/session/speech`` speaks."""
+    transcribe_max_bytes: int = 10_000_000
+    """The largest audio file ``POST /v1/session/transcribe`` takes."""
+    transcribe_max_seconds: int = 120
+    """The longest audio file ``POST /v1/session/transcribe`` takes."""
+    transcribe_stream_max_seconds: int = 300
+    """The longest streaming recognition (``WS /v1/session/transcribe/stream``): its audio, and its
+    wall-clock time with a margin of 10 seconds."""
+    transcribe_stream_idle_seconds: float = 30
+    """A streaming recognition socket that receives no audio for this long is closed."""
+    speech_timeout_seconds: float = 60
+    """The longest one synthesis may take before it ends with an error."""
     voice_smart_turn: bool = True
     """End of turn decided by Smart Turn v3 on top of Silero VAD (else VAD silence only)."""
     voice_ice_servers: list[str] = Field(default_factory=list)
@@ -169,6 +190,24 @@ class Settings(BaseSettings):
     public_url: str | None = None
     """``EVOKAI_PUBLIC_URL``: where people reach the API (base path included), for messages that
     point to the console. Default ``http://localhost:{port}{base_path}``."""
+
+    internal_url: str | None = None
+    """``EVOKAI_INTERNAL_URL``: where this service reaches itself (base path included), for the
+    built-in assistant's admin MCP server. Default ``http://127.0.0.1:{port}{base_path}``."""
+    assistant: Literal["on", "off"] = "on"
+    """``EVOKAI_ASSISTANT``: the built-in console assistant (``evokai.assistant``), a locked system
+    application created at start and inactive until an owner picks its model. ``off`` creates
+    nothing (an existing one stays as it is)."""
+
+    @property
+    def internal_base(self) -> str:
+        """Where this service reaches itself, base path included.
+
+        Returns:
+            ``EVOKAI_INTERNAL_URL``, else ``http://127.0.0.1:{port}{base_path}``.
+        """
+        url = self.internal_url or f"http://127.0.0.1:{self.port}{self.base_path}"
+        return url.rstrip("/")
 
     build_commit: str = ""
     """The commit the image was built from (``EVOKAI_BUILD_COMMIT``, set by the image build)."""
@@ -259,6 +298,10 @@ class Settings(BaseSettings):
     application's data residency applies on top)."""
     embedding_model: str = "bedrock:amazon.titan-embed-text-v2:0"
     """The embedding model of a new knowledge base that does not choose one."""
+    attachments_request_mb: int = Field(default=50, ge=1, le=200)
+    """Largest total of the files attached to one chat message, in megabytes: the body limit of
+    ``POST /v1/session/chat`` follows it (base64 adds a third) when the session's application is
+    granted attachments and its agent has them on, 2 MB otherwise. Agents set lower limits."""
     knowledge_max_file_mb: int = Field(default=20, ge=1, le=200)
     """Largest document accepted (upload, address or connector), in megabytes."""
     knowledge_fetch_allow: list[str] = Field(default_factory=list)

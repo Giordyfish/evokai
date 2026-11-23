@@ -230,6 +230,12 @@ export interface PiperTtsOptions {
   audioContext?: AudioContext
   /** Default rate. */
   rate?: number
+  /**
+   * A higher (above 1) or lower voice at the same pace (default 1): the synthesis is stretched by this factor
+   * (`length_scale`) and played back faster by the same factor (`playbackRate`), so the length stays and the pitch
+   * moves. 1.15 makes a small, bright voice.
+   */
+  pitchShift?: number
   fetch?: (input: string) => Promise<Response>
 }
 
@@ -328,7 +334,8 @@ export class PiperTts implements TtsEngine {
     const done = new Promise<{ cancelled: boolean }>((r) => (resolve = r))
     const rate = opts.rate ?? this.opts.rate ?? 1
     // Synthesis starts now (in order), playback follows the queue.
-    const audio = this.load().then((s) => s.synthesize(text, { rate }))
+    const shift = this.opts.pitchShift ?? 1
+    const audio = this.load().then((s) => s.synthesize(text, { rate: rate / shift }))
     audio.catch(() => undefined)
     const item: Item = { text, rate, audio, resolve, cancelled: false }
     this.queue.push(item)
@@ -387,6 +394,8 @@ export class PiperTts implements TtsEngine {
     an.fftSize = 1024
     an.smoothingTimeConstant = 0.5
     source.buffer = buf
+    const shift = this.opts.pitchShift ?? 1
+    if (shift !== 1) source.playbackRate.value = shift
     source.connect(an)
     an.connect(ctx.destination)
     const stopMeter = meterAnalyser(an, 'agent', this.signals)

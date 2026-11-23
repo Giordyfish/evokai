@@ -4,8 +4,8 @@
  */
 import { createElement, forwardRef, useEffect, useImperativeHandle, useRef, type ReactElement, type ReactNode, type Ref } from 'react'
 
-import type { CreateVoiceOptions, EvokaiSession, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
-import type { ValueFormatter } from './context'
+import type { ClientToolHandler, CreateVoiceOptions, EvokaiSession, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
+import type { ToolRenderer, ValueFormatter } from './context'
 import type { ConversationItem } from './controller'
 import { defineElements, type EvokaiChatElement, type EvokaiVoiceElement } from './elements'
 import type { Strings } from './strings'
@@ -28,10 +28,14 @@ export interface EvokaiCommonProps {
   unstyled?: boolean
   /** Replaced icons by name: SVG markup. */
   icons?: Partial<Record<string, string>>
-  /** Elements for the slots (`slot="launcher"`, `"avatar"`, `"empty"`, `"stage-orb"`). */
+  /** Elements for the slots (`slot="orb"`, `"launcher"`, `"avatar"`, `"empty"`, `"stage-orb"`). */
   children?: ReactNode
   strings?: Partial<Strings>
   toolLabels?: Record<string, string> | ((name: string) => string | null | undefined)
+  /** Your own cards for tools, by tool name (see `EvokaiChatElement.toolRenderers`). */
+  toolRenderers?: Record<string, ToolRenderer>
+  /** Your custom client tools, by name (see `EvokaiChatElement.tools`). */
+  tools?: Record<string, ClientToolHandler>
   formatValue?: ValueFormatter
   voiceOptions?: CreateVoiceOptions
   title?: string
@@ -62,7 +66,7 @@ export interface EvokaiVoiceProps extends EvokaiCommonProps {
 
 type Props = EvokaiCommonProps & Partial<EvokaiChatProps & EvokaiVoiceProps>
 
-const PROPS = ['getToken', 'session', 'listConversations', 'getPage', 'strings', 'toolLabels', 'formatValue', 'voiceOptions', 'skin', 'icons'] as const
+const PROPS = ['getToken', 'session', 'listConversations', 'getPage', 'strings', 'toolLabels', 'toolRenderers', 'tools', 'formatValue', 'voiceOptions', 'skin', 'icons'] as const
 
 function attrs(p: Props): Record<string, string | undefined> {
   const str = (v: unknown) => (v === undefined || v === null || v === false ? undefined : v === true ? '' : String(v))
@@ -133,3 +137,4 @@ export const EvokaiVoice = forwardRef<EvokaiVoiceElement | null, EvokaiVoiceProp
 })
 
 export type { EvokaiChatElement, EvokaiVoiceElement }
+export type { ToolRenderer }

@@ -4,32 +4,42 @@
  * Permissions, and the server refuses a definition that references it.
  */
 import type { ComponentChildren } from 'preact'
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 
-import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, SkillInfo } from '@client/core/types'
-import { describe, forApp } from '../api'
+import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, ModuleRef, PromptVersion, SkillInfo } from '@client/core/types'
+import { adminJson, describe, forApp } from '../api'
+import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
-import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
+import { capabilityItems, capabilityUsable, channelGranted, builtinGranted, clientGranted, codeGranted, grantedModels, attachmentsGranted, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
 import { done, Fx, HAT, sparkle, toast } from '../magic'
 import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { rulesOf, toRow, type RuleRow } from '../askRules'
+import { blankTool, type ClientTool, type ClientToolRow, fromRow, MAX_TOOLS, toolProblems, toRow as toolRow } from '../clientTools'
 import { Btn, Field, Hero, KV, Panel, StatusTag, Switch, Tag } from '../ui'
 import { Loads } from './common'
 import { RulesEditor } from './AskRules'
+import { ParamsForm } from './ModuleParams'
 import { capDescription } from '../capabilityText'
+import { hasLegacyLabels, isLegacy, withSyntax } from '../templates'
 import { t, tn, type TextKey } from '../i18n'
 
-type Sec = 'ins' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
+const BUILTIN_KINDS = ['web_search', 'web_fetch', 'code_execution', 'image_generation', 'file_search', 'mcp_server', 'memory']
+const STORING_KINDS = ['file_search', 'memory']
+
+type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
 const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
   ins: ['name', 'title', 'instructions', 'channels', 'a2a'],
+  mod: ['modules'],
   model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'model_settings', 'temperature', 'prompt_cache'],
-  tools: ['mcp_servers', 'client_tools', 'ask_rules'],
+  tools: ['mcp_servers', 'client_tools', 'ask_rules', 'attachments'],
   skills: ['skills', 'preload_skills'],
   kb: ['knowledge', 'code', 'capabilities', 'subagents'],
   voice: ['voice'],
   out: ['output_schema'],
   ver: [],
 }
+const ATTACHMENT_KINDS = ['png', 'jpeg', 'webp', 'gif', 'pdf', 'docx', 'pptx', 'txt', 'md', 'csv'] as const
+type AttachmentKind = (typeof ATTACHMENT_KINDS)[number]
 const CLIENT_TOOLS: Array<[string, TextKey]> = [
   ['navigate', 'ag.ct.navigate'],
   ['chart', 'ag.ct.chart'],
@@ -68,6 +78,7 @@ interface Data {
   skills: SkillInfo[]
   bases: KnowledgeBase[]
   keys: Map<string, string>
+  prompts: PromptVersion[]
 }
 
 export function AgentEditor({ app, name }: { app: ConsoleApplication; name: string }) {
@@ -75,20 +86,54 @@ export function AgentEditor({ app, name }: { app: ConsoleApplication; name: stri
   setTitle(isNew ? t('ag.new') : name, t('tab.agents'), app.name)
   const api = forApp(app.id)
   const load = useLoad<Data>(async () => {
-    const [versions, grants, servers, skills, keys, bases] = await Promise.all([
+    const [versions, grants, servers, skills, keys, bases, prompts] = await Promise.all([
       isNew ? Promise.resolve([] as AgentVersion[]) : api.admin.agents.versions(name),
       api.admin.grants.get(),
       api.admin.mcpServers.list(),
       api.admin.skills.list(),
       api.admin.keys.list(),
       api.admin.knowledge.list().then((l) => l.items),
+      api.admin.prompts.list(),
     ])
-    return { versions, grants, servers, skills, bases, keys: new Map(keys.map((k) => [k.id, k.prefix])) }
+    return { versions, grants, servers, skills, bases, prompts, keys: new Map(keys.map((k) => [k.id, k.prefix])) }
   }, [app.id, name])
   return (
     <Loads load={load} what={isNew ? t('what.newAgent') : name}>
       {(d) => <Editor key={`${name}${d.versions[0]?.version ?? ''}`} app={app} data={d} isNew={isNew} reload={load.reload} />}
     </Loads>
+  )
+}
+
+interface Suitability {
+  complexity: { tier: 'low' | 'medium' | 'high'; factors: Record<string, number> }
+  estimate: Fit
+}
+
+/** The primary model's suitability for this agent (as saved): an estimate, or the measurement, with its reasons. */
+function ModelFit({ app, agent, model }: { app: ConsoleApplication; agent: string; model: string }) {
+  const [fit, setFit] = useState<Suitability | null>(null)
+  useEffect(() => {
+    let live = true
+    setFit(null)
+    const path = `/v1/admin/agents/${encodeURIComponent(agent)}/suitability?model=${encodeURIComponent(model)}`
+    adminJson<Suitability>(app.id, 'GET', path)
+      .then((r) => live && setFit(r))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [app.id, agent, model])
+  if (!fit) return null
+  const b = fitBadge(fit.estimate)
+  const tier = { low: t('fit.tier.low'), medium: t('fit.tier.medium'), high: t('fit.tier.high') }[fit.complexity.tier]
+  return (
+    <div class="s fit" style="margin-top:4px">
+      <Tag tone={b.tone} dot>
+        {b.text}
+      </Tag>{' '}
+      {fitReasons(fit.estimate).join(' · ')}
+      {fit.estimate.basis === 'estimate' ? <div class="s">{t('fit.forTier', { tier })}</div> : null}
+    </div>
   )
 }
 
@@ -104,6 +149,8 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
   const [schemaText, setSchemaText] = useState(draft.output_schema ? JSON.stringify(draft.output_schema, null, 2) : '')
   const [settingsText, setSettingsText] = useState(JSON.stringify(draft.model_settings ?? {}, null, 2))
   const [askRows, setAskRows] = useState<RuleRow[]>((draft.ask_rules ?? []).map(toRow))
+  const [toolRows, setToolRows] = useState<ClientToolRow[]>(((draft.client_tools?.custom ?? []) as ClientTool[]).map(toolRow))
+  const toolIssues = toolProblems(toolRows)
   /** The tools rules can name (as last listed), and whether each changes data. */
   const ruleTools = data.servers.flatMap((s) =>
     (s.tools ?? []).map((x) => ({ name: `${s.tool_prefix ?? ''}${x.name}`, mutating: !!x.destructive || x.readOnly === false })),
@@ -128,7 +175,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
   const liveIndex = live ? data.versions.length - data.versions.indexOf(live) : 0
   const dirty = (s: Sec) => SECTION_FIELDS[s].some((k) => !same(draft[k], base[k]))
   const secs: Array<[Sec, string]> = (
-    ['ins', 'model', 'tools', 'skills', 'kb', ...(browser ? ['voice'] : []), ...(server ? ['out'] : []), ...(isNew ? [] : ['ver'])] as Sec[]
+    ['ins', 'mod', 'model', 'tools', 'skills', 'kb', ...(browser ? ['voice'] : []), ...(server ? ['out'] : []), ...(isNew ? [] : ['ver'])] as Sec[]
   ).map((k) => [k, t(`ag.sec.${k}`)])
   const unsaved = secs.filter(([k]) => dirty(k)).length
   const locked = (
@@ -151,15 +198,25 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
     setProblems(null)
     let body: AgentDef = draft
     try {
-      body = {
-        ...body,
-        output_schema: server && schemaText.trim() ? JSON.parse(schemaText) : null,
-        model_settings: settingsText.trim() ? JSON.parse(settingsText) : {},
-      }
+      body = withSyntax(
+        {
+          ...body,
+          output_schema: server && schemaText.trim() ? JSON.parse(schemaText) : null,
+          model_settings: settingsText.trim() ? JSON.parse(settingsText) : {},
+        },
+        base,
+        isNew,
+      )
     } catch {
       setProblems(t('ag.badJson'))
       return
     }
+    if (toolIssues.some((x) => x !== null) || toolRows.length > MAX_TOOLS) {
+      setProblems(t('ag.customFix'))
+      setSec('tools')
+      return
+    }
+    body = { ...body, client_tools: { ...(body.client_tools ?? {}), custom: toolRows.map(fromRow) } }
     if (!body.name || !/^[A-Za-z0-9_-]+$/.test(body.name)) {
       setProblems(t('ag.badName'))
       setSec('ins')
@@ -225,7 +282,100 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
     set({ model: list[0] ?? '', fallbacks: list.slice(1) })
   }
 
+  // Prompt modules: the latest version of each prompt (or the version a module pins) and its parameters.
+  const promptAt = (name: string, version?: number | null): PromptVersion | undefined => {
+    const all = data.prompts.filter((x) => x.name === name)
+    return version ? all.find((x) => x.version === version) : all.reduce<PromptVersion | undefined>((m, x) => (!m || x.version > m.version ? x : m), undefined)
+  }
+  const modules: ModuleRef[] = draft.modules ?? []
+  const promptNames = [...new Set(data.prompts.map((x) => x.name))].filter((n) => !modules.some((m) => m.name === n)).sort()
+  const [adding, setAdding] = useState('')
+  const setModule = (i: number, patch: Partial<ModuleRef>) => set({ modules: modules.map((m, k) => (k === i ? { ...m, ...patch } : m)) })
+  const moveModule = (i: number, d: number) => {
+    const j = i + d
+    if (j < 0 || j >= modules.length) return
+    const next = [...modules]
+    ;[next[i], next[j]] = [next[j]!, next[i]!]
+    set({ modules: next })
+  }
+
   const panes: Record<Sec, ComponentChildren> = {
+    mod: (
+      <Panel title={t('ag.sec.mod')}>
+        <p class="hint">{t('ag.modHint')}</p>
+        {modules.length ? null : <p class="hint">{t('ag.modNone')}</p>}
+        {modules.map((m, i) => {
+          const prompt = promptAt(m.name, m.version)
+          return (
+            <div key={m.name} class="opt" style="display:block">
+              <div class="flags" style="justify-content:space-between">
+                <span>
+                  <b>
+                    <code>{m.name}</code>
+                  </b>{' '}
+                  {prompt ? <small class="hint">v{prompt.version}{prompt.description ? `, ${prompt.description}` : ''}</small> : <Tag tone="bad">{t('ag.modMissing')}</Tag>}
+                </span>
+                <span class="flags">
+                  <Switch label={t('ag.modOn')} on={m.on !== false} onChange={(v) => setModule(i, { on: v })} />
+                  <Switch label={t('ag.modSession')} on={m.session === true} onChange={(v) => setModule(i, { session: v })} />
+                  <select
+                    class="in"
+                    style="width:auto"
+                    value={m.version ? String(m.version) : ''}
+                    aria-label={t('ag.modVersion')}
+                    onChange={(e) => setModule(i, { version: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
+                  >
+                    <option value="">{t('ag.modLatest')}</option>
+                    {data.prompts
+                      .filter((x) => x.name === m.name)
+                      .map((x) => (
+                        <option key={x.version} value={x.version}>
+                          v{x.version}
+                        </option>
+                      ))}
+                  </select>
+                  <Btn sm kind="ghost" label={t('prm.up')} onClick={() => moveModule(i, -1)}>
+                    ↑
+                  </Btn>
+                  <Btn sm kind="ghost" label={t('prm.down')} onClick={() => moveModule(i, 1)}>
+                    ↓
+                  </Btn>
+                  <Btn sm kind="ghost danger" onClick={() => set({ modules: modules.filter((_, k) => k !== i) })}>
+                    {t('ag.modRemove')}
+                  </Btn>
+                </span>
+              </div>
+              {prompt?.parameters ? (
+                <ParamsForm schema={prompt.parameters} values={(m.params ?? {}) as Record<string, unknown>} onChange={(v) => setModule(i, { params: v })} idPrefix={`ag-mod-${i}`} />
+              ) : null}
+            </div>
+          )
+        })}
+        <div class="flags" style="margin-top:12px">
+          <select class="in" style="width:auto" value={adding} onChange={(e) => setAdding(e.currentTarget.value)} aria-label={t('ag.modPick')}>
+            <option value="">{t('ag.modPick')}</option>
+            {promptNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <Btn
+            sm
+            disabled={!adding}
+            onClick={() => {
+              set({ modules: [...modules, { name: adding, on: true, session: false, params: {} }] })
+              setAdding('')
+            }}
+          >
+            {t('ag.modAdd')}
+          </Btn>
+          <a class="hint" href={appHref(app.slug, 'prompts')}>
+            {t('ag.modManage')}
+          </a>
+        </div>
+      </Panel>
+    ),
     ins: (
       <Panel title={t('ag.sec.ins')}>
         <div class="grid g2" style="gap:0 14px">
@@ -289,6 +439,12 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
           onInput={(e) => set({ instructions: e.currentTarget.value })}
         />
         <div class="hint">{t('ag.insHint')}</div>
+        {!isNew && isLegacy(base) ? (
+          <p class="hint">
+            <Tag tone="warn">{t('tpl.legacy')}</Tag> {t('tpl.legacyHint')}
+            {hasLegacyLabels(base) ? <> {t('tpl.legacyLabels')}</> : null}
+          </p>
+        ) : null}
       </Panel>
     ),
     model: (
@@ -308,6 +464,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
                     </a>
                   ) : null}
                   <div class="s" style="font:12px var(--mono);color:var(--mu);overflow:hidden;text-overflow:ellipsis">{m}</div>
+                  {i === 0 && !isNew ? <ModelFit app={app} agent={draft.name} model={m} /> : null}
                 </div>
                 <span class="grip">
                   <button type="button" aria-label={t('ag.moveUp')} onClick={() => move(i, -1)}>
@@ -507,6 +664,34 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
               clientGranted(g, 'confirm') ? <Tag tone="ok">{t('ag.grantedTag')}</Tag> : locked,
               !clientGranted(g, 'confirm'),
             )}
+            <p class="hint">{t('ag.confirmCardHint')}</p>
+            <h4>{t('ag.customTools')}</h4>
+            <p class="hint">{t('ag.customToolsHint')}</p>
+            {toolRows.map((r, i) => {
+              const edit = (patch: Partial<ClientToolRow>) => setToolRows(toolRows.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+              const issue = toolIssues[i]
+              return (
+                <div key={i} class="opt" style="display:block">
+                  <Field label={t('ag.customNameLabel')}>
+                    <input class="in mono" value={r.name} onInput={(e) => edit({ name: e.currentTarget.value })} />
+                  </Field>
+                  <Field label={t('ag.customDescriptionLabel')}>
+                    <textarea class="in" value={r.description} onInput={(e) => edit({ description: e.currentTarget.value })} />
+                  </Field>
+                  <Field label={t('ag.customParameters')}>
+                    <textarea class="in mono" spellcheck={false} style="min-height:120px" value={r.parameters} onInput={(e) => edit({ parameters: e.currentTarget.value })} />
+                  </Field>
+                  {row(t('ag.customWait'), t('ag.customWaitHint'), <Switch on={r.wait} aria={t('ag.customWait')} onChange={(v) => edit({ wait: v })} />)}
+                  {issue ? <p class="hint bad">{t(issue)}</p> : null}
+                  <Btn onClick={() => setToolRows(toolRows.filter((_, j) => j !== i))}>{t('ag.customRemove')}</Btn>
+                </div>
+              )
+            })}
+            {toolRows.length >= MAX_TOOLS ? (
+              <p class="hint">{t('ag.customTooMany')}</p>
+            ) : (
+              <Btn onClick={() => setToolRows([...toolRows, blankTool()])}>{t('ag.customAdd')}</Btn>
+            )}
           </Panel>
         ) : (
           <Panel title={t('ag.clientTools')}>
@@ -515,6 +700,54 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             </p>
           </Panel>
         )}
+        {browser
+          ? (() => {
+              const ok = attachmentsGranted(g)
+              const a = draft.attachments ?? { enabled: false }
+              const kinds: AttachmentKind[] = a.types ?? [...ATTACHMENT_KINDS]
+              const put = (p: Partial<NonNullable<AgentDef['attachments']>>) => set({ attachments: { ...a, ...p } })
+              const num = (key: 'max_file_mb' | 'max_files' | 'max_conversation_mb', label: string, max: number, dflt: number) => (
+                <Field label={label}>
+                  <input class="in num" type="number" min={1} max={max} value={a[key] ?? dflt} onInput={(e) => put({ [key]: Number(e.currentTarget.value) })} />
+                </Field>
+              )
+              return (
+                <>
+                  <div style="height:16px" />
+                  <Panel title={t('ag.attachments')}>
+                    {row(
+                      t('ag.attachmentsOn'),
+                      ok ? t('ag.attachmentsSub') : t('ag.attachmentsNotGranted'),
+                      ok ? <Switch on={!!a.enabled} aria={t('ag.attachmentsOn')} onChange={(v) => put({ enabled: v })} /> : locked,
+                      !ok,
+                    )}
+                    {ok && a.enabled ? (
+                      <>
+                        <Field label={t('ag.attachmentsTypes')} hint={t('ag.attachmentsTypesHint')}>
+                          <div class="flags">
+                            {ATTACHMENT_KINDS.map((k) => (
+                              <Switch
+                                key={k}
+                                label={k}
+                                on={kinds.includes(k)}
+                                disabled={kinds.length === 1 && kinds.includes(k)}
+                                onChange={(v) => put({ types: v ? [...kinds, k] : kinds.filter((x) => x !== k) })}
+                              />
+                            ))}
+                          </div>
+                        </Field>
+                        <div class="grid g3">
+                          {num('max_file_mb', t('ag.attachmentsFileMb'), 50, 10)}
+                          {num('max_files', t('ag.attachmentsFiles'), 10, 5)}
+                          {num('max_conversation_mb', t('ag.attachmentsConversationMb'), 1000, 50)}
+                        </div>
+                      </>
+                    ) : null}
+                  </Panel>
+                </>
+              )
+            })()
+          : null}
       </>
     ),
     skills: (
@@ -645,6 +878,58 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             t('ag.code'),
             ok ? t('ag.codeSub') : code.granted ? t('ag.codeNoSandbox') : t('ag.codeNotGranted'),
             ok ? <Switch on={!!draft.code?.enabled} aria={t('ag.code')} onChange={(v) => set({ code: { enabled: v } })} /> : locked,
+            !ok,
+          )
+        })()}
+        <h4>{t('ag.builtinTools')}</h4>
+        <p class="hint">{t('ag.builtinToolsHint')}</p>
+        {BUILTIN_KINDS.map((kind) => {
+          const ok = builtinGranted(g, kind)
+          const list = (draft.builtin_tools ?? []) as Array<{ kind: string; config?: Record<string, unknown> }>
+          const cur = list.find((x) => x.kind === kind)
+          const others = list.filter((x) => x.kind !== kind)
+          return (
+            <div key={kind}>
+              {row(
+                t(`ag.builtin.${kind}` as TextKey),
+                ok ? (STORING_KINDS.includes(kind) ? t('ag.builtinKeeps') : kind) : t('ag.builtinNotGranted'),
+                ok ? (
+                  <Switch
+                    on={!!cur}
+                    aria={kind}
+                    onChange={(v) => set({ builtin_tools: (v ? [...others, { kind, config: {} }] : others) as AgentDef['builtin_tools'] })}
+                  />
+                ) : (
+                  locked
+                ),
+                !ok,
+              )}
+              {cur && ok ? (
+                <Field label={t('ag.builtinConfig')} hint={t('ag.builtinConfigHint')}>
+                  <textarea
+                    class="in mono"
+                    spellcheck={false}
+                    value={JSON.stringify(cur.config ?? {}, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const config = JSON.parse(e.currentTarget.value) as Record<string, unknown>
+                        set({ builtin_tools: [...others, { kind, config }] as AgentDef['builtin_tools'] })
+                      } catch {
+                        toast(t('ag.builtinBadJson'), '')
+                      }
+                    }}
+                  />
+                </Field>
+              ) : null}
+            </div>
+          )
+        })}
+        {(() => {
+          const ok = openaiConfirmGranted(g)
+          return row(
+            t('ag.openaiConfirm'),
+            ok ? t('ag.openaiConfirmSub') : t('ag.openaiConfirmNotGranted'),
+            ok ? <Switch on={!!draft.openai_confirm} aria={t('ag.openaiConfirm')} onChange={(v) => set({ openai_confirm: v })} /> : locked,
             !ok,
           )
         })()}
@@ -794,6 +1079,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
                       {t('ag.live')}
                     </Tag>
                   ) : null}
+                  {isLegacy(v.definition) ? <Tag tone="warn">{t('tpl.legacy')}</Tag> : null}
                   <span style="margin-left:auto">
                     {v.active ? null : (
                       <Btn sm kind="ghost" onClick={() => void restore(v)}>

@@ -64,6 +64,7 @@ export class FakeFilter extends FakeNode {
 }
 export class FakeSource extends FakeNode {
   buffer: unknown = null
+  playbackRate = { value: 1 }
   constructor() {
     super('source')
   }

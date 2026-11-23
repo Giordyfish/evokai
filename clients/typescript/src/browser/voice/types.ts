@@ -8,6 +8,7 @@ import type { LocaleCode, LocalePack } from '../../locales'
 import type { AudioSignal, AudioSignals } from '../audio/signals'
 import type { MicSound } from '../audio/mic-sounds'
 import type { Microphone } from '../mic/microphone'
+import type { MarkTiming, VisemeTiming } from '../speech-server'
 
 // ── conversation engines ────────────────────────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,8 @@ export interface VoiceEvents {
    */
   boundary: { segment: SpokenSegment; charIndex: number }
   segmentEnd: SpokenSegment & { cancelled: boolean }
+  /** A cue of the answer (`say.marks`) reached by the voice, with server speech. */
+  mark: { segment: SpokenSegment; mark: MarkTiming }
   /** The user talked over the agent: speech stopped and the turn was cancelled. */
   bargeIn: { turnId: string | null; heard: string }
   /** The agent paused because the user may be starting to talk (`true`), or carried on (`false`). */
@@ -122,9 +125,12 @@ export interface SttEvents {
   error: VoiceError
 }
 
-/** Speech recognition. The only implementation is on-device (`OnDeviceStt`): never a cloud recogniser. */
+/**
+ * Speech recognition: on the device (`OnDeviceStt`), or by the server when the token chose a recognition engine
+ * (`ServerStt`, the session's engine through Evokai).
+ */
 export interface SttEngine {
-  readonly kind: 'on-device'
+  readonly kind: 'on-device' | 'server'
   readonly lang: string
   readonly running: boolean
   /** Whether recognition can run on this device, or after downloading the language pack. */
@@ -145,7 +151,7 @@ export interface SttEngine {
 
 // ── text to speech ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** `piper`: neural voice in the browser (desktop); `browser`: local `speechSynthesis` voices; `server`: later. */
+/** `piper`: neural voice in the browser (desktop); `browser`: local `speechSynthesis` voices; `server`: Evokai's engine. */
 export type TtsKind = 'piper' | 'browser' | 'server'
 
 export interface TtsProgress {
@@ -169,6 +175,8 @@ export interface TtsSpeakOptions {
   /** Speech rate (1 = normal). */
   rate?: number
   signal?: AbortSignal
+  /** The `say` segment this text is (server speech speaks it by turn and index, with its cues). */
+  say?: { turnId: string; index: number }
 }
 
 export interface TtsUtterance {
@@ -190,6 +198,10 @@ export interface TtsEvents {
   end: { text: string; cancelled: boolean }
   /** Audio measurement of what is being spoken (measured from audio, or estimated from text). */
   signal: AudioSignal
+  /** A cue of the segment reached by the voice (server speech). */
+  mark: { text: string; mark: MarkTiming }
+  /** A mouth shape, when the engine gives them (server speech). */
+  viseme: { text: string; viseme: VisemeTiming }
 }
 
 export interface TtsEngine {

@@ -76,6 +76,13 @@ class Application(Base):
     audit_ttl_days: Mapped[int | None] = mapped_column(sa.Integer)
     """Audit log entries are deleted this many days after the change (None = the deployment's
     ``EVOKAI_AUDIT_TTL_DAYS``)."""
+    system: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=sa.false())
+    """Shipped with Evokai (the built-in assistant, ``evokai.assistant``)."""
+    locked: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=sa.false())
+    """A locked system application refuses every change (409 ``locked``) until an owner unlocks
+    it; shipped updates are applied only while it is locked."""
+    system_version: Mapped[str | None] = mapped_column(sa.String(64))
+    """The hash of the shipped definition a system application was last set from."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
 
 
@@ -193,7 +200,7 @@ class Session(Base):
     subject: Mapped[str] = mapped_column(SUBJECT)
     tags: Mapped[list[Any]] = mapped_column(sa.JSON, default=list)
     actor_kind: Mapped[str] = mapped_column(sa.String(16), default="agent", server_default="agent")
-    """Who answers: an agent today; an avatar fronting an agent later."""
+    """Who answers: an agent."""
     voice_engine: Mapped[str] = mapped_column(
         sa.String(16), default="browser", server_default="browser"
     )
@@ -209,6 +216,12 @@ class Session(Base):
     exit_code_hash: Mapped[str | None] = mapped_column(sa.String(200))
     """Kiosk sessions: a hashed code that closes the session."""
     exit_attempts: Mapped[int] = mapped_column(sa.Integer, default=0, server_default="0")
+    prompt_options: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """The prompt modules and locale chosen at token mint: ``{"modules": {name: {"on", "params",
+    "version"}}, "locale"}`` (``evokai.agents.modules``); None follows the agent's defaults."""
+    client_tools: Mapped[list[dict[str, Any]] | None] = mapped_column(sa.JSON)
+    """Custom client tools the session token declared (``evokai.tools.custom``): too big for the
+    token, kept with the conversation and replaced by a later mint that sends them."""
     status: Mapped[str] = mapped_column(sa.String(16), default="active")
     last_seq: Mapped[int] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
@@ -246,6 +259,29 @@ class Message(Base):
     feedback: Mapped[int | None] = mapped_column(sa.SmallInteger)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     __table_args__ = (sa.Index("ix_evokai_messages_thread", "thread_id", "position"),)
+
+
+class Attachment(Base):
+    """A file a person attached to a chat message (``evokai.attachments``), Evokai storage only.
+
+    Kept with its conversation: deleted with it (time to live, erase, deletion). A rewritten
+    question keeps its attachments; they go when its rewrite never stores a new question. Images
+    are stored without their metadata.
+    """
+
+    __tablename__ = "evokai_attachments"
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    application_id: Mapped[str] = mapped_column(ID)
+    subject: Mapped[str] = mapped_column(SUBJECT)
+    session_id: Mapped[str] = mapped_column(ID)
+    message_id: Mapped[str | None] = mapped_column(ID)
+    name: Mapped[str] = mapped_column(sa.String(200))
+    media_type: Mapped[str] = mapped_column(sa.String(100))
+    size: Mapped[int] = mapped_column(sa.Integer)
+    sha256: Mapped[str] = mapped_column(sa.String(64))
+    data: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    __table_args__ = (sa.Index("ix_evokai_attachments_session", "session_id"),)
 
 
 class ConversationSummary(Base):
@@ -440,6 +476,16 @@ class PromptRecord(Base):
     name: Mapped[str] = mapped_column(sa.String(80))
     version: Mapped[int] = mapped_column(sa.Integer)
     text: Mapped[str] = mapped_column(sa.Text)
+    parameters: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """A prompt module's parameter schema (``evokai.agents.modules``); None for a plain prompt."""
+    description: Mapped[str] = mapped_column(sa.Text, default="", server_default="")
+    data: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """A static lookup table of the version, readable in the template as ``data``."""
+    template_syntax: Mapped[str] = mapped_column(
+        sa.String(16), default="handlebars", server_default="legacy"
+    )
+    """``handlebars``, or ``legacy`` for the versions saved before Handlebars (they keep rendering
+    as they always did, ``evokai.agents.modules.render_text``)."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     __table_args__ = (
         sa.UniqueConstraint("application_id", "name", "version", name="uq_evokai_prompt_version"),

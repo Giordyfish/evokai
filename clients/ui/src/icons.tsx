@@ -22,6 +22,7 @@ const I = {
   back: <path d="M19 12H5M11 18l-6-6 6-6" />,
   memory: <path d="M12 3a7 7 0 0 0-4 12.7V18a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 3zM9.5 22h5" />,
   edit: <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4" />,
+  again: <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />,
   link: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />,
   // One family: an arrow into the orb's corner (voice goes on in the launcher) and out of it (back to the panel).
@@ -38,6 +39,7 @@ const I = {
     </>
   ),
   chart: <path d="M3 3v18h18M7 16v-3M12 16V8M17 16v-6" />,
+  clip: <path d="M20 11l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17a2 2 0 0 1-3-3l7.5-7.5" />,
 }
 
 /** The names of the replaceable icons. */

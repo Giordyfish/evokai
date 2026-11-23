@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from evokai import audit
 from evokai import grants as g
 from evokai.api.deps import admin_app, services
+from evokai.audio.choice import stt_engines
 from evokai.core.errors import NotFound
 from evokai.db import models as m
 from evokai.grants import Grants
@@ -216,6 +217,31 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
     ]
 
     client = [_item(grants, g.CLIENT, n, grants.client(n)) for n in g.CLIENT_TOOLS]
+    # Custom client tools: session-declared ones as a whole, each one an agent declares, and the
+    # names or patterns an override sets.
+    declared: dict[str, list[str]] = {}
+    for a in agents:
+        for t in (a.definition.get("client_tools") or {}).get("custom") or []:
+            declared.setdefault(str(t.get("name")), []).append(a.name)
+    custom_names = sorted(
+        set(declared)
+        | {r.name for r in rows if r.kind == g.CLIENT and r.name not in g.CLIENT_TOOLS}
+        - {g.CLIENT_SESSION}
+    )
+    client_custom = [
+        _item(grants, g.CLIENT, g.CLIENT_SESSION, _flag(grants, g.CLIENT, g.CLIENT_SESSION)),
+        *(
+            _item(
+                grants,
+                g.CLIENT,
+                n,
+                grants.client_tool(n, static=n in declared),
+                usedBy=sorted(declared.get(n, [])),
+                pattern=any(c in n for c in "*?"),
+            )
+            for n in custom_names
+        ),
+    ]
 
     # Voice: browser speech with its on-device voices, server speech with its engines and voices.
     def voice_children(engine: str) -> list[dict[str, Any]]:
@@ -246,10 +272,10 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         ]  # fmt: skip
         return out
 
-    configured = svc.settings.voice_stt
-    stt_names = sorted({configured} | {r.name for r in rows if r.kind == g.STT})
+    offered = set(stt_engines(svc.settings))
+    stt_names = sorted(offered | {r.name for r in rows if r.kind == g.STT})
     stt = [
-        _item(grants, g.STT, n, _flag(grants, g.STT, n), label=n, configured=n == configured)
+        _item(grants, g.STT, n, _flag(grants, g.STT, n), label=n, configured=n in offered)
         for n in stt_names
     ]
     voice = [
@@ -337,6 +363,42 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
             ),
         )
     ]
+    builtin = [
+        _item(
+            grants,
+            g.BUILTIN,
+            kind,
+            grants.builtin(kind),
+            usedBy=sorted(
+                a.name
+                for a in agents
+                if any(t.get("kind") == kind for t in a.definition.get("builtin_tools") or [])
+            ),
+        )
+        for kind in g.BUILTIN_KINDS
+    ]
+    openai = [
+        _item(
+            grants,
+            g.OPENAI,
+            "confirm",
+            grants.openai("confirm"),
+            usedBy=sorted(a.name for a in agents if a.definition.get("openai_confirm") is True),
+        )
+    ]
+    attachments = [
+        _item(
+            grants,
+            g.ATTACHMENTS,
+            "*",
+            grants.attachments(),
+            usedBy=sorted(
+                a.name
+                for a in agents
+                if (a.definition.get("attachments") or {}).get("enabled") is True
+            ),
+        )
+    ]
     connections = [
         _item(
             grants,
@@ -366,19 +428,35 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         stored_names(await svc.store.capability_credentials.all(app.id)),
         svc.settings.image_flavour,
     )
+    # Prompt modules: the ones an agent lets a session change, and every override.
+    module_users: dict[str, list[str]] = {}
+    for a in agents:
+        for ref in a.definition.get("modules") or []:
+            if ref.get("session"):
+                module_users.setdefault(str(ref.get("name")), []).append(a.name)
+    module_names = set(module_users) | {r.name for r in rows if r.kind == g.MODULE}
+    modules = [
+        _item(grants, g.MODULE, n, grants.module(n), usedBy=sorted(module_users.get(n, [])))
+        for n in sorted(module_names)
+    ]
     groups = [
         {"id": "models", "items": models},
         {"id": "mcp", "items": mcp},
         {"id": "skills", "items": skill_items},
         {"id": "client", "items": client},
+        {"id": "clientCustom", "items": client_custom},
         {"id": "voice", "items": voice},
         {"id": "storage", "items": storage},
         {"id": "channels", "items": channels},
         {"id": "knowledge", "items": knowledge},
         {"id": "workflows", "items": workflows},
         {"id": "code", "items": code},
+        {"id": "openai", "items": openai},
+        {"id": "attachments", "items": attachments},
+        {"id": "builtin", "items": builtin},
         {"id": "connections", "items": connections},
         {"id": "capabilities", "items": capabilities},
+        {"id": "modules", "items": modules},
     ]
     return {
         "groups": groups,

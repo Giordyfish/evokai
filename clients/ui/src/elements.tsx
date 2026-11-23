@@ -5,18 +5,19 @@
  */
 import { render, type VNode } from 'preact'
 
-import type { CreateVoiceOptions, EvokaiSession, FetchLike, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
-import { Ui, defaultFormat, type UiContext, type ValueFormatter } from './context'
+import { localePack, type ClientToolHandler, type CreateVoiceOptions, type EvokaiSession, type FetchLike, type PageContext, type SessionEvent, type TokenInfo, type TokenRequestContext } from '@evokai/evokai-client/browser'
+import { type ChatState, chatState, fromEvent } from './chatstate'
+import { Ui, defaultFormat, type ToolRenderer, type UiContext, type ValueFormatter } from './context'
 import { Controller, type ConversationItem } from './controller'
 import { Panel, useController } from './panel'
 import { VoiceStage } from './stage'
 import { baseCss } from './styles'
 import { stringsFor, type Strings } from './strings'
-import { resolveTheme, themeVars, type Theme } from './theme'
+import { orbColors, orbImages, resolveTheme, themeVars, type Theme } from './theme'
 import { ChartView, DiagramView } from './visuals'
 
 const CONFIG = ['base-url', 'token-url', 'conversations-url', 'locale', 'storage-key', 'page-context', 'page-selector'] as const
-const LOOK = ['theme', 'title', 'app-name', 'voice', 'scheme', 'position', 'shortcut', 'open', 'unstyled'] as const
+const LOOK = ['theme', 'title', 'app-name', 'voice', 'scheme', 'position', 'shortcut', 'open', 'unstyled', 'orb-images'] as const
 
 // Outside a browser (server rendering) the module still loads; the elements are only defined in a browser.
 const HTMLBase: typeof HTMLElement = typeof HTMLElement === 'undefined' ? (Object as unknown as typeof HTMLElement) : HTMLElement
@@ -39,6 +40,13 @@ abstract class EvokaiBase extends HTMLBase {
   voiceOptions?: CreateVoiceOptions
   /** Labels for tool activity, by tool name (or a function). */
   toolLabels?: Record<string, string> | ((name: string) => string | null | undefined)
+  /**
+   * Your own cards for tools, by tool name: `(part) => HTMLElement | null` draws that tool's activity or result in the
+   * chat instead of the default line (server, MCP and client tools alike; `ui_chart` and `ui_diagram` replace the
+   * built-in visuals). A part carries only what the events carry: a client tool's arguments and result, a server
+   * tool's name and status. Return null to keep the default.
+   */
+  toolRenderers?: Record<string, ToolRenderer>
   /** How chart values are written (default: plain numbers, `pct` with %). */
   formatValue?: ValueFormatter
   /** The fetch used for Evokai and your token and conversation endpoints (default: the global one). */
@@ -51,11 +59,33 @@ abstract class EvokaiBase extends HTMLBase {
   private icons_: Partial<Record<string, string>> | null = null
   private watched: Controller | null = null
   private unwatch: (() => void) | null = null
+  private state_: ChatState = 'idle'
   private controller_: Controller | null = null
   private configKey = ''
   private theme_: Theme | string | null = null
   private strings_: Partial<Strings> | null = null
+  private tools_: Record<string, ClientToolHandler> | null = null
+  private unhandle: Array<() => void> = []
   private scheduled = false
+
+  /**
+   * Your custom client tools, by name (`docs/client-tools.md`): each function gets the call's arguments, and what it
+   * returns is the result of a tool that waits.
+   */
+  get tools(): Record<string, ClientToolHandler> | null {
+    return this.tools_
+  }
+
+  set tools(v: Record<string, ClientToolHandler> | null) {
+    this.tools_ = v
+    const c = this.controller_
+    if (c) this.handleTools(c.session)
+  }
+
+  private handleTools(session: EvokaiSession): void {
+    for (const off of this.unhandle) off()
+    this.unhandle = Object.entries(this.tools_ ?? {}).map(([name, fn]) => session.handleTool(name, fn))
+  }
 
   /** The theme: a preset name (`evokai`) or a `Theme` object. */
   get theme(): Theme | string | null {
@@ -132,12 +162,14 @@ abstract class EvokaiBase extends HTMLBase {
       this.dispatchEvent(new CustomEvent('evokai-event', { detail: e, bubbles: true, composed: true }))
       if (e.type === 'navigate') this.navigate(e.path)
     })
+    this.handleTools(c.session)
     this.controller_ = c
     return c
   }
 
   set controller(c: Controller | null) {
     this.controller_ = c
+    if (c) this.handleTools(c.session)
     this.configKey = JSON.stringify([...CONFIG.map((a) => this.getAttribute(a)), !!this.getToken, !!this.session])
     this.update()
   }
@@ -162,9 +194,25 @@ abstract class EvokaiBase extends HTMLBase {
     this.watched = null
   }
 
+  /** The conversation's state in one word (`chatstate.ts`): also `data-state` on the host. */
+  get chatState(): ChatState {
+    return this.state_
+  }
+
+  /** A new state: `data-state` on the host and a `statechange` event (`detail: { state, previous }`). */
+  private setState(next: ChatState): void {
+    if (next === this.state_) return
+    const previous = this.state_
+    this.state_ = next
+    this.setAttribute('data-state', next)
+    // An orb made of images follows the state.
+    if (this.hasAttribute('orb-images') || resolveTheme(this.theme).orb?.images) this.update()
+    this.dispatchEvent(new CustomEvent('statechange', { detail: { state: next, previous }, bubbles: true, composed: true }))
+  }
+
   /**
-   * The conversation's state on the host, for your styles: `data-phase`, `data-busy`, `data-voice`, `data-dictating`
-   * (and `data-view` on `<evokai-chat>`).
+   * The conversation's state on the host, for your styles and for slotted content: `data-phase`, `data-busy`,
+   * `data-voice`, `data-dictating`, `data-state` (and `data-view` on `<evokai-chat>`).
    */
   private reflect(c: Controller | null): void {
     if (c === this.watched) return
@@ -178,9 +226,16 @@ abstract class EvokaiBase extends HTMLBase {
       this.toggleAttribute('data-busy', st.session.busy)
       this.toggleAttribute('data-voice', st.voiceOn)
       this.toggleAttribute('data-dictating', st.dictating)
+      this.setState(chatState(this.state_, { phase: st.session.phase, busy: st.session.busy, voiceOn: st.voiceOn, dictating: st.dictating }))
     }
+    if (!this.hasAttribute('data-state')) this.setAttribute('data-state', this.state_)
     put(c.state)
-    this.unwatch = c.subscribe(put)
+    const offState = c.subscribe(put)
+    const offEvents = c.session.on('*', (e: SessionEvent) => this.setState(fromEvent(this.state_, e)))
+    this.unwatch = () => {
+      offState()
+      offEvents()
+    }
   }
 
   attributeChangedCallback(): void {
@@ -211,11 +266,12 @@ abstract class EvokaiBase extends HTMLBase {
     const labels = this.toolLabels
     const ctx: UiContext = {
       s: stringsFor(locale, this.strings_),
-      lang: this.controller?.lang ?? (locale === 'it' ? 'it-IT' : 'en-US'),
+      lang: this.controller?.lang ?? localePack(locale).lang,
       fmt: this.formatValue ?? defaultFormat,
       toolLabel: (name) => (typeof labels === 'function' ? labels(name) : labels?.[name]) ?? name,
       names: { title: this.getAttribute('title') ?? 'Assistant', app: this.getAttribute('app-name') ?? '' },
       icons: this.icons_ ?? undefined,
+      toolRenderer: (name) => this.toolRenderers?.[name],
     }
     render(<Ui.Provider value={ctx}>{this.view(theme)}</Ui.Provider>, this.mount as HTMLDivElement)
   }
@@ -252,6 +308,11 @@ export class EvokaiChatElement extends EvokaiBase {
   /** What is on screen, on the host for your styles: `data-view` = `closed`, `chat`, `voice` or `minimized`. */
   private onView = (view: string) => {
     if (this.getAttribute('data-view') !== view) this.setAttribute('data-view', view)
+  }
+
+  /** Where the orb (or what stands in for it) is: `data-orb` = `launcher`, `head`, `center` or `flying`. */
+  private onOrb = (at: string) => {
+    if (this.getAttribute('data-orb') !== at) this.setAttribute('data-orb', at)
   }
 
   get isOpen(): boolean {
@@ -302,10 +363,14 @@ export class EvokaiChatElement extends EvokaiBase {
         onOpen={(o) => (o ? this.open() : this.close())}
         voice={this.getAttribute('voice') !== 'off'}
         logo={theme.logo}
-        orb={theme.orb}
+        orb={orbColors(theme.orb)}
+        images={orbImages(this.getAttribute('orb-images'), theme.orb)}
+        state={this.chatState}
         keyTarget={typeof window === 'undefined' ? null : window}
         onNavigate={(p) => this.navigate(p)}
         onView={this.onView}
+        onOrb={this.onOrb}
+        host={this}
       />
     )
   }
@@ -366,7 +431,7 @@ export class EvokaiVoiceElement extends EvokaiBase {
   protected view(theme: Theme): VNode | null {
     const c = this.controller
     if (!c || !this.hasAttribute('open')) return null
-    return <Standalone c={c} orb={theme.orb} onEnd={() => void this.stop()} />
+    return <Standalone c={c} orb={orbColors(theme.orb)} onEnd={() => void this.stop()} />
   }
 }
 

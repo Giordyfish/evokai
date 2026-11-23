@@ -8,10 +8,190 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
+### Added
+
+- Attachments in the browser chat: a person attaches images (PNG, JPEG, WebP, GIF) and documents (PDF, Word,
+  PowerPoint, text, Markdown, CSV) to a message, inline as base64 in `POST /v1/session/chat` (`attachments`). Off until
+  granted (`attachments:*`) and turned on per agent (`attachments`: kinds, size per file, files per message, total per
+  conversation). The kind is read from the bytes; SVG, HTML and XML are refused; image metadata (EXIF, GPS, XMP) is
+  stripped before anything is kept or sent. Models that read images or PDF get the file, the others the extracted text,
+  scanned and marked as untrusted data. Files are kept with the conversation (Evokai storage) and follow its time to
+  live, export and erasure; with external storage nothing is kept beyond the turn. The history lists each question's
+  files and serves its images through `GET /v1/session/attachments/{id}`; traces keep only name, type, size and hash.
+  The TypeScript client (`chat({ text, files })`, `attachment(id)`), the Python client (`chat(..., attachments=[...])`),
+  `<evokai-chat>` (paper clip, drop, paste, previews; UI size budget +1.5 KB) and the console (agent editor,
+  Permissions) follow. `EVOKAI_ATTACHMENTS_REQUEST_MB` (default 50) sets the chat body limit of a session that may
+  attach files, read from its token before the body; every other session keeps 2 MB. See `docs/attachments.md`.
+- Prompt modules: versioned application prompts with a restricted JSON Schema of parameters and an optional data table,
+  rendered as Handlebars templates (pydantic-handlebars, no HTML escaping) after an agent's instructions. Agents list
+  the modules they use with defaults and whether a session may change them; the application backend switches and
+  fills them in `POST /v1/session-tokens` (and server runs) with `modules`, checked against the schema, the `module`
+  grants and, for free-text values, the guard's input checks. Versions are pinned per conversation and traced as
+  `prompt.modules`. Declared in the application YAML (`prompts:` and the agents' `modules:`), managed in the console's
+  new Prompts page (visual parameter builder, data table, version diff, live check and preview through
+  `POST /v1/admin/prompts/{name}/preview`), the agent editor and the playground. See `docs/prompt-modules.md`.
+- A per-session `locale` at token mint: speech rules and messages follow the shipped pack of its language
+  (400 `unknown_locale` without one).
+- The TypeScript and Python clients send `modules` and `locale` when minting, and save prompt modules and preview them.
+- An admin MCP server at `{base}/mcp/admin`: an explicit allow-list of admin routes as MCP tools, generated from the
+  OpenAPI with FastMCP and called in process with the caller's own rights, so AI agents can operate an application
+  with an admin key ([admin MCP](docs/admin-mcp.md)). The Keys page shows how to connect one.
+- The console assistant: Evokai's own assistant in the console, with the mascot, running as a locked system
+  application `evokai-assistant` that acts on the selected application through the admin MCP server with a delegation
+  token of the person's console login. Every change waits for a confirmation. It is inactive until an owner picks a
+  model on the new Assistant page, which recommends models by measured eval numbers and can try one against recorded
+  responses ([assistant](docs/assistant.md)). `EVOKAI_ASSISTANT=off` turns it off; `EVOKAI_INTERNAL_URL` says where the
+  service reaches itself.
+- `<evokai-chat>` exposes the conversation's state as `data-state` and a `statechange` event, for slotted content.
+- The browser voice takes `pitch` and `preferVoice`; Piper takes `pitchShift`.
+- The red team suite has attacks on the console assistant, run on system applications.
+- The console assistant's conversations are each person's own: on its system application every route that returns
+  conversation content (conversation list and detail, notes, traces, the server API's conversations, the privacy
+  export, bug reports, security events, and the admin MCP tools through them) keeps to the caller's subject. An owner
+  reads another person's conversation only through `POST /v1/admin/assistant/conversations/{id}/inspect` with a
+  written reason, audited and listed to the author (`GET /v1/console/assistant/privacy`); the console asks for the
+  reason. A first-use notice (retention, who can see, purpose, the assistant's AI nature) is accepted once per login
+  with its version. See [assistant](docs/assistant.md#privacy-of-the-conversations).
+- The assistant's voice follows data protection: the browser's online voice only when the selected application's and
+  the assistant's profiles allow processors outside the EU, otherwise a local system voice or Piper in the browser.
+- `GET /v1/admin/application/reset/preview`: every item a reset of the assistant's application deletes or restores,
+  with the deleted items' definitions; the console downloads them as JSON.
+- A model suitability estimate for every agent (`GET /v1/admin/agents/{agent}/suitability`, the Assistant page and the
+  agent editor): the agent's complexity from its definition and a verdict from sourced facts only (context window,
+  tool calling, streaming, τ²-bench results from the benchmark's own repository in `model_profiles.yaml`), "to
+  verify" when a fact is missing, replaced by a measurement when there is one ([model suitability](docs/models.md)).
+- `<evokai-chat>` takes your own orb: one element of the page (`slot="orb"`) or images per chat state
+  (`theme.orb.images` or the `orb-images` attribute: still or animated, `idle` for a missing state, a `still` image for
+  reduced motion, optional one-shot images per change of state). It rests and flies exactly as the orb does, and the
+  host says where it is as `data-orb`. With `position="bottom-left"` the minimized bubble and its actions mirror
+  around a launcher of any size.
+- Inline markup ([docs](docs/markup.md)): an application (and an agent, kind by kind) declares cues (`{wave}`,
+  `{point:left}`) and speech tags (`[laughs]`) with their delimiters and optional allowed names, static or from a
+  session's prompt module. Spoken segments carry the cleaned text plus `marks` (`{name, arg?, at, spokenAt?}`) and
+  `tagged` (the spoken form with its speech tags); unknown names are dropped and counted in the trace
+  (`markupDropped`). `text` events and stored messages keep the markup; a person's markup is neutralised before the
+  model sees it; the leak check reads the answer without it. `GET /v1/session` returns the delimiters (`markup`), the
+  TypeScript client's `stripMarkup` hides them and `<evokai-chat>` uses it. Set in the application YAML (`markup:`),
+  `PATCH /v1/admin/application` and the console's Limits page.
+- Server speech ([docs](docs/voice.md)), mounted with voice: `POST /v1/session/speech` speaks a text or a `say`
+  segment and streams audio (PCM or Ogg Opus) with word times, the segment's cues as times and visemes;
+  `POST /v1/session/transcribe` transcribes a recording; `WS /v1/session/transcribe/stream` transcribes the
+  microphone (session token in the subprotocol, one socket per session, Silero VAD parameters, a maximum
+  length). Engines are Pipecat services: ElevenLabs, OpenAI, Azure, Piper, Kokoro and faster-whisper, each in
+  the provider catalog with residency, retention and price, so data protection judges them and their usage
+  (characters, seconds) counts in the caps. A session token chooses them with `speech: {tts, stt}` within the
+  grants. The TypeScript client gets `session.speak`, `TimedSpeechPlayer`, `ServerTts` and `ServerStt`, which
+  the browser voice engine and `<evokai-chat>` use when the token chose server engines; the Python client gets
+  `speak` and `transcribe`. Real engines are tested from recorded cassettes (`scripts/record-cassettes.sh
+  speech`).
+- Language packs for Spanish, French, German, Romanian and Swedish (`es`, `fr`, `de`, `ro`, `sv`): messages, speech
+  rules (spoken yes and no, ordinals, abbreviations, redaction words) and calendar, on the server and in the TypeScript
+  client. A session `locale` and an application `locale` accept every shipped pack; the playground offers them.
+
 ### Changed
 
+- `<evokai-chat>`: the orb no longer flies across the page. Opening fades the launcher orb out while the panel rises a
+  little into place and the orb fades in on its header; closing does the reverse; between chat and voice mode it fades
+  from one place to the other. The same applies to an orb of your own (`slot="orb"`) or orb images; `data-orb` still
+  reads `flying` while it is between places. The landing splash is gone.
+- Numbers read aloud (`say.spoken`) come from num2words, driven by each pack's new `speech.numbers` block (separators,
+  decimal word, per cent, currency, date and time shapes), in every language but English, which is spoken as written.
+  Italian keeps its own cardinal speller. Spoken ordinals («la deuxième») are matched without accents on the server
+  too.
+- The console assistant has no button: the mascot is its launcher at the bottom left and travels like the chat's orb
+  (to the header, to the middle in voice mode, back to the launcher while voice is minimized). There is no launcher
+  while the assistant is not active; it is activated from the Assistant page.
+- **Breaking: one template syntax, Handlebars.** Agent instructions, application prompts and confirm labels are
+  Handlebars templates (pydantic-handlebars, as prompt modules): `{{date}}`, `{{app}}`, and in labels `{{field}}`,
+  `{{count field}}` and `{{map field "table"}}`; the first label whose fields are all present still wins. Every agent
+  version and prompt version records its `template_syntax`; those saved before are `legacy` and keep rendering exactly
+  as they did, so running conversations are unchanged, and the console marks them **Legacy syntax**. Saving a text
+  that still has an old placeholder (`{date}`, `{app}`, a label's `{field}`, `{field|count}`, `{field|map:table}`) is
+  refused with 400 `legacy_syntax`, naming the placeholder and its Handlebars form; templates that do not fit are
+  400 `prompt_template` or `label_template`. Nothing is converted automatically. See `docs/templates.md`.
+- The assistant's system application holds only its own resources: creating workflows, knowledge bases, other agents,
+  channels, OAuth apps, capability credentials, keys or other MCP servers on it answers `409 system_app`, locked or
+  not. `POST /v1/admin/application/reset` needs `{confirm: <slug>}` and deletes exactly what its preview lists
+  (prompts, extra skills and MCP servers, eval cases and the rest included). Its conversations are kept 30 days at
+  most (`400 system_ttl` above), and their author cannot delete them within that time (`409 retention`).
+- Prompt texts without `{{` replace only `{date}` and `{app}`: other braces stay as written (before, a JSON example
+  such as `{"ok": true}` in instructions failed to render).
+- Neutral wording: the default voice rule no longer names domain-specific codes ("codes, account numbers or personal
+  data"); agents that keep the default rule keep their version.
+- Changes to a locked system application answer `409 locked` on every admin route.
+- Single sign-on console logins send the application they act on, like operator logins.
+- The console assistant can never change an agent's security policy, whoever it acts for.
 - The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
+- The WebRTC voice pipeline uses the session's voice (token `voice`, else the agent's `voice.voice_id`): it was
+  never passed to the speech engine before. The fake recognition engine hears «hello» unless given phrases.
+- **Breaking:** a built-in `mcp_server` must list its `allowed_tools`, each of which runs without a confirmation (in
+  browser turns, server runs and the OpenAI-compatible API); a listed tool the policy denies or confirms, or an ask
+  rule may ask for, is taken off the list. Its address must be on the egress allow-list whenever one is set and
+  `tools.egress` is not off, in monitor too. The Protection page says which built-in tools may reach any address
+  because no egress allow-list holds them (`egress` in `GET /v1/admin/data-protection`).
+
+### Fixed
+
+- Postgres sessions speak UTC whatever the server's or the role's time zone (#66). The daily usage series groups
+  timestamps by their text and reads them as UTC, so on a server outside UTC the usage of the late evening (or early
+  morning) was counted on the wrong day. Daily usage on such servers now groups by the UTC day: figures near midnight
+  can move to the neighbouring day compared with 0.1.3.
+- `POST /v1/session/transcribe` takes recordings up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB): the session API's 2 MB
+  body limit refused anything longer than about a minute of 16 kHz WAV with 413. `POST /v1/session/speech` and
+  `POST /v1/session/tool-results` now take at most 256 KB, which their own maxima fit in.
+- The streaming recognition socket (`WS /v1/session/transcribe/stream`) has a wall-clock deadline: its maximum
+  length plus 10 seconds, or its session token's expiry when sooner (`expired`, close code 4401). Only audio resets
+  its idle timer. Before, a client sending a text message every 29 seconds kept the socket, its pipeline and the
+  engine's connection open forever. Every early close carries its code as the close reason.
+- Provider built-in tools follow the security policy: the tool policy and the ask rules apply to each under the names
+  `builtin:<kind>` and `<kind>`. A denied tool, or one outside an allow-list, is not offered; since the provider runs
+  them and nothing can wait for a confirmation, a tool the policy confirms or an ask rule may ask for is refused
+  instead of running unconfirmed. Before, they bypassed the policy entirely.
+- An answer that called a provider built-in tool that can change data (`mcp_server`, `memory`, `code_execution`)
+  cannot be regenerated, as after a custom client tool: running it again could act twice. The answer keeps a
+  `builtinTool` block (also in an external history, and in the Python and TypeScript clients' types), and so does an
+  answer the guard stopped or that was interrupted.
+- An attachment's name is the person's input: it passes the same input checks as their message (a name they refuse
+  refuses the turn), and on its way to the model its identifiers are protected (`pii.model`) and its markup is made
+  inert. Before, it reached the model as raw text outside the data markers. Markup in a document's text and in a
+  client tool's result is made inert too, so nobody can write cues for the agent through them.
+- A streamed Chat Completion and a whole one say the same: the text of every step, each set apart from the one before
+  by a blank line (and so are two texts of one step around a built-in tool's call), in both and in the stored
+  conversation. Before, `"stream": true` glued the steps' texts together
+  ("Let me check.October has 24 orders.") while `"stream": false` returned only the last step's. Server runs follow
+  the same rule.
+- Regenerating no longer asks a different question than the person did: an answer is not regenerable (`done`,
+  `GET /v1/session/conversation`, 409 `not_regenerable`) when its question was stored with identifiers masked
+  (`pii.history` enforced: the original is kept nowhere), or, with external storage, when it carried an image or a PDF
+  the model read as a file (its bytes are gone after the turn).
+- Browser voice on Safari and iOS: the microphone no longer goes deaf after the agent's first answer, and a phrase is
+  no longer lost. A device recogniser that was open while the agent spoke is replaced when it finishes; a session that
+  ends with its last phrase still interim delivers it; results that repeat earlier phrases send only the new words, and
+  a phrase that follows one already sent is sent in full; a short reply that repeats the agent's words is sent.
+
+### Upgrading
+
+- **Convert the application YAML before you start the new version.** A file whose agents or prompts still use
+  `{date}`, `{app}` or the old label fields stops the start-up with a message naming the file, the item and what to
+  write instead: `{date}` becomes `{{date}}`, `{app}` `{{app}}`, `{field}` `{{field}}`, `{field|count}`
+  `{{count field}}` and `{field|map:table}` `{{map field "table"}}`. Double braces that were escapes for a literal
+  brace become single braces. JSON examples need no change. `config/bookshop.yaml` and the examples are converted.
+- Nothing else needs doing: versions already stored stay legacy and keep working, and can still be restored or saved
+  with another model. The first change of an agent's or prompt's text through the API or the console is saved in
+  Handlebars, and is refused while the agent's confirm labels still use the old fields: the console does not edit
+  labels, so convert them through the API or the YAML file first. Migration `0032` adds `template_syntax` to prompt
+  versions (existing rows are `legacy`).
+- Workflow approval labels keep the older grammar: leave them as they are.
+- Migrations `0030` to `0034` are additive: new columns and the attachments table, nothing dropped or rewritten.
+- An agent whose `builtin_tools` has an `mcp_server` without `allowed_tools` cannot be saved any more, and its turns
+  leave that tool out until you list the tools the provider may call on it.
+- Going back to 0.1.3 after saving Handlebars versions is not supported: 0.1.3 does not know `template_syntax`, so a
+  `{{date}}` saved by this version reaches the model as `{date}`. To go back, restore the database backup taken before
+  the upgrade, or start 0.1.3 with the YAML file you used before converting it, so its agents get versions in the old
+  syntax again.
 
 ## [0.1.3] - 2026-11-21
 

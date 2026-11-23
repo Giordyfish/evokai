@@ -23,8 +23,8 @@ validation:
 
 theme:
   name: material
-  logo: assets/evokai-head.png
-  favicon: assets/evokai-head.png
+  logo: assets/evokai-logo.png
+  favicon: assets/evokai-favicon.png
   icon:
     repo: fontawesome/brands/github
   palette:
@@ -87,15 +87,26 @@ nav:
       - Architecture: architecture.md
   - Guides:
       - Capabilities: capabilities.md
+      - Templates: templates.md
+      - Prompt modules: prompt-modules.md
+      - Inline markup: markup.md
+      - Server speech: voice.md
+      - Client tools: client-tools.md
+      - Attachments: attachments.md
+      - Provider built-in tools: builtin-tools.md
       - Knowledge bases: knowledge.md
       - Long-term memory: memory.md
       - Workflows: workflows.md
       - Code execution: code.md
       - Evals: evals.md
+      - Model suitability: models.md
       - Cost governance: costs.md
+      - Operate from an AI agent: admin-mcp.md
+      - The console assistant: assistant.md
       - Open standards:
           - AG-UI: ag-ui.md
           - OpenAI-compatible API: openai-compatible.md
+          - AI SDK: ai-sdk.md
           - A2A: a2a.md
   - Security & compliance:
       - Security of agents: security.md

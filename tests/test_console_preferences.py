@@ -36,7 +36,8 @@ async def test_defaults_until_saved_then_the_saved_copy(env: Env) -> None:
     await _login(env, env.admin_key)
     first = (await env.client.get(URL, headers=CONSOLE)).json()
     assert first == {"preferences": DEFAULTS.document(), "updatedAt": None}
-    assert first["preferences"]["version"] == 1
+    assert first["preferences"]["version"] == 2
+    assert first["preferences"]["mascot"] == "hidden"
     assert first["preferences"]["motion"] == "system"
 
     doc = {
@@ -77,7 +78,7 @@ async def test_needs_the_console_login_and_its_header(env: Env) -> None:
         {"language": "de"},
         {"focusAlways": "yes"},
         {"motion": None},
-        {"version": 2},
+        {"version": 3},
         {"fontFamily": "Comic Sans"},
     ],
 )
@@ -147,6 +148,17 @@ async def test_changes_are_audited_with_only_what_changed_and_reset_forgets(env:
         )
     ).json()["items"]
     assert log[0]["action"] == "preferences.reset"
+
+
+def test_the_mascot_is_off_unless_a_person_chose_it() -> None:
+    """Version 2: the default is the logo. A version 1 ``on`` was the default, not a choice."""
+    assert DEFAULTS.mascot == "hidden" and DEFAULTS.version == 2
+    assert read({"version": 1, "mascot": "on"}).mascot == "hidden"
+    assert read({"version": 1}).mascot == "hidden"
+    assert read({"version": 1, "mascot": "still"}).mascot == "still"
+    assert read({"version": 1, "mascot": "hidden"}).mascot == "hidden"
+    assert read({"version": 2, "mascot": "on"}).mascot == "on"
+    assert read({"version": 1, "mascot": "on"}).document()["version"] == 2
 
 
 def test_a_stored_document_that_no_longer_validates_reads_as_the_defaults() -> None:

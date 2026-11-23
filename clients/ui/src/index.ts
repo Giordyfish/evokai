@@ -8,14 +8,15 @@
  * Transport, events, voice and usage come from the headless client (`@evokai/evokai-client/browser`).
  */
 export { EvokaiChatElement, EvokaiVoiceElement, defineElements } from './elements'
+export { chatState, fromEvent, type ChatState } from './chatstate'
 export { Controller, pageContext } from './controller'
 export type { ControllerOptions, ControllerState, ConversationItem, Installing, Support } from './controller'
 export { defaultFormat } from './context'
-export type { UiContext, ValueFormatter } from './context'
+export type { ToolRenderer, UiContext, ValueFormatter } from './context'
 export { en, it, strings, stringsFor, fill } from './strings'
 export type { Strings } from './strings'
 export { DARK, LIGHT, ORB, themes, themeVars, resolveTheme, orbRgb } from './theme'
-export type { OrbColors, Palette, Theme } from './theme'
+export type { OrbColors, OrbImages, OrbState, Palette, Theme } from './theme'
 export { blocks, inline, safeHref } from './markdown'
 export { ringShare, pctText } from './usage'
 export { stagePhase, trapFocus } from './stage'

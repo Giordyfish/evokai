@@ -69,13 +69,17 @@ class SayEvent(BaseEvent):
     """Voice mode: a speakable segment, numbered from 0 within the turn.
 
     ``text`` is what is shown; ``spoken``, set only when it differs, is what the speech engine
-    says (numbers in words: «1.000» is shown, «mille» is said).
+    says (numbers in words: «1.000» is shown, «mille» is said); ``tagged`` the spoken form with its
+    speech tags (``[laughs]``); ``marks`` the answer's cues (``{name, arg?, at, spokenAt?}``). An
+    empty ``text`` carries cues only.
     """
 
     type: Literal["say"] = "say"
     index: int
     text: str
     spoken: str | None = None
+    tagged: str | None = None
+    marks: list[dict[str, Any]] = Field(default_factory=list)
     filler: bool = False
 
 
@@ -118,6 +122,20 @@ class NavigateEvent(BaseEvent):
 
     type: Literal["navigate"] = "navigate"
     path: str
+
+
+class ClientToolEvent(BaseEvent):
+    """A custom client tool the agent called (``docs/client-tools.md``).
+
+    With ``wait``, the turn waits until the client answers (``on_tool`` handlers do it, or call
+    ``tool_result``); without, the model was already told ``ok``.
+    """
+
+    type: Literal["client_tool"] = "client_tool"
+    call_id: str
+    name: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    wait: bool = False
 
 
 class ConnectEvent(BaseEvent):
@@ -216,6 +234,7 @@ class DoneEvent(BaseEvent):
     replaced_from: int | None = None
     """External storage, a rewrite: drop the sent history from this index before appending."""
     rewritable: bool | None = None
+    regenerable: bool | None = None
     """Whether the conversation's last question can still be rewritten."""
 
 
@@ -258,7 +277,8 @@ KnownEvent = Annotated[
     | ErrorEvent
     | DoneEvent
     | SpeechEvent
-    | RewrittenEvent,
+    | RewrittenEvent
+    | ClientToolEvent,
     Field(discriminator="type"),
 ]
 """Every event type the client knows, discriminated on ``type``."""
@@ -280,6 +300,7 @@ Event = (
     | DoneEvent
     | SpeechEvent
     | RewrittenEvent
+    | ClientToolEvent
     | UnknownEvent
 )
 """What a stream, a replay or a stored message yields."""
@@ -302,6 +323,7 @@ _TYPES = frozenset({
     "done",
     "speech",
     "rewritten",
+    "client_tool",
 })
 
 
@@ -357,7 +379,10 @@ class StoredMessage(WireModel):
     feedback: int | None = None
     interrupted: bool = False
     rewritable: bool | None = None
+    regenerable: bool | None = None
     """User messages: the last question, which can still be rewritten (``session.rewrite``)."""
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    """User messages: the files attached (id, name, mediaType, size)."""
 
 
 class ConversationDetail(WireModel):
@@ -392,3 +417,4 @@ class ChatResult(WireModel):
     """External storage, a rewrite: drop the sent history from this index before appending
     ``messages``."""
     rewritable: bool | None = None
+    regenerable: bool | None = None

@@ -116,7 +116,32 @@ export interface TextEvent extends EventMeta { type: 'text'; delta: string }
  * Voice mode only: a speakable segment, numbered from 0 within the turn. `text` is what is shown; `spoken`, present only
  * when it differs, is what the speech engine says (numbers in words: «1.000» is shown, «mille» is said).
  */
-export interface SayEvent extends EventMeta { type: 'say'; index: number; text: string; spoken?: string; filler?: boolean }
+/** A cue of the answer (`{wave}`, `{point:left}`) on a spoken segment: `at` is the offset in `text`, `spokenAt` in `spoken`. */
+export interface SayMark {
+  name: string
+  arg?: string
+  at: number
+  spokenAt?: number
+}
+/**
+ * A spoken segment (voice mode). `text` is the subtitle; `spoken` what the voice says, when it differs (numbers in
+ * words); `tagged` the spoken form with its speech tags (`[laughs]`), for engines that perform them; `marks` the
+ * cues. An empty `text` carries only cues (the answer ended on them): nothing to speak.
+ */
+export interface SayEvent extends EventMeta {
+  type: 'say'
+  index: number
+  text: string
+  spoken?: string
+  tagged?: string
+  marks?: SayMark[]
+  filler?: boolean
+}
+/** The delimiters of the answers' inline markup (`docs/markup.md`), to hide it in what a chat shows. */
+export interface MarkupView {
+  cue?: { open: string; close: string }
+  speech?: { open: string; close: string }
+}
 export interface ToolEvent extends EventMeta { type: 'tool'; name: string; status: 'start' | 'done' | 'error' }
 export interface ChartEvent extends EventMeta { type: 'chart'; chart: Chart }
 export interface DiagramEvent extends EventMeta { type: 'diagram'; diagram: Diagram }
@@ -129,6 +154,30 @@ export interface AskEvent extends EventMeta {
   other: boolean
 }
 export interface NavigateEvent extends EventMeta { type: 'navigate'; path: string }
+/**
+ * A custom client tool the agent called (`docs/client-tools.md`). With `wait`, the turn waits until the client posts
+ * the result (`EvokaiSession.handleTool` does it for you); without, the model was already told `ok`.
+ */
+/**
+ * One tool's activity as a page draws it (`EvokaiSession.renderTool`, `<evokai-chat>` `toolRenderers`): only what the
+ * events already carry. A server or MCP tool has its name and status (never its arguments or output); a client tool
+ * also has its arguments and the result your own handler returned; `ui_chart` and `ui_diagram` have the visual.
+ */
+export interface ToolPart {
+  name: string
+  status: 'start' | 'done' | 'error'
+  callId?: string
+  args?: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+export interface ClientToolEvent extends EventMeta {
+  type: 'client_tool'
+  callId: string
+  name: string
+  args: Record<string, unknown>
+  wait: boolean
+}
 /** The i18n key of why a call waits for the person (`confirmReasonText` turns it into a sentence). */
 export type ConfirmReasonKey = 'confirm.why.writes' | 'confirm.why.rule' | 'confirm.why.policy'
 /**
@@ -189,6 +238,8 @@ export interface DoneEvent extends EventMeta {
   replacedFrom?: number
   /** Whether the conversation's last question can still be rewritten (absent from older services). */
   rewritable?: boolean
+  /** Whether the conversation's last answer can still be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
 }
 /** Server voice: speech went off (provider failure); the session goes on in text. */
 export interface SpeechEvent extends EventMeta { type: 'speech'; enabled: boolean; reason?: string; message?: string }
@@ -239,7 +290,7 @@ export interface ConnectEvent extends EventMeta { type: 'connect'; provider: Con
 export type EvokaiEvent =
   | ConversationEvent | TextEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
   | ConfirmEvent | ConfirmedEvent | UsageEvent | ErrorEvent | DoneEvent | SpeechEvent | CitationEvent | HandoffEvent
-  | ConnectEvent | RewrittenEvent
+  | ConnectEvent | RewrittenEvent | ClientToolEvent
 
 export type EventType = EvokaiEvent['type']
 
@@ -330,6 +381,35 @@ export interface SessionInfo {
   memory?: MemoryState | null
   /** The agent's starter questions, to show before the first message. */
   suggestions?: string[]
+  /** The inline markup the agent may write (null without): `stripMarkup` hides it. */
+  markup?: MarkupView | null
+  /** The server speech engines the token chose, null for the deployment's defaults. */
+  speech?: SpeechChoice | null
+  /** What the person may attach to a message (`docs/attachments.md`); null when nothing. */
+  attachments?: AttachmentOffer | null
+}
+
+/** The server speech engines of a session (`speech` at token mint). */
+export interface SpeechChoice {
+  tts: string | null
+  stt: string | null
+}
+
+/** The files a session accepts: kinds read from the bytes, sizes in bytes. */
+export interface AttachmentOffer {
+  kinds: string[]
+  mediaTypes: string[]
+  maxFileBytes: number
+  maxFiles: number
+}
+
+/** A file attached to a question: `id` once the service keeps it, `url` a local preview of an image just sent. */
+export interface AttachmentRef {
+  id?: string
+  name: string
+  mediaType: string
+  size: number
+  url?: string
 }
 
 export interface StoredMessage {
@@ -341,6 +421,10 @@ export interface StoredMessage {
   interrupted?: boolean
   /** User messages: whether this is the last question and can still be rewritten (`EvokaiSession.rewrite`). */
   rewritable?: boolean
+  /** The last assistant message, when it can still be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
+  /** User messages: the files attached to them (images are shown with `EvokaiSession.attachment`). */
+  attachments?: AttachmentRef[]
 }
 
 export interface PendingConfirmation { actionId: string; items: string[]; why?: ConfirmReason[] }
@@ -517,6 +601,11 @@ export interface Application {
   messages: Partial<Record<LimitMessageKey, string>>
   /** The limit messages of the application's locale (what applies without an override). */
   messageDefaults: Record<LimitMessageKey, string>
+  /** Inline markup the agents may write (`docs/markup.md`); null without. */
+  markup?: {
+    cue?: { open: string; close: string; names?: string[] | null; names_from?: { module: string; param: string } | null; enabled?: boolean } | null
+    speech?: { open: string; close: string; names?: string[] | null; enabled?: boolean } | null
+  } | null
   /** What content traces keep (default `masked`; external storage keeps none). */
   tracing_content?: TraceContent
   /** The monthly budget of its evals (null: the default, 2), apart from its caps. */
@@ -596,7 +685,10 @@ export interface ParsedSkill {
 export interface AdminConversation {
   id: string
   subject: string
-  title: string
+  /** Null for another person's conversation with the console assistant (an owner's list shows no content). */
+  title: string | null
+  /** On the assistant's system application: whether it is the caller's own conversation. */
+  own?: boolean
   agent: string
   agentVersion: string
   status: string
@@ -777,7 +869,8 @@ export interface ConsoleMe {
  * operator). Every field is one of a few choices; the service refuses anything else.
  */
 export interface ConsolePreferences {
-  version: 1
+  /** 2 since the logo became the mascot's default (a version 1 document's `on` reads as `hidden`). */
+  version: 2
   /** `auto` follows the browser. */
   language: 'auto' | 'en' | 'it'
   /** `auto` is the language's own order. */
@@ -787,6 +880,7 @@ export interface ConsolePreferences {
   density: 'comfortable' | 'compact'
   /** `system` follows the operating system's reduced motion setting. */
   motion: 'system' | 'reduce' | 'full'
+  /** Beside Evokai in the console's sidebar: the mage animated, still, or the logo (`hidden`, the default). */
   mascot: 'on' | 'still' | 'hidden'
   /** Percent. */
   textSize: 100 | 112 | 125
@@ -897,7 +991,30 @@ export interface SkillDetail extends Omit<SkillInfo, 'files' | 'scripts'> {
   scripts: SkillScripts
   limits: SkillLimits
 }
-export interface PromptVersion { name: string; version: number; createdAt: string }
+/**
+ * A version of an application prompt. A prompt module (`parameters` set) has a Handlebars text checked against its
+ * parameter schema, and optionally a lookup table (`data`) its text reads with `{{lookup data <parameter>}}`.
+ */
+export interface PromptVersion {
+  name: string
+  version: number
+  text: string
+  description: string
+  /** The module's parameter schema (a restricted JSON Schema), or null for a plain prompt. */
+  parameters: Record<string, unknown> | null
+  data: Record<string, string> | null
+  /** `handlebars`, or `legacy` for a version saved before Handlebars (it keeps rendering as it did). */
+  templateSyntax: 'legacy' | 'handlebars'
+  createdAt: string
+}
+/** A prompt to save: a changed text, schema, description or data becomes the next version. */
+export type PromptBody = Schemas['PromptBody']
+/** Sample values for a preview, and optionally an unsaved draft (`text`, `parameters`, `data`) to render instead. */
+export type PromptPreview = Schemas['PreviewBody']
+/** A prompt module an agent may use, with its default state and parameters. */
+export type ModuleRef = Schemas['ModuleRef']
+/** A session's choice for one prompt module, at token mint (server key only). */
+export type ModuleChoice = Schemas['ModuleChoice']
 export interface BugReport {
   id: string
   subject: string
@@ -912,7 +1029,7 @@ export interface BugReport {
 
 export type GrantKind =
   | 'model' | 'mcp' | 'tool' | 'skill' | 'client' | 'voice' | 'stt' | 'tts' | 'storage' | 'channel' | 'knowledge'
-  | 'workflow' | 'code' | 'connection' | 'capability'
+  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin' | 'attachments'
 export type ModelGrant = 'any' | 'fallback' | 'off'
 export type GrantValue = boolean | ModelGrant
 export type ClientToolName = 'navigate' | 'chart' | 'diagram' | 'ask' | 'confirm' | 'memory'
@@ -1258,6 +1375,18 @@ export interface DataProtectionReport {
   empty: boolean
   processors: ProcessorVerdict[]
   browser: { online_voices: boolean; online_recognition: boolean; vendors?: string[] | null } | null
+  /**
+   * The agents' provider built-in tools, and whether the profile lets the ones that keep data at the provider run.
+   * `egress` (tools that reach the network): `allow_list` when the security policy holds them to its egress
+   * allow-list, `unrestricted` when they may reach any address; null for the others.
+   */
+  builtinTools?: Array<{
+    agent: string
+    kind: string
+    keepsData: boolean
+    allowed: boolean
+    egress?: 'allow_list' | 'unrestricted' | null
+  }>
 }
 export interface ProviderEndpointView {
   id: string

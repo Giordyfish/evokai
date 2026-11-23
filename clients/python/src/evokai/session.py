@@ -9,9 +9,20 @@ and the service cancels that turn.
 from __future__ import annotations
 
 import asyncio
+import base64
+import inspect
 import json
+import os
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Generator,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from types import TracebackType
 from typing import Any, Literal, NoReturn
 
@@ -23,6 +34,7 @@ from evokai._http import AsyncTransport, SyncTransport
 from evokai.errors import EvokaiConnectionError, EvokaiError
 from evokai.events import (
     ChatResult,
+    ClientToolEvent,
     DoneEvent,
     Event,
     SessionConversation,
@@ -30,6 +42,7 @@ from evokai.events import (
     parse_event,
 )
 from evokai.models import (
+    Attachment,
     Connection,
     ConnectionStarted,
     HistoryMessage,
@@ -40,12 +53,25 @@ from evokai.models import (
     SessionInfo,
     SessionToken,
 )
+from evokai.speech import (
+    SPEECH_PATH,
+    TRANSCRIBE_PATH,
+    Speech,
+    SpeechFormat,
+    Transcript,
+    collect,
+    finished,
+    speech_body,
+)
 from evokai.sse import SseMessage, SseParser
 
 __all__ = ["AsyncChatStream", "AsyncEvokaiSession", "ChatMode", "ChatStream", "EvokaiSession"]
 
 ChatMode = Literal["text", "voice"]
+AttachmentInput = Attachment | str | os.PathLike[str] | tuple[str, bytes]
+"""A file for ``chat(..., attachments=[...])``: :class:`Attachment`, a path, ``(name, bytes)``."""
 CHAT_PATH = "/v1/session/chat"
+REGENERATE_PATH = "/v1/session/regenerate"
 
 
 def chat_body(
@@ -57,11 +83,13 @@ def chat_body(
     history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
     end_of_speech_at: float | None = None,
     rewrite: bool | str = False,
+    attachments: Sequence[AttachmentInput] | None = None,
 ) -> dict[str, Any]:
     """The body of ``POST /v1/session/chat``.
 
     ``rewrite``: replace the last question with ``text`` (True), or name the stored message being
     edited (its id; the service refuses it when it is no longer the last question).
+    ``attachments``: files for the model (``docs/attachments.md``), sent as base64.
 
     Returns:
         The JSON body.
@@ -80,6 +108,26 @@ def chat_body(
         out["endOfSpeechAt"] = end_of_speech_at
     if rewrite and confirm is None:
         out["rewrite"] = {"messageId": rewrite} if isinstance(rewrite, str) else {}
+    if attachments and confirm is None:
+        out["attachments"] = [_attachment_body(a) for a in attachments]
+    return out
+
+
+def _attachment_body(item: AttachmentInput) -> dict[str, Any]:
+    """An attachment as the chat body carries it.
+
+    Returns:
+        name, data (base64) and mediaType when given.
+    """
+    if isinstance(item, tuple):
+        item = Attachment(name=item[0], data=item[1])
+    elif not isinstance(item, Attachment):
+        path = os.fspath(item)
+        with open(path, "rb") as f:
+            item = Attachment(name=os.path.basename(path), data=f.read())
+    out: dict[str, Any] = {"name": item.name, "data": base64.b64encode(item.data).decode()}
+    if item.media_type:
+        out["mediaType"] = item.media_type
     return out
 
 
@@ -152,9 +200,10 @@ class ChatStream:
         events: Every event yielded so far.
     """
 
-    def __init__(self, session: EvokaiSession, body: dict[str, Any]) -> None:
+    def __init__(self, session: EvokaiSession, body: dict[str, Any], path: str = CHAT_PATH) -> None:
         self._session = session
         self._body = body
+        self._path = path
         self._state = _StreamState(session.last_seq)
         self._gen: Generator[Any, None, None] | None = None
 
@@ -230,7 +279,7 @@ class ChatStream:
     def _run(self) -> Generator[Any, None, None]:
         s = self._session
         state = self._state
-        with s._transport.stream(CHAT_PATH, self._body, s.token) as response:
+        with s._transport.stream(self._path, self._body, s.token) as response:
             state.turn_id = response.headers.get("x-turn-id") or None
             yield _OPENED
             parser = SseParser()
@@ -241,6 +290,8 @@ class ChatStream:
                         if event is None or not state.accept(event, replay=False):
                             continue
                         s._seen(event)
+                        if isinstance(event, ClientToolEvent):
+                            s._run_tool(event)
                         yield event
                         if state.done is not None:
                             return
@@ -272,9 +323,12 @@ class AsyncChatStream:
         events: Every event yielded so far.
     """
 
-    def __init__(self, session: AsyncEvokaiSession, body: dict[str, Any]) -> None:
+    def __init__(
+        self, session: AsyncEvokaiSession, body: dict[str, Any], path: str = CHAT_PATH
+    ) -> None:
         self._session = session
         self._body = body
+        self._path = path
         self._state = _StreamState(session.last_seq)
         self._gen: AsyncGenerator[Any, None] | None = None
 
@@ -350,7 +404,7 @@ class AsyncChatStream:
     async def _run(self) -> AsyncGenerator[Any, None]:
         s = self._session
         state = self._state
-        async with s._transport.stream(CHAT_PATH, self._body, s.token) as response:
+        async with s._transport.stream(self._path, self._body, s.token) as response:
             state.turn_id = response.headers.get("x-turn-id") or None
             yield _OPENED
             parser = SseParser()
@@ -361,6 +415,8 @@ class AsyncChatStream:
                         if event is None or not state.accept(event, replay=False):
                             continue
                         s._seen(event)
+                        if isinstance(event, ClientToolEvent):
+                            await s._run_tool(event)
                         yield event
                         if state.done is not None:
                             return
@@ -409,6 +465,16 @@ class _SessionBase:
         self.last_seq = 0
         self.replay_attempts = replay_attempts
         self.replay_delay = replay_delay
+        self._tools: dict[str, Callable[[dict[str, Any]], Any]] = {}
+
+    def on_tool(self, name: str, fn: Callable[[dict[str, Any]], Any]) -> None:
+        """Run a custom client tool when the agent calls it (``docs/client-tools.md``).
+
+        ``fn`` gets the call's arguments; for a tool that waits, what it returns (or the message
+        of what it raises) is posted as the result while the stream goes on. With the async
+        session ``fn`` may be a coroutine function.
+        """
+        self._tools[name] = fn
 
     def use_token(self, token: str | SessionToken) -> None:
         """Replace the session token (a refreshed one, for the same conversation)."""
@@ -501,6 +567,7 @@ class EvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         end_of_speech_at: float | None = None,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> ChatStream:
         """Send a message and stream the turn.
 
@@ -510,12 +577,19 @@ class EvokaiSession(_SessionBase):
             mode: ``voice`` for a transcript the answer of which is read aloud.
             history: External storage: the conversation so far, oldest first.
             end_of_speech_at: Seconds since the epoch when the user stopped speaking.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``
+                (the agent's ``attachments`` and the ``attachments`` grant decide what is taken).
 
         Returns:
             The stream of the turn's events (iterate it, or use it in a ``with`` block).
         """
         body = chat_body(
-            text=text, page=page, mode=mode, history=history, end_of_speech_at=end_of_speech_at
+            text=text,
+            page=page,
+            mode=mode,
+            history=history,
+            end_of_speech_at=end_of_speech_at,
+            attachments=attachments,
         )
         return ChatStream(self, body)
 
@@ -551,6 +625,32 @@ class EvokaiSession(_SessionBase):
             text=text, page=page, mode=mode, history=history, rewrite=message_id or True
         )
         return ChatStream(self, body)
+
+    def regenerate(
+        self,
+        *,
+        page: PageContext | Mapping[str, Any] | None = None,
+        mode: ChatMode = "text",
+        history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
+    ) -> ChatStream:
+        """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+        The stream starts with ``conversation`` and ``rewritten``. Refused with
+        :class:`ConflictError` ``not_regenerable`` when there is nothing to regenerate, the last
+        turn changed data or ran a client tool, or a turn is running (``done.regenerable`` and
+        ``regenerable`` on a stored message say when it is allowed).
+
+        Args:
+            page: The page the user is looking at.
+            mode: ``text`` or ``voice``.
+            history: External storage: the conversation so far, oldest first (with the last
+                question and the answer to replace).
+
+        Returns:
+            The stream of the new turn's events.
+        """
+        body = chat_body(page=page, mode=mode, history=history)
+        return ChatStream(self, body, REGENERATE_PATH)
 
     def confirm(
         self,
@@ -606,6 +706,7 @@ class EvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         rewrite: bool | str = False,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> ChatResult:
         """Run one turn and wait for its end (``Accept: application/json``).
 
@@ -617,12 +718,19 @@ class EvokaiSession(_SessionBase):
             history: External storage: the conversation so far, oldest first.
             rewrite: Replace the last question with ``text`` (True, or the edited message's id);
                 with external storage drop your history from ``result.replaced_from``.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``.
 
         Returns:
             The whole turn: its text, events, reason and (external storage) new messages.
         """
         body = chat_body(
-            text=text, confirm=confirm, page=page, mode=mode, history=history, rewrite=rewrite
+            text=text,
+            confirm=confirm,
+            page=page,
+            mode=mode,
+            history=history,
+            rewrite=rewrite,
+            attachments=attachments,
         )
         result = self._transport.send(calls.session_chat_json(body), self.token)
         for e in result.events:
@@ -640,6 +748,25 @@ class EvokaiSession(_SessionBase):
     def feedback(self, message_id: str, value: Literal[1, -1] | None) -> None:
         """Thumbs up (1), down (-1) or none (None) on a stored assistant message."""
         self._transport.send(calls.session_feedback(message_id, value), self.token)
+
+    def tool_result(self, call_id: str, result: Any = None, *, error: str | None = None) -> None:
+        """Answer a waiting custom client tool call (once): a JSON result, or an error."""
+        self._transport.send(calls.session_tool_result(call_id, result, error), self.token)
+
+    def _run_tool(self, event: ClientToolEvent) -> None:
+        fn = self._tools.get(event.name)
+        if fn is None:
+            return
+        try:
+            result, error = fn(event.args), None
+        except Exception as e:
+            result, error = None, str(e) or type(e).__name__
+        if event.wait:
+            try:
+                self.tool_result(event.call_id, result, error=error)
+            except EvokaiError:
+                # Answered late (the turn's timeout) or refused: the stream goes on.
+                pass
 
     def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""
@@ -711,6 +838,54 @@ class EvokaiSession(_SessionBase):
     def disconnect(self, provider: str) -> None:
         """Disconnect a provider: the person's tokens are deleted."""
         self._transport.send(calls.session_disconnect(provider), self.token)
+
+    def speak(
+        self,
+        text: str | None = None,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+        format: SpeechFormat = "pcm",
+        sample_rate: int = 24_000,
+    ) -> Speech:
+        """Speak a text, or one ``say`` segment of this conversation, with the session's engine.
+
+        Server speech: ``POST /v1/session/speech`` (needs server voice on the service).
+
+        Args:
+            text: A text (made speakable and redacted on the server).
+            turn_id: Or a ``say`` segment: its turn...
+            index: ...and its index.
+            format: ``pcm`` (16-bit mono at ``sample_rate``) or ``opus`` (Ogg Opus, 48 kHz).
+            sample_rate: The PCM sample rate.
+
+        Returns:
+            The audio and its timings (words, marks, visemes).
+        """
+        body = speech_body(text, turn_id, index, format, sample_rate)
+        out, parser = Speech(), SseParser()
+        with self._transport.stream(SPEECH_PATH, body, self.token) as response:
+            for chunk in response.iter_bytes():
+                collect(parser.feed(chunk), out)
+        return finished(out)
+
+    def transcribe(
+        self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
+    ) -> Transcript:
+        """Transcribe a recording (WAV, WebM, Ogg, MP3, M4A) with the session's engine.
+
+        Args:
+            audio: The file's bytes.
+            content_type: Its media type.
+            language: A BCP 47 language (default: the session's).
+
+        Returns:
+            The text, the audio's length and the engine.
+        """
+        data = self._transport.send_bytes(
+            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language}
+        )
+        return Transcript.model_validate(data)
 
 
 class AsyncEvokaiSession(_SessionBase):
@@ -793,6 +968,7 @@ class AsyncEvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         end_of_speech_at: float | None = None,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> AsyncChatStream:
         """Send a message and stream the turn (``async for`` or ``async with``).
 
@@ -802,12 +978,19 @@ class AsyncEvokaiSession(_SessionBase):
             mode: ``voice`` for a transcript the answer of which is read aloud.
             history: External storage: the conversation so far, oldest first.
             end_of_speech_at: Seconds since the epoch when the user stopped speaking.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``
+                (the agent's ``attachments`` and the ``attachments`` grant decide what is taken).
 
         Returns:
             The stream of the turn's events.
         """
         body = chat_body(
-            text=text, page=page, mode=mode, history=history, end_of_speech_at=end_of_speech_at
+            text=text,
+            page=page,
+            mode=mode,
+            history=history,
+            end_of_speech_at=end_of_speech_at,
+            attachments=attachments,
         )
         return AsyncChatStream(self, body)
 
@@ -843,6 +1026,32 @@ class AsyncEvokaiSession(_SessionBase):
             text=text, page=page, mode=mode, history=history, rewrite=message_id or True
         )
         return AsyncChatStream(self, body)
+
+    def regenerate(
+        self,
+        *,
+        page: PageContext | Mapping[str, Any] | None = None,
+        mode: ChatMode = "text",
+        history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
+    ) -> AsyncChatStream:
+        """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+        The stream starts with ``conversation`` and ``rewritten``. Refused with
+        :class:`ConflictError` ``not_regenerable`` when there is nothing to regenerate, the last
+        turn changed data or ran a client tool, or a turn is running (``done.regenerable`` and
+        ``regenerable`` on a stored message say when it is allowed).
+
+        Args:
+            page: The page the user is looking at.
+            mode: ``text`` or ``voice``.
+            history: External storage: the conversation so far, oldest first (with the last
+                question and the answer to replace).
+
+        Returns:
+            The stream of the new turn's events.
+        """
+        body = chat_body(page=page, mode=mode, history=history)
+        return AsyncChatStream(self, body, REGENERATE_PATH)
 
     def confirm(
         self,
@@ -898,6 +1107,7 @@ class AsyncEvokaiSession(_SessionBase):
         mode: ChatMode = "text",
         history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
         rewrite: bool | str = False,
+        attachments: Sequence[AttachmentInput] | None = None,
     ) -> ChatResult:
         """Run one turn and wait for its end (``Accept: application/json``).
 
@@ -909,12 +1119,19 @@ class AsyncEvokaiSession(_SessionBase):
             history: External storage: the conversation so far, oldest first.
             rewrite: Replace the last question with ``text`` (True, or the edited message's id);
                 with external storage drop your history from ``result.replaced_from``.
+            attachments: Files for the model: :class:`Attachment`, paths or ``(name, bytes)``.
 
         Returns:
             The whole turn: its text, events, reason and (external storage) new messages.
         """
         body = chat_body(
-            text=text, confirm=confirm, page=page, mode=mode, history=history, rewrite=rewrite
+            text=text,
+            confirm=confirm,
+            page=page,
+            mode=mode,
+            history=history,
+            rewrite=rewrite,
+            attachments=attachments,
         )
         result = await self._transport.send(calls.session_chat_json(body), self.token)
         for e in result.events:
@@ -932,6 +1149,29 @@ class AsyncEvokaiSession(_SessionBase):
     async def feedback(self, message_id: str, value: Literal[1, -1] | None) -> None:
         """Thumbs up (1), down (-1) or none (None) on a stored assistant message."""
         await self._transport.send(calls.session_feedback(message_id, value), self.token)
+
+    async def tool_result(
+        self, call_id: str, result: Any = None, *, error: str | None = None
+    ) -> None:
+        """Answer a waiting custom client tool call (once): a JSON result, or an error."""
+        await self._transport.send(calls.session_tool_result(call_id, result, error), self.token)
+
+    async def _run_tool(self, event: ClientToolEvent) -> None:
+        fn = self._tools.get(event.name)
+        if fn is None:
+            return
+        try:
+            result, error = fn(event.args), None
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as e:
+            result, error = None, str(e) or type(e).__name__
+        if event.wait:
+            try:
+                await self.tool_result(event.call_id, result, error=error)
+            except EvokaiError:
+                # Answered late (the turn's timeout) or refused: the stream goes on.
+                pass
 
     async def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""
@@ -1009,3 +1249,51 @@ class AsyncEvokaiSession(_SessionBase):
     async def disconnect(self, provider: str) -> None:
         """Disconnect a provider: the person's tokens are deleted."""
         await self._transport.send(calls.session_disconnect(provider), self.token)
+
+    async def speak(
+        self,
+        text: str | None = None,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+        format: SpeechFormat = "pcm",
+        sample_rate: int = 24_000,
+    ) -> Speech:
+        """Speak a text, or one ``say`` segment of this conversation, with the session's engine.
+
+        Server speech: ``POST /v1/session/speech`` (needs server voice on the service).
+
+        Args:
+            text: A text (made speakable and redacted on the server).
+            turn_id: Or a ``say`` segment: its turn...
+            index: ...and its index.
+            format: ``pcm`` (16-bit mono at ``sample_rate``) or ``opus`` (Ogg Opus, 48 kHz).
+            sample_rate: The PCM sample rate.
+
+        Returns:
+            The audio and its timings (words, marks, visemes).
+        """
+        body = speech_body(text, turn_id, index, format, sample_rate)
+        out, parser = Speech(), SseParser()
+        async with self._transport.stream(SPEECH_PATH, body, self.token) as response:
+            async for chunk in response.aiter_bytes():
+                collect(parser.feed(chunk), out)
+        return finished(out)
+
+    async def transcribe(
+        self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
+    ) -> Transcript:
+        """Transcribe a recording (WAV, WebM, Ogg, MP3, M4A) with the session's engine.
+
+        Args:
+            audio: The file's bytes.
+            content_type: Its media type.
+            language: A BCP 47 language (default: the session's).
+
+        Returns:
+            The text, the audio's length and the engine.
+        """
+        data = await self._transport.send_bytes(
+            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language}
+        )
+        return Transcript.model_validate(data)

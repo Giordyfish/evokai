@@ -37,6 +37,8 @@ font-family:var(--ek-font);color:var(--ek-text);font-size:14px;line-height:1.5}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 button:disabled{cursor:default;opacity:.4}
 slot{display:contents}
+slot[name=orb]::slotted(*){display:block;width:100%;height:100%;pointer-events:none}
+.orbimg{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
 `
 
 /** The default look. */
@@ -55,8 +57,6 @@ const LOOK = `
 .orbfly[data-at=launcher][data-phase=idle] .orbcore{animation:ekpulse 4.2s ease-in-out infinite}
 @keyframes ekpulse{0%,100%{box-shadow:0 calc(4px*var(--k,1)) calc(20px*var(--k,1)) color-mix(in oklab,var(--evokai-orb-main,${ORB.main}) 30%,transparent)}50%{box-shadow:0 calc(6px*var(--k,1)) calc(30px*var(--k,1)) color-mix(in oklab,var(--evokai-orb-main,${ORB.main}) 50%,transparent)}}
 .orbfly .ringfx{position:absolute;left:-50%;top:-50%;width:200%;height:200%;pointer-events:none}
-.splash{position:fixed;z-index:var(--ek-z);border-radius:50%;border:2px solid var(--ek-accent);pointer-events:none;animation:eksplash .6s ease-out forwards}
-@keyframes eksplash{from{transform:scale(.9);opacity:.8}to{transform:scale(1.5);opacity:0}}
 .oslot{position:relative;display:inline-grid;place-items:center;flex:none}
 .oslot:not([data-here])>slot{visibility:hidden}
 .oslot.launch{min-width:60px;min-height:60px;border-radius:50%}
@@ -70,12 +70,13 @@ const LOOK = `
 .launcher[data-hidden]{visibility:hidden;pointer-events:none}
 .launcher:hover{transform:scale(1.05)}
 .launcher:focus-visible{outline-offset:4px}
-.vbubble{position:absolute;right:76px;bottom:6px;width:min(20rem,calc(100vw - 124px));padding:11px 14px 12px;border-radius:20px 20px 6px 20px;background:var(--ek-surface);border:1px solid var(--ek-border);box-shadow:0 22px 44px -22px rgb(0 0 0/.45);transform-origin:right bottom;animation:ekbubble .35s cubic-bezier(.2,.8,.2,1) both}
+.vbubble{position:absolute;right:calc(100% + 16px);bottom:6px;width:min(20rem,calc(100vw - 100% - 64px));padding:11px 14px 12px;border-radius:20px 20px 6px 20px;background:var(--ek-surface);border:1px solid var(--ek-border);box-shadow:0 22px 44px -22px rgb(0 0 0/.45);transform-origin:right bottom;animation:ekbubble .35s cubic-bezier(.2,.8,.2,1) both}
 .vbubble::after{content:"";position:absolute;right:-7px;bottom:16px;width:14px;height:14px;background:inherit;border-right:1px solid var(--ek-border);border-bottom:1px solid var(--ek-border);transform:rotate(-45deg);border-radius:0 0 4px 0}
 .vbubble.small{width:auto;white-space:nowrap}
-:host([position=bottom-left]) .vbubble{right:auto;left:76px;border-radius:20px 20px 20px 6px;transform-origin:left bottom}
+:host([position=bottom-left]) .vbubble{right:auto;left:calc(100% + 16px);border-radius:20px 20px 20px 6px;transform-origin:left bottom;animation-name:ekbubblel}
 :host([position=bottom-left]) .vbubble::after{right:auto;left:-7px;transform:rotate(135deg)}
 @keyframes ekbubble{from{opacity:0;transform:translateX(12px) scale(.96)}}
+@keyframes ekbubblel{from{opacity:0;transform:translateX(-12px) scale(.96)}}
 .vst{display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ek-accent)}
 .hop{display:inline-flex;gap:3px}.hop b{width:4px;height:4px;border-radius:50%;background:currentColor;animation:ekhop 1s ease-in-out infinite}
 .hop b:nth-child(2){animation-delay:.15s}.hop b:nth-child(3){animation-delay:.3s}
@@ -87,20 +88,20 @@ const LOOK = `
 .vct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vchip button{font-weight:600;color:var(--ek-accent)}
 .vchip button:hover{text-decoration:underline}
-.acts{position:absolute;left:12px;bottom:60px;padding-bottom:12px;display:flex;flex-direction:column;gap:8px;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s,transform .2s}
+.acts{position:absolute;left:50%;margin-left:-18px;bottom:100%;padding-bottom:12px;display:flex;flex-direction:column;gap:8px;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s,transform .2s}
 .dock:is([data-mini],[data-idle]):is(:hover,:has(:focus-visible)) .acts{opacity:1;transform:none;pointer-events:auto}
 .ab{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--ek-surface);box-shadow:0 0 0 1px var(--ek-border),0 8px 18px -10px rgb(0 0 0/.5);color:var(--ek-subtle)}
 .ab:hover{color:var(--ek-text)}
 .ab.fin{background:var(--ek-brand);color:var(--ek-on-brand);box-shadow:none}
 .ab.muted{color:var(--ek-danger)}
 .panel{position:fixed;z-index:var(--ek-z);bottom:24px;right:24px;top:64px;width:min(25.5rem,calc(100vw - 32px));display:flex;flex-direction:column;overflow:hidden;
-background:var(--ek-surface);border:1px solid var(--ek-border);border-radius:var(--ek-radius);box-shadow:0 40px 90px -40px rgb(0 0 0/.45);transform-origin:var(--ek-origin,40px 40px)}
+background:var(--ek-surface);border:1px solid var(--ek-border);border-radius:var(--ek-radius);box-shadow:0 40px 90px -40px rgb(0 0 0/.45);transform-origin:50% 100%}
 :host([position=bottom-left]) .panel{right:auto;left:24px}
 .panel[data-box=pre]{opacity:0;pointer-events:none}
 .panel[data-box=in]{animation:ekboxin .32s cubic-bezier(.2,.8,.2,1) both}
 .panel[data-box=out]{animation:ekboxout .24s cubic-bezier(.4,0,1,1) both;pointer-events:none}
-@keyframes ekboxin{from{opacity:0;transform:scale(.5)}}
-@keyframes ekboxout{to{opacity:0;transform:scale(.5)}}
+@keyframes ekboxin{from{opacity:0;transform:translateY(18px) scale(.985)}}
+@keyframes ekboxout{to{opacity:0;transform:translateY(18px) scale(.985)}}
 @media (max-width:640px){.panel{inset:0;width:auto;border-radius:0;border:0}}
 .aurora{position:absolute;inset:0 0 auto;height:160px;pointer-events:none;overflow:hidden;opacity:.55}
 .aurora i{position:absolute;width:220px;height:220px;border-radius:50%;filter:blur(60px);background:var(--ek-aurora-1);top:-140px;left:-40px;animation:ekdrift 18s ease-in-out infinite alternate}
@@ -166,6 +167,13 @@ a.src-title:hover{text-decoration:underline;color:var(--ek-brand)}
 @keyframes ekblink{50%{opacity:.3}}
 .nav{font-size:12px;color:var(--ek-subtle)}
 .err{font-size:12px;color:var(--ek-danger)}
+.files{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.composer>.files{padding:0 8px 8px}
+.bubble .files{margin-bottom:6px}
+.file{display:inline-flex;align-items:center;gap:6px;max-width:200px;padding:4px 8px;border-radius:10px;font-size:12px;box-shadow:inset 0 0 0 1px var(--ek-border)}
+.file img{width:28px;height:28px;object-fit:cover;border-radius:6px}
+.fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shot{max-width:160px;max-height:160px;border-radius:12px;object-fit:cover}
 .fb{display:flex;gap:4px;color:color-mix(in oklab,var(--ek-subtle) 70%,transparent)}
 .fb button{padding:4px;border-radius:6px}.fb button:hover{color:var(--ek-text)}
 .fb button[aria-pressed=true]{color:var(--ek-accent)}

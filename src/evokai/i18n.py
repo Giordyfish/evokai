@@ -48,23 +48,65 @@ def _load(locale: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def locale_of(app: Any) -> str:
-    """An application's locale.
+@cache
+def known_locales() -> frozenset[str]:
+    """The languages Evokai ships a pack for.
 
     Returns:
-        ``defaults.locale``, else English.
+        Their codes (``en``, ``it``).
     """
+    files = resources.files("evokai.locales").iterdir()
+    return frozenset(f.name[:-5] for f in files if f.name.endswith(".json"))
+
+
+_TAG = re.compile(r"^([A-Za-z]{2,3})(-[A-Za-z0-9]{1,8})*$")
+
+
+def pack_language(tag: str | None) -> str | None:
+    """The shipped pack for a BCP 47 language tag (``it-IT`` reads the ``it`` pack).
+
+    Returns:
+        The pack's language, or None for a malformed tag or a language without a pack.
+    """
+    m = _TAG.match(tag or "")
+    if not m:
+        return None
+    language = m[1].lower()
+    return language if language in known_locales() else None
+
+
+def locale_of(app: Any, session: Any = None) -> str:
+    """The locale of an application, or of one of its sessions.
+
+    Args:
+        app: The application.
+        session: A session whose token chose a locale (``prompt_options.locale``), if any.
+
+    Returns:
+        The session's locale (its pack's language), else ``defaults.locale``, else English.
+    """
+    options = getattr(session, "prompt_options", None) or {}
+    if own := pack_language(options.get("locale")):
+        return own
     return str(((app.defaults if app is not None else None) or {}).get("locale") or DEFAULT_LOCALE)
 
 
-def message(app: Any, key: str, **params: Any) -> str:
+def message(app: Any, key: str, *, session: Any = None, **params: Any) -> str:
     """A user-facing message: the application's own text, else its locale's, else English.
+
+    Args:
+        app: The application.
+        key: The message key.
+        session: The session, whose token may have chosen another locale (``locale_of``).
+        **params: Values for the ``{name}`` placeholders.
 
     Returns:
         The text with ``{name}`` parameters filled in (``{appName}`` always available).
     """
     defaults = (app.defaults if app is not None else None) or {}
-    text = (defaults.get("messages") or {}).get(key) or pack(locale_of(app))["messages"][key]
+    text = (defaults.get("messages") or {}).get(key) or pack(locale_of(app, session))["messages"][
+        key
+    ]
     values = {"appName": getattr(app, "name", ""), **params}
     for name, value in values.items():
         text = text.replace("{" + name + "}", str(value))

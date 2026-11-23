@@ -655,9 +655,12 @@ class SessionRepository(_Repo):
     async def purge_expired(self, now: datetime | None = None) -> int:
         """Delete conversations past their application's time to live, for good.
 
-        Messages, summaries, events, turns, pending actions, threads and the conversation go; usage
-        records stay (budgets keep counting) without their link to the conversation or turn; bug
-        reports lose the link too.
+        The time to live counts from the last message, and for a system application from the
+        conversation's start.
+
+        Messages, attachments, summaries, events, turns, pending actions, threads and the
+        conversation go; usage records stay (budgets keep counting) without their link to the
+        conversation or turn; bug reports lose the link too.
 
         Returns:
             How many conversations were deleted.
@@ -671,11 +674,15 @@ class SessionRepository(_Repo):
                         m.Application.id,
                         m.Application.conversation_ttl_days,
                         m.Application.storage_mode,
+                        m.Application.system,
                     ).where(m.Application.conversation_ttl_days.is_not(None))
                 )
             ).all()
-        for app_id, ttl, app_mode in apps:
+        for app_id, ttl, app_mode, system in apps:
             cutoff = now - timedelta(days=int(ttl or 0))
+            # A system application's conversations (the console assistant's) go that many days
+            # after they started, however long they are resumed: what was said is kept no longer.
+            since = m.Session.created_at if system else m.Session.updated_at
             while True:
                 async with self.db.session() as s:
                     ids = list(
@@ -685,7 +692,7 @@ class SessionRepository(_Repo):
                                 .select(m.Session.id)
                                 .where(
                                     m.Session.application_id == app_id,
-                                    m.Session.updated_at <= cutoff,
+                                    since <= cutoff,
                                     _stored_here(str(app_mode or "evokai")),
                                 )
                                 .limit(500)
@@ -712,6 +719,8 @@ class SessionRepository(_Repo):
         exit_code_hash: str | None = None,
         voice_engine: str = "browser",
         storage_mode: str | None = None,
+        prompt_options: dict[str, Any] | None = None,
+        client_tools: list[dict[str, Any]] | None = None,
     ) -> tuple[m.Session, m.Thread]:
         """Create a conversation and its thread.
 
@@ -731,10 +740,29 @@ class SessionRepository(_Repo):
                 exit_code_hash=exit_code_hash,
                 voice_engine=voice_engine,
                 storage_mode=storage_mode,
+                prompt_options=prompt_options,
+                client_tools=client_tools,
             )
             thread = m.Thread(id=new_id(), session_id=sess.id)
             s.add_all([sess, thread])
             return sess, thread
+
+    async def set_prompt_options(self, session_id: str, options: dict[str, Any]) -> None:
+        """Replace the prompt modules and locale chosen for the session."""
+        async with self.db.session() as s:
+            await s.execute(
+                sa
+                .update(m.Session)
+                .where(m.Session.id == session_id)
+                .values(prompt_options=options)
+            )
+
+    async def set_client_tools(self, session_id: str, tools: list[dict[str, Any]] | None) -> None:
+        """Replace the custom client tools the session token declared."""
+        async with self.db.session() as s:
+            await s.execute(
+                sa.update(m.Session).where(m.Session.id == session_id).values(client_tools=tools)
+            )
 
     async def set_voice_engine(self, session_id: str, engine: str) -> None:
         """Record who does speech for the session from now on."""
@@ -964,6 +992,7 @@ class SessionRepository(_Repo):
                 m.Event,
                 m.PendingAction,
                 m.Message,
+                m.Attachment,
                 m.ConversationSummary,
                 m.CapabilityRecord,
                 m.Turn,
@@ -995,6 +1024,97 @@ class SessionRepository(_Repo):
         async with self.db.session() as s:
             q = sa.update(m.Session).where(m.Session.id == session_id)
             await s.execute(q.values(last_seq=seq, updated_at=utcnow()))
+
+
+class AttachmentRepository(_Repo):
+    """Files attached to chat messages (``evokai.attachments``), by owner and conversation."""
+
+    async def add(self, w: Who, session_id: str, message_id: str | None, items: list[Any]) -> None:
+        """Keep prepared attachments (``evokai.attachments.Prepared``) with their message."""
+        if not items:
+            return
+        async with self.db.session() as s:
+            for p in items:
+                s.add(
+                    m.Attachment(
+                        id=p.id,
+                        application_id=w.application_id,
+                        subject=w.subject,
+                        session_id=session_id,
+                        message_id=message_id,
+                        name=p.name,
+                        media_type=p.media_type,
+                        size=p.size,
+                        sha256=p.sha256,
+                        data=p.data,
+                    )
+                )
+
+    def _owned(self, w: Who, session_id: str) -> list[Any]:
+        a = m.Attachment
+        return [
+            a.application_id == w.application_id,
+            a.subject == w.subject,
+            a.session_id == session_id,
+        ]
+
+    async def get(self, w: Who, session_id: str, attachment_id: str) -> m.Attachment | None:
+        """One attachment of this owner's conversation.
+
+        Returns:
+            The row, or None (another conversation's id included).
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.Attachment).where(
+                m.Attachment.id == attachment_id, *self._owned(w, session_id)
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def data_of(self, w: Who, session_id: str, ids: list[str]) -> dict[str, bytes]:
+        """The bytes of some attachments of this owner's conversation.
+
+        Returns:
+            id to bytes (unknown ids are left out).
+        """
+        if not ids:
+            return {}
+        async with self.db.session() as s:
+            q = sa.select(m.Attachment.id, m.Attachment.data).where(
+                m.Attachment.id.in_(ids), *self._owned(w, session_id)
+            )
+            return {i: bytes(d) for i, d in (await s.execute(q)).all()}
+
+    async def total(self, w: Who, session_id: str) -> int:
+        """Bytes kept for a conversation.
+
+        Returns:
+            The sum of the sizes.
+        """
+        async with self.db.session() as s:
+            q = sa.select(sa.func.coalesce(sa.func.sum(m.Attachment.size), 0)).where(
+                *self._owned(w, session_id)
+            )
+            return int((await s.execute(q)).scalar_one())
+
+    async def relink(self, w: Who, session_id: str, ids: list[str], message_id: str | None) -> None:
+        """Move attachments to another message (a rewritten question keeps them)."""
+        if not ids or message_id is None:
+            return
+        async with self.db.session() as s:
+            q = sa.update(m.Attachment).where(m.Attachment.id.in_(ids), *self._owned(w, session_id))
+            await s.execute(q.values(message_id=message_id))
+
+    async def delete(self, w: Who, session_id: str, ids: list[str]) -> int:
+        """Delete attachments of a conversation (a rewritten question that was never replaced).
+
+        Returns:
+            How many were deleted.
+        """
+        if not ids:
+            return 0
+        async with self.db.session() as s:
+            q = sa.delete(m.Attachment).where(m.Attachment.id.in_(ids), *self._owned(w, session_id))
+            return _rowcount(await s.execute(q))
 
 
 class MessageRepository(_Repo):
@@ -1385,6 +1505,23 @@ class PendingRepository(_Repo):
             )
             return _rowcount(await s.execute(q))
 
+    async def take(self, w: Who, pending_id: str, status: str) -> bool:
+        """Close an open, unexpired confirmation once (approved, rejected, superseded).
+
+        Returns:
+            False when it was already closed, expired or not this subject's: nothing may run.
+        """
+        async with self.db.session() as s:
+            p = m.PendingAction
+            q = sa.update(p).where(
+                p.id == pending_id,
+                p.application_id == w.application_id,
+                p.subject == w.subject,
+                p.status == "open",
+                sa.or_(p.expires_at.is_(None), p.expires_at > utcnow()),
+            )
+            return _rowcount(await s.execute(q.values(status=status))) == 1
+
     async def close(self, w: Who, pending_id: str, status: str) -> None:
         """Close a confirmation (approved, rejected, superseded)."""
         async with self.db.session() as s:
@@ -1624,8 +1761,28 @@ class UsageRepository(_Repo):
 class PromptRepository(_Repo):
     """Versioned prompts of an application."""
 
-    async def put(self, application_id: str, name: str, text: str) -> int:
-        """Store a new version of a prompt (no-op when the text is unchanged).
+    async def put(
+        self,
+        application_id: str,
+        name: str,
+        text: str,
+        *,
+        parameters: dict[str, Any] | None = None,
+        description: str = "",
+        data: dict[str, Any] | None = None,
+        template_syntax: str = "handlebars",
+    ) -> int:
+        """Store a new version of a prompt (no-op when nothing changed).
+
+        Args:
+            application_id: Owner application.
+            name: Prompt name.
+            text: The text (a template for a module).
+            parameters: A module's parameter schema; None for a plain prompt.
+            description: What the prompt is for.
+            data: A module's static lookup table.
+            template_syntax: The text's syntax (``legacy`` only for versions saved before
+                Handlebars).
 
         Returns:
             The version number.
@@ -1640,11 +1797,28 @@ class PromptRepository(_Repo):
                 .limit(1)
             )
             last = (await s.execute(q)).scalar_one_or_none()
-            if last and last.text == text:
+            if (
+                last
+                and last.text == text
+                and last.parameters == parameters
+                and (last.description or "") == description
+                and last.data == data
+                and last.template_syntax == template_syntax
+            ):
                 return last.version
             version = (last.version if last else 0) + 1
             s.add(
-                p(id=new_id(), application_id=application_id, name=name, version=version, text=text)
+                p(
+                    id=new_id(),
+                    application_id=application_id,
+                    name=name,
+                    version=version,
+                    text=text,
+                    parameters=parameters,
+                    description=description,
+                    data=data,
+                    template_syntax=template_syntax,
+                )
             )
             return version
 
@@ -1672,6 +1846,17 @@ class PromptRepository(_Repo):
             p = m.PromptRecord
             q = sa.select(p).where(p.application_id == application_id).order_by(p.name, p.version)
             return list((await s.execute(q)).scalars().all())
+
+    async def delete(self, application_id: str, name: str) -> int:
+        """Delete a prompt with every version (a system application's reset).
+
+        Returns:
+            How many versions were deleted.
+        """
+        async with self.db.session() as s:
+            p = m.PromptRecord
+            q = sa.delete(p).where(p.application_id == application_id, p.name == name)
+            return _rowcount(await s.execute(q))
 
 
 class VoiceRepository(_Repo):
@@ -1973,10 +2158,12 @@ class AuditRepository(_Repo):
         end: datetime | None = None,
         before: datetime | None = None,
         limit: int = 100,
+        target: str | None = None,
     ) -> list[m.AuditEntry]:
         """Entries, newest first: of one application, or every entry (``everything``).
 
-        ``action`` ending in ``.`` is a prefix (``agent.``); ``actor`` matches a part of it.
+        ``action`` ending in ``.`` is a prefix (``agent.``); ``actor`` and ``target`` match a part
+        of it.
 
         Returns:
             Entries.
@@ -1993,6 +2180,8 @@ class AuditRepository(_Repo):
             )
         if actor:
             where.append(a.actor.like(f"%{actor}%"))
+        if target:
+            where.append(a.target.like(f"%{target}%"))
         if start is not None:
             where.append(a.at >= start)
         if end is not None:
@@ -2638,6 +2827,7 @@ class Store:
         self.credentials = CredentialRepository(db)
         self.sessions = SessionRepository(db)
         self.messages = MessageRepository(db)
+        self.attachments = AttachmentRepository(db)
         self.summaries = SummaryRepository(db)
         self.turns = TurnRepository(db)
         self.events = EventRepository(db)
@@ -2743,6 +2933,7 @@ async def _forget_sessions(s: Any, ids: list[str]) -> None:
     for model in (
         m.Event,
         m.Message,
+        m.Attachment,
         m.ConversationSummary,
         m.CapabilityRecord,
         m.PendingAction,

@@ -29,10 +29,13 @@ from typing import Any, Literal, cast
 from urllib.parse import unquote_plus
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
@@ -45,8 +48,11 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.tools import DeferredToolResults, ToolDenied
 from pydantic_ai.usage import UsageLimits
 
+from evokai import attachments as files_
 from evokai.agents.definitions import AgentDef
+from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import (
+    Instructions,
     PageContext,
     memory_block,
     split_skills,
@@ -57,16 +63,26 @@ from evokai.agents.prompts import (
 from evokai.agents.registry import AgentRegistry
 from evokai.agents.skills import Skill, SkillFile
 from evokai.agents.skills import load as load_skill
+from evokai.audio.speech.markup import Markup, markup_of
 from evokai.audio.speech.numbers import spell_numbers
 from evokai.audio.speech.replies import spoken_decision, spoken_option
 from evokai.audio.speech.speakable import SentenceSplitter, speakable
 from evokai.core.config import Settings
-from evokai.core.errors import ConfigError, Conflict, Forbidden, NotFound, Unauthorized
+from evokai.core.errors import (
+    BadRequest,
+    ConfigError,
+    Conflict,
+    Forbidden,
+    NotFound,
+    Unauthorized,
+)
 from evokai.core.util import clip, new_id, utcnow
 from evokai.db import models as m
 from evokai.db.repositories import DEFAULT_TITLE, Store, Who
+from evokai.engine import builtin_tools
 from evokai.engine.agent import build_agent
 from evokai.engine.capability import finish_attempt
+from evokai.engine.client_calls import ClientCalls, ClientToolWait
 from evokai.engine.code_mode import EvokaiCodeMode
 from evokai.engine.compaction import Compactor, EvokaiCompaction, estimate_tokens, over
 from evokai.engine.messages import response_blocks, result_blocks, to_stored
@@ -127,7 +143,7 @@ from evokai.sessions.threads import (
     ThreadMessage,
     ThreadStore,
 )
-from evokai.tools import visuals
+from evokai.tools import custom, visuals
 from evokai.tools.client_tools import HANDOFF, handoff_tool, local_tools
 from evokai.tools.labels import confirm_label
 
@@ -170,6 +186,19 @@ class TurnInput:
     rewrite: dict[str, Any] | None = None
     """Rewrite the last question with ``text`` (``{messageId?}``): the last turn is replaced
     (``evokai.sessions.rewrite``)."""
+    client_tools: bool = True
+    """Offer custom client tools: only where the client receives ``client_tool`` events (the
+    session stream; not AG-UI or the messaging channels)."""
+    client_wait: bool = True
+    """Offer the custom client tools that wait (not in a JSON turn: it cannot answer them)."""
+    regenerate: bool = False
+    """Regenerate the last answer: the last question (its stored or sent text) runs again as a
+    rewrite (409 ``not_regenerable`` when it cannot)."""
+    files: list[files_.Upload] = field(default_factory=list)
+    """Attachments of the message (``evokai.attachments``), checked when the turn opens."""
+    kept_files: list[dict[str, Any]] = field(default_factory=list)
+    """A rewrite or a regeneration: the replaced question's attachment blocks, which the new
+    question keeps."""
 
 
 @dataclass
@@ -192,6 +221,8 @@ class TurnRun:
     """Where this conversation lives: ``evokai`` or ``external``."""
     rules: SpeechRules = field(default_factory=speech_rules)
     """Speech rules of the application's language."""
+    markup: Markup | None = None
+    """The inline markup of the answer (cues, speech tags), when the application or agent has it."""
     guard: TurnGuard | None = None
     """The security layer of this turn."""
     status: str = "done"
@@ -209,6 +240,10 @@ class TurnRun:
     replaced_from: int | None = None
     """A rewrite with external storage: the index of the sent history the new messages replace
     from."""
+    files: list[files_.Prepared] = field(default_factory=list)
+    """The message's attachments, checked and prepared (``evokai.attachments``)."""
+    dropped: bool = False
+    """A rewrite deleted the question it replaces (Evokai storage)."""
 
 
 class _Cancelled(Exception):
@@ -268,6 +303,8 @@ class TurnEngine:
         """The last model calls of this process (the console's health page)."""
         self.compactor = Compactor(self)
         """Context compaction of conversations stored by Evokai (``evokai.engine.compaction``)."""
+        self.client_calls = ClientCalls()
+        """Custom client tool calls waiting for the client (``evokai.engine.client_calls``)."""
         self.run_listeners: list[Any] = []
         """Called when a server run ends (``evokai.workflows`` event triggers):
         ``(app, agent, run_id, status, output, subject)``."""
@@ -339,6 +376,7 @@ class TurnEngine:
         if inp.channel != "browser" and inp.channel not in agent.channels:
             raise Forbidden(f"This agent is not reached over {inp.channel}.", code="channel")
         plan, replaced_from = await self._rewrite_check(inp, app, who, session, storage)
+        attached = await self._attachments(inp, app, grants, agent, session, storage)
         turn_id = new_id()
         guard = self.guard.turn(
             app,
@@ -387,12 +425,16 @@ class TurnEngine:
         await self.store.turns.start(who, session.id, inp.mode, turn_id)
         threads = self._threads(storage, who, session.id, thread_id, inp)
         await self.guard.started(guard)
+        markup = markup_of((app.defaults or {}).get("markup"), agent.markup, session)
+        guard.neutralise = markup.neutralise if markup is not None else None
         return TurnRun(
             rewrite=plan,
             replaced_from=replaced_from,
+            files=attached,
             guard=guard,
             trace=guard.trace,
-            rules=speech_rules(locale_of(app), identifiers.of_app(app)),
+            rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
+            markup=markup,
             threads=threads,
             grants=grants,
             storage=storage,
@@ -426,14 +468,20 @@ class TurnEngine:
             Conflict: Nothing to rewrite, not the last question, the last turn changed data, or a
                 turn is running (409, ``rewrite_*`` codes, with the application's message).
         """
-        if inp.rewrite is None or inp.confirm is not None or not (inp.text or "").strip():
+        if inp.regenerate:
+            inp.rewrite, inp.confirm = inp.rewrite or {}, None
+        elif inp.rewrite is None or inp.confirm is not None or not (inp.text or "").strip():
             return None, None  # a decision is not a rewrite; an empty message is refused later
         rows: list[Any] = []
         index: int | None = None
         if storage == "external":
             sent = list(inp.history or [])
-            index, code = rewrite.check([h.model_dump() for h in sent], None)
+            dumped = [h.model_dump() for h in sent]
+            index, code = rewrite.check(dumped, None)
+            if index is not None and inp.regenerate:
+                index, inp.text = self._regenerated(dumped, index, files_kept=False)
             if index is not None:
+                inp.kept_files = _attached_blocks(dumped[index].get("content"))
                 inp.history = sent[:index]
         elif session is None:
             code = rewrite.NOTHING
@@ -443,12 +491,153 @@ class TurnEngine:
             thread = await self.store.sessions.thread(session.id)
             rows = await self.store.messages.recent(who, thread.id, 400)
             index, code = rewrite.check(rows, inp.rewrite.get("messageId"))
+            if index is not None and inp.regenerate:
+                index, inp.text = self._regenerated(rows, index)
+            if index is not None:
+                inp.kept_files = _attached_blocks(rows[index].content)
         if code is not None or index is None:
-            code = code or rewrite.NOTHING
-            raise Conflict(message(app, rewrite.MESSAGE_KEYS[code]), code=code)
+            code = rewrite.NOT_REGENERABLE if inp.regenerate else code or rewrite.NOTHING
+            raise Conflict(message(app, rewrite.MESSAGE_KEYS[code], session=session), code=code)
         if storage == "external":
             return None, index
         return rewrite.plan_of(rows, index), None
+
+    async def _attachments(
+        self,
+        inp: TurnInput,
+        app: m.Application,
+        grants: Grants,
+        agent: AgentDef,
+        session: m.Session | None,
+        storage: str,
+    ) -> list[files_.Prepared]:
+        """The message's attachments, checked before anything is kept (``evokai.attachments``).
+
+        Returns:
+            The prepared files.
+
+        Raises:
+            BadRequest: Attachments sent with a decision (``attachment_invalid``).
+        """
+        if not inp.files:
+            return []
+        if inp.confirm is not None:
+            raise BadRequest("A decision carries no attachments.", code="attachment_invalid")
+        restricted = grants.restrict(agent)
+        chain = self._candidates(restricted, app, inp.principal.claims.model, grants)
+        used = None
+        if storage == "evokai":
+            used = (
+                0
+                if session is None
+                else await self.store.attachments.total(inp.principal.who, session.id)
+            )
+        # Stripping and reading a file takes a while: off the event loop, so other streams go on.
+        return await asyncio.to_thread(
+            files_.check,
+            inp.files,
+            granted=grants.attachments(),
+            config=restricted.attachments,
+            models=[self.catalog.get(n) for n in chain],
+            carried=len(inp.kept_files),
+            used_bytes=used,
+        )
+
+    def models_for(
+        self, agent: AgentDef, app: m.Application, requested: str | None, grants: Grants
+    ) -> list[Any]:
+        """The model objects of the chain a turn of this agent would try.
+
+        Returns:
+            pydantic-ai models, in order.
+        """
+        chain = self._candidates(grants.restrict(agent), app, requested, grants)
+        return [self.catalog.get(n) for n in chain]
+
+    async def _file_blocks(
+        self, run: TurnRun, inp: TurnInput, guard: TurnGuard
+    ) -> list[dict[str, Any]]:
+        """The question's attachment blocks: kept ones first, then the new ones.
+
+        A document's text is scanned for hidden instructions (``untrusted.injection``); a PDF
+        whose scan removed something goes as its cleaned text instead of the file.
+
+        Returns:
+            The blocks.
+        """
+        blocks = list(inp.kept_files)
+        for p in run.files:
+            meta = p.meta()
+            if p.text is not None:
+                cleaned = files_.clip(await guard.untrusted(p.text, f"attachment:{p.name}"))
+                # A PDF goes as its text when the scan removed something, or when it holds
+                # personal data the policy protects towards the model (the file cannot be masked).
+                protects = guard.policy.enforced("pii.model") and guard.has_pii(cleaned)
+                if not p.native or cleaned != p.text or protects:
+                    p.native = False
+                    blocks.append({"file": meta, "text": cleaned})
+                    continue
+            blocks.append({"file": meta})
+        if blocks:
+            self._trace(run, inp).root.set(
+                attachments=[{**b["file"], "native": "text" not in b} for b in blocks]
+            )
+        return blocks
+
+    async def _keep_files(self, run: TurnRun, inp: TurnInput, message_id: str | None) -> None:
+        """Keep the new attachments with their message (Evokai storage only)."""
+        if run.storage != "evokai":
+            return
+        await self.store.attachments.add(run.who, run.session.id, message_id, run.files)
+        kept = [str(b["file"]["id"]) for b in inp.kept_files]
+        await self.store.attachments.relink(run.who, run.session.id, kept, message_id)
+        inp.kept_files = []
+
+    async def _drop_unkept(self, run: TurnRun, inp: TurnInput) -> None:
+        """Drop the attachments of a replaced question that no new question kept (never raises).
+
+        A rewrite whose new question was never stored (refused, cancelled) deleted the question:
+        its attachments go with it.
+        """
+        if run.storage != "evokai" or not run.dropped or not inp.kept_files:
+            return
+        ids = [str(b["file"]["id"]) for b in inp.kept_files]
+        try:
+            await self.store.attachments.delete(run.who, run.session.id, ids)
+        except Exception as e:
+            log.warning(
+                "attachments_not_dropped", extra={"turnId": run.turn_id, "error": error_class(e)}
+            )
+
+    async def _file_bytes(self, run: TurnRun, stored: list[Any], models: list[Any]) -> Any:
+        """The files of the history the models read as they are, by id (``history.file_part``).
+
+        Returns:
+            id to ``BinaryContent``.
+        """
+        if not run.grants.attachments():
+            return {}  # revoked: earlier files are no longer sent (their text stays in the history)
+        images, pdf = files_.readable(models)
+        wanted = files_.native_files(stored, images=images, pdf=pdf)
+        data = {p.id: p.data for p in run.files}
+        missing = [str(f["id"]) for f in wanted if str(f["id"]) not in data]
+        if missing and run.storage == "evokai":
+            data.update(await self.store.attachments.data_of(run.who, run.session.id, missing))
+        return files_.binaries(wanted, data)
+
+    @staticmethod
+    def _regenerated(
+        messages: list[Any], index: int, *, files_kept: bool = True
+    ) -> tuple[int | None, str | None]:
+        """The question a regeneration runs again, when its answer may be regenerated.
+
+        Returns:
+            Its index and text, or ``(None, None)``.
+        """
+        if rewrite.regenerable_index(messages, files_kept=files_kept) != index:
+            return None, None
+        text = rewrite.question_text(messages[index])
+        return (index, text) if text else (None, None)
 
     async def _idle(self, session_id: str, wait: float = 2.0) -> bool:
         """Whether no turn of the conversation runs.
@@ -469,12 +658,15 @@ class TurnEngine:
             await asyncio.wait_for(running.finished.wait(), timeout=timeout)
         return self.turns.running(session_id) is None
 
-    async def _rewritable(self, run: TurnRun) -> bool:
-        """Whether the conversation's last question can still be rewritten (the ``done`` event).
+    async def _rewritable(self, run: TurnRun) -> tuple[bool, bool]:
+        """Whether the last question can be rewritten, and the last answer regenerated.
+
+        For the ``done`` event.
 
         Returns:
-            True when it can.
+            Both answers.
         """
+        external = isinstance(run.threads, ExternalThreads)
         try:
             if isinstance(run.threads, ExternalThreads):
                 msgs: list[Any] = [*run.threads.history, *run.threads.added]
@@ -484,8 +676,11 @@ class TurnEngine:
             log.warning(
                 "rewritable_unknown", extra={"turnId": run.turn_id, "error": error_class(e)}
             )
-            return False
-        return rewrite.rewritable_index(msgs) is not None
+            return False, False
+        return (
+            rewrite.rewritable_index(msgs) is not None,
+            rewrite.regenerable_index(msgs, files_kept=not external) is not None,
+        )
 
     def new_trace(
         self,
@@ -618,18 +813,35 @@ class TurnEngine:
             run.timings["endOfSpeechAt"] = inp.end_of_speech_at
         voice = inp.mode == "voice"
         splitter = SentenceSplitter(
-            run.agent.voice.first_clause_min_chars if voice else 0, run.rules
+            run.agent.voice.first_clause_min_chars if voice else 0, run.rules, markup=run.markup
         )
-        said = {"n": 0}
+        said = {"n": 0, "dropped": 0}
+        carried: list[dict[str, Any]] = []
         trace = self._trace(run, inp)
         voice_span: dict[str, Span | None] = {"span": None}
 
         def emit(event: dict[str, Any]) -> dict[str, Any]:
             return run.channel.publish(event, run.turn_id)
 
-        def say(text: str, *, filler: bool = False) -> None:
-            if not voice or not text:
+        def say(text: str, *, filler: bool = False, last: bool = False) -> None:
+            if not voice or not (text or last):
                 return
+            shown, spoken = text, None
+            extra: dict[str, Any] = {}
+            if run.markup is not None:
+                # Cues become marks; a segment of cues alone hands them to the next one.
+                f = run.markup.forms(text, run.rules)
+                said["dropped"] += f.dropped
+                marks = [{**x, "at": 0, **({"spokenAt": 0} if "spokenAt" in x else {})}
+                         for x in carried] + f.marks  # fmt: skip
+                carried.clear()
+                if not f.text and not last:
+                    carried.extend(marks)
+                    return
+                shown, spoken = f.text, f.spoken
+                extra = {"marks": marks} if marks else {}
+                if f.tagged:
+                    extra["tagged"] = f.tagged
             if said["n"] == 0:
                 run.timings["firstSayMs"] = round((time.perf_counter() - t0) * 1000)
                 voice_span["span"] = trace.event(
@@ -640,12 +852,14 @@ class TurnEngine:
                     firstSayMs=run.timings["firstSayMs"],
                 )
             # What is shown keeps its digits; the speech engine gets the numbers in words.
-            spoken = spell_numbers(text, run.rules.locale)
+            if spoken is None:
+                spoken = spell_numbers(shown, run.rules.locale)
             emit({
                 "type": "say",
                 "index": said["n"],
-                "text": text,
-                **({"spoken": spoken} if spoken != text else {}),
+                "text": shown,
+                **({"spoken": spoken} if spoken != shown else {}),
+                **extra,
                 **({"filler": True} if filler else {}),
             })
             said["n"] += 1
@@ -656,13 +870,20 @@ class TurnEngine:
         emit({"type": "conversation", "id": run.session.id, "turnStarted": True})
         try:
             await self._run(run, inp, emit, say, splitter, t0)
+            if carried:
+                say("", last=True)  # the answer ended on cues
         except _Cancelled:
             run.status, run.reason = "interrupted", run.handle.reason or "cancelled"
         except Exception as e:
             log.exception("turn_failed", extra={"turnId": run.turn_id, "error": error_class(e)})
             run.status, run.reason = "failed", "internal"
-            emit({"type": "error", "code": "internal", "message": message(run.app, "turn.failed")})
+            emit({
+                "type": "error",
+                "code": "internal",
+                "message": message(run.app, "turn.failed", session=run.session),
+            })
         finally:
+            await self._drop_unkept(run, inp)
             # The turn is over: its capability workers' call tokens stop working.
             await self.mcp.end_run(run.turn_id)
             run.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -679,12 +900,14 @@ class TurnEngine:
                 done["messages"] = [x.as_json() for x in run.threads.added]
                 if run.replaced_from is not None:
                     done["replacedFrom"] = run.replaced_from
-            done["rewritable"] = await self._rewritable(run)
+            done["rewritable"], done["regenerable"] = await self._rewritable(run)
             # Security events are stored before the end is announced: whoever reads them next
             # (the console, a test) finds them.
             await guard.flush()
             if voice_span["span"] is not None:
                 voice_span["span"].set(segments=said["n"])
+                if said["dropped"]:
+                    voice_span["span"].set(markupDropped=said["dropped"])
             # The trace too, so the console can open it as soon as the turn is over.
             await self.store_trace(self._finish_trace(run, inp))
             # From here the turn has answered: its messages are stored, what is left is persisting
@@ -774,7 +997,7 @@ class TurnEngine:
                 emit({
                     "type": "error",
                     "code": "expired",
-                    "message": message(run.app, "turn.confirmExpired"),
+                    "message": message(run.app, "turn.confirmExpired", session=run.session),
                 })
                 run.reason = "expired"
                 return
@@ -812,7 +1035,7 @@ class TurnEngine:
                     content=content,
                     events=[{"type": "confirmed", "approve": approve, "writes": False}],
                 )
-                refusal = message(run.app, "turn.refusal")
+                refusal = message(run.app, "turn.refusal", session=run.session)
                 emit({"type": "text", "delta": refusal})
                 say(refusal)
                 await self._add(run, role="assistant", content=[{"text": refusal}], text=refusal)
@@ -822,23 +1045,37 @@ class TurnEngine:
         else:
             text = (inp.text or "").strip()
             if not text:
-                emit({"type": "error", "code": "empty", "message": message(run.app, "turn.empty")})
+                emit({
+                    "type": "error",
+                    "code": "empty",
+                    "message": message(run.app, "turn.empty", session=run.session),
+                })
                 run.reason = "empty"
                 return
             tr = self._trace(run, inp)
             with tr.span("guard", "guard input", control="input") as gs:
                 decision = await guard.check_input(text)
+                # A file's name is the person's input too: the same checks, before the model.
+                for p in run.files:
+                    if decision.blocked:
+                        break
+                    named = await guard.check_input(p.name)
+                    if named.blocked:
+                        decision = named
                 gs.set(decision="blocked" if decision.blocked else "allowed")
             if decision.blocked:
                 if decision.refusal:
                     emit({"type": "text", "delta": decision.refusal})
                     say(speakable(decision.refusal, run.rules))
                 else:
-                    refused = message(run.app, "turn.guard")
+                    refused = message(run.app, "turn.guard", session=run.session)
                     emit({"type": "error", "code": "guard", "message": refused})
                 run.status, run.reason = "blocked", "guard"
                 return
             text = user_text = decision.text
+            if run.markup is not None:
+                # A person cannot write cues for the agent: their markup reaches it inert.
+                text = user_text = run.markup.neutralise(text)
             if pending:
                 content += [
                     _result(
@@ -852,12 +1089,14 @@ class TurnEngine:
                 ]
                 await store.pending.close(who, pending.id, "superseded")
             question = open_question(shown)
+            content += await self._file_blocks(run, inp, guard)
             content.append({
                 "text": clip(
                     f'Answer to your question "{question}": {text}' if question else text, 8_000
                 )
             })
-            await self._add(run, role="user", content=content, text=text)
+            message_id = await self._add(run, role="user", content=content, text=text)
+            await self._keep_files(run, inp, message_id)
 
         # 2. Tools: the app's (as the user) and our own. If an app server does not answer, the agent
         # goes on without it.
@@ -878,7 +1117,14 @@ class TurnEngine:
         skills = await self._skills(run.app.id, agent, run.grants)
         preloaded, on_demand = split_skills(agent, skills)
         instructions = await self._instructions(run.app.id, agent)
-        guard.instructions = instructions or agent.instructions
+        guard.instructions = instructions.text if instructions else agent.instructions
+        modules = await resolve_modules(
+            self.store, run.app.id, agent, run.session.prompt_options, session=run.session
+        )
+        modules = protected(modules, guard.protect_text)
+        if modules and guard.trace is not None:
+            # Which modules at which versions; never their parameters.
+            guard.trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})
         # Memory: only with Evokai storage, the application's mode and the person's consent.
         memory_on = False
         if run.storage == "evokai" and self.memory is not None:
@@ -898,7 +1144,7 @@ class TurnEngine:
             max_tokens=settings.max_output_tokens,
             op_tags={"turnId": run.turn_id},
             prompt_cache=agent.prompt_cache,
-            locale=locale_of(run.app),
+            locale=locale_of(run.app, run.session),
             expired=self.expired_callback(run.app.id, run.who.subject),
         )
         if resume is not None:
@@ -927,7 +1173,7 @@ class TurnEngine:
             emit({
                 "type": "error",
                 "code": "model",
-                "message": message(run.app, "turn.modelUnavailable"),
+                "message": message(run.app, "turn.modelUnavailable", session=run.session),
             })
             run.status, run.reason = "failed", "model"
             return
@@ -956,6 +1202,7 @@ class TurnEngine:
             timezone=str((run.app.defaults or {}).get("timezone") or "UTC"),
             preloaded=preloaded,
             scripts_runnable=SKILL_RUN in names,
+            modules=modules,
         )
         if notes:
             prompt = replace(prompt, stable=f"{prompt.stable}\n\n{notes}")
@@ -964,6 +1211,9 @@ class TurnEngine:
 
         # 3. Model and tools: pydantic-ai's Agent runs the loop, Evokai's capability and toolset
         # apply caps, guard, confirmations, traces and usage.
+        files: dict[str, Any] = {}
+        """Attachments the models read as they are, by id (filled once the history is known)."""
+
         def view(messages: list[Any]) -> list[Any]:
             fold = rs.extra.get("fold")
             if fold is not None:
@@ -980,7 +1230,7 @@ class TurnEngine:
                 # providers refuse tool calls in a history sent without tools.
                 model_history = flatten_tools(model_history, set())
             rs.extra["traceInput"] = _new_messages(model_history)
-            return to_model_messages(system, model_history)
+            return to_model_messages(system, model_history, files)
 
         rs.view = view
         rs.before_call = lambda: self._before_call(run, inp, rs, candidates, emit, say)
@@ -989,6 +1239,9 @@ class TurnEngine:
         )
         scope = self._scope(run, inp, credential)
         capabilities = await self.capabilities_for(agent, rs, scope)
+        waits = self._client_wait(run, rs)
+        if waits is not None:
+            capabilities.append(waits)
         compaction = next((c for c in capabilities if isinstance(c, EvokaiCompaction)), None)
         plan = (
             self.compactor.plan(run, candidates, compaction.policy(settings))
@@ -999,6 +1252,7 @@ class TurnEngine:
             stored = await self._compacted(run, inp, rs, plan, system, tools)
         else:
             stored = [Stored(role=x.role, content=x.content) for x in await self._history(run)]
+        files.update(await self._file_bytes(run, stored, [x for _, x in rs.models]))
         history = to_model_messages(system, stored if resume else repair(stored))
         results = None
         if resume is not None:
@@ -1057,6 +1311,7 @@ class TurnEngine:
         plan = run.rewrite
         if plan is not None:
             await rewrite.drop(self.store, run.who, run.session.id, run.thread_id, plan)
+            run.dropped = True
             event.update(replaced=plan.turn_ids, messageId=plan.message_id)
         if run.replaced_from is not None:
             event["replacedFrom"] = run.replaced_from
@@ -1168,6 +1423,16 @@ class TurnEngine:
         from evokai import capabilities as caps
         from evokai.capabilities.catalog import ENTRIES, HOST_WORKSPACE
 
+        builtin = builtin_tools.capabilities(
+            agent.builtin_tools,
+            scope.grants,
+            protection(scope.app),
+            _egress_allow(rs.guard),
+            gate=rs.guard.provider_tool_refusal,
+            mcp_allow=_egress_allow(rs.guard, strict=True),
+        )
+        if builtin:
+            rs.trace.root.set(builtinTools=[d.kind for d in agent.builtin_tools])
         uses = {
             name: use
             for name, use in agent.capabilities.items()
@@ -1176,7 +1441,7 @@ class TurnEngine:
             and scope.grants.capability(name)
         }
         if not uses:
-            return []
+            return builtin
         enabled = set(uses)
 
         async def record(name: str, response: ModelResponse) -> None:
@@ -1264,7 +1529,7 @@ class TurnEngine:
         if any(caps.get(n).group != "evokai" for n in enabled):
             # The tools capabilities bring get Evokai's tool rules, and what they do is traced.
             out += [harness.CapabilityTools(), harness.CapabilityEvents()]
-        return out
+        return out + builtin
 
     async def _subagents(
         self, agent: AgentDef, rs: RunState, scope: Scope
@@ -1403,6 +1668,8 @@ class TurnEngine:
             specs = [s for s in specs if not asks(s.name)]
             child.tools = {s.name: s for s in specs}
             instructions = await self._instructions(scope.app.id, target)
+            # A subagent renders its own modules at their defaults (no session choice, no pin).
+            modules = await resolve_modules(self.store, scope.app.id, target, None)
             prompt = system_prompt(
                 target,
                 now=self.now(),
@@ -1416,6 +1683,7 @@ class TurnEngine:
                 timezone=str((scope.app.defaults or {}).get("timezone") or "UTC"),
                 preloaded=preloaded,
                 scripts_runnable=False,
+                modules=modules,
             )
             notes = guard.system_notes()
             if kbs:
@@ -1486,7 +1754,10 @@ class TurnEngine:
             raise _Cancelled()
         guard = self._guard(run)
         if guard.budget(0):
-            emit({"type": "text", "delta": "\n\n" + message(run.app, "turn.maxSteps")})
+            emit({
+                "type": "text",
+                "delta": "\n\n" + message(run.app, "turn.maxSteps", session=run.session),
+            })
             raise StopRun("guard")
         claims = inp.principal.claims
         caps = await cap_state(self.store, run.app, run.who, self.now(), claims.limits)
@@ -1503,12 +1774,12 @@ class TurnEngine:
                 "type": "error",
                 "code": "limit",
                 "limit": hit.kind,
-                "message": limit_message(run.app, hit),
+                "message": limit_message(run.app, hit, session=run.session),
                 "resetsAt": hit.end.isoformat(),
             })
             # In voice the person may not be looking at the panel: the cap is said aloud too,
             # or the assistant just seems not to answer.
-            say(speakable(limit_message(run.app, hit), run.rules))
+            say(speakable(limit_message(run.app, hit, session=run.session), run.rules))
             raise StopRun("limit")
 
     async def _on_response(
@@ -1588,7 +1859,9 @@ class TurnEngine:
                 ) as ar:
                     async for node in ar:
                         if Agent.is_model_request_node(node):
-                            filt = guard.output_filter()
+                            filt = guard.output_filter(
+                                clean=run.markup.clean if run.markup else None
+                            )
                             started = time.perf_counter()
                             rs.extra["streaming"] = True
                             async with node.stream(ar.ctx) as stream:
@@ -1604,6 +1877,10 @@ class TurnEngine:
                                         ev.delta, TextPartDelta
                                     ):
                                         delta = ev.delta.content_delta
+                                    if isinstance(ev, PartStartEvent) and isinstance(
+                                        ev.part, NativeToolCallPart | NativeToolReturnPart
+                                    ):
+                                        self._native(run, rs, ev.part, emit)
                                     if delta:
                                         show(filt.push(delta))
                                         if filt.blocked:
@@ -1619,14 +1896,14 @@ class TurnEngine:
                                     await finish_attempt(rs, a, response)
                             rs.extra["streaming"] = False
                             if filt.blocked:
-                                stop = message(run.app, "turn.guardStopped")
+                                stop = message(run.app, "turn.guardStopped", session=run.session)
                                 emit({"type": "text", "delta": ("\n\n" if rs.text else "") + stop})
                                 say(stop)
                                 answer = f"{rs.text}\n\n{stop}" if rs.text else stop
                                 await self._add(
                                     run,
                                     role="assistant",
-                                    content=[{"text": answer}],
+                                    content=[{"text": answer}, *_acted(rs)],
                                     text=answer,
                                     events=rs.events or None,
                                 )
@@ -1717,7 +1994,8 @@ class TurnEngine:
                             if rs.tool_calls >= max_calls:
                                 emit({
                                     "type": "text",
-                                    "delta": "\n\n" + message(run.app, "turn.maxSteps"),
+                                    "delta": "\n\n"
+                                    + message(run.app, "turn.maxSteps", session=run.session),
                                 })
                                 run.reason = "max_steps"
                                 return
@@ -1738,7 +2016,7 @@ class TurnEngine:
             if rs.attempt is not None and rs.attempt.span is not None:
                 rs.trace.end(rs.attempt.span, status="cancelled", outputTokens=None)
             if rs.extra.get("streaming"):
-                await self._keep_partial(run, rs.text, splitter)
+                await self._keep_partial(run, rs.text, splitter, _acted(rs))
             raise
         except Exception as e:
             if rs.extra.get("model_error") is None and not rs.extra.get("streaming"):
@@ -1749,10 +2027,10 @@ class TurnEngine:
             emit({
                 "type": "error",
                 "code": "model",
-                "message": message(run.app, "turn.modelUnavailable"),
+                "message": message(run.app, "turn.modelUnavailable", session=run.session),
             })
-            if rs.text:
-                await self._keep_partial(run, rs.text, splitter)
+            if rs.text or _acted(rs):
+                await self._keep_partial(run, rs.text, splitter, _acted(rs))
             run.status, run.reason = "failed", "model"
         finally:
             if rs.fallback:
@@ -1783,7 +2061,11 @@ class TurnEngine:
         rs.events.append(confirm)
         emit(confirm)
         items = "; ".join(w["label"] for w in rs.waiting)
-        say(speakable(message(run.app, "turn.confirmPrompt", items=items), run.rules))
+        say(
+            speakable(
+                message(run.app, "turn.confirmPrompt", session=run.session, items=items), run.rules
+            )
+        )
         if assistant:
             await self._add(
                 run, role="assistant", content=assistant, text=rs.text, events=rs.events
@@ -1904,6 +2186,8 @@ class TurnEngine:
                     read_only=t["name"] == "skill_load",
                 )
             )
+        if inp.client_tools and inp.channel == "browser":
+            out += self._client_tools(run, rs, app_names, wait=inp.client_wait)
         if targets and guard.offered(HANDOFF) and HANDOFF not in app_names:
             handoff = handoff_tool([(n, t.title) for n, t in targets.items()])
 
@@ -2007,6 +2291,198 @@ class TurnEngine:
         # the person is left out, like a tool that changes data (``McpRegistry.toolbox``).
         asks = run.grants.client("confirm")
         return [t for t in out if guard.offered(t.name) and (asks or not guard.askable(t.name))]
+
+    @staticmethod
+    def _native(run: TurnRun, rs: RunState, part: Any, emit: Any) -> None:
+        """A provider built-in tool's call or result, as events.
+
+        A ``tool`` event, and a ``citation`` per web source (numbered with the turn's other
+        citations); traced as an event.
+        """
+        if isinstance(part, NativeToolCallPart):
+            emit({"type": "tool", "name": part.tool_name, "status": "start", "builtin": True})
+            if builtin_tools.kind_of(part.tool_name) in builtin_tools.CHANGING:
+                # Kept with an answer that ends before its response is stored (``_acted``).
+                rs.extra.setdefault("acted", []).append({
+                    "builtinTool": {
+                        "id": part.tool_call_id,
+                        "name": part.tool_name,
+                        "changes": True,
+                    }
+                })
+            return
+        failed = isinstance(part.content, dict) and part.content.get("error_code")
+        status = "error" if failed else "done"
+        emit({"type": "tool", "name": part.tool_name, "status": status, "builtin": True})
+        # A source shown as a link follows the link policy, like a link in the answer.
+        found = [x for x in builtin_tools.sources(part.content) if rs.guard.link_allowed(x["url"])]
+        for src in found:
+            n = run.citations.get(src["url"])
+            if n is None:
+                n = run.citations[src["url"]] = len(run.citations) + 1
+                rs.show({
+                    "type": "citation",
+                    "index": n,
+                    "title": src["title"],
+                    "url": src["url"],
+                    "source": part.tool_name,
+                })
+        rs.trace.event(
+            "tool",
+            f"builtin_tool {part.tool_name}",
+            tool=part.tool_name,
+            callId=part.tool_call_id,
+            type="builtin",
+            outcome="error" if failed else "ok",
+            sources=len(found),
+        )
+
+    def _client_tools(
+        self, run: TurnRun, rs: RunState, app_names: set[str], *, wait: bool = True
+    ) -> list[ToolSpec]:
+        """The custom client tools of a turn: the agent's, then the session token's.
+
+        Each sends a ``client_tool`` event; one that waits defers its call until the client
+        answers (``ClientToolWait``). An application tool with the same name wins.
+
+        Returns:
+            Their tool specs.
+        """
+        session_tools = [
+            t
+            for t in custom.merged([], run.session.client_tools)
+            if run.grants.client_tool(t.name, static=False)
+        ]
+        tools = custom.merged(run.agent.client_tools.custom, session_tools)
+        if not wait:
+            tools = [t for t in tools if not t.wait]
+        emit = rs.emit
+        assert emit is not None  # ruff: ignore[assert] (a turn always emits)
+        waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
+        names: dict[str, str] = rs.extra.setdefault("clientNames", {})
+        announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
+
+        def handler(tool: Any) -> Any:
+            async def handle(  # ruff: ignore[unused-async] (a handler is awaited)
+                args: dict[str, Any], cid: str, span: Any
+            ) -> ToolResult:
+                event = {
+                    "type": "client_tool",
+                    "callId": cid,
+                    "name": tool.name,
+                    "args": args,
+                    "wait": tool.wait,
+                }
+                if span is not None:
+                    span.set(type="client", wait=tool.wait)
+                if not tool.wait:
+                    emit(event)
+                    return ToolResult(True, custom.OK_TEXT)
+                # Sent when the wait opens: a step that ends on a confirmation never sends it.
+                announce[cid] = event
+                waits[cid] = time.perf_counter()
+                names[cid] = custom.model_name(tool.name)
+                if span is not None:
+                    span.set(outcome="waiting")
+                raise CallDeferred()
+
+            return handle
+
+        out = []
+        for t in tools:
+            name = custom.model_name(t.name)
+            if name in app_names:
+                log.warning("client_tool_shadowed", extra={"turnId": run.turn_id, "tool": name})
+                continue
+            out.append(
+                ToolSpec(
+                    name=name,
+                    description=t.description,
+                    schema=t.parameters,
+                    run=handler(t),
+                    kind="client",
+                    metadata={"evokai_client_wait": t.wait},
+                )
+            )
+        return out
+
+    def _client_wait(self, run: TurnRun, rs: RunState) -> ClientToolWait | None:
+        """The capability that waits for the client's results, when a client tool waits.
+
+        Returns:
+            It, or None.
+        """
+        names = frozenset(
+            n
+            for n, t in rs.tools.items()
+            if t.kind == "client" and t.metadata.get("evokai_client_wait")
+        )
+        if not names:
+            return None
+        guard, trace = rs.guard, rs.trace
+        waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
+        called: dict[str, str] = rs.extra.setdefault("clientNames", {})
+        limit = self.settings.tool_result_chars
+
+        def waited(cid: str) -> int:
+            started = waits.pop(cid, None)
+            return round((time.perf_counter() - started) * 1000) if started else 0
+
+        async def accept(cid: str, result: Any, error: str | None) -> str:
+            name = called.get(cid, "client")
+            ok = error is None
+            if ok:
+                text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+            else:
+                text = f"Error from the client application: {clip(str(error), 2_000)}"
+            # The result comes from the browser: data the person controls, never instructions.
+            text = clip(await guard.tool_result(name, text), limit)
+            rs.ok[cid] = ok
+            span = trace.event(
+                "tool",
+                f"client_tool_result {name}",
+                tool=name,
+                callId=cid,
+                type="client",
+                waitedMs=waited(cid),
+                outcome="ok" if ok else "error",
+                resultChars=len(text),
+            )
+            trace.put(span, result=text)
+            return text
+
+        announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
+
+        def announced(cids: list[str]) -> None:
+            for cid in cids:
+                event = announce.pop(cid, None)
+                if event is not None and rs.emit is not None:
+                    rs.emit(event)
+
+        def timed_out(cids: list[str]) -> None:
+            for cid in cids:
+                rs.ok[cid] = False
+                name = called.get(cid, "client")
+                trace.event(
+                    "tool",
+                    f"client_tool_result {name}",
+                    tool=name,
+                    callId=cid,
+                    type="client",
+                    waitedMs=waited(cid),
+                    outcome="timeout",
+                )
+
+        return ClientToolWait(
+            calls=self.client_calls,
+            session_id=run.session.id,
+            turn_id=run.turn_id,
+            names=names,
+            accept=accept,
+            announce=announced,
+            timed_out=timed_out,
+            timeout_seconds=self.settings.client_tool_timeout_seconds,
+        )
 
     @staticmethod
     def _spoken(
@@ -2425,11 +2901,11 @@ class TurnEngine:
         enc = await self.store.credentials.get(claims.token_id, claims.application_id)
         return self.keyring.decrypt(enc) if enc else None
 
-    async def _instructions(self, application_id: str, agent: AgentDef) -> str | None:
-        """The text of the agent's versioned prompt, if it references one.
+    async def _instructions(self, application_id: str, agent: AgentDef) -> Instructions | None:
+        """The agent's versioned prompt, if it references one.
 
         Returns:
-            The prompt text, or None to use the inline instructions.
+            The prompt's text and syntax, or None to use the inline instructions.
 
         Raises:
             ConfigError: The referenced prompt does not exist.
@@ -2439,7 +2915,8 @@ class TurnEngine:
         row = await self.store.prompts.get(application_id, agent.prompt.name, agent.prompt.version)
         if row is None:
             raise ConfigError(f"prompt not found: {agent.prompt.name}")
-        return row.text
+        # An empty prompt leaves the inline instructions, as it always did.
+        return Instructions(row.text, row.template_syntax) if row.text else None
 
     async def _skills(
         self, application_id: str, agent: AgentDef, grants: Grants | None = None
@@ -2545,7 +3022,11 @@ class TurnEngine:
         """
         assert run.threads is not None  # ruff: ignore[assert] (set by open())
         if run.storage == "evokai":
-            content, text = self._guard(run).for_storage(content, text)
+            stored, kept = self._guard(run).for_storage(content, text)
+            if role == "user" and (stored != content or kept != text):
+                # Identifiers were masked: the question cannot be asked again as it was.
+                stored = [*stored, {rewrite.MASKED: True}]
+            content, text = stored, kept
         msg = ThreadMessage(role, content, text, events, interrupted=interrupted)
         return await run.threads.add(msg, run.turn_id)
 
@@ -2561,17 +3042,24 @@ class TurnEngine:
             return ExternalThreads.from_request(inp.history)
         return EvokaiThreads(self.store.messages, who, session_id, thread_id)
 
-    async def _keep_partial(self, run: TurnRun, text: str, splitter: SentenceSplitter) -> None:
+    async def _keep_partial(
+        self,
+        run: TurnRun,
+        text: str,
+        splitter: SentenceSplitter,
+        acted: list[dict[str, Any]] | None = None,
+    ) -> None:
         """Keep an interrupted answer in the conversation, marked as such.
 
-        Tool calls it had started are dropped.
+        Tool calls it had started are dropped; the provider's built-in tools that can change data
+        and were called stay marked (``acted``), so the answer is not regenerated.
         """
         splitter.reset()
-        if text:
+        if text or acted:
             await self._add(
                 run,
                 role="assistant",
-                content=[{"text": text}],
+                content=[*([{"text": text}] if text else []), *(acted or [])],
                 text=text,
                 interrupted=True,
             )
@@ -2701,6 +3189,36 @@ class TurnEngine:
         return ToolResult(False, f"Unknown tool: {name}")
 
 
+def _acted(rs: RunState) -> list[dict[str, Any]]:
+    """The marks of the built-in tools that can change data the turn's model called.
+
+    A response stored whole carries them already (``response_blocks``); an answer stopped by the
+    guard, cancelled or cut by a model failure is stored from its text, so it takes them from here.
+
+    Returns:
+        ``builtinTool`` blocks.
+    """
+    return list(rs.extra.get("acted") or [])
+
+
+def _egress_allow(guard: TurnGuard, *, strict: bool = False) -> list[str] | None:
+    """The egress allow-list a built-in tool follows (only while ``tools.egress`` is enforced).
+
+    Args:
+        guard: The turn's guard.
+        strict: Any allow-list while ``tools.egress`` is not off, also in monitor (an MCP server
+            the provider calls: its calls cannot be checked one by one).
+
+    Returns:
+        Domains (an empty list allows none), or None when there is no check.
+    """
+    tools = guard.policy.settings.tools
+    on = guard.policy.on if strict else guard.policy.enforced
+    if tools is None or tools.egress_allow is None or not on("tools.egress"):
+        return None
+    return list(tools.egress_allow)
+
+
 def _new_messages(history: list[Any]) -> list[dict[str, Any]]:
     """The messages a model call saw for the first time: those after the last answer.
 
@@ -2712,7 +3230,19 @@ def _new_messages(history: list[Any]) -> list[dict[str, Any]]:
         if x.role == "assistant":
             break
         tail.append(x)
-    return [{"role": x.role, "content": x.content} for x in reversed(tail)]
+    # An attachment's text never goes in a trace: its name, type, size and hash do.
+    return [
+        {"role": x.role, "content": [files_.traced(b) for b in x.content]} for x in reversed(tail)
+    ]
+
+
+def _attached_blocks(content: Any) -> list[dict[str, Any]]:
+    """The attachment blocks of a message's content.
+
+    Returns:
+        The blocks.
+    """
+    return [b for b in content or [] if isinstance(b, dict) and "file" in b]
 
 
 def _result(

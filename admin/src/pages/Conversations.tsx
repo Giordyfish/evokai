@@ -1,12 +1,14 @@
 /**
  * Conversations: the review of what people asked and what the agents answered (only for conversations kept in Evokai).
  * Browse with thumbs and notes filters, read one conversation with each turn's trace, and leave a reviewer's note or
- * label (kept, written to the audit log by label and length, never by text).
+ * label (kept, written to the audit log by label and length, never by text). On the assistant's system application
+ * each person reads only their own conversations; an owner opens another person's only by an inspection with a
+ * written reason, which the author is shown.
  */
 import { useState } from 'preact/hooks'
 
 import type { AdminConversation, AdminConversationDetail, AdminConversationQuery, ConsoleApplication, TraceSummary } from '@client/core/types'
-import { describe, forApp } from '../api'
+import { adminJson, describe, EvokaiError, forApp } from '../api'
 import { ago, dateTime, ms } from '../format'
 import { Empty, toast } from '../magic'
 import { appHref, go, setTitle, useLoad } from '../state'
@@ -123,7 +125,7 @@ function ConversationList({ app, q }: { app: ConsoleApplication; q: URLSearchPar
                       {items.map((c) => (
                         <tr key={c.id} data-go onClick={() => go(appHref(app.slug, 'conversations', c.id))}>
                           <td>
-                            <b>{c.title}</b>
+                            {c.title === null ? <span class="s">{t('cv.othersConversation')}</span> : <b>{c.title}</b>}
                           </td>
                           <td>
                             {c.agent}
@@ -225,9 +227,57 @@ function TurnTrace({ app, trace }: { app: ConsoleApplication; trace: TraceSummar
   )
 }
 
+/** An owner's inspection of another person's conversation: a written reason first, then a read-only view. */
+function InspectForm({ app, id, onDone }: { app: ConsoleApplication; id: string; onDone: (c: AdminConversationDetail) => void }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const ok = reason.trim().length >= 20
+  const inspect = async () => {
+    setBusy(true)
+    try {
+      onDone(await adminJson<AdminConversationDetail>(app.id, 'POST', `/v1/admin/assistant/conversations/${encodeURIComponent(id)}/inspect`, { reason: reason.trim() }))
+    } catch (err) {
+      toast(t('cv.notInspected'), describe(err), null)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <Hero
+        title={t('cv.inspectTitle')}
+        sub={t('cv.inspectSub')}
+        actions={
+          <Btn kind="ghost" href={appHref(app.slug, 'conversations')}>
+            {t('tr.back')}
+          </Btn>
+        }
+      />
+      <Panel cls="disclaimer">
+        <p class="hint">{t('cv.inspectText')}</p>
+        <Field label={t('cv.inspectReason')}>
+          <textarea class="in" rows={3} maxLength={500} value={reason} placeholder={t('cv.inspectReasonPh')} onInput={(e) => setReason(e.currentTarget.value)} />
+        </Field>
+        <Btn kind="pri" disabled={!ok} busy={busy ? t('cv.inspecting') : false} onClick={() => void inspect()}>
+          {t('cv.inspect')}
+        </Btn>
+      </Panel>
+    </>
+  )
+}
+
 function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: string; focus: string | null }) {
   const api = forApp(app.id)
-  const load = useLoad(() => api.admin.conversations.get(id), [app.id, id])
+  const [inspected, setInspected] = useState<AdminConversationDetail | null>(null)
+  const load = useLoad(async (): Promise<AdminConversationDetail | null> => {
+    try {
+      return await api.admin.conversations.get(id)
+    } catch (err) {
+      // Another person's conversation with the assistant: an owner opens it only by an inspection.
+      if (err instanceof EvokaiError && err.code === 'inspection_required') return null
+      throw err
+    }
+  }, [app.id, id])
   setTitle(t('cv.one'), app.name)
   const remove = async (noteId: string) => {
     try {
@@ -239,7 +289,9 @@ function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: str
   }
   return (
     <Loads load={load} what={t('what.conversation')}>
-      {(c: AdminConversationDetail) => {
+      {(loaded: AdminConversationDetail | null) => {
+        const c = loaded ?? inspected
+        if (!c) return <InspectForm app={app} id={id} onDone={setInspected} />
         const traces = new Map((c.traces ?? []).map((x) => [x.id, x]))
         const notes = c.notes ?? []
         const shown = new Set<string>()
@@ -247,11 +299,14 @@ function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: str
           <>
             <Hero
               title={c.title}
-              sub={t('cv.oneSub', { agent: c.agent, version: c.agentVersion, subject: c.subject })}
+              sub={inspected ? t('cv.inspectedSub', { subject: c.subject }) : t('cv.oneSub', { agent: c.agent, version: c.agentVersion, subject: c.subject })}
               actions={
-                <Btn kind="ghost" href={appHref(app.slug, 'conversations')}>
-                  {t('tr.back')}
-                </Btn>
+                <>
+                  {inspected ? <Tag tone="warn">{t('cv.inspectedTag')}</Tag> : null}
+                  <Btn kind="ghost" href={appHref(app.slug, 'conversations')}>
+                    {t('tr.back')}
+                  </Btn>
+                </>
               }
             />
             <div class="grid g-21">
@@ -288,35 +343,37 @@ function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: str
                   })}
                 </div>
               </Panel>
-              <div class="grid" style="gap:16px">
-                <Panel title={t('cv.review')}>
-                  <p class="hint" style="margin:0 0 12px">{t('cv.reviewHint')}</p>
-                  <NoteForm app={app} conversation={c.id} turnId={focus && traces.has(focus) ? focus : null} onAdded={load.reload} />
-                  {focus && traces.has(focus) ? <p class="hint">{t('cv.onTurn')}</p> : null}
-                </Panel>
-                <Panel title={t('cv.notes')} actions={<Tag>{num(notes.length)}</Tag>}>
-                  {notes.length ? (
-                    notes.map((n) => (
-                      <div key={n.id} class="opt">
-                        <div class="t">
-                          {n.label ? <Tag tone="vi">{labelText(n.label)}</Tag> : null} <b>{n.note}</b>
-                          <small>
-                            {n.author} · {ago(n.createdAt)}
-                            {n.turnId ? ` · ${t('cv.onATurn')}` : ''}
-                          </small>
+              {inspected ? null : (
+                <div class="grid" style="gap:16px">
+                  <Panel title={t('cv.review')}>
+                    <p class="hint" style="margin:0 0 12px">{t('cv.reviewHint')}</p>
+                    <NoteForm app={app} conversation={c.id} turnId={focus && traces.has(focus) ? focus : null} onAdded={load.reload} />
+                    {focus && traces.has(focus) ? <p class="hint">{t('cv.onTurn')}</p> : null}
+                  </Panel>
+                  <Panel title={t('cv.notes')} actions={<Tag>{num(notes.length)}</Tag>}>
+                    {notes.length ? (
+                      notes.map((n) => (
+                        <div key={n.id} class="opt">
+                          <div class="t">
+                            {n.label ? <Tag tone="vi">{labelText(n.label)}</Tag> : null} <b>{n.note}</b>
+                            <small>
+                              {n.author} · {ago(n.createdAt)}
+                              {n.turnId ? ` · ${t('cv.onATurn')}` : ''}
+                            </small>
+                          </div>
+                          {app.role !== 'viewer' ? (
+                            <Btn sm kind="ghost" onClick={() => void remove(n.id)}>
+                              {t('cv.delete')}
+                            </Btn>
+                          ) : null}
                         </div>
-                        {app.role !== 'viewer' ? (
-                          <Btn sm kind="ghost" onClick={() => void remove(n.id)}>
-                            {t('cv.delete')}
-                          </Btn>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <p class="hint">{t('cv.noNotes')}</p>
-                  )}
-                </Panel>
-              </div>
+                      ))
+                    ) : (
+                      <p class="hint">{t('cv.noNotes')}</p>
+                    )}
+                  </Panel>
+                </div>
+              )}
             </div>
           </>
         )

@@ -23,7 +23,7 @@ from evokai import (
     parse_event,
 )
 from evokai.events import ChatResult, SessionConversation, parse_events
-from evokai.models import TextBlock, ToolResultBlock, ToolUseBlock
+from evokai.models import BuiltinToolBlock, TextBlock, ToolResultBlock, ToolUseBlock
 
 META = {"turnId": "t1", "seq": 4}
 
@@ -43,6 +43,17 @@ CASES: list[tuple[dict[str, Any], type, dict[str, Any]]] = [
         {"type": "say", "index": 1, "text": "Sono 1.000 punti.", "spoken": "Sono mille punti."},
         SayEvent,
         {"index": 1, "text": "Sono 1.000 punti.", "spoken": "Sono mille punti.", "filler": False},
+    ),
+    (
+        {
+            "type": "say",
+            "index": 2,
+            "text": "Hi!",
+            "tagged": "[laughs] Hi!",
+            "marks": [{"name": "wave", "at": 2}],
+        },
+        SayEvent,
+        {"tagged": "[laughs] Hi!", "marks": [{"name": "wave", "at": 2}]},
     ),
     (
         {"type": "tool", "name": "crm_search", "status": "done"},
@@ -120,10 +131,10 @@ def test_no_amount_field_in_usage_events() -> None:
 
 
 def test_unknown_type_keeps_every_field() -> None:
-    event = parse_event({"type": "avatar", "pose": "wave", **META})
+    event = parse_event({"type": "highlight", "target": "price", **META})
     assert isinstance(event, UnknownEvent)
-    assert event.type == "avatar"
-    assert event.data == {"type": "avatar", "pose": "wave", "turnId": "t1", "seq": 4}
+    assert event.type == "highlight"
+    assert event.data == {"type": "highlight", "target": "price", "turnId": "t1", "seq": 4}
 
 
 def test_known_type_with_a_payload_that_no_longer_fits_falls_back() -> None:
@@ -155,6 +166,7 @@ def test_done_carries_external_history_messages() -> None:
                     {"text": "hi"},
                     {"toolUse": {"id": "u1", "name": "crm", "input": {"q": 1}}},
                     {"toolResult": {"id": "u1", "name": "crm", "ok": False, "text": "no"}},
+                    {"builtinTool": {"id": "b1", "name": "mcp_server:crm", "changes": True}},
                 ],
                 "text": "hi",
             }
@@ -163,7 +175,7 @@ def test_done_carries_external_history_messages() -> None:
     assert isinstance(event, DoneEvent)
     assert event.messages is not None
     blocks = event.messages[0].content
-    assert [type(b) for b in blocks] == [TextBlock, ToolUseBlock, ToolResultBlock]
+    assert [type(b) for b in blocks] == [TextBlock, ToolUseBlock, ToolResultBlock, BuiltinToolBlock]
     assert isinstance(blocks[1], ToolUseBlock)
     assert blocks[1].tool_use.input == {"q": 1}
     assert event.messages[0].model_dump(exclude_unset=True)["content"][1] == {

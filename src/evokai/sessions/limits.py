@@ -229,23 +229,27 @@ async def cap_state(
     return CapState(tuple(CapUse(c, s, e, spend.get(c.kind, 0.0)) for c, s, e in spans))
 
 
-def resets_text(app: Any, use: CapUse) -> str:
+def resets_text(app: Any, use: CapUse, session: Any = None) -> str:
     """When a cap resets, in the application's words and time zone: ``on Saturday at 00:00``.
 
     Returns:
-        The text.
+        The text (in the session's locale, when its token chose one).
     """
-    cal = pack(locale_of(app)).get("calendar") or {}
+    cal = pack(locale_of(app, session)).get("calendar") or {}
     local = use.end.astimezone(zone_of(app)).date()
     if use.cap.period == "day":
-        return message(app, "limit.resetsDay")
+        return message(app, "limit.resetsDay", session=session)
     if use.cap.period == "week":
-        return message(app, "limit.resetsWeek", weekday=cal["weekdays"][local.weekday()])
+        return message(
+            app, "limit.resetsWeek", session=session, weekday=cal["weekdays"][local.weekday()]
+        )
     day = cal.get("firstDay", "1") if local.day == 1 else str(local.day)
-    return message(app, "limit.resetsMonth", day=day, month=cal["months"][local.month - 1])
+    return message(
+        app, "limit.resetsMonth", session=session, day=day, month=cal["months"][local.month - 1]
+    )
 
 
-def limit_message(app: Any, use: CapUse) -> str:
+def limit_message(app: Any, use: CapUse, session: Any = None) -> str:
     """The text for a reached cap, in the application's locale, with its own overrides.
 
     Says which cap and when it resets; never an amount.
@@ -253,7 +257,7 @@ def limit_message(app: Any, use: CapUse) -> str:
     Returns:
         The message.
     """
-    return message(app, _KEYS[use.kind], resets=resets_text(app, use))
+    return message(app, _KEYS[use.kind], session=session, resets=resets_text(app, use, session))
 
 
 def share_pct(spent: float, cap: float | None) -> float | None:

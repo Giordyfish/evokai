@@ -19,7 +19,13 @@ export function Protection({ app, a, reload }: { app: ConsoleApplication; a: App
     <>
       <ProfileForm key={JSON.stringify(a.data_protection ?? null)} app={app} a={a} reload={reload} />
       <Loads load={report} what={t('what.processors')}>
-        {(r) => <Processors r={r} />}
+        {(r) => (
+          <>
+            <Processors r={r} />
+            <div style="height:16px" />
+            <BuiltinTools r={r} />
+          </>
+        )}
       </Loads>
     </>
   )
@@ -37,6 +43,7 @@ function ProfileForm({ app, a, reload }: { app: ConsoleApplication; a: Applicati
   const [voices, setVoices] = useState(Boolean(p.browser?.online_voices))
   const [recognition, setRecognition] = useState(Boolean(p.browser?.online_recognition))
   const [vendors, setVendors] = useState((p.browser?.vendors ?? []).join(', '))
+  const [storage, setStorage] = useState(Boolean(p.provider_tool_storage))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -45,7 +52,7 @@ function ProfileForm({ app, a, reload }: { app: ConsoleApplication; a: Applicati
     setSaving(true)
     setError(null)
     try {
-      const profile = profileFrom({ geos, countries, eu, jurisdictions, retention, voices, recognition, vendors })
+      const profile = profileFrom({ geos, countries, eu, jurisdictions, retention, voices, recognition, vendors, storage })
       await forApp(app.id).admin.application.patch({ data_protection: profile })
       sparkle(btn)
       done(btn)
@@ -86,6 +93,9 @@ function ProfileForm({ app, a, reload }: { app: ConsoleApplication; a: Applicati
       <Field label={t('dp.retentionLabel')} hint={t('dp.retentionHint')}>
         <Seg options={RETENTION} value={retention} onChange={setRetention} labels={{ any: t('dp.ret.any'), no_training: t('dp.ret.noTraining'), zero_retention: t('dp.ret.zero') }} />
       </Field>
+      <Field label={t('dp.storageLabel')} hint={t('dp.storageHint')}>
+        <Switch on={storage && retention !== 'zero_retention'} label={t('dp.storageSwitch')} onChange={setStorage} />
+      </Field>
       <Field label={t('dp.browserLabel')} hint={t('dp.browserHint')}>
         <div style="display:grid;gap:8px">
           <Switch on={voices} label={t('dp.onlineVoices')} onChange={setVoices} />
@@ -117,6 +127,45 @@ function Processors({ r }: { r: DataProtectionReport }) {
           <tbody>
             {r.processors.map((x) => (
               <Row key={`${x.kind}/${x.name}`} x={x} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+function BuiltinTools({ r }: { r: DataProtectionReport }) {
+  const rows = r.builtinTools ?? []
+  if (!rows.length) return null
+  return (
+    <Panel title={t('dp.builtinTitle')}>
+      <p class="hint">{t('dp.builtinSub')}</p>
+      <div class="wx">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>{t('dp.builtinTool')}</th>
+              <th>{t('dp.builtinAgent')}</th>
+              <th>{t('dp.verdict')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((x) => (
+              <tr key={`${x.agent}/${x.kind}`}>
+                <td>
+                  <code>{x.kind}</code>
+                  {x.keepsData ? <div class="s">{t('dp.builtinKeeps')}</div> : null}
+                  {x.egress === 'unrestricted' ? <div class="s">{t('dp.builtinAnyAddress')}</div> : null}
+                  {x.egress === 'allow_list' ? <div class="s">{t('dp.builtinAllowList')}</div> : null}
+                </td>
+                <td>{x.agent}</td>
+                <td>
+                  <Tag tone={x.allowed ? 'ok' : 'warn'} dot>
+                    {x.allowed ? t('dp.allowed') : t('dp.excluded')}
+                  </Tag>
+                </td>
+              </tr>
             ))}
           </tbody>
         </table>

@@ -1,0 +1,111 @@
+# Model profiles for the suitability estimate (evokai.llm.suitability). Every figure has its source and
+# the date it refers to; a fact nobody sourced is absent, and an absent fact makes the estimate "to verify".
+#
+# - tau2_bench: pass^1 per domain (airline, retail, telecom) as published in the benchmark's own repository
+#   (sierra-research/tau2-bench, web/leaderboard/public/submissions, read at a pinned commit on 2026-11-22).
+#   Only submissions with all three domains are here; as_of is the submission's evaluation date. The
+#   benchmark runs every task through tool calls, so a result there also sources tool calling.
+# - streaming: Evokai streams every chat model of these providers (evokai.llm, the same rule the assistant's
+#   activation uses, evokai.assistant.activation.supports_tools); other providers are unknown.
+# - Context windows are not repeated here: they come from evokai/llm/context_windows.json (models.dev
+#   snapshot with its own date) or EVOKAI_CONTEXT_WINDOWS.
+# - No instruction-following or BFCL figure is here: none was read from its own page for these models.
+version: 1
+checked: '2026-11-22'
+providers:
+- providers: [bedrock, anthropic, openai, openai-chat, openai-responses, azure, google-gla, google-vertex, mistral]
+  streaming: true
+  source: https://github.com/Giordyfish/evokai/blob/develop/src/evokai/assistant/activation.py
+  as_of: '2026-11-22'
+models:
+- name: "Claude Opus 4.5"
+  patterns: ["*claude-opus-4-5*"]
+  tool_calling: true
+  tau2_bench:
+    airline: 84.0
+    retail: 79.61
+    telecom: 92.32
+    reasoning_effort: high
+    benchmark_version: "1.0.1"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/claude-opus-4-5_sierra_2026-02-26/submission.json
+    as_of: '2026-05-05'
+- name: "Claude Sonnet 4.5"
+  patterns: ["*claude-sonnet-4-5*"]
+  tool_calling: true
+  tau2_bench:
+    airline: 72.0
+    retail: 72.37
+    telecom: 84.87
+    reasoning_effort: enabled
+    benchmark_version: "1.0.1"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/claude-sonnet-4-5_sierra_2026-02-26/submission.json
+    as_of: '2026-02-24'
+- name: "GPT-5"
+  patterns: ["*gpt-5"]
+  tool_calling: true
+  tau2_bench:
+    airline: 62.5
+    retail: 81.58
+    telecom: 95.83
+    benchmark_version: "0.1.3"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/gpt-5_sierra_2025-08-09/submission.json
+    as_of: '2025-08-09'
+- name: "GPT-5.2"
+  patterns: ["*gpt-5.2"]
+  tool_calling: true
+  tau2_bench:
+    airline: 83.0
+    retail: 81.58
+    telecom: 89.69
+    reasoning_effort: high
+    benchmark_version: "1.0.1"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/gpt-5-2_sierra_2026-02-26/submission.json
+    as_of: '2026-05-05'
+- name: "GPT-4.1"
+  patterns: ["*gpt-4.1"]
+  tool_calling: true
+  tau2_bench:
+    airline: 56.0
+    retail: 74.0
+    telecom: 34.0
+    benchmark_version: "0.1.3"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/gpt-4-1_openai_2024-06-20/submission.json
+    as_of: '2025-06-09'
+- name: "GPT-4.1-mini"
+  patterns: ["*gpt-4.1-mini"]
+  tool_calling: true
+  tau2_bench:
+    airline: 48.7
+    retail: 61.4
+    telecom: 48.9
+    benchmark_version: "0.1.3"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/gpt-4-1-mini_openai_2024-06-20/submission.json
+    as_of: '2025-06-09'
+- name: "o4-mini"
+  patterns: ["*:o4-mini"]
+  tool_calling: true
+  tau2_bench:
+    airline: 52.1
+    retail: 68.3
+    telecom: 50.2
+    benchmark_version: "0.1.3"
+    submitted_by: Sierra
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/o4-mini_openai_2024-06-20/submission.json
+    as_of: '2025-06-09'
+- name: "DeepSeek-V3.2"
+  patterns: ["*deepseek.v3.2"]
+  tool_calling: true
+  tau2_bench:
+    airline: 63.8
+    retail: 81.1
+    telecom: 96.2
+    benchmark_version: "0.1.3"
+    submitted_by: DeepSeek
+    source: https://github.com/sierra-research/tau2-bench/blob/768f3d8fe8528b4f32a5096f9ed008ae50f48ead/web/leaderboard/public/submissions/deepseek-v3.2_deepseek_2025-12-01/submission.json
+    as_of: '2025-12-01'

@@ -198,6 +198,14 @@ and has a health check on `{EVOKAI_BASE_PATH}/health`. Released images are publi
 A pipeline runs it after the image is pushed (`--image <repo>@<digest>`) and keeps `sbom/` as the build's
 artifacts (`evokai-sbom-<commit>`). The image SBOM only warns when syft cannot be fetched, unless `SBOM_STRICT=1`.
 
+### Third-party licences
+
+The SBOMs list every dependency with its licence. Two Python packages of the service are under the GNU Lesser General
+Public License: `num2words` (LGPL-2.1, numbers in spoken text) and `psycopg` (LGPL-3.0, when installed with the
+Postgres tooling). They are used unmodified, as separately installed packages that can be replaced with another
+version of the same library, and their source code is on the Python Package Index and in their own repositories;
+an image that ships them carries their licence files in their `dist-info` folders.
+
 ### Image signing
 
 `scripts/sign-image.sh <repo>@sha256:<digest> [--sbom sbom/image.cdx.json]` signs the image with cosign (2.6.5,
@@ -231,5 +239,6 @@ Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY
 frame-ancestors 'none'` and `Cache-Control: no-store` (the console has its own strict CSP).
 `Strict-Transport-Security` is added when the request arrived over HTTPS, directly or through a proxy that sets
 `X-Forwarded-Proto: https`. The browser session API (`/v1/session/*`) answers CORS for the origins the applications
-allow (never with credentials); bodies over 2 MB there, or 8 MB elsewhere, get 413. See
+allow (never with credentials); bodies over 2 MB there (a recording to transcribe: `EVOKAI_TRANSCRIBE_MAX_BYTES`;
+speech and tool results: 256 KB), or 8 MB elsewhere, get 413. See
 [security assessment](security-assessment.md).

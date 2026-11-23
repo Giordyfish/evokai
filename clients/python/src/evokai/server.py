@@ -31,6 +31,7 @@ from evokai.models import (
     AskRule,
     AskRulesView,
     BugReport,
+    ClientToolDef,
     CompliancePack,
     ComplianceProfile,
     ComplianceSnapshot,
@@ -48,6 +49,7 @@ from evokai.models import (
     McpTestResult,
     MemoryConsentResult,
     MemoryFact,
+    ModuleChoice,
     NewKey,
     PromptVersion,
     RunAttachment,
@@ -92,6 +94,7 @@ def _run_request(
     attachments: Sequence[RunAttachment | Obj] | None,
     store: bool | None,
     groups: Sequence[str] | None = None,
+    client_tools: Sequence[ClientToolDef | Obj] | None = None,
 ) -> RunRequest:
     data: dict[str, Any] = {"input": input if isinstance(input, str) else list(input)}
     if subject is not None:
@@ -104,6 +107,8 @@ def _run_request(
         data["store"] = store
     if groups is not None:
         data["groups"] = list(groups)
+    if client_tools is not None:
+        data["client_tools"] = list(client_tools)
     return RunRequest.model_validate(data)
 
 
@@ -197,6 +202,9 @@ class EvokaiServer:
         exit_code: str | None = None,
         groups: Sequence[str] | None = None,
         memory_consent: bool | None = None,
+        modules: Mapping[str, ModuleChoice | Obj] | None = None,
+        locale: str | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> SessionToken:
         """Mint a short-lived session token for the browser (it creates the conversation).
 
@@ -217,6 +225,12 @@ class EvokaiServer:
             groups: The subject's groups, for knowledge bases restricted to some groups.
             memory_consent: The person's answer to long-term memory, when the application asked it
                 in its own interface (``memory_mode: ask``); False deletes what was remembered.
+            modules: Prompt modules of the agent to switch on or off and fill, by name
+                (``{"tone": {"params": {"style": "brief"}}}``): only those the agent lets a session
+                change. On a continued conversation it replaces the earlier choice.
+            locale: The session's language, a BCP 47 tag with a shipped pack (``it-IT``).
+            client_tools: Custom client tools of this session (``docs/client-tools.md``), granted
+                by ``client:session``; on a continued conversation a list replaces the earlier one.
 
         Returns:
             The token, its expiry, the conversation, the voice engine, the storage mode, the usage
@@ -239,6 +253,9 @@ class EvokaiServer:
                 "exit_code": exit_code,
                 "groups": list(groups) if groups is not None else None,
                 "memory_consent": memory_consent,
+                "modules": dict(modules) if modules is not None else None,
+                "locale": locale,
+                "client_tools": list(client_tools) if client_tools is not None else None,
             },
         )
         return self._send(calls.mint(req))
@@ -253,6 +270,7 @@ class EvokaiServer:
         attachments: Sequence[RunAttachment | Obj] | None = None,
         store: bool | None = None,
         groups: Sequence[str] | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> RunResult:
         """Run an agent that allows the ``server`` channel and wait for its answer.
 
@@ -264,13 +282,17 @@ class EvokaiServer:
             attachments: Text attachments (``RunAttachment`` or ``{name, text, mediaType}``).
             store: Keep the run as a conversation of the subject.
             groups: The subject's groups, for knowledge bases restricted to some groups.
+            client_tools: Custom client tools of this run (none may wait): their calls come back
+                in ``client_tool_calls``.
 
         Returns:
             The output (JSON when the agent has an ``output_schema``, else text), the model and
             the usage with its cost.
         """
         return self._send(
-            calls.run(agent, _run_request(input, subject, tags, attachments, store, groups))
+            calls.run(
+                agent, _run_request(input, subject, tags, attachments, store, groups, client_tools)
+            )
         )
 
     def usage(
@@ -631,13 +653,57 @@ class AdminPrompts:
         """Every version of every prompt."""
         return self._s._send(calls.prompts_list())
 
-    def put(self, name: str, text: str) -> int:
-        """Save a prompt; a changed text becomes the next version.
+    def put(
+        self,
+        name: str,
+        text: str,
+        *,
+        parameters: Obj | None = None,
+        description: str | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> int:
+        """Save a prompt; a changed text, schema, description or data becomes the next version.
+
+        Args:
+            name: The prompt's name.
+            text: Its text (a Handlebars template for a module).
+            parameters: A prompt module's parameter schema (a restricted JSON Schema).
+            description: What the prompt is for.
+            data: A module's lookup table, key to text.
 
         Returns:
             The version.
         """
-        return self._s._send(calls.prompts_put(name, text))
+        fields = {"parameters": parameters, "description": description, "data": data}
+        return self._s._send(
+            calls.prompts_put(name, text, {k: v for k, v in fields.items() if v is not None})
+        )
+
+    def preview(
+        self,
+        name: str,
+        *,
+        params: Obj | None = None,
+        version: int | None = None,
+        text: str | None = None,
+        parameters: Obj | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> str:
+        """Render a prompt (a saved version, or the draft given) with sample parameter values.
+
+        Returns:
+            The rendered text.
+        """
+        fields = {
+            "params": params,
+            "version": version,
+            "text": text,
+            "parameters": parameters,
+            "data": data,
+        }
+        return self._s._send(
+            calls.prompts_preview(name, {k: v for k, v in fields.items() if v is not None})
+        )
 
 
 class AdminVoices:
@@ -822,6 +888,9 @@ class AsyncEvokaiServer:
         exit_code: str | None = None,
         groups: Sequence[str] | None = None,
         memory_consent: bool | None = None,
+        modules: Mapping[str, ModuleChoice | Obj] | None = None,
+        locale: str | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> SessionToken:
         """Mint a short-lived session token; see :meth:`EvokaiServer.mint_session_token`.
 
@@ -845,6 +914,9 @@ class AsyncEvokaiServer:
                 "exit_code": exit_code,
                 "groups": list(groups) if groups is not None else None,
                 "memory_consent": memory_consent,
+                "modules": dict(modules) if modules is not None else None,
+                "locale": locale,
+                "client_tools": list(client_tools) if client_tools is not None else None,
             },
         )
         return await self._send(calls.mint(req))
@@ -859,13 +931,14 @@ class AsyncEvokaiServer:
         attachments: Sequence[RunAttachment | Obj] | None = None,
         store: bool | None = None,
         groups: Sequence[str] | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> RunResult:
         """Run a server agent and wait for its answer; see :meth:`EvokaiServer.run`.
 
         Returns:
             The run's answer.
         """
-        req = _run_request(input, subject, tags, attachments, store, groups)
+        req = _run_request(input, subject, tags, attachments, store, groups, client_tools)
         return await self._send(calls.run(agent, req))
 
     async def usage(
@@ -1220,13 +1293,57 @@ class AsyncAdminPrompts:
         """Every version of every prompt."""
         return await self._s._send(calls.prompts_list())
 
-    async def put(self, name: str, text: str) -> int:
-        """Save a prompt; a changed text becomes the next version.
+    async def put(
+        self,
+        name: str,
+        text: str,
+        *,
+        parameters: Obj | None = None,
+        description: str | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> int:
+        """Save a prompt; a changed text, schema, description or data becomes the next version.
+
+        Args:
+            name: The prompt's name.
+            text: Its text (a Handlebars template for a module).
+            parameters: A prompt module's parameter schema (a restricted JSON Schema).
+            description: What the prompt is for.
+            data: A module's lookup table, key to text.
 
         Returns:
             The version.
         """
-        return await self._s._send(calls.prompts_put(name, text))
+        fields = {"parameters": parameters, "description": description, "data": data}
+        return await self._s._send(
+            calls.prompts_put(name, text, {k: v for k, v in fields.items() if v is not None})
+        )
+
+    async def preview(
+        self,
+        name: str,
+        *,
+        params: Obj | None = None,
+        version: int | None = None,
+        text: str | None = None,
+        parameters: Obj | None = None,
+        data: Mapping[str, str] | None = None,
+    ) -> str:
+        """Render a prompt (a saved version, or the draft given) with sample parameter values.
+
+        Returns:
+            The rendered text.
+        """
+        fields = {
+            "params": params,
+            "version": version,
+            "text": text,
+            "parameters": parameters,
+            "data": data,
+        }
+        return await self._s._send(
+            calls.prompts_preview(name, {k: v for k, v in fields.items() if v is not None})
+        )
 
 
 class AsyncAdminVoices:

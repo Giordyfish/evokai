@@ -6,27 +6,35 @@ Event names and payloads are the clients' contract.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from evokai import attachments as files_
 from evokai.agents.prompts import PageContext
 from evokai.api.deps import services, session
-from evokai.core.errors import AppError, Conflict, Forbidden, NotFound
+from evokai.audio.choice import speech_view
+from evokai.audio.speech.markup import markup_of
+from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.security import code_matches
 from evokai.core.util import utcnow
+from evokai.grants import grants_of
 from evokai.guard.ask import REASON_WRITES
+from evokai.identity.auth import bearer
 from evokai.identity.models import SessionPrincipal
 from evokai.memory.store import memory_view as view
 from evokai.services import Services
 from evokai.sessions.limits import cap_state
-from evokai.sessions.rewrite import rewritable_index
+from evokai.sessions.rewrite import regenerable_index, rewritable_index
 from evokai.sessions.threads import MAX_HISTORY_MESSAGES, HistoryMessage
 from evokai.sessions.turns import TurnInput
+from evokai.tools.custom import MAX_RESULT_CHARS
 
 router = APIRouter(prefix="/v1/session", tags=["session"])
 Svc = Annotated[Services, Depends(services)]
@@ -55,7 +63,86 @@ async def info(svc: Svc, s: Sess) -> dict[str, Any]:
         "memories": await svc.store.memories.facts(s.who),
         "memory": (await svc.memory.state(app, s.who)).view() if app else None,
         "suggestions": await _suggestions(svc, c.application_id, agent),
+        "markup": await _markup(svc, app, agent, conv),
+        "speech": speech_view(c.speech_tts, c.speech_stt),
+        "attachments": await _attachments_offer(svc, app, agent, c.model),
     }
+
+
+async def _markup(svc: Services, app: Any, agent: str, conv: Any) -> dict[str, Any] | None:
+    """The delimiters of the answers' inline markup, so a client can hide it in what it shows.
+
+    Returns:
+        ``{cue?: {open, close}, speech?: {open, close}}``, or None without markup.
+    """
+    if app is None:
+        return None
+    try:
+        own = (await svc.agents.active(app.id, agent)).markup
+    except AppError:
+        own = None
+    m = markup_of((app.defaults or {}).get("markup"), own, conv)
+    return m.view if m else None
+
+
+async def _attachments_offer(
+    svc: Services, app: Any, agent: str, requested: str | None
+) -> dict[str, Any] | None:
+    """What the person may attach to a message (``evokai.attachments.offer``), or None.
+
+    Returns:
+        ``kinds``, ``mediaTypes``, ``maxFileBytes`` and ``maxFiles``.
+    """
+    if app is None:
+        return None
+    try:
+        definition = await svc.agents.active(app.id, agent)
+    except AppError:
+        return None
+    grants = await grants_of(svc.store, app)
+    if not grants.attachments():
+        return None
+    restricted = grants.restrict(definition)
+    return files_.offer(
+        restricted.attachments, svc.engine.models_for(definition, app, requested, grants)
+    )
+
+
+async def takes_attachments(svc: Services, authorization: str | None) -> bool:
+    """Whether a chat request may carry attachments, read before its body (``api.hardening``).
+
+    Only then does ``POST /v1/session/chat`` get the larger body limit
+    (``EVOKAI_ATTACHMENTS_REQUEST_MB``): the session token is valid, its application is granted
+    ``attachments`` and the conversation's agent has them on. The route still authenticates the
+    request in full (origin, rate) and the turn checks the files themselves.
+
+    Returns:
+        True when all three hold; False otherwise, never raising for a bad token.
+    """
+    token = bearer(authorization)
+    if not token:
+        return False
+    try:
+        s = await svc.auth.session(token)
+        app = await svc.store.applications.get(s.claims.application_id)
+        if app is None:
+            return False
+        grants = await grants_of(svc.store, app)
+        if not grants.attachments():
+            return False
+        # After a handoff the conversation goes on with another agent than the token's.
+        conv = await svc.store.sessions.get(s.who, s.claims.conversation_id)
+        if conv is None:
+            definition = await svc.agents.active(app.id, s.claims.agent)
+        else:
+            try:
+                definition = await svc.agents.active(app.id, conv.agent_name)
+            except NotFound:
+                definition = await svc.agents.pinned(app.id, conv.agent_name, conv.agent_version)
+    except AppError:
+        return False
+    config = grants.restrict(definition).attachments
+    return config is not None and config.enabled
 
 
 async def _suggestions(svc: Services, application_id: str, agent: str) -> list[str]:
@@ -88,6 +175,9 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
     running = svc.turns.answering(sess.id)
     # The last question can be rewritten while nothing after it changed data and no turn runs.
     editable = None if running else rewritable_index(msgs)
+    # The last answer can be regenerated under the same rule, unless a client tool acted.
+    again = None if running else regenerable_index(msgs)
+    last_answer = max((i for i, x in enumerate(msgs) if x.role == "assistant"), default=None)
     return {
         "messages": [
             {
@@ -98,6 +188,12 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
                 "feedback": x.feedback,
                 "interrupted": x.interrupted,
                 **({"rewritable": i == editable} if x.role == "user" else {}),
+                **({"attachments": _shown_files(x.content)} if x.role == "user" else {}),
+                **(
+                    {"regenerable": True}
+                    if again is not None and i == last_answer and i > again
+                    else {}
+                ),
             }
             for i, x in enumerate(msgs)
             if x.text or x.events
@@ -112,6 +208,55 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
         "lastSeq": sess.last_seq,
         "runningTurnId": running.turn_id if running else None,
     }
+
+
+def _shown_files(content: Any) -> list[dict[str, Any]]:
+    """The attachments of a question as the person sees them (never their text).
+
+    Returns:
+        id, name, mediaType, size of each.
+    """
+    return [
+        {k: b["file"].get(k) for k in ("id", "name", "mediaType", "size")}
+        for b in content or []
+        if isinstance(b, dict) and isinstance(b.get("file"), dict)
+    ]
+
+
+@router.get(
+    "/attachments/{attachment_id}",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/*": {}}, "description": "The image"},
+        404: {"description": "Not Found"},
+    },
+)
+async def attachment(attachment_id: str, svc: Svc, s: Sess) -> Response:
+    """An image the person attached to this conversation, to show it in the history.
+
+    Only images, only of the session's own conversation, as they are kept (without their
+    metadata). Documents are never served back.
+
+    Returns:
+        The image.
+
+    Raises:
+        NotFound: Not an image of this conversation (another conversation's id included).
+    """
+    # An expired conversation is gone for readers before the purge deletes it.
+    alive = await svc.store.sessions.get(s.who, s.claims.conversation_id)
+    row = await svc.store.attachments.get(s.who, s.claims.conversation_id, attachment_id)
+    if alive is None or row is None or not row.media_type.startswith("image/"):
+        raise NotFound("Unknown attachment.", code="unknown_attachment")
+    return Response(
+        content=row.data,
+        media_type=row.media_type,
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
 
 
 @router.get("/events")
@@ -142,6 +287,43 @@ async def cancel_turn(turn_id: str, svc: Svc, s: Sess) -> dict[str, bool]:
         turn_id, s.claims.subject, "cancelled", session_id=s.claims.conversation_id
     )
     return {"ok": True, "cancelled": cancelled}
+
+
+class ToolResultBody(BaseModel):
+    """The client's answer to a ``client_tool`` call that waits."""
+
+    callId: str = Field(min_length=1, max_length=200)
+    result: Any = None
+    """Any JSON value (at most 32 KB as JSON). It is data the browser controls: scanned like a
+    tool's output and marked as data for the model, never an instruction."""
+    error: str | None = Field(default=None, max_length=2_000)
+    """Instead of a result: why the client could not do it (the model reads it)."""
+
+
+@router.post(
+    "/tool-results",
+    # Explicit description: the default is the status phrase, which changed in Python 3.13.
+    responses={404: {}, 413: {"description": "Content Too Large"}},
+)
+async def tool_result(body: ToolResultBody, svc: Svc, s: Sess) -> dict[str, bool]:
+    """Answer a custom client tool call the running turn waits for (once).
+
+    Returns:
+        ok.
+
+    Raises:
+        NotFound: No call of this session waits under that id here (answered, timed out, or the
+            turn runs on another task) (``unknown_call``).
+        AppError: The result is larger than 32 KB (413 ``too_large``).
+    """
+    if body.error is None and len(json.dumps(body.result, default=str)) > MAX_RESULT_CHARS:
+        raise AppError("The result is larger than 32 KB.", code="too_large", status=413)
+    answered = await svc.engine.client_calls.answer(
+        s.claims.conversation_id, body.callId, body.result, body.error
+    )
+    if not answered:
+        raise NotFound("No client call waits under this id.", code="unknown_call")
+    return {"ok": True}
 
 
 class Feedback(BaseModel):
@@ -182,6 +364,31 @@ class Rewrite(BaseModel):
     Left out: the last question. External storage has no ids: the last question of ``history``."""
 
 
+class ChatAttachment(BaseModel):
+    """A file attached to a message: the attachment of a server run, with its bytes."""
+
+    name: str = Field(min_length=1, max_length=200)
+    mediaType: str | None = Field(default=None, max_length=100)
+    """What the browser says it is: never trusted, the kind is read from the bytes."""
+    data: str = Field(min_length=1)
+    """The bytes, base64 (a ``data:`` URL is accepted too)."""
+
+    def decoded(self) -> files_.Upload:
+        """The upload.
+
+        Returns:
+            Its name and bytes.
+
+        Raises:
+            BadRequest: Not base64 (``attachment_invalid``).
+        """
+        raw = self.data.split(",", 1)[1] if self.data.startswith("data:") else self.data
+        try:
+            return files_.Upload(self.name, base64.b64decode(raw, validate=True))
+        except (binascii.Error, ValueError) as e:
+            raise BadRequest("An attachment is not base64.", code="attachment_invalid") from e
+
+
 class ChatBody(BaseModel):
     """A user input."""
 
@@ -195,6 +402,9 @@ class ChatBody(BaseModel):
     history: list[HistoryMessage] | None = Field(default=None, max_length=MAX_HISTORY_MESSAGES)
     """External storage only: the conversation so far (oldest first)."""
     endOfSpeechAt: float | None = None
+    attachments: list[ChatAttachment] = Field(default_factory=list, max_length=10)
+    """Files for the model (``docs/attachments.md``): the ``attachments`` grant and the agent's
+    ``attachments`` say which and how many; the text is still required."""
 
 
 class ChatResult(BaseModel):
@@ -215,6 +425,8 @@ class ChatResult(BaseModel):
     ``messages``."""
     rewritable: bool | None = None
     """Whether the conversation's last question can still be rewritten."""
+    regenerable: bool | None = None
+    """Whether the conversation's last answer can still be regenerated."""
 
 
 def sse(event: dict[str, Any]) -> str:
@@ -251,7 +463,24 @@ async def chat(
         history=body.history,
         end_of_speech_at=body.endOfSpeechAt,
         rewrite=body.rewrite.model_dump() if body.rewrite else None,
+        files=[a.decoded() for a in body.attachments],
     )
+    return await _run_turn(svc, inp, request)
+
+
+async def _run_turn(
+    svc: Services, inp: TurnInput, request: Request
+) -> StreamingResponse | ChatResult:
+    """Open and run a turn: its event stream, or the whole turn as JSON.
+
+    Returns:
+        The response.
+    """
+    accept = request.headers.get("accept", "")
+    as_json = "application/json" in accept and "text/event-stream" not in accept
+    if as_json:
+        # The client sees the events only at the end: it cannot answer a client tool that waits.
+        inp.client_wait = False
     run = await svc.engine.open(inp)
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
@@ -262,8 +491,7 @@ async def chat(
     stop_listening = run.channel.listen(on_event)
     task = asyncio.create_task(svc.engine.execute(run, inp))
 
-    accept = request.headers.get("accept", "")
-    if "application/json" in accept and "text/event-stream" not in accept:
+    if as_json:
         try:
             await task
         finally:
@@ -281,6 +509,7 @@ async def chat(
             messages=done.get("messages"),
             replacedFrom=done.get("replacedFrom"),
             rewritable=done.get("rewritable"),
+            regenerable=done.get("regenerable"),
         )
 
     async def stream() -> AsyncIterator[str]:
@@ -306,6 +535,46 @@ async def chat(
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no", "X-Turn-Id": run.turn_id},
     )
+
+
+class RegenerateBody(BaseModel):
+    """Regenerate the last answer (the question is the conversation's own)."""
+
+    page: PageContext | None = None
+    mode: Literal["text", "voice"] = "text"
+    history: list[HistoryMessage] | None = Field(default=None, max_length=MAX_HISTORY_MESSAGES)
+    """External storage only: the conversation so far (oldest first), with the last question and
+    the answer to replace."""
+    endOfSpeechAt: float | None = None
+
+
+@router.post(
+    "/regenerate",
+    response_model=ChatResult,
+    responses={200: {"content": {"text/event-stream": {}, "application/json": {}}}, 409: {}},
+)
+async def regenerate(
+    body: RegenerateBody, svc: Svc, s: Sess, request: Request
+) -> StreamingResponse | ChatResult:
+    """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+    Like a rewrite with the same question (a ``rewritten`` event, then the new answer), with the
+    same caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409
+    ``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a
+    custom client tool, or a turn is running.
+
+    Returns:
+        The event stream, or the turn as JSON (``Accept: application/json``).
+    """
+    inp = TurnInput(
+        principal=s,
+        page=body.page,
+        mode=body.mode,
+        history=body.history,
+        end_of_speech_at=body.endOfSpeechAt,
+        regenerate=True,
+    )
+    return await _run_turn(svc, inp, request)
 
 
 class ExitBody(BaseModel):

@@ -9,7 +9,16 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, model_validator
 
 from evokai import audit, privacy
+from evokai.agents.definitions import AgentDef, ClientToolDef
+from evokai.agents.modules import (
+    ModuleChoice,
+    check_session_modules,
+    choose_modules,
+    scan_module_texts,
+)
 from evokai.api.deps import server_app, services
+from evokai.assistant.privacy import own_subject
+from evokai.audio.choice import SpeechChoice, check_speech, speech_view
 from evokai.core.caps import CapSpec, caps_of, currency_of, rate_of, zone_of
 from evokai.core.caps import window as cap_window
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
@@ -17,12 +26,15 @@ from evokai.core.security import hash_code
 from evokai.core.util import utcnow
 from evokai.db.repositories import DEFAULT_TITLE, Who
 from evokai.grants import Grants, NotGranted, grants_of
+from evokai.i18n import pack_language
 from evokai.identity.models import AppPrincipal
 from evokai.memory.store import memory_view as view
 from evokai.privacy import residency_allows
 from evokai.protection import protection
 from evokai.services import Services
 from evokai.sessions.limits import app_shares, cap_state, caps_set, report_shares, windows_of
+from evokai.tools.custom import MAX_TOOLS as MAX_CLIENT_TOOLS
+from evokai.tools.custom import check_tools
 
 router = APIRouter(prefix="/v1", tags=["server"])
 Svc = Annotated[Services, Depends(services)]
@@ -97,13 +109,18 @@ class TokenRequest(BaseModel):
     Requesting an engine the application is not granted is refused (403
     ``voice_engine_not_granted``).
     """
+    speech: SpeechChoice | None = None
+    """Server speech engines for this session, among those the deployment offers (400
+    ``speech_engine`` otherwise): ``tts`` for ``POST /v1/session/speech`` and server voice, ``stt``
+    for transcription and server voice. Omitted = the deployment's defaults. Needs server speech
+    granted, the recognition engine's ``stt`` grant and the data protection profile."""
     storageMode: Literal["evokai", "external"] | None = None
     """Where a new conversation lives: in Evokai, or kept by the application (it sends the
     history with each request). Omitted = the application's storage mode. Fixed for the
     conversation once created; a mode the application is not granted is refused (403
     ``storage_mode_not_granted``)."""
     actor: Literal["agent"] = "agent"
-    """Who answers. Only agents today; avatars fronting an agent later."""
+    """Who answers. Only agents today."""
     consent: Consent | None = None
     """The consent the end user gave for this session (recorded with it)."""
     exitCode: str | None = Field(default=None, min_length=4, max_length=32)
@@ -112,6 +129,22 @@ class TokenRequest(BaseModel):
     """The person's answer to long-term memory, when the application asked it in its own
     interface (``memory_mode: ask``): recorded for the subject, the latest answer counts. False
     deletes what was remembered. Omitted = unchanged (the chat panel may ask)."""
+    modules: dict[str, ModuleChoice] | None = Field(default=None, max_length=20)
+    """Prompt modules of the agent to switch on or off and fill, by name
+    (``{"tone": {"on": true, "params": {"style": "brief"}}}``): only the ones the agent lets a
+    session change (``session: true``, else 400 ``module_locked``) and the application is granted
+    (403 ``module_not_granted``). Parameters are validated (400 ``module_params``) and free-text
+    values pass the guard's input checks (400 ``module_param_rejected``). On a continued
+    conversation it replaces the earlier choice; omitted keeps it."""
+    locale: str | None = Field(default=None, max_length=35)
+    """The session's language, a BCP 47 tag (``it-IT``): speech rules and messages use the shipped
+    pack of its language (400 ``unknown_locale`` without one). Omitted = the application's locale,
+    or the conversation's earlier choice."""
+    clientTools: list[ClientToolDef] | None = Field(default=None, max_length=MAX_CLIENT_TOOLS + 1)
+    """Custom client tools of this session (``docs/client-tools.md``), beside the agent's own:
+    each ``{name, description, parameters, wait}``. They need the grant ``client:session`` (403
+    ``client_not_granted``) and are kept with the conversation; on a continued conversation a
+    list replaces the earlier one (``[]`` clears it), omitted keeps it."""
 
 
 @router.post("/session-tokens")
@@ -125,8 +158,10 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         NotFound: Unknown agent, conversation or application.
         Conflict: The conversation is closed, or kept in another storage mode.
         Forbidden: The agent runs on the server only.
-        NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,
-            are not granted to the application (403 ``*_not_granted``).
+        NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,
+            or browser sessions, are not granted to the application (403 ``*_not_granted``).
+        BadRequest: An unknown locale, or a prompt module choice that is refused
+            (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).
     """
     agent = await svc.agents.active(app.application_id, body.agent)
     if "browser" not in agent.channels:
@@ -135,6 +170,13 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
     application = await svc.store.applications.get(app.application_id)
     if application is None:
         raise NotFound()
+    if application.system and app.key_id != "console-assistant":
+        # Its sessions act with a person's delegation: only the console assistant route mints them.
+        raise Forbidden("A system application's sessions open from the console.", code="system_app")
+    if application.system and not (application.defaults or {}).get("assistant_model"):
+        raise Conflict(
+            "The assistant has no model yet: an owner activates it.", code="assistant_inactive"
+        )
     grants = await grants_of(svc.store, application)
     if not grants.channel("browser"):
         raise NotGranted("channel", "Browser sessions are not granted to this application.")
@@ -149,11 +191,27 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
     engine = _voice_engine(body, application, grants, svc.settings.voice_stt)
     if body.voice and not grants.tts(engine, body.voice):
         raise NotGranted("voice", f"The voice {body.voice} is not granted for {engine} speech.")
+    if body.speech is not None and (body.speech.tts or body.speech.stt):
+        check_speech(
+            svc.settings,
+            application,
+            grants,
+            tts=body.speech.tts,
+            stt=body.speech.stt,
+            voice=body.voice if body.speech.tts else None,
+        )
     mode = _storage_mode(body.storageMode, application.storage_mode, grants)
+    if body.locale is not None and pack_language(body.locale) is None:
+        raise BadRequest(f"No language pack for the locale {body.locale}.", code="unknown_locale")
+    existing = None
     if body.conversationId:
         existing = await svc.store.sessions.get(who, body.conversationId)
         if not existing:
             raise NotFound("Unknown conversation.", code="unknown_conversation")
+    session_tools = _session_tools(body, agent, grants)
+    stored = (existing.prompt_options if existing else None) or {}
+    options = await _prompt_options(svc, application, agent, grants, body, stored)
+    if existing:
         if existing.status == "closed":
             raise Conflict("This session is closed.", code="closed")
         kept = existing.storage_mode or application.storage_mode
@@ -162,9 +220,13 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         if not grants.storage(kept):
             raise NotGranted("storage_mode", f"The {kept} storage mode is not granted.")
         mode = kept
-        conversation_id = body.conversationId
+        conversation_id = existing.id
         if existing.voice_engine != engine:
             await svc.store.sessions.set_voice_engine(existing.id, engine)
+        if options is not None and options != stored:
+            await svc.store.sessions.set_prompt_options(existing.id, options)
+        if session_tools is not None:
+            await svc.store.sessions.set_client_tools(existing.id, session_tools or None)
     else:
         sess, _ = await svc.store.sessions.create(
             who,
@@ -176,6 +238,8 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
             exit_code_hash=hash_code(body.exitCode) if body.exitCode else None,
             voice_engine=engine,
             storage_mode=mode,
+            prompt_options=options,
+            client_tools=session_tools or None,
         )
         conversation_id = sess.id
     claims: dict[str, Any] = {
@@ -193,6 +257,10 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         claims["mdl"] = body.model
     if body.voice:
         claims["voc"] = body.voice
+    if body.speech and body.speech.tts:
+        claims["spt"] = body.speech.tts
+    if body.speech and body.speech.stt:
+        claims["sps"] = body.speech.stt
     if body.forwardCredential:
         claims["crd"] = True
     if body.groups:
@@ -220,10 +288,76 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         "expiresAt": exp,
         "conversationId": conversation_id,
         "voiceEngine": engine,
+        "speech": speech_view(body.speech.tts, body.speech.stt) if body.speech else None,
         "storageMode": mode,
         "usage": caps.view(),
         "suggestions": agent.suggestions,
     }
+
+
+async def _prompt_options(
+    svc: Services,
+    app: Any,
+    agent: Any,
+    grants: Grants,
+    body: TokenRequest,
+    stored: dict[str, Any],
+) -> dict[str, Any] | None:
+    """The prompt modules and locale of the session, checked.
+
+    A choice of modules replaces the conversation's earlier one (over the agent's defaults); a
+    locale replaces the earlier locale; what is omitted is kept.
+
+    Returns:
+        The options to store, or None when the token chooses nothing.
+    """
+    modules: dict[str, Any] | None = stored.get("modules")
+    if body.modules is not None:
+        modules = choose_modules(agent, body.modules, grants, modules)
+    texts = await check_session_modules(svc.store, app.id, agent, modules)
+    if body.modules and modules is not None:
+        # Only the values this token brings are scanned (the agent's own are trusted).
+        given = {
+            name: [(p, v) for p, v in texts.get(name, []) if (c.params or {}).get(p) == v]
+            for name, c in body.modules.items()
+        }
+        cleaned = await scan_module_texts(
+            svc.guard,
+            app,
+            agent,
+            given,
+            subject=body.subject,
+            session_id=body.conversationId,
+        )
+        for name, values in cleaned.items():
+            modules[name]["params"] = {**modules[name]["params"], **values}
+    if body.modules is None and body.locale is None:
+        return None
+    return {
+        "modules": modules or {},
+        "locale": body.locale if body.locale is not None else stored.get("locale"),
+    }
+
+
+def _session_tools(
+    body: TokenRequest, agent: AgentDef, grants: Grants
+) -> list[dict[str, Any]] | None:
+    """The custom client tools a token declares, checked against the limits and the grants.
+
+    Returns:
+        The tools to keep (None: the token sent none, keep what the conversation has).
+
+    Raises:
+        NotGranted: ``client:session`` or a tool's name is not granted (``check_tools`` refuses
+            more than 32 tools with the agent's, or a name twice, with 400).
+    """
+    if body.clientTools is None:
+        return None
+    check_tools([*agent.client_tools.custom, *body.clientTools])
+    for t in body.clientTools:
+        if not grants.client_tool(t.name, static=False):
+            raise NotGranted("client", f"The client tool {t.name} is not granted to sessions.")
+    return [t.model_dump() for t in body.clientTools]
 
 
 def _voice_engine(body: TokenRequest, app: Any, grants: Grants, stt: str) -> str:
@@ -275,11 +409,14 @@ def _storage_mode(requested: str | None, app_mode: str, grants: Grants) -> str:
 async def conversations(
     svc: Svc, app: App, subject: SubjectQ, limit: Annotated[int, Query(ge=1, le=100)] = 30
 ) -> dict[str, Any]:
-    """A subject's recent conversations.
+    """A subject's recent conversations (on a system application, only the caller's own).
 
     Returns:
         items.
     """
+    mine = await own_subject(svc, app)
+    if mine is not None and subject != mine:
+        return {"items": []}
     return {"items": await svc.store.sessions.recent(Who(app.application_id, subject), limit)}
 
 
@@ -295,6 +432,9 @@ async def conversation(
     Raises:
         NotFound: Not a conversation of this subject.
     """
+    mine = await own_subject(svc, app)
+    if mine is not None and subject != mine:
+        raise NotFound()
     who = Who(app.application_id, subject)
     sess = await svc.store.sessions.get(who, conversation_id)
     if not sess:
@@ -334,7 +474,14 @@ async def delete_conversation(
 
     Raises:
         NotFound: Not a conversation of this subject.
+        Conflict: A system application's conversation: it is kept until its time to live ends
+            (409 ``retention``).
     """
+    if await own_subject(svc, app) is not None:
+        raise Conflict(
+            "The assistant's conversations are kept until their time to live ends.",
+            code="retention",
+        )
     if not await svc.store.sessions.delete(Who(app.application_id, subject), conversation_id):
         raise NotFound()
     key = privacy.subject_key(svc.keyring.signing_key, app.application_id, subject)[:16]

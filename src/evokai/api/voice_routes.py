@@ -13,10 +13,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from evokai.api.deps import services, session
-from evokai.core.errors import Conflict, Forbidden, NotFound
-from evokai.grants import NotGranted, grants_of
+from evokai.audio.choice import check_speech
+from evokai.core.errors import Conflict, NotFound
+from evokai.grants import grants_of
 from evokai.identity.models import SessionPrincipal
-from evokai.protection import processor_allows, protection
 from evokai.services import Services
 from evokai.sessions.threads import MAX_HISTORY_MESSAGES, HistoryMessage
 
@@ -74,20 +74,14 @@ async def _server(svc: Services, s: SessionPrincipal) -> Any:
     if app is None:
         raise NotFound()
     grants = await grants_of(svc.store, app)
-    if not grants.voice("server"):
-        raise NotGranted("voice_engine", "Server speech is not granted to this application.")
-    if not grants.stt(svc.settings.voice_stt):
-        raise NotGranted(
-            "stt", f"The speech-to-text engine {svc.settings.voice_stt} is not granted."
-        )
-    if s.claims.voice and not grants.tts("server", s.claims.voice):
-        raise NotGranted("voice", f"The voice {s.claims.voice} is not granted for server speech.")
-    for kind, engine in (("stt", svc.settings.voice_stt), ("tts", svc.settings.voice_tts)):
-        if not processor_allows(protection(app), f"{kind}:{engine}"):
-            raise Forbidden(
-                f"The {kind} engine {engine} is outside the application's data protection profile.",
-                code="data_protection",
-            )
+    check_speech(
+        svc.settings,
+        app,
+        grants,
+        tts=s.claims.speech_tts or svc.settings.voice_tts,
+        stt=s.claims.speech_stt or svc.settings.voice_stt,
+        voice=s.claims.voice,
+    )
     if svc.voice is None:
         from evokai.audio.voice.pipeline import VoiceServer
 

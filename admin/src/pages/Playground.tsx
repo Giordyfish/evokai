@@ -5,13 +5,14 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
-import type { AgentDef, Chart, Citation, ConsoleApplication, Diagram, HistoryMessage, SessionToken } from '@client/core/types'
+import type { AgentDef, Chart, Citation, ConsoleApplication, Diagram, HistoryMessage, ModuleChoice, PromptVersion, SessionToken } from '@client/core/types'
 import { readSse } from '@client/browser/sse'
 import { baseUrl, describe, forApp } from '../api'
 import { CitedText, Sources } from '../cite'
 import { Empty, Fx, HAT, Mage, Motes, oneshot, toast } from '../magic'
 import { setTitle, useConsole, useLoad } from '../state'
-import { Btn, Hero, Panel, Seg, Tag } from '../ui'
+import { Btn, Hero, Panel, Seg, Switch, Tag } from '../ui'
+import { ParamsForm } from './ModuleParams'
 import { num, t } from '../i18n'
 
 type Item =
@@ -161,6 +162,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
   const c = useConsole()
   const api = forApp(app.id)
   const agents = useLoad(() => api.admin.agents.list(), [app.id])
+  const prompts = useLoad(() => api.admin.prompts.list().catch(() => [] as PromptVersion[]), [app.id])
   const browserAgents = (agents.data ?? []).filter((a: AgentDef) => (a.channels ?? ['browser']).includes('browser'))
   const [agent, setAgent] = useState(agentName ?? '')
   const current = browserAgents.find((a) => a.name === agent) ?? browserAgents[0]
@@ -174,6 +176,10 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
   const [busy, setBusy] = useState(false)
   const [usage, setUsage] = useState<string | null>(null)
   const token = useRef<SessionToken | null>(null)
+  /** The test session's prompt modules and locale; a change applies from the next message (a new token). */
+  const [choices, setChoices] = useState<Record<string, ModuleChoice>>({})
+  const [locale, setLocale] = useState('')
+  const optionsChanged = useRef(false)
   const history = useRef<HistoryMessage[]>([])
   const abort = useRef<AbortController | null>(null)
   const thread = useRef<HTMLDivElement>(null)
@@ -192,16 +198,28 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
     setUsage(null)
   }
   useEffect(reset, [current?.name, subject])
+  useEffect(() => setChoices({}), [current?.name])
+  useEffect(() => {
+    optionsChanged.current = true
+  }, [JSON.stringify(choices), locale])
+  const sessionModules = (current?.modules ?? []).filter((m) => m.session)
+  const promptOf = (name: string, version?: number | null): PromptVersion | undefined => {
+    const all = (prompts.data ?? []).filter((x) => x.name === name)
+    return version ? all.find((x) => x.version === version) : all.reduce<PromptVersion | undefined>((m, x) => (!m || x.version > m.version ? x : m), undefined)
+  }
 
   const ensureToken = async (): Promise<SessionToken> => {
     const prev = token.current
-    if (prev && prev.expiresAt * 1000 - Date.now() > 20_000) return prev
+    if (prev && !optionsChanged.current && prev.expiresAt * 1000 - Date.now() > 20_000) return prev
     const next = await api.mintSessionToken({
       subject: subject.trim() || 'playground:console',
       agent: current!.name,
       tags: tags.split(/[\s,]+/).filter(Boolean),
       ...(prev ? { conversationId: prev.conversationId } : {}),
+      ...(Object.keys(choices).length ? { modules: choices } : {}),
+      ...(locale ? { locale } : {}),
     })
+    optionsChanged.current = false
     token.current = next
     return next
   }
@@ -461,7 +479,44 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         <input class="in mono" style="width:190px" value={subject} onChange={(e) => setSubject(e.currentTarget.value)} aria-label={t('pg.subject')} />
         <input class="in mono" style="width:120px" value={tags} onInput={(e) => setTags(e.currentTarget.value)} aria-label={t('pg.tags')} />
         <Seg options={['text', 'voice'] as const} labels={{ text: t('pg.text'), voice: t('pg.voice') }} value={mode} onChange={setMode} />
+        <select class="in" style="width:auto" value={locale} onChange={(e) => setLocale(e.currentTarget.value)} aria-label={t('pg.locale')}>
+          <option value="">{t('pg.localeApp')}</option>
+          <option value="en">{t('pg.localeEn')}</option>
+          <option value="it">{t('pg.localeIt')}</option>
+          <option value="es">{t('pg.localeEs')}</option>
+          <option value="fr">{t('pg.localeFr')}</option>
+          <option value="de">{t('pg.localeDe')}</option>
+          <option value="ro">{t('pg.localeRo')}</option>
+          <option value="sv">{t('pg.localeSv')}</option>
+        </select>
       </div>
+      {sessionModules.length ? (
+        <Panel title={t('pg.modules')}>
+          <p class="hint">{t('pg.modulesHint')}</p>
+          {sessionModules.map((m) => {
+            const choice = choices[m.name] ?? {}
+            const on = choice.on ?? m.on !== false
+            const prompt = promptOf(m.name, m.version)
+            const update = (patch: ModuleChoice) => setChoices({ ...choices, [m.name]: { ...choice, ...patch } })
+            return (
+              <div key={m.name} class="opt" style="display:block">
+                <div class="flags">
+                  <Switch label={m.name} on={on} onChange={(v) => update({ on: v })} />
+                  {prompt?.description ? <small class="hint">{prompt.description}</small> : null}
+                </div>
+                {on && prompt?.parameters ? (
+                  <ParamsForm
+                    schema={prompt.parameters}
+                    values={(choice.params ?? m.params ?? {}) as Record<string, unknown>}
+                    onChange={(v) => update({ params: v })}
+                    idPrefix={`pg-${m.name}`}
+                  />
+                ) : null}
+              </div>
+            )
+          })}
+        </Panel>
+      ) : null}
       <div class="pg">
         <Panel>
           <div class="thread" ref={thread}>

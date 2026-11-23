@@ -4,13 +4,17 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import type { ConsoleApplication, CostAlert } from '@client/core/types'
 import { forApp, root } from './api'
+import { useAssistantState } from './assistant/active'
+import { assistantActive } from './assistant/choice'
+import { AssistantLauncher } from './assistant/Panel'
 import { ALERTS_CHANGED, alertText, bannerAlert } from './costs'
 import { pl } from './format'
-import { Empty, Familiar, HAT } from './magic'
+import { BrandMark, Empty } from './magic'
 import { Access } from './pages/Access'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
 import { Apps } from './pages/Apps'
+import { Assistant } from './pages/Assistant'
 import { Audit } from './pages/Audit'
 import { Health } from './pages/Health'
 import { Keys } from './pages/Keys'
@@ -32,6 +36,7 @@ import { Traces } from './pages/Traces'
 import { Conversations } from './pages/Conversations'
 import { Setup } from './pages/Setup'
 import { Skills } from './pages/Skills'
+import { Prompts } from './pages/Prompts'
 import { Knowledge } from './pages/Knowledge'
 import { Workflows } from './pages/Workflows'
 import { Approvals } from './pages/Approvals'
@@ -64,6 +69,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
         return <Channels app={app} />
       case 'skills':
         return <Skills app={app} id={id} />
+      case 'prompts':
+        return <Prompts app={app} id={id} />
       case 'knowledge':
         return <Knowledge app={app} id={id} />
       case 'workflows':
@@ -105,6 +112,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
       return <Health />
     case 'access':
       return <Access />
+    case 'assistant':
+      return <Assistant />
     case 'preferences':
       return <Preferences q={route.q} />
     case 'states':
@@ -124,6 +133,8 @@ export function Shell({ route }: { route: Route }) {
   const [lastApp, setLastApp] = useState<string | null>(null)
   const fresh = app && app.slug !== lastApp
   const alerts = useCostAlerts(app)
+  const assistant = useAssistantState(route.view === 'assistant')
+  const assistantOn = assistantActive(assistant)
 
   useEffect(() => {
     setOpen(false)
@@ -179,7 +190,7 @@ export function Shell({ route }: { route: Route }) {
   else if (route.view === 'setup') crumbs.push([t('page.applications'), '#/apps'], [t('page.setup')])
   else
     crumbs.push([
-      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
+      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
         t('page.notFound'),
     ])
 
@@ -202,7 +213,7 @@ export function Shell({ route }: { route: Route }) {
     <div class={`shell ${open ? 'open' : ''}`}>
       <aside class="side" aria-label={t('shell.navigation')}>
         <a class="brand" href="#/apps" title={t('shell.home')} aria-label={t('shell.homeLabel')}>
-          <img src={HAT} alt="" />
+          <BrandMark assistantActive={assistantOn} />
           <b>
             Evokai<sup>™</sup>
           </b>
@@ -259,10 +270,8 @@ export function Shell({ route }: { route: Route }) {
           {nav('#/playground', t('page.playground'), 'play', route.view === 'playground')}
           {nav('#/usage', t('page.usage'), 'usage', route.view === 'usage')}
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
+          {nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant')}
           {c.me.deploymentOwner ? nav('#/access', t('page.access'), 'access', route.view === 'access') : null}
-        </div>
-        <div class="famslot">
-          <Familiar />
         </div>
         <div class="foot">
           <a
@@ -320,6 +329,7 @@ export function Shell({ route }: { route: Route }) {
         </main>
       </div>
       {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
+      <AssistantLauncher app={app} state={assistant} dark={dark} />
     </div>
   )
 }

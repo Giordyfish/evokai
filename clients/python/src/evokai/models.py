@@ -12,6 +12,7 @@ the routes and the TypeScript client's types.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -28,7 +29,11 @@ __all__ = [
     "ApiKeyInfo",
     "AppPatch",
     "Application",
+    "Attachment",
+    "AttachmentOffer",
     "BugReport",
+    "BuiltinTool",
+    "BuiltinToolBlock",
     "CapConfig",
     "CapPeriod",
     "CapShare",
@@ -39,6 +44,8 @@ __all__ = [
     "ConversationSummary",
     "EraseResult",
     "ExportedConfig",
+    "FileBlock",
+    "FileRef",
     "GrantChange",
     "GrantChanges",
     "GrantGroup",
@@ -318,6 +325,38 @@ class TextBlock(WireModel):
     text: str
 
 
+class FileRef(WireModel):
+    """An attachment as a message keeps it: never its bytes."""
+
+    id: str
+    name: str
+    media_type: str
+    size: int = 0
+    sha256: str = ""
+
+
+class FileBlock(WireModel):
+    """An attachment of a question, with the text the model read of it (a document).
+
+    Without text, the model read the file itself.
+    """
+
+    file: FileRef
+    text: str | None = None
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """A file to send with a message (``chat(..., attachments=[...])``).
+
+    A path or a ``(name, bytes)`` pair works too. The service reads the kind from the bytes.
+    """
+
+    name: str
+    data: bytes
+    media_type: str | None = None
+
+
 class ToolUse(WireModel):
     """A tool call of the model."""
 
@@ -350,7 +389,24 @@ class ToolResultBlock(WireModel):
     tool_result: ToolResult
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+class BuiltinTool(WireModel):
+    """A provider built-in tool that can change data ran during the answer."""
+
+    id: str
+    name: str
+    changes: bool = True
+
+
+class BuiltinToolBlock(WireModel):
+    """A content block marking a provider built-in tool that can change data.
+
+    The answer cannot be regenerated: keep it as the service returns it.
+    """
+
+    builtin_tool: BuiltinTool
+
+
+ContentBlock = FileBlock | TextBlock | ToolUseBlock | ToolResultBlock | BuiltinToolBlock
 
 
 class HistoryMessage(WireModel):
@@ -408,6 +464,27 @@ class Consent(WireModel):
     notice_hash: str | None = None
 
 
+class ModuleChoice(WireModel):
+    """A session's choice for one prompt module of the agent (only with the server key)."""
+
+    on: bool | None = None
+    """Switch the module on or off; omitted keeps the agent's default."""
+    params: dict[str, Any] | None = None
+    """Parameter values over the agent's defaults."""
+
+
+class ClientToolDef(SnakeModel):
+    """A custom client tool: your client application runs it (``client_tool`` events)."""
+
+    name: str
+    """``^[a-z][a-z0-9_]{1,47}$``; the model sees it as ``client_<name>``."""
+    description: str
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    """The JSON Schema of the arguments (at most 16 KB)."""
+    wait: bool = False
+    """True: the turn waits for the client's result (``tool_result``)."""
+
+
 class TokenRequest(WireModel):
     """The body of ``POST /v1/session-tokens``."""
 
@@ -428,6 +505,12 @@ class TokenRequest(WireModel):
     groups: list[str] | None = None
     memory_consent: bool | None = None
     """The person's answer to long-term memory, asked in the application's own interface."""
+    modules: dict[str, ModuleChoice] | None = None
+    """Prompt modules of the agent to switch and fill for this session, by name."""
+    locale: str | None = None
+    """The session's language (a BCP 47 tag with a shipped pack: ``en``, ``it``)."""
+    client_tools: list[ClientToolDef] | None = None
+    """Custom client tools of this session (granted by ``client:session``)."""
 
 
 class SessionToken(WireModel):
@@ -446,6 +529,15 @@ class SessionToken(WireModel):
     """Whether memory is on for the person, and whether to ask them."""
 
 
+class AttachmentOffer(WireModel):
+    """The files a session accepts: kinds read from the bytes, sizes in bytes."""
+
+    kinds: list[str] = Field(default_factory=list)
+    media_types: list[str] = Field(default_factory=list)
+    max_file_bytes: int = 0
+    max_files: int = 0
+
+
 class SessionInfo(WireModel):
     """``GET /v1/session``: conversation, agent, usage shares and memories."""
 
@@ -457,6 +549,10 @@ class SessionInfo(WireModel):
     memory: MemoryState | None = None
     """Whether memory is on for the person and whether to ask them (None: no application)."""
     suggestions: list[str] = Field(default_factory=list)
+    attachments: AttachmentOffer | None = None
+    """What the person may attach to a message (None: nothing)."""
+    markup: dict[str, Any] | None = None
+    """The delimiters of the answers' inline markup (``cue``, ``speech``), None without."""
 
 
 # Server runs
@@ -486,6 +582,8 @@ class RunRequest(WireModel):
     attachments: list[RunAttachment] = Field(default_factory=list)
     store: bool = False
     groups: list[str] = Field(default_factory=list)
+    client_tools: list[ClientToolDef] = Field(default_factory=list)
+    """Custom client tools of this run; none may wait (their calls come back in the result)."""
 
 
 class RunUsage(WireModel):
@@ -509,6 +607,8 @@ class RunResult(WireModel):
     model: str
     usage: RunUsage
     conversation_id: str | None = None
+    client_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    """Calls of custom client tools the run made (``callId``, ``name``, ``args``), to carry out."""
 
 
 # Conversations, usage, catalogue, privacy
@@ -848,6 +948,8 @@ class ClientToolsDef(SnakeModel):
     ask: bool = True
     memory: bool = True
     navigate: NavigateDef | None = None
+    custom: list[ClientToolDef] = Field(default_factory=list)
+    """Client tools of the application's own."""
 
 
 class CodeDef(SnakeModel):
@@ -917,7 +1019,11 @@ class AgentDef(SnakeModel):
     output_schema: dict[str, Any] | None = None
     prompt_cache: Literal["off", "5m", "1h"] = "off"
     confirm_labels: dict[str, str | list[str]] = Field(default_factory=dict)
+    """Tool name to label template(s) of its confirmation card, in Handlebars."""
     confirm_values: dict[str, dict[str, str]] = Field(default_factory=dict)
+    template_syntax: Literal["legacy", "handlebars"] = "handlebars"
+    """The syntax of the instructions and labels: what is saved is ``handlebars``; ``legacy``
+    marks a version saved before Handlebars."""
     suggestions: list[str] = Field(default_factory=list)
     voice: VoiceDef | None = None
     security: dict[str, Any] | None = None
@@ -1072,9 +1178,24 @@ class SkillDetail(WireModel):
 
 
 class PromptBody(SnakeModel):
-    """A prompt's text; a changed text becomes the next version."""
+    """A prompt; a changed text, schema, description or data becomes the next version."""
 
     text: str
+    parameters: dict[str, Any] | None = None
+    """A prompt module's parameter schema (its text is then a Handlebars template)."""
+    description: str | None = None
+    data: dict[str, str] | None = None
+    """A module's lookup table, read in its template with ``{{lookup data <parameter>}}``."""
+
+
+class PreviewBody(SnakeModel):
+    """Sample values for a prompt preview, and optionally a draft to render instead."""
+
+    params: dict[str, Any] | None = None
+    version: int | None = None
+    text: str | None = None
+    parameters: dict[str, Any] | None = None
+    data: dict[str, str] | None = None
 
 
 class PromptVersion(WireModel):
@@ -1082,6 +1203,14 @@ class PromptVersion(WireModel):
 
     name: str
     version: int
+    text: str | None = None
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+    """A module's parameter schema, or None for a plain prompt."""
+    data: dict[str, str] | None = None
+    template_syntax: Literal["legacy", "handlebars"] | None = None
+    """``handlebars``, or ``legacy`` for a version saved before Handlebars (it keeps rendering as
+    it did)."""
     created_at: str | None = None
 
 

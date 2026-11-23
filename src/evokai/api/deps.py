@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import Request
+import json
 
-from evokai.core.errors import AppError, Forbidden, NotFound, Unauthorized
+from fastapi import Request
+from starlette.requests import HTTPConnection
+
+from evokai.assistant import delegation
+from evokai.assistant.reset import own_write
+from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
 from evokai.identity import console
 from evokai.identity.auth import bearer
 from evokai.identity.models import AppPrincipal, SessionPrincipal
-from evokai.identity.roles import authorize
+from evokai.identity.roles import authorize, required, route_of
+from evokai.mcp_admin.tools import by_route
 from evokai.services import Services
 
 SESSION_REQUESTS_PER_MINUTE = 240
@@ -71,7 +77,44 @@ async def _console(request: Request) -> AppPrincipal | None:
         console=True,
         role=role,
         actor=login.actor,
+        subject=delegation.login_subject(
+            login.kind, login.user_id, login.key_id, login.application_id
+        ),
     )
+
+
+async def _delegated(request: Request, token: str) -> AppPrincipal:
+    """The console assistant's delegation token: the live login's rights, checked like the console.
+
+    An expired or forged token, or one whose login ended, is refused (401); a role that does not
+    allow the route is refused (403 ``role``). Even used directly, it opens only the routes of the
+    admin MCP server's allow-list (403 ``assistant_route``) and only the body fields a tool may send
+    (403 ``assistant_field``): keys, secrets, sign-in, the audit log, personal data and the unlock
+    of a system application stay out of its reach whoever holds it.
+
+    Returns:
+        The principal.
+
+    Raises:
+        Forbidden: A route or a field outside the admin MCP server's allow-list.
+        BadRequest: A body that is not a JSON object.
+    """
+    svc = services(request)
+    who = await delegation.principal(svc, token)
+    authorize(request, who.role, svc.settings.base_path)
+    spec = by_route().get((request.method.upper(), route_of(request, svc.settings.base_path)))
+    if spec is None:
+        raise Forbidden("The assistant cannot use this route.", code="assistant_route")
+    if spec.fields is not None:
+        try:
+            body = json.loads(await request.body() or b"{}")
+        except ValueError:
+            raise BadRequest("Invalid JSON.") from None
+        if not isinstance(body, dict):
+            raise BadRequest("The body is a JSON object.")
+        if set(body) - set(spec.fields):
+            raise Forbidden("The assistant cannot change these fields.", code="assistant_field")
+    return who
 
 
 async def console_login(request: Request) -> console.ConsoleLogin:
@@ -116,11 +159,16 @@ async def server_app(request: Request) -> AppPrincipal:
         if (c := await _console(request)) is not None:
             return c
         raise Unauthorized()
+    # The console assistant's delegation token is never a server key: the server API mints session
+    # tokens and reaches a person's data (export, erase), which the assistant must never do.
     return await services(request).auth.application(token)
 
 
 async def admin_app(request: Request) -> AppPrincipal:
     """An application authenticated with its admin key, or a console login.
+
+    Every change on a locked system application is refused here (409 ``locked``), for every admin
+    route, including routes added later; only ``LOCK_EXEMPT`` routes pass.
 
     Returns:
         The application principal.
@@ -130,10 +178,52 @@ async def admin_app(request: Request) -> AppPrincipal:
     """
     token = bearer(request.headers.get("authorization"))
     if not token:
-        if (c := await _console(request)) is not None:
-            return c
-        raise Unauthorized()
-    return await services(request).auth.application(token, admin=True)
+        if (c := await _console(request)) is None:
+            raise Unauthorized()
+        who = c
+    elif delegation.is_delegation(token):
+        who = await _delegated(request, token)
+    else:
+        who = await services(request).auth.application(token, admin=True)
+    await _unlocked(request, who)
+    return who
+
+
+LOCK_EXEMPT: frozenset[tuple[str, str]] = frozenset({
+    ("POST", "/v1/admin/application/unlock"),
+    ("POST", "/v1/admin/application/reset"),
+    ("POST", "/v1/admin/assistant/activate"),
+    ("POST", "/v1/admin/assistant/try"),
+    ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
+})
+"""Changes a locked system application accepts: unlocking and resetting it, activating the
+assistant's model, trying a model on it and an owner's inspection of a conversation."""
+
+
+async def _unlocked(request: Request, who: AppPrincipal) -> None:
+    """Refuse a change on a system application outside its own resources, or while it is locked.
+
+    Raises:
+        Conflict: A system application and a change of another kind of resource (409
+            ``system_app``, locked or not: ``evokai.assistant.reset``), or a locked system
+            application and a change (409 ``locked``).
+    """
+    svc = services(request)
+    method, path = request.method.upper(), route_of(request, svc.settings.base_path)
+    if method in {"GET", "HEAD", "OPTIONS"} or required(method, path) == "viewer":
+        return
+    app = await svc.store.applications.get(who.application_id)
+    if app is None or not app.system:
+        return
+    if not own_write(path, request.path_params):
+        raise Conflict(
+            "A system application holds only the assistant's own resources.", code="system_app"
+        )
+    if app.locked and (method, path) not in LOCK_EXEMPT:
+        raise Conflict(
+            "This system application is locked: an owner unlocks it in the console first.",
+            code="locked",
+        )
 
 
 async def operator(request: Request) -> None:
@@ -157,13 +247,14 @@ async def operator(request: Request) -> None:
         raise Unauthorized("An operator login is required.", code="operator_key")
 
 
-def same_origin(request: Request, origin: str) -> bool:
+def same_origin(request: HTTPConnection, origin: str) -> bool:
     """Whether a browser origin is this service's own (the console's playground).
 
     Returns:
         True for the service's own scheme and host.
     """
-    own = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+    scheme = {"ws": "http", "wss": "https"}.get(request.url.scheme, request.url.scheme)
+    own = f"{scheme}://{request.headers.get('host', request.url.netloc)}"
     return origin.rstrip("/") == own
 
 

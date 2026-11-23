@@ -223,8 +223,8 @@ agents:
     mcp_servers: [app]
     confirm_labels:
       order_refund:
-        - "Refund the orders of {period} as {reason|map:reasons}"
-        - "Refund the orders of {period}"
+        - 'Refund the orders of {{period}} as {{map reason "reasons"}}'
+        - "Refund the orders of {{period}}"
     confirm_values:
       reasons: {damaged: "Damaged", wrong_item: "Wrong item"}
     max_tool_calls_per_turn: 4
@@ -232,7 +232,7 @@ agents:
     voice:
       first_clause_min_chars: 0
       fillers: {"*": "One moment."}
-    instructions: "You are an assistant. Today is {date}."
+    instructions: "You are an assistant. Today is {{date}}."
 """
 
 SKILL = """---

@@ -184,6 +184,30 @@ class SyncTransport:
         finally:
             response.close()
 
+    def send_bytes(
+        self,
+        path: str,
+        data: bytes,
+        content_type: str,
+        credential: str | None,
+        params: Mapping[str, Any],
+    ) -> Any:
+        """POST raw bytes (an audio file) and read the JSON answer.
+
+        Returns:
+            The decoded JSON.
+        """
+        headers = {**_headers(credential, "application/json", False), "Content-Type": content_type}
+        try:
+            response = self.client.post(
+                self.url(path), content=data, params=clean_params(params), headers=headers
+            )
+        except httpx.TransportError as e:
+            _network(e)
+        if response.is_error:
+            _refused(response)
+        return response.json()
+
     def close(self) -> None:
         """Close the HTTP client, if this transport created it."""
         if self.owns_client:
@@ -269,6 +293,30 @@ class AsyncTransport:
             yield response
         finally:
             await response.aclose()
+
+    async def send_bytes(
+        self,
+        path: str,
+        data: bytes,
+        content_type: str,
+        credential: str | None,
+        params: Mapping[str, Any],
+    ) -> Any:
+        """POST raw bytes (an audio file) and read the JSON answer.
+
+        Returns:
+            The decoded JSON.
+        """
+        headers = {**_headers(credential, "application/json", False), "Content-Type": content_type}
+        try:
+            response = await self.client.post(
+                self.url(path), content=data, params=clean_params(params), headers=headers
+            )
+        except httpx.TransportError as e:
+            _network(e)
+        if response.is_error:
+            _refused(response)
+        return response.json()
 
     async def aclose(self) -> None:
         """Close the HTTP client, if this transport created it."""

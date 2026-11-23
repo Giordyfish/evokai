@@ -14,7 +14,10 @@ import {
   type RequestOptions,
 } from '../core/http'
 import type {
+  AttachmentRef,
   ChatMode,
+  ClientToolEvent,
+  ToolPart,
   Connection,
   ConnectionProvider,
   ConnectionStarted,
@@ -33,16 +36,36 @@ import type {
   MemoryList,
   MemoryState,
   SessionInfo,
+  SpeechChoice,
   VoiceEngineKind,
 } from '../core/types'
 import { readSse } from './sse'
 import { localePack, type LocaleCode, type LocalePack } from '../locales'
+import {
+  speak as speakWith,
+  speechEvents as speechEventsWith,
+  transcribe as transcribeWith,
+  type SpeakInput,
+  type SpeechResult,
+  type SpeechStreamEvent,
+} from './speech-server'
 import { localId, seen, SessionStore, type SessionState } from './store'
+
+/** Runs a custom client tool: gets the call's arguments (and the event); its return value is the result. */
+export type ClientToolHandler = (args: Record<string, unknown>, event: ClientToolEvent) => unknown
 
 /** A token, or the session-token response of your backend (its other fields are used when present). */
 export type TokenInfo =
   | string
-  | { token: string; conversationId?: string | null; voiceEngine?: VoiceEngineKind; expiresAt?: number; usage?: UsageShares }
+  | {
+      token: string
+      conversationId?: string | null
+      voiceEngine?: VoiceEngineKind
+      /** The server speech engines the token chose (`speech` at mint), null for the defaults. */
+      speech?: SpeechChoice | null
+      expiresAt?: number
+      usage?: UsageShares
+    }
 
 export interface TokenRequestContext {
   /** The conversation the token must open (null = a new one). */
@@ -88,6 +111,13 @@ export interface ChatInput {
    * external storage, `onMessages` gets `done.replacedFrom`: drop your history from that index before appending.
    */
   rewrite?: boolean
+  /** Regenerate the last answer instead of sending `text` (use `EvokaiSession.regenerate`). */
+  regenerate?: boolean
+  /**
+   * Files for the model (`docs/attachments.md`): images and documents, as the session's `attachments` allows. The
+   * service reads their kind from the bytes and refuses what the agent does not take (`attachment_*` codes).
+   */
+  files?: Array<File | Blob>
   signal?: AbortSignal
 }
 
@@ -102,9 +132,14 @@ export class EvokaiSession {
   private readonly opts: EvokaiSessionOptions
   private tok: { token: string; expiresAt?: number } | null = null
   private engine: VoiceEngineKind
+  private speech_: SpeechChoice | null = null
   private readonly listeners = new Map<string, Set<EventListener>>()
+  private readonly tools = new Map<string, ClientToolHandler>()
+  private readonly renderers = new Map<string, (part: ToolPart) => void>()
   private readonly controllers = new Set<AbortController>()
   private replaying: Promise<void> | null = null
+  /** Local preview URLs of images just sent, revoked once no message shows them (`fileRef`). */
+  private readonly previews = new Set<string>()
 
   constructor(opts: EvokaiSessionOptions) {
     if (!opts.baseUrl) throw new Error('EvokaiSession: baseUrl is required')
@@ -117,7 +152,12 @@ export class EvokaiSession {
     // Client-side events derived from the state: the turn phase and the usage shares.
     let phase: TurnPhase = this.state.phase
     let usage = this.state.usage
+    let messages = this.state.messages
     this.store.subscribe((st) => {
+      if (st.messages !== messages) {
+        messages = st.messages
+        if (this.previews.size) this.revokePreviews(st.messages)
+      }
       if (st.phase !== phase) {
         const previous = phase
         phase = st.phase
@@ -170,7 +210,19 @@ export class EvokaiSession {
     if (typeof event.seq === 'number' && seen(this.state, event.seq)) return
     this.store.dispatch({ type: 'event', event })
     this.emit(event)
+    this.renderEvent(event)
+    if (event.type === 'client_tool') void this.runTool(event)
     if (event.type === 'done' && event.messages?.length) this.opts.onMessages?.(event.messages, event)
+  }
+
+  /** Revoke the preview URLs no message shows any more (a reload, a new conversation, a refused rewrite). */
+  private revokePreviews(messages: SessionState['messages']): void {
+    const shown = new Set(messages.flatMap((m) => m.attachments?.flatMap((a) => (a.url ? [a.url] : [])) ?? []))
+    for (const url of this.previews) {
+      if (shown.has(url)) continue
+      this.previews.delete(url)
+      URL.revokeObjectURL(url)
+    }
   }
 
   private emit(event: SessionEvent): void {
@@ -225,6 +277,7 @@ export class EvokaiSession {
       this.engine = info.voiceEngine
       this.store.dispatch({ type: 'voiceEngine', voiceEngine: info.voiceEngine })
     }
+    if (info.speech !== undefined) this.speech_ = info.speech
     if (info.conversationId && !this.state.conversationId) this.store.dispatch({ type: 'conversation', conversationId: info.conversationId })
     return info.token
   }
@@ -262,6 +315,7 @@ export class EvokaiSession {
   /** The session: conversation, agent, the subject's memories and usage shares (also updates the usage). */
   async info(): Promise<SessionInfo> {
     const info = await this.call<SessionInfo>('/v1/session')
+    if (info.speech !== undefined) this.speech_ = info.speech
     this.store.dispatch({ type: 'usage', usage: info.usage })
     if (!this.state.conversationId) this.store.dispatch({ type: 'conversation', conversationId: info.conversationId })
     return info
@@ -292,6 +346,9 @@ export class EvokaiSession {
     const text = input.text?.trim()
     if (input.confirm) this.store.dispatch({ type: 'decided', actionId: input.confirm.actionId, approve: input.confirm.approve })
     const rewrite = input.rewrite && text !== undefined && !input.confirm
+    const files = !input.confirm && !input.regenerate ? (input.files ?? []) : []
+    const attachments = files.map(fileRef)
+    for (const a of attachments) if (a.url) this.previews.add(a.url)
     // The question being rewritten (Evokai storage: the service refuses it if it is no longer the last one).
     const editing = rewrite ? [...this.state.messages].reverse().find((m) => m.role === 'user' && m.local === undefined) : undefined
     this.store.dispatch({
@@ -300,16 +357,25 @@ export class EvokaiSession {
       ...(text !== undefined && !input.confirm ? { text } : {}),
       ...(input.answer ? { answer: true } : {}),
       ...(rewrite ? { rewrite: true } : {}),
+      ...(attachments.length ? { attachments } : {}),
     })
     const history = input.history !== undefined ? input.history : await this.opts.getHistory?.()
     const page = input.page !== undefined ? input.page : this.opts.getPage?.()
     const body: Record<string, unknown> = { mode: input.mode ?? 'text' }
-    if (input.confirm) body.confirm = input.confirm
+    if (input.regenerate) {
+      // The service runs its own copy of the question again.
+    } else if (input.confirm) body.confirm = input.confirm
     else if (text !== undefined) body.text = text
     if (page) body.page = page
     if (history) body.history = history
     if (input.endOfSpeechAt) body.endOfSpeechAt = input.endOfSpeechAt
-    if (rewrite) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
+    if (files.length) {
+      body.attachments = await Promise.all(
+        files.map(async (f, i) => ({ name: attachments[i]?.name ?? 'file', mediaType: f.type, data: await base64(f) })),
+      )
+    }
+    if (rewrite && !input.regenerate) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
+    const path = input.regenerate ? '/v1/session/regenerate' : '/v1/session/chat'
 
     const ctrl = new AbortController()
     this.controllers.add(ctrl)
@@ -318,8 +384,8 @@ export class EvokaiSession {
     let turnId: string | null = null
     let done: DoneEvent | null = null
     try {
-      let res = await this.post(body, await this.getAccessToken(), ctrl.signal)
-      if (res.status === 401 && this.opts.getToken) res = await this.post(body, await this.getAccessToken(true), ctrl.signal)
+      let res = await this.post(body, await this.getAccessToken(), ctrl.signal, path)
+      if (res.status === 401 && this.opts.getToken) res = await this.post(body, await this.getAccessToken(true), ctrl.signal, path)
       if (!res.ok || !res.body) throw await errorFromResponse(res)
       const header = res.headers.get('X-Turn-Id')
       if (header) {
@@ -363,9 +429,23 @@ export class EvokaiSession {
     }
   }
 
-  private async post(body: Record<string, unknown>, token: string, signal: AbortSignal): Promise<Response> {
+  /**
+   * An image attached to this conversation (`AttachmentRef.id`), fetched with the session token: show it with
+   * `URL.createObjectURL`. Documents are never served back (404 `unknown_attachment`).
+   */
+  async attachment(id: string): Promise<Blob> {
+    const path = `/v1/session/attachments/${encodeURIComponent(id)}`
+    const get = async (token: string) =>
+      this.fetchFn(joinUrl(this.baseUrl, path), { headers: { Authorization: `Bearer ${token}` } })
+    let res = await get(await this.getAccessToken())
+    if (res.status === 401 && this.opts.getToken) res = await get(await this.getAccessToken(true))
+    if (!res.ok) throw await errorFromResponse(res)
+    return res.blob()
+  }
+
+  private async post(body: Record<string, unknown>, token: string, signal: AbortSignal, path = '/v1/session/chat'): Promise<Response> {
     try {
-      return await this.fetchFn(joinUrl(this.baseUrl, '/v1/session/chat'), {
+      return await this.fetchFn(joinUrl(this.baseUrl, path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -438,6 +518,17 @@ export class EvokaiSession {
     return this.chat({ ...opts, text, rewrite: true })
   }
 
+  /**
+   * Regenerate the last answer: the last question runs again and its new answer replaces the last one (a `rewritten`
+   * event, then the new turn). Allowed while `ChatMessage.regenerable` (the service refuses with `not_regenerable`
+   * after a turn that changed data or ran a client tool); resolves with the new turn's `done`, or null.
+   */
+  regenerate(opts: Omit<ChatInput, 'confirm' | 'text' | 'rewrite' | 'regenerate'> = {}): Promise<DoneEvent | null> {
+    const question = [...this.state.messages].reverse().find((m) => m.role === 'user' && m.parts.some((p) => p.kind === 'text'))
+    const text = question?.parts.map((p) => (p.kind === 'text' ? p.text : '')).join('') ?? ''
+    return this.chat({ ...opts, text, rewrite: true, regenerate: true })
+  }
+
   /** Approve or reject an open confirmation. */
   confirm(actionId: string, approve: boolean, opts: Omit<ChatInput, 'confirm' | 'text'> = {}): Promise<DoneEvent | null> {
     return this.chat({ ...opts, confirm: { actionId, approve } })
@@ -447,6 +538,80 @@ export class EvokaiSession {
   answer(askId: string, labels: string[], opts: Omit<ChatInput, 'confirm' | 'text'> = {}): Promise<DoneEvent | null> {
     this.store.dispatch({ type: 'answered', askId, labels })
     return this.chat({ ...opts, text: labels.join(', '), answer: true })
+  }
+
+  // ── client tools ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Run a custom client tool when the agent calls it (`docs/client-tools.md`). For a tool that waits, what `fn`
+   * returns (or throws) is posted as its result; for one that does not, `fn` just runs. Returns an unregister
+   * function. A tool without a handler that waits gets an error result, so the turn does not wait for nothing.
+   */
+  handleTool(name: string, fn: ClientToolHandler): () => void {
+    this.tools.set(name, fn)
+    return () => {
+      if (this.tools.get(name) === fn) this.tools.delete(name)
+    }
+  }
+
+  /**
+   * Draw a tool's activity with your own UI code: `render` gets a `ToolPart` each time the tool starts and ends (and
+   * a client tool's result once your handler answered). Server and MCP tools give their name and status only; use
+   * `ui_chart` and `ui_diagram` for the visuals. Returns an unregister function.
+   */
+  renderTool(name: string, render: (part: ToolPart) => void): () => void {
+    this.renderers.set(name, render)
+    return () => {
+      if (this.renderers.get(name) === render) this.renderers.delete(name)
+    }
+  }
+
+  private render(part: ToolPart): void {
+    const fn = this.renderers.get(part.name)
+    if (!fn) return
+    try {
+      fn(part)
+    } catch {
+      // The page's own drawing code: its failure never stops the session.
+    }
+  }
+
+  private renderEvent(e: EvokaiEvent): void {
+    if (e.type === 'tool') this.render({ name: e.name, status: e.status })
+    else if (e.type === 'client_tool') this.render({ name: e.name, status: e.wait ? 'start' : 'done', callId: e.callId, args: e.args })
+    else if (e.type === 'chart') this.render({ name: 'ui_chart', status: 'done', result: e.chart })
+    else if (e.type === 'diagram') this.render({ name: 'ui_diagram', status: 'done', result: e.diagram })
+  }
+
+  /** Answer a waiting client tool call yourself (when you listen to `client_tool` events instead of `handleTool`). */
+  async toolResult(callId: string, answer: { result: unknown } | { error: string }): Promise<void> {
+    await this.call('/v1/session/tool-results', { method: 'POST', body: { callId, ...answer } })
+  }
+
+  private async runTool(event: ClientToolEvent): Promise<void> {
+    const fn = this.tools.get(event.name)
+    if (!fn) {
+      if (event.wait && this.listenerCount('client_tool') === 0) {
+        await this.toolResult(event.callId, { error: `No handler for ${event.name} in this client.` }).catch(() => undefined)
+      }
+      return
+    }
+    let answer: { result: unknown } | { error: string }
+    try {
+      answer = { result: (await fn(event.args, event)) ?? null }
+    } catch (e) {
+      answer = { error: e instanceof Error ? e.message : String(e) }
+    }
+    if (event.wait) {
+      const status = 'result' in answer ? 'done' : 'error'
+      this.store.dispatch({ type: 'toolResult', callId: event.callId, status, ...answer })
+      this.render({ name: event.name, status, callId: event.callId, args: event.args, ...answer })
+      await this.toolResult(event.callId, answer).catch(() => undefined)
+    }
+  }
+
+  private listenerCount(type: string): number {
+    return this.listeners.get(type)?.size ?? 0
   }
 
   /** Thumbs up (1), down (-1) or none (null) on a stored assistant message. */
@@ -544,6 +709,34 @@ export class EvokaiSession {
   url(path: string): string {
     return joinUrl(this.baseUrl, path)
   }
+
+  /** The fetch this session uses (for transports that make their own requests). */
+  get fetchLike(): FetchLike {
+    return this.fetchFn
+  }
+
+  /**
+   * The server speech engines the token chose (`speech` at mint), or null: the browser voice engine then speaks and
+   * listens on the device. Read from the token or from `info()`.
+   */
+  get speech(): SpeechChoice | null {
+    return this.speech_
+  }
+
+  /** Server speech: a text or a `say` segment as audio and timings (`POST /v1/session/speech`). */
+  speak(input: SpeakInput): Promise<SpeechResult> {
+    return speakWith(this, input)
+  }
+
+  /** Server speech as a stream: audio first, timings as the engine reports them (for `TimedSpeechPlayer`). */
+  speechEvents(input: SpeakInput): AsyncGenerator<SpeechStreamEvent> {
+    return speechEventsWith(this, input)
+  }
+
+  /** Transcribe a recording with the session's recognition engine (`POST /v1/session/transcribe`). */
+  transcribe(audio: Blob | Uint8Array, opts?: { language?: string; contentType?: string; signal?: AbortSignal }) {
+    return transcribeWith(this, audio, opts)
+  }
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -551,4 +744,19 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 /** Whether an `error` event is a spending cap that blocked the turn (`limit` says which). */
 export function isLimitError(e: SessionEvent): e is LimitErrorEvent {
   return e.type === 'error' && e.code === 'limit'
+}
+
+/** What a question shows of a file before the service keeps it: an image gets a local preview. */
+function fileRef(f: File | Blob): AttachmentRef {
+  const name = 'name' in f && f.name ? f.name : 'file'
+  const url = f.type.startsWith('image/') && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(f) : undefined
+  return { name, mediaType: f.type, size: f.size, ...(url ? { url } : {}) }
+}
+
+/** A file's bytes as base64 (in slices: a large file would overflow the call stack in one go). */
+async function base64(f: Blob): Promise<string> {
+  const bytes = new Uint8Array(await f.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
 }

@@ -1,4 +1,5 @@
 import { meaningfulWords, stripEcho, tailWords } from '../src/browser/speech'
+import { Emitter, type SttEngine, type SttEvents } from '../src/browser/voice/types'
 import { ingestAll, setup } from './helpers/voice'
 
 const LONG = 'This week the shop refunded four thousand euros of orders, less than last week.'
@@ -129,11 +130,40 @@ describe('short replies just after the agent has spoken', () => {
     await vi.waitFor(() => expect(s.m.calls).toHaveLength(2))
   })
 
-  test('a late transcript of its own phrase is still echo and is not sent', async () => {
+  test('a late transcript of its own phrase, from the recogniser that heard it, is not sent', async () => {
     const s = await spoken()
-    s.rec.instances.at(-1)!.say('less than last week', true)
+    // That recogniser was replaced when the agent finished: what it still reports is dropped with it.
+    await vi.waitFor(() => expect(s.rec.instances).toHaveLength(2))
+    s.rec.instances[0]!.say('less than last week', true)
     await new Promise((r) => setTimeout(r, 20))
     expect(s.m.calls).toHaveLength(0)
+  })
+
+  test('a recogniser that is not replaced (not the device one) still drops a late transcript of its phrase', async () => {
+    const events = new Emitter<SttEvents>()
+    const stt: SttEngine = {
+      kind: 'server',
+      lang: 'en-US',
+      running: true,
+      support: async () => 'ready',
+      install: async () => true,
+      start: async () => undefined,
+      stop: () => undefined,
+      abort: () => undefined,
+      on: (e, fn) => events.on(e, fn),
+    }
+    const s = setup({ engine: { stt } })
+    await s.engine.start()
+    speaking(s)
+    s.session.ingest({ type: 'done', conversationId: 'c', reason: 'end_turn', turnId: 't1', seq: 4 })
+    s.tts.synth.finish()
+    s.tts.synth.finish()
+    await vi.waitFor(() => expect(s.engine.phase).not.toBe('speaking'))
+    events.emit('final', 'less than last week')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(s.m.calls).toHaveLength(0)
+    events.emit('final', 'the chart')
+    await vi.waitFor(() => expect(s.m.calls).toHaveLength(1))
   })
 })
 

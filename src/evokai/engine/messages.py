@@ -15,12 +15,15 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    TextContent,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
 
+from evokai.engine.builtin_tools import CHANGING, kind_of
 from evokai.sessions.history import Stored
 
 SUMMARY_HEADER = (
@@ -98,7 +101,11 @@ def response_blocks(
     args: dict[str, dict[str, Any]] | None = None,
     renamed: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """An answer as blocks: its text, then its tool calls.
+    """An answer as blocks: its text, its tool calls, then its calls of built-in tools that act.
+
+    A call of a provider built-in tool that can change data is kept as a mark
+    (``{"builtinTool": {"id", "name", "changes": true}}``): the model never sees it again, and the
+    answer cannot be regenerated.
 
     Args:
         response: The model's answer.
@@ -122,6 +129,11 @@ def response_blocks(
         }
         for p in response.parts
         if isinstance(p, ToolCallPart)
+    ]
+    blocks += [
+        {"builtinTool": {"id": p.tool_call_id, "name": p.tool_name, "changes": True}}
+        for p in response.parts
+        if isinstance(p, NativeToolCallPart) and kind_of(p.tool_name) in CHANGING
     ]
     return blocks
 
@@ -180,6 +192,10 @@ def to_stored(
         blocks = result_blocks(m, ok, renamed)
         for p in m.parts:
             if isinstance(p, UserPromptPart):
+                attached = _file_block(p)
+                if attached is not None:
+                    blocks.append(attached)
+                    continue
                 text = p.content if isinstance(p.content, str) else content_text(p.content)
                 if text.startswith(SUMMARY_HEADER):
                     blocks.append({"text": text, "summary": True})
@@ -188,6 +204,18 @@ def to_stored(
         if blocks:
             out.append(Stored(role="user", content=blocks))
     return out
+
+
+def _file_block(part: UserPromptPart) -> dict[str, Any] | None:
+    """The attachment block a user prompt was built from (``history.file_part``), if any.
+
+    Returns:
+        The block, unchanged (never the bytes).
+    """
+    first = part.content[0] if isinstance(part.content, list) and part.content else None
+    meta = first.metadata if isinstance(first, TextContent) else None
+    block = meta.get("file") if isinstance(meta, dict) else None
+    return block if isinstance(block, dict) else None
 
 
 def _result(tool_use_id: str, name: str, ok: bool, text: str) -> dict[str, Any]:

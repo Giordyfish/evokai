@@ -1,4 +1,4 @@
-import { BOX_IN_MS, BOX_OUT_MS, cubicBezier, Flow, flightAt, restOf, settled, viewOf, type FlowIO, type Look, type Rest, type Spot, type View } from '../src/flow'
+import { BOX_IN_MS, BOX_OUT_MS, Flow, HOP_MS, hopAt, restOf, settled, viewOf, type FlowIO, type Look, type Rest, type Spot, type View } from '../src/flow'
 import { lineWindow } from '../src/panel'
 
 const SPOTS: Record<Rest, Spot> = {
@@ -67,46 +67,44 @@ describe('the views', () => {
   })
 })
 
-describe('the sequencer: the orb moves first when something opens, the box closes first when something closes', () => {
-  test('open the chat: the orb flies from the launcher to the header, then the box opens around it', async () => {
+describe('the sequencer: the orb never crosses the page, it fades out where it was and in where it goes', () => {
+  test('open the chat: the box is measured unseen, the launcher orb hops to the header while the box rises', async () => {
     const { events } = await run('closed', 'chat')
-    const fly = events[flyIndex(events)]
-    expect(fly).toMatchObject({ kind: 'fly', from: 'launcher', to: 'head', ms: 700 })
+    expect(events[flyIndex(events)]).toMatchObject({ kind: 'fly', from: 'launcher', to: 'head', ms: HOP_MS })
+    // The place it goes is measured on the box laid out unseen, before the hop.
     expect(boxIndex(events, 'pre')).toBeLessThan(flyIndex(events))
     expect(flyIndex(events)).toBeLessThan(boxIndex(events, 'in'))
     expect(events).toContainEqual({ kind: 'wait', ms: BOX_IN_MS })
-    // The box is laid out unseen during the flight, never shown before the orb lands.
-    const looks = shows(events)
-    for (const l of looks.slice(0, looks.findIndex((x) => x.box === 'in'))) expect(['none', 'pre']).toContain(l.box)
+    // While the box rises the orb is between places: it rests in the header only once the box is open.
+    expect(shows(events).find((l) => l.box === 'in')?.orb).toBe('flying')
     expect(shows(events).at(-1)).toEqual(settled('chat'))
   })
 
-  test('close the chat: the box closes, then the orb flies down to the launcher', async () => {
+  test('close the chat: the box sinks away while the orb hops down to the launcher', async () => {
     const { events } = await run('chat', 'closed')
     expect(boxIndex(events, 'out')).toBeLessThan(flyIndex(events))
-    expect(events[flyIndex(events)]).toMatchObject({ from: 'head', to: 'launcher' })
-    expect(at(events, (e) => e.kind === 'wait' && e.ms === BOX_OUT_MS)).toBeLessThan(flyIndex(events))
+    expect(shows(events)[0]).toMatchObject({ box: 'out', orb: 'flying' })
+    expect(events[flyIndex(events)]).toMatchObject({ from: 'head', to: 'launcher', ms: HOP_MS })
+    expect(events).toContainEqual({ kind: 'wait', ms: BOX_OUT_MS })
     expect(shows(events).at(-1)).toEqual(settled('closed'))
   })
 
-  test('close from voice: the box closes, then the orb flies from the middle to the launcher', async () => {
+  test('close from voice: the orb hops from the middle to the launcher', async () => {
     const { events } = await run('voice', 'closed')
-    expect(boxIndex(events, 'out')).toBeLessThan(flyIndex(events))
     expect(events[flyIndex(events)]).toMatchObject({ from: 'center', to: 'launcher' })
     expect(shows(events).some((l) => l.layer === 'chat' && l.box !== 'none')).toBe(false)
   })
 
-  test('minimize: the box closes, the orb flies into the launcher, then the bubble appears', async () => {
+  test('minimize: the box sinks away, the orb hops into the launcher, then the bubble appears', async () => {
     const { events } = await run('voice', 'minimized')
     const fly = flyIndex(events)
     expect(boxIndex(events, 'out')).toBeLessThan(fly)
-    expect(events[fly]).toMatchObject({ from: 'center', to: 'launcher', ms: 820 })
-    const bubbleAt = at(events, (e) => e.kind === 'show' && e.look.bubble)
-    expect(bubbleAt).toBeGreaterThan(fly)
+    expect(events[fly]).toMatchObject({ from: 'center', to: 'launcher', ms: HOP_MS })
+    expect(at(events, (e) => e.kind === 'show' && e.look.bubble)).toBeGreaterThan(fly)
     expect(shows(events).at(-1)).toEqual(settled('minimized'))
   })
 
-  test('restore: the orb flies up to the middle, then the box opens around it on voice mode', async () => {
+  test('restore: the orb hops up to the middle while the box rises on voice mode', async () => {
     const { events } = await run('minimized', 'voice')
     const fly = flyIndex(events)
     expect(events[fly]).toMatchObject({ from: 'launcher', to: 'center' })
@@ -114,10 +112,10 @@ describe('the sequencer: the orb moves first when something opens, the box close
     expect(shows(events)[0]).toMatchObject({ box: 'pre', layer: 'voice', bubble: false })
   })
 
-  test('voice on and off inside the open panel: header and middle swap while the layers crossfade', async () => {
+  test('voice on and off inside the open panel: the orb hops between header and middle while the layers crossfade', async () => {
     const on = await run('chat', 'voice')
     expect(on.events[0]).toMatchObject({ kind: 'show', look: { box: 'open', layer: 'voice', orb: 'flying' } })
-    expect(on.events[1]).toMatchObject({ kind: 'fly', from: 'head', to: 'center', ms: 720 })
+    expect(on.events[1]).toMatchObject({ kind: 'fly', from: 'head', to: 'center', ms: HOP_MS })
     expect(shows(on.events).every((l) => l.box === 'open')).toBe(true)
     const off = await run('voice', 'chat')
     expect(off.events[1]).toMatchObject({ kind: 'fly', from: 'center', to: 'head' })
@@ -162,37 +160,32 @@ describe('the sequencer: the orb moves first when something opens, the box close
   })
 })
 
-describe('the flight', () => {
+describe('the hop', () => {
   const a = SPOTS.launcher
   const b = SPOTS.center
 
-  test('starts where it leaves and lands where it goes, at their sizes', () => {
-    expect(flightAt(a, b, 0)).toEqual({ x: a.x, y: a.y, size: a.size })
-    const end = flightAt(a, b, 1)
-    expect(end.x).toBeCloseTo(b.x)
-    expect(end.y).toBeCloseTo(b.y)
-    expect(end.size).toBeCloseTo(b.size)
-  })
-
-  test('follows a slight arc and overshoots a little before landing', () => {
-    // On the way, the orb leaves the straight line from the launcher up to the middle.
-    const off = (t: number) => {
-      const p = flightAt(a, b, t)
-      return Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / Math.hypot(b.x - a.x, b.y - a.y)
+  test('fades out and shrinks where it was, then grows and fades in where it goes, never in between', () => {
+    expect(hopAt(a, b, 0)).toEqual({ spot: a, scale: 1, opacity: 1 })
+    const ts = Array.from({ length: 41 }, (_, i) => i / 40)
+    for (const t of ts) {
+      const h = hopAt(a, b, t)
+      // Only ever on one of the two places: nothing travels across the page.
+      expect([a, b]).toContain(h.spot)
+      expect(h.scale).toBeGreaterThanOrEqual(0.6)
+      expect(h.scale).toBeLessThanOrEqual(1)
+      // Seen on one place only while it is out of the other.
+      if (h.spot === a) expect(h.opacity).toBeGreaterThan(0)
     }
-    expect(Math.max(...Array.from({ length: 21 }, (_, i) => off(i / 20)))).toBeGreaterThan(10)
-    const sizes = Array.from({ length: 41 }, (_, i) => flightAt(a, b, i / 40).size)
-    expect(Math.max(...sizes)).toBeGreaterThan(b.size)
-    expect(Math.max(...sizes)).toBeLessThan(b.size * 1.07)
+    const out = ts.filter((t) => hopAt(a, b, t).spot === a)
+    expect(Math.max(...out)).toBeLessThan(0.5)
+    expect(hopAt(a, b, 0.45).opacity).toBe(0)
+    expect(hopAt(a, b, 1)).toEqual({ spot: b, scale: 1, opacity: 1 })
   })
 
-  test('the easing is a CSS cubic-bezier', () => {
-    const linear = cubicBezier(0, 0, 1, 1)
-    expect(linear(0.3)).toBeCloseTo(0.3, 3)
-    const ease = cubicBezier(0.45, 0.05, 0.25, 1)
-    expect(ease(0)).toBe(0)
-    expect(ease(1)).toBe(1)
-    expect(ease(0.5)).toBeGreaterThan(0.5)
+  test('the fade is monotonic on each side', () => {
+    const op = (t: number) => hopAt(a, b, t).opacity
+    for (let t = 0; t < 0.38; t += 0.02) expect(op(t + 0.02)).toBeLessThanOrEqual(op(t))
+    for (let t = 0.5; t < 0.98; t += 0.02) expect(op(t + 0.02)).toBeGreaterThanOrEqual(op(t))
   })
 })
 

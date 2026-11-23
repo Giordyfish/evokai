@@ -7,11 +7,22 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from evokai.agents.definitions import ClientToolDef
+from evokai.agents.modules import (
+    ModuleChoice,
+    check_session_modules,
+    choose_modules,
+    scan_module_texts,
+)
 from evokai.api.deps import server_app, services
-from evokai.core.errors import NotFound
+from evokai.core.errors import BadRequest, NotFound
+from evokai.grants import NotGranted, grants_of
+from evokai.i18n import pack_language
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
 from evokai.sessions.runs import AgentRunner, Attachment
+from evokai.tools.custom import MAX_TOOLS as MAX_CLIENT_TOOLS
+from evokai.tools.custom import check_tools
 
 router = APIRouter(prefix="/v1/agents", tags=["runs"])
 Svc = Annotated[Services, Depends(services)]
@@ -48,6 +59,15 @@ class RunRequest(BaseModel):
     )
     """The subject's groups or roles: knowledge documents with access groups are found only when
     one of them matches (documents without access groups always are)."""
+    modules: dict[str, ModuleChoice] | None = Field(default=None, max_length=20)
+    """Prompt modules of the agent to switch on or off and fill for this run, as in a session
+    token (``POST /v1/session-tokens``), with the same checks."""
+    locale: str | None = Field(default=None, max_length=35)
+    """The run's language, a BCP 47 tag with a shipped pack (400 ``unknown_locale`` without)."""
+    clientTools: list[ClientToolDef] = Field(default_factory=list, max_length=MAX_CLIENT_TOOLS + 1)
+    """Custom client tools for this run (``docs/client-tools.md``), granted by ``client:session``.
+    Nobody can answer mid-run, so none may wait (400 ``client_tool_wait``): their calls come back
+    in ``clientToolCalls``."""
 
 
 class RunUsage(BaseModel):
@@ -76,6 +96,9 @@ class RunResponse(BaseModel):
     citations: list[dict[str, Any]] = Field(default_factory=list)
     """Knowledge passages found by the run, as ``citation`` events (the answer cites them as
     ``[n]``)."""
+    clientToolCalls: list[dict[str, Any]] = Field(default_factory=list)
+    """Calls of custom client tools the run made (``callId``, ``name``, ``args``), in order: the
+    caller carries them out (the model was told they were received)."""
 
 
 @router.post("/{name}/run")
@@ -87,11 +110,33 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
 
     Raises:
         NotFound: Unknown application.
+        BadRequest: An unknown locale, or a prompt module choice that is refused.
     """
     application = await svc.store.applications.get(app.application_id)
     if application is None:
         raise NotFound()
     agent = await svc.agents.active(app.application_id, name)
+    await _check_client_tools(svc, application, agent, body.clientTools)
+    options = None
+    if body.modules is not None or body.locale is not None:
+        if body.locale is not None and pack_language(body.locale) is None:
+            raise BadRequest(
+                f"No language pack for the locale {body.locale}.", code="unknown_locale"
+            )
+        grants = await grants_of(svc.store, application)
+        modules = choose_modules(agent, body.modules or {}, grants)
+        texts = await check_session_modules(svc.store, application.id, agent, modules)
+        cleaned = await scan_module_texts(
+            svc.guard,
+            application,
+            agent,
+            texts,
+            subject=body.subject or f"system:{agent.name}",
+            session_id=None,
+        )
+        for module, values in cleaned.items():
+            modules[module]["params"] = {**modules[module]["params"], **values}
+        options = {"modules": modules, "locale": body.locale}
     text = body.input if isinstance(body.input, str) else None
     messages = None if isinstance(body.input, str) else [x.model_dump() for x in body.input]
     result = await AgentRunner(svc.engine).run(
@@ -104,6 +149,9 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
         tags=body.tags,
         store_conversation=body.store,
         groups=body.groups,
+        prompt_options=options,
+        client_tools=body.clientTools,
+        offer_client_tools=True,
     )
     return RunResponse(
         runId=result.run_id,
@@ -119,4 +167,28 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
         ),
         conversationId=result.conversation_id,
         citations=result.citations,
+        clientToolCalls=result.client_calls,
     )
+
+
+async def _check_client_tools(
+    svc: Services, application: Any, agent: Any, tools: list[ClientToolDef]
+) -> None:
+    """A run's custom client tools: none waits, within the limits, each one granted.
+
+    Raises:
+        BadRequest: A tool that waits (``client_tool_wait``).
+        NotGranted: ``client:session`` or a tool's name is not granted.
+    """
+    if not tools:
+        return
+    if any(t.wait for t in tools):
+        raise BadRequest(
+            "A server run cannot wait for a client tool: declare it with wait false.",
+            code="client_tool_wait",
+        )
+    check_tools([*agent.client_tools.custom, *tools])
+    grants = await grants_of(svc.store, application)
+    for t in tools:
+        if not grants.client_tool(t.name, static=False):
+            raise NotGranted("client", f"The client tool {t.name} is not granted to runs.")

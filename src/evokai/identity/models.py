@@ -29,7 +29,13 @@ class AppPrincipal:
     """The console role on this application (keys act as its owner)."""
     actor: str = ""
     """Who, for the audit log: ``key:<prefix>``, ``admin-key:<id>``, ``operator-key``,
-    ``sso:<e-mail>``."""
+    ``sso:<e-mail>``, ``assistant:<the console login>``."""
+    via: str = ""
+    """``assistant`` for the console assistant's delegation token (``evokai.assistant``)."""
+    subject: str = ""
+    """The person's subject in the console assistant (``console:<login>``) for a console login or
+    a delegation; empty for keys. A system application shows each person only this subject's
+    conversations (``evokai.assistant.privacy``)."""
 
 
 @dataclass(frozen=True)

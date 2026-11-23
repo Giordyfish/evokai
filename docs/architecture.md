@@ -23,8 +23,8 @@ One service, one event vocabulary. Text and voice are two ways into the same con
   nothing reached the user yet); an MCP server that is down drops its tools for that turn; a
   failing speech provider turns the session to text; a budget that runs out ends the turn with a
   clear message.
-- **Avatar-ready, not avatar-bound.** Speech is emitted as ordered `say` segments any renderer
-  (browser TTS, server TTS, subtitles, a future avatar) can follow. A session declares its actor
+- **Renderer-agnostic speech.** Speech is emitted as ordered `say` segments that any renderer
+  (browser TTS, server TTS, subtitles, a visual) can follow. A session declares its actor
   (`agent` today).
 
 ## Hard rule: no conversations at model providers
@@ -106,6 +106,10 @@ admin console ── OIDC (code + PKCE) ──▶ /v1/console/sso/* ──▶ th
   optional per-subject caps, optional model and voice, **voice engine**, and whether a credential
   was forwarded. The forwarded credential itself is stored encrypted (Fernet) for the token's life
   and purged after it.
+- The mint may also choose the session's **prompt modules** (`modules`: which of the agent's
+  modules are on, with which parameters) and its **locale** (a BCP 47 tag with a shipped language
+  pack). They are checked (free-text parameters by the guard) and stored on the conversation, not
+  in the token: the browser never sees or changes them ([Prompt modules](prompt-modules.md)).
 - A session can record the **consent** the user gave (version, time, notice hash) and, for kiosks,
   a hashed **exit code** (`POST /v1/session/exit`: 204, 403 wrong, 429 too many attempts).
 
@@ -131,7 +135,7 @@ tools ── cachePoint(ttl) ── system: stable part ── cachePoint(ttl) �
 
 - The **stable part** of the system prompt is the same on every request of an agent version: the
   instructions, the text of the agent's `preload_skills` and the list of the skills it loads on
-  demand. `{date}` in the instructions changes it once a day.
+  demand. `{{date}}` in the instructions changes it once a day.
 - The **volatile part** (voice rule, memories, open page) follows the cache point, so nothing per
   request is ever inside the cached prefix. A server run has no volatile part: its input is the
   user's message.
@@ -193,7 +197,7 @@ conversation (`storageMode`), and the conversation keeps it for good (older conv
   saw), turns, numbered events (for replay), pending confirmations and memories in Evokai's
   database.
 - **`external`**: the application sends `history` (the stable `HistoryMessage` contract: `role`,
-  `content` blocks `text` / `toolUse` / `toolResult`, `text`, `events`, `interrupted`) with every
+  `content` blocks `text` / `toolUse` / `toolResult` / `builtinTool`, `text`, `events`, `interrupted`) with every
   request; Evokai validates and windows it, runs the turn and returns the new messages in the
   `done` event or the JSON response (`Accept: application/json`). No message content, events or
   memories are kept at rest; a pending confirmation holds only the waiting tool calls and the
@@ -238,6 +242,26 @@ an open or answered confirmation), and runs a new turn on the new text (`evokai.
   (in `done` and in the JSON answer): the application drops its copy from that index and appends `messages`. Nothing
   is kept at rest, as for every external turn.
 
+### Regenerating the last answer
+
+`POST /v1/session/regenerate` (session token; body `{page?, mode?, history?}`) runs the last question again and its
+new answer replaces the last one. It is a rewrite with the same question, so everything above applies: the stream
+(or the JSON answer with `Accept: application/json`) starts with `conversation` and `rewritten`, the caps, the guard
+and the traces are a turn's, and the replaced answer stays only in its turn's trace, not in the visible history.
+
+- **Refused** with 409 `not_regenerable` (`turn.notRegenerable` in the language packs) when there is no question yet,
+  the last turn changed data (a `wrote` result or an approved change), it ran a custom
+  [client tool](client-tools.md) (the client acted on it, and running it again could act twice), it called a
+  [built-in tool](builtin-tools.md) that can change data, or a turn is running; and when the question cannot be asked
+  again as it was: stored with identifiers masked (`pii.history`: the original is kept nowhere), or, with external
+  storage, carrying an image or PDF read as a file (its bytes are gone after the turn).
+- **The flag.** Every `done` event carries `regenerable`, and in `GET /v1/session/conversation` the last assistant
+  message has `regenerable: true` while it can be regenerated and no turn runs. The TypeScript client's
+  `session.regenerate()` and `ChatMessage.regenerable`, `<evokai-chat>`'s regenerate button on the last answer, and
+  the Python client's `regenerate()` use them.
+- **External storage.** Send the history with the last question and the answer to replace: Evokai answers with
+  `replacedFrom` as for a rewrite.
+
 ## Protocol (HTTP + SSE)
 
 Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/openapi.json`.
@@ -257,11 +281,15 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | POST | `/v1/session/memory-consent` | session | the person's answer (a no deletes what was remembered) |
 | GET | `/v1/session/conversation` | session | messages, open confirmation, last seq, running turn |
 | POST | `/v1/session/chat` | session | a turn: `{text?, confirm?, rewrite?, page?, mode: text\|voice, history?, endOfSpeechAt?}` → SSE (or JSON); `rewrite` replaces the last question ([below](#rewriting-the-last-question)) |
+| POST | `/v1/session/regenerate` | session | regenerate the last answer: `{page?, mode?, history?}` → SSE (or JSON), 409 `not_regenerable` ([regenerating](#regenerating-the-last-answer)) |
+| POST | `/v1/session/tool-results` | session | answer a waiting custom client tool: `{callId, result \| error}` ([client tools](client-tools.md)) |
 | POST | `/v1/session/turns/{id}/cancel` | session | cancel a turn (barge-in) |
 | GET | `/v1/session/events?after=` | session | replay after a reconnect |
 | POST | `/v1/session/messages/{id}/feedback` | session | thumbs |
 | POST | `/v1/session/exit`, `/v1/session/bug-reports` | session | kiosk exit, bug report |
 | POST/PATCH | `/v1/session/voice/offer` | session | server voice: WebRTC offer / ICE candidates (only when enabled) |
+| POST | `/v1/session/speech`, `/v1/session/transcribe` | session | [server speech](voice.md): a text or a `say` segment as audio and timings (SSE); a recording transcribed (only when enabled) |
+| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled) |
 | POST | `/v1/session/agui` | session | a turn as an [AG-UI](ag-ui.md) run: `RunAgentInput` in, AG-UI events out (SSE); confirmations and questions are interrupts |
 | POST | `/v1/openai/chat/completions` | server key or session | [OpenAI-compatible](openai-compatible.md) Chat Completions: model = agent, server-run semantics, streaming |
 | GET | `/v1/openai/models` | server key or session | the agents the caller can use, as OpenAI models |
@@ -293,7 +321,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET | `/v1/console/me`, `/applications`, `/health` | console cookie | who is logged in, its applications, health |
 | GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility), per console identity; audited |
 
-Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, filler?}`), `tool` (start/done/error),
+Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (start/done/error),
 `chart` (a chart, or an `image` the agent's code drew), `diagram`, `ask`, `navigate`, `confirm` (`{actionId, items, why}`: `why[i]` says why
 `items[i]` waits, an i18n key and an [ask rule](security.md#ask-rules)'s label), `rewritten` (`{replaced, messageId, replacedFrom?}`, the
 last question was [rewritten](#rewriting-the-last-question)), `citation` (`{index, kb, documentId, title,
@@ -310,12 +338,17 @@ own identifiers the way each one asks. Charts and schemas are never read aloud.
 
 A speech engine reads «1.000» as «uno punto zero zero zero», so a `say` also carries `spoken`, the
 same sentence with its numbers in words, whenever that differs from `text`
-(`evokai.audio.speech.numbers`, by the application's locale; Italian today, other languages are
-spoken as written). Italian covers integers with thousand dots, decimals («12,5»: «dodici virgola
-cinque»), percentages, euros («1.234,56 €»: «milleduecentotrentaquattro euro e cinquantasei»),
-dates («16/11/2026»: «sedici novembre duemilaventisei»), times («17:26»), signs and ordinals
-(«1°»: «primo»); digits inside identifiers, versions («2.0.1») and codes (a leading zero, more than
-twelve digits) are left alone. The voice speaks `spoken ?? text`; everything shown (the chat, the
+(`evokai.audio.speech.numbers`, by the session's locale: Italian, Spanish, French, German, Romanian
+and Swedish; English is spoken as written). The words come from
+[num2words](https://pypi.org/project/num2words/) (Italian keeps its own speller, which num2words
+gets wrong for 118 and «ventitré»), and each pack's `speech.numbers` block says how the language
+writes numbers (group and decimal separators, the date separator) and the words around them. Every
+language covers integers with group separators («1.000», «1 000» with a no-break space in French
+and Swedish), decimals («12,5»: «dodici virgola cinque»), percentages, euros («1.234,56 €»:
+«milleduecentotrentaquattro euro e cinquantasei»), dates («16/11/2026»: «sedici novembre
+duemilaventisei»; «16.11.2026» in German and Romanian), times («17:26»), signs and, in Italian and
+Spanish, ordinals («1°»: «primo»); digits inside identifiers, versions («2.0.1») and codes (a
+leading zero, more than twelve digits) are left alone. The voice speaks `spoken ?? text`; everything shown (the chat, the
 subtitles) keeps `text`, and the stored messages and `text` events never change.
 
 ## Server runs (back-office agents)
@@ -365,7 +398,9 @@ A session declares its **voice engine** (token claim, else the application defau
   as an RTVI server message `{"evokai": event}`. Pipecat handles interruptions; the agent cancels
   its turn on barge-in (`barge_in`). A failing TTS (quota, outage) turns the session to text and
   says so. STT and TTS are pluggable (registered names or `module:factory`); EU-hosted providers
-  plug in without touching the pipeline. Connections stay bound to their session.
+  plug in without touching the pipeline. Connections stay bound to their session. The engines are
+  the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
+  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming).
 
 ## Module map (`src/evokai`)
 
@@ -396,6 +431,8 @@ A session declares its **voice engine** (token claim, else the application defau
 | `sandbox` | isolated code execution: the AgentCore Code Interpreter client, the `code_run` tool and `skill_run` for skill scripts ([code](code.md)) |
 | `connections` | per-user OAuth connections: providers and scopes, the token vault, the authorization flow with PKCE, refresh and revocation |
 | `channels` | e-mail, Teams and Slack: configuration, subject mapping, each protocol's verification and replies, runs and turns from deliveries |
+| `mcp_admin` | the admin MCP server: the admin API's allow-listed routes as MCP tools, called in process with the caller's rights ([admin MCP](admin-mcp.md)) |
+| `assistant` | the console assistant: its locked system application, delegation tokens, activation and model recommendations, its evals ([assistant](assistant.md)) |
 | `guard` | the security layer: policies, injection and personal-data detectors, spotlighting, output filter, tool policy, abuse limits, security events ([security](security.md)) |
 
 ## Database
@@ -433,6 +470,9 @@ turn), usage and health (database and migrations, models answering, MCP servers,
 The console shows no amount anywhere (pages, charts, tables, exports): only used and left shares of the caps, computed
 by the service (see the hard rule above). The caps themselves are set on the Limits page as plain numbers, never with a
 currency.
+
+The console embeds Evokai's own assistant (`<evokai-chat>` with the mascot), which operates the selected application
+through the admin MCP server with the person's rights and asks before every change ([assistant](assistant.md)).
 
 The console is internal: it is not meant to be published on the internet (the application's proxy should block
 `{base}/admin`; reach it through a port-forward to the service, for example with SSM).

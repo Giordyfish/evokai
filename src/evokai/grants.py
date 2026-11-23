@@ -12,8 +12,8 @@ published over A2A) is the one item that is off until granted.
 
 Enforced in four places:
 
-- **session token mint**: the browser channel, a requested model, voice engine, voice and storage
-  mode (403 with a ``*_not_granted`` code);
+- **session token mint**: the browser channel, a requested model, voice engine, voice, storage
+  mode and prompt module choice (403 with a ``*_not_granted`` code);
 - **turns and server runs**: the agent only gets granted MCP servers, tools, skills and client
   tools; the model chain skips models that are off, and fallback-only models never answer first;
 - **voice offers**: server voice and its speech-to-text engine;
@@ -23,11 +23,12 @@ Enforced in four places:
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from evokai.agents.definitions import AgentDef
+from evokai.agents.definitions import BUILTIN_KINDS, AgentDef
 from evokai.core.errors import AppError, BadRequest
 from evokai.llm.catalog import bare, normalize
 
@@ -50,6 +51,10 @@ WORKFLOW = "workflow"
 CODE = "code"
 CONNECTION = "connection"
 CAPABILITY = "capability"
+MODULE = "module"
+OPENAI = "openai"
+BUILTIN = "builtin"
+ATTACHMENTS = "attachments"
 KINDS = (
     MODEL,
     MCP,
@@ -66,6 +71,10 @@ KINDS = (
     CODE,
     CONNECTION,
     CAPABILITY,
+    MODULE,
+    OPENAI,
+    BUILTIN,
+    ATTACHMENTS,
 )
 KNOWLEDGE_ALL = "*"
 """The knowledge grant of the whole capability (each base is also an item of its own)."""
@@ -76,8 +85,19 @@ may change data without an approval (default off)."""
 
 CODE_ITEMS = ("*",)
 """Isolated code execution (``code_run``) as a whole, off until granted."""
+OPENAI_ITEMS = ("confirm",)
+"""The OpenAI-compatible API: ``confirm``, changes wait for a yes in the next request (off until
+granted, and the agent turns it on with ``openai_confirm``)."""
+ATTACHMENT_ITEMS = ("*",)
+"""Files people attach to chat messages (``evokai.attachments``), off until granted; the agent's
+``attachments`` turns them on and sets the kinds and sizes."""
 
 CLIENT_TOOLS = ("navigate", "chart", "diagram", "ask", "confirm", "memory")
+CLIENT_SESSION = "session"
+"""The client grant of custom client tools declared by a session token or a server run (off until
+granted); a custom tool's own name (or a pattern) is a client grant too."""
+CUSTOM_CLIENT = re.compile(r"^[a-z][a-z0-9_*?]{0,47}$")
+"""A client grant naming custom client tools: a name, or a pattern with ``*`` and ``?``."""
 VOICE_ENGINES = ("browser", "server")
 STORAGE_MODES = ("evokai", "external")
 CHANNELS = ("browser", "server", "a2a", "email", "teams", "slack")
@@ -101,12 +121,17 @@ OFF_BY_DEFAULT = frozenset(
     | {(CHANNEL, c) for c in MESSAGING_CHANNELS}
     | {(CONNECTION, p) for p in CONNECTION_PROVIDERS}
     | {(CODE, "*")}
+    | {(CLIENT, CLIENT_SESSION)}
+    | {(OPENAI, "confirm")}
+    | {(ATTACHMENTS, "*")}
+    | {(BUILTIN, k) for k in BUILTIN_KINDS}
 )
 """Items an application does not have until it is granted them: A2A publishes agents to anyone
 holding the server key, autonomous workflows change data without a person deciding, channels
 beyond the web panel let outsiders write to an agent, connections let an agent act as a person in
-a third-party system, and code execution sends conversation data to a sandbox, so all of them are
-opt-in. Every ``capability`` of the catalog is off until granted too (``Grants.default``)."""
+a third-party system, code execution sends conversation data to a sandbox, and attachments let
+people send files to the model, so all of them are opt-in. Every ``capability`` of the catalog is
+off until granted too (``Grants.default``)."""
 MODEL_LEVELS = ("any", "fallback", "off")
 
 YAML_SECTIONS = {
@@ -125,6 +150,10 @@ YAML_SECTIONS = {
     "code": CODE,
     "connections": CONNECTION,
     "capabilities": CAPABILITY,
+    "modules": MODULE,
+    "openai": OPENAI,
+    "builtin_tools": BUILTIN,
+    "attachments": ATTACHMENTS,
 }
 """Sections of ``grants:`` in an application YAML (and ``EVOKAI_BOOTSTRAP_APPS``) → kinds."""
 
@@ -169,14 +198,20 @@ def check_value(kind: str, name: str, value: Any) -> Any:
         raise BadRequest(f"Unknown grant kind: {kind}", code="grant")
     if not name or len(name) > 300:
         raise BadRequest("A grant needs a name (up to 300 characters).", code="grant")
+    if kind == CLIENT and not (
+        name in CLIENT_TOOLS or name == CLIENT_SESSION or CUSTOM_CLIENT.match(name)
+    ):
+        raise BadRequest(f"Unknown {kind}: {name}", code="grant")
     fixed = {
-        CLIENT: CLIENT_TOOLS,
         VOICE: VOICE_ENGINES,
         STORAGE: STORAGE_MODES,
         CHANNEL: CHANNELS,
         WORKFLOW: WORKFLOW_ITEMS,
         CODE: CODE_ITEMS,
         CONNECTION: CONNECTION_ITEMS,
+        OPENAI: OPENAI_ITEMS,
+        BUILTIN: BUILTIN_KINDS,
+        ATTACHMENTS: ATTACHMENT_ITEMS,
     }
     if kind in fixed and name not in fixed[kind]:
         raise BadRequest(f"Unknown {kind}: {name}", code="grant")
@@ -304,6 +339,33 @@ class Grants:
         """
         return self._flag(CLIENT, name)
 
+    def client_tool(self, name: str, *, static: bool) -> bool:
+        """Whether a custom client tool may be offered.
+
+        An exact override wins, else the longest matching pattern. Without one, a tool the agent
+        declares itself is on; a tool a session token or a server run declares needs
+        ``client:session`` (and then is on). A session tool always needs ``client:session``.
+
+        Args:
+            name: The tool's declared name (without the model-facing prefix).
+            static: Declared in the agent definition.
+
+        Returns:
+            True if it may be offered.
+        """
+        if not static and not self._flag(CLIENT, CLIENT_SESSION):
+            return False
+        exact = self.override(CLIENT, name)
+        if exact is not None:
+            return bool(exact)
+        patterns = sorted(
+            (n for k, n in self.overrides if k == CLIENT and _is_pattern(n)), key=len, reverse=True
+        )
+        for p in patterns:
+            if fnmatch.fnmatchcase(name, p):
+                return bool(self.overrides[CLIENT, p])
+        return True
+
     def voice(self, engine: str) -> bool:
         """Whether a voice engine may be used (browser or server speech).
 
@@ -364,6 +426,30 @@ class Grants:
         """
         return self._flag(CODE, "*")
 
+    def openai(self, name: str = "confirm") -> bool:
+        """Whether the OpenAI-compatible API may do it (``confirm``: changes wait for a yes).
+
+        Returns:
+            True if granted (off by default).
+        """
+        return self._flag(OPENAI, name)
+
+    def attachments(self) -> bool:
+        """Whether people may attach files to chat messages; off until granted.
+
+        Returns:
+            True if granted.
+        """
+        return self._flag(ATTACHMENTS, "*")
+
+    def builtin(self, kind: str) -> bool:
+        """Whether agents may use a provider built-in tool (``web_search``...).
+
+        Returns:
+            True if granted (each one is off by default).
+        """
+        return self._flag(BUILTIN, kind)
+
     def capability(self, name: str) -> bool:
         """Whether agents may use a capability of the catalog (``evokai.capabilities``).
 
@@ -385,6 +471,14 @@ class Grants:
         return self._flag(CONNECTION, provider) and (
             family is None or self._flag(CONNECTION, f"{provider}/{family}")
         )
+
+    def module(self, name: str) -> bool:
+        """Whether session tokens may switch a prompt module or change its parameters.
+
+        Returns:
+            True if granted (the default).
+        """
+        return self._flag(MODULE, name)
 
     def channel(self, name: str) -> bool:
         """Whether agents may be reached this way.
@@ -417,6 +511,7 @@ class Grants:
                 "diagram": ct.diagram and self.client("diagram"),
                 "ask": ct.ask and self.client("ask"),
                 "memory": ct.memory and self.client("memory"),
+                "custom": [t for t in ct.custom if self.client_tool(t.name, static=True)],
             }
         )
         knowledge = agent.knowledge
@@ -427,12 +522,16 @@ class Grants:
         code = agent.code
         if code is not None and code.enabled and not self.code():
             code = code.model_copy(update={"enabled": False})
+        files = agent.attachments
+        if files is not None and files.enabled and not self.attachments():
+            files = files.model_copy(update={"enabled": False})
         return agent.model_copy(
             update={
                 "client_tools": tools,
                 "mcp_servers": [s for s in agent.mcp_servers if self.mcp(s)],
                 "knowledge": knowledge,
                 "code": code,
+                "attachments": files,
             }
         )
 
@@ -489,6 +588,11 @@ class Grants:
                 continue
             if explicit_client_tools is None or name in explicit_client_tools:
                 out.append(f"client tool {name} is not granted")
+        out += [
+            f"client tool {t.name} is not granted"
+            for t in ct.custom
+            if not self.client_tool(t.name, static=True)
+        ]
         bases = agent.knowledge.bases if agent.knowledge else []
         out += [f"knowledge base {b} is not granted" for b in bases if not self.knowledge(b)]
         if "server" in agent.channels and not self.channel("server"):
@@ -499,6 +603,15 @@ class Grants:
             out.append("A2A is not granted")
         if agent.code is not None and agent.code.enabled and not self.code():
             out.append("code execution is not granted")
+        out += [
+            f"built-in tool {t.kind} is not granted"
+            for t in agent.builtin_tools
+            if not self.builtin(t.kind)
+        ]
+        if agent.attachments is not None and agent.attachments.enabled and not self.attachments():
+            out.append("attachments are not granted")
+        if agent.openai_confirm and not self.openai("confirm"):
+            out.append("confirmations over the OpenAI-compatible API are not granted")
         out += [
             f"capability {name} is not granted"
             for name, use in agent.capabilities.items()

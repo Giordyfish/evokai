@@ -16,7 +16,13 @@
     "resolveJsonModule": true,
     "types": ["vite/client", "vitest/globals"],
     "noEmit": true,
-    "paths": { "@client/*": ["../clients/typescript/src/*"] }
+    "paths": {
+      "@client/*": ["../clients/typescript/src/*"],
+      "@ui/*": ["../clients/ui/src/*"],
+      "@evokai/evokai-client/browser": ["../clients/typescript/src/browser/index.ts"],
+      "preact": ["./node_modules/preact"],
+      "preact/*": ["./node_modules/preact/*"]
+    }
   },
   "include": ["src", "test"]
 }

@@ -28,8 +28,9 @@ from evokai.api.deps import admin_app, console_login, operator, services
 from evokai.api.grants_routes import grant_view
 from evokai.api.trace_routes import note_view
 from evokai.api.trace_routes import summary as trace_summary
+from evokai.assistant.privacy import lists_everyone, own_subject
 from evokai.core.caps import LEGACY
-from evokai.core.errors import AppError, BadRequest, Conflict, NotFound, Unauthorized
+from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
 from evokai.core.security import generate_key
 from evokai.core.util import utcnow
 from evokai.db import models as m
@@ -554,6 +555,14 @@ async def conversations(
     if app.storage_mode != "evokai":
         return {"storage": app.storage_mode, "items": []}
     limit = max(1, min(limit, 200))
+    # A system application: each person's own conversations; an owner lists everyone's, the
+    # others without their content (``evokai.assistant.privacy``).
+    mine = await own_subject(svc, a)
+    everyone = mine is not None and lists_everyone(a)
+    if mine is not None and not everyone:
+        if subject and subject != mine:
+            return {"storage": app.storage_mode, "items": [], "next": None}
+        subject = mine
     items = await svc.store.sessions.review(
         a.application_id,
         subject=subject,
@@ -563,6 +572,11 @@ async def conversations(
         before=before,
         limit=limit,
     )
+    if mine is not None:
+        items = [
+            {**i, "own": True} if i["subject"] == mine else {**i, "title": None, "own": False}
+            for i in items
+        ]
     return {
         "storage": app.storage_mode,
         "items": items,
@@ -574,18 +588,63 @@ async def conversations(
 async def conversation(conversation_id: str, svc: Svc, a: Admin) -> dict[str, Any]:
     """One conversation with its messages, turns, their traces and the reviewers' notes.
 
+    On a system application only the caller's own conversation opens; an owner opens another
+    person's through an inspection (403 ``inspection_required``).
+
     Returns:
         The conversation: messages (with their turn), turns, traces (summaries by turn) and
         notes.
 
     Raises:
         NotFound: Unknown, or the application keeps conversations itself.
+        Forbidden: Another person's conversation on a system application, for an owner.
+    """
+    mine = await own_subject(svc, a)
+    subject = await conversation_subject(svc, a.application_id, conversation_id)
+    if subject is None or (mine is not None and subject != mine and not lists_everyone(a)):
+        raise NotFound()
+    if mine is not None and subject != mine:
+        raise Forbidden(
+            "Another person's conversation opens only through an inspection.",
+            code="inspection_required",
+        )
+    return await conversation_view(svc, a.application_id, conversation_id)
+
+
+async def conversation_subject(
+    svc: Services, application_id: str, conversation_id: str
+) -> str | None:
+    """The subject of a conversation of the application.
+
+    Returns:
+        The subject, or None when there is no such conversation.
+    """
+    async with svc.db.session() as s:
+        return (
+            await s.execute(
+                sa.select(m.Session.subject).where(
+                    m.Session.id == conversation_id, m.Session.application_id == application_id
+                )
+            )
+        ).scalar_one_or_none()
+
+
+async def conversation_view(
+    svc: Services, application_id: str, conversation_id: str
+) -> dict[str, Any]:
+    """A conversation with its messages, turns, their traces and the reviewers' notes.
+
+    Returns:
+        The conversation.
+
+    Raises:
+        NotFound: No such conversation.
     """
     async with svc.db.session() as s:
         row = (
             await s.execute(
                 sa.select(m.Session).where(
-                    m.Session.id == conversation_id, m.Session.application_id == a.application_id
+                    m.Session.id == conversation_id, m.Session.application_id == application_id
                 )
             )
         ).scalar_one_or_none()
@@ -603,12 +662,12 @@ async def conversation(conversation_id: str, svc: Svc, a: Admin) -> dict[str, An
         )
     if row is None:
         raise NotFound()
-    who = Who(a.application_id, row.subject)
+    who = Who(application_id, row.subject)
     thread = await svc.store.sessions.thread(row.id)
     msgs = await svc.store.messages.recent(who, thread.id, 400)
-    application = await svc.store.applications.get(a.application_id)
-    traces = await svc.store.traces.for_session(a.application_id, row.id) if application else []
-    notes = await svc.store.review_notes.for_session(a.application_id, row.id)
+    application = await svc.store.applications.get(application_id)
+    traces = await svc.store.traces.for_session(application_id, row.id) if application else []
+    notes = await svc.store.review_notes.for_session(application_id, row.id)
     return {
         "id": row.id,
         "subject": row.subject,
@@ -1021,6 +1080,7 @@ async def export(svc: Svc, a: Admin) -> dict[str, str]:
         ("locale", d.get("locale")),
         ("timezone", d.get("timezone")),
         ("messages", d.get("messages") or None),
+        ("markup", d.get("markup") or None),
         ("tracing", {"content": d["tracing_content"]} if d.get("tracing_content") else None),
     )
     # An old *_usd field whose cap ``caps`` sets does not apply: left out, or the file would set

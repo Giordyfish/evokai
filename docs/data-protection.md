@@ -126,6 +126,10 @@ Three independent dimensions, each optional; the ones that are set combine, and 
 | `jurisdiction` | `eu` and/or ISO country codes | the provider is controlled from the EU or EEA (`eu`) or from a listed country |
 | `retention` | `any`, `no_training`, `zero_retention` | the API terms say inputs are not used for training (and, for `zero_retention`, nothing is kept past the request) |
 
+Beside the three dimensions, `provider_tool_storage: true` lets [provider built-in tools](builtin-tools.md) that keep
+data at the model's provider (`file_search` over the provider's vector stores, `memory`) run. It is off unless set,
+and a profile with `retention: zero_retention` cannot set it.
+
 **An unknown fact never satisfies a rule.** A model whose provider's jurisdiction the catalog cannot show is excluded
 by a jurisdiction rule with the reason `unknown`; a self-hosted server satisfies the rules its operator declares in
 `EVOKAI_PROVIDERS_FILE`. Something that runs inside Evokai (a test model, the local Prompt Guard) sends nothing out and

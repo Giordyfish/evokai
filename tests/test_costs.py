@@ -171,17 +171,19 @@ async def _usage(env: Env, subject: str, usd: float, when: datetime) -> None:
 
 async def test_alerts_fire_once_per_threshold_and_month_and_carry_shares_only(env: Env) -> None:
     await _settings(env, monthly_cap_usd=10, subject_monthly_usd=1, cost_alert_thresholds=[50, 90])
-    now = datetime.now(UTC)
+    # Mid-month of the current month, so the forecast does not depend on today's date: 5.6 USD
+    # in the first 14 days of a month projects well above 90% of 10 USD.
+    now = datetime.now(UTC).replace(day=15, hour=12, minute=0, second=0, microsecond=0)
     for i in range(1, 15):
         await _usage(env, "u1", 0.40, now - timedelta(days=i))
     app = await env.svc.store.applications.get(env.app_id)
-    view = await env.svc.costs.forecast(app)
+    view = await env.svc.costs.forecast(app, now)
     assert view["application"]["forecastPct"] > 90
-    first = await env.svc.costs.evaluate(app, view)
+    first = await env.svc.costs.evaluate(app, view, now)
     scopes = sorted((a.scope.split(":")[0], a.threshold) for a in first)
     assert ("application", 50) in scopes and ("application", 90) in scopes
     assert ("subject", 90) in scopes  # u1 against their own monthly cap
-    assert await env.svc.costs.evaluate(app, view) == []  # never twice
+    assert await env.svc.costs.evaluate(app, view, now) == []  # never twice
     assert await env.svc.costs.check_alerts() == 0
     r = await env.client.get("/agent/v1/admin/costs/forecast", headers=_adm(env))
     body = r.json()
@@ -407,3 +409,23 @@ async def test_cache_suggestions_list_the_agents_that_would_gain(env: Env) -> No
     assert r.status_code == 200, r.text
     r = await env.client.get("/agent/v1/admin/costs/cache-suggestions", headers=_adm(env))
     assert [x["agent"] for x in r.json()["items"]] == ["long"]
+
+
+async def test_postgres_sessions_speak_utc_whatever_the_server_zone(env: Env) -> None:
+    """The usage series reads timestamp text as UTC: every Postgres session must be in UTC."""
+    import sqlalchemy as sa
+
+    if env.svc.db.engine.dialect.name != "postgresql":
+        pytest.skip("Postgres only (EVOKAI_TEST_DATABASE_URL)")
+    async with env.svc.db.engine.connect() as c:
+        assert (await c.execute(sa.text("SHOW timezone"))).scalar() == "UTC"
+    # A usage late in a Rome evening counts on that Rome day.
+    await _settings(env, timezone="Europe/Rome")
+    app = await env.svc.store.applications.get(env.app_id)
+    assert app is not None
+    late = datetime(2026, 11, 22, 22, 30, tzinfo=UTC)  # 23:30 in Rome, Sunday 22 November
+    await _usage(env, "u1", 1.0, late)
+    series = await env.svc.costs.daily(
+        env.app_id, late - timedelta(days=1), tz=ZoneInfo("Europe/Rome")
+    )
+    assert series[""] == {date(2026, 11, 22): 1.0}

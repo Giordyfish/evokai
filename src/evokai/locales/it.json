@@ -16,6 +16,7 @@
     "turn.empty": "Scrivi qualcosa.",
     "turn.refusal": "Va bene, non ho cambiato nulla.",
     "turn.confirmPrompt": "Prima di procedere ti chiedo conferma: {items}.",
+    "openai.confirmPrompt": "Prima di procedere ti chiedo conferma: {items}. Rispondi sì o no.",
     "turn.maxSteps": "Ho raggiunto il numero massimo di passaggi per questa richiesta. Dimmi come proseguire.",
     "turn.guard": "Non posso aiutarti con questa richiesta.",
     "turn.guardStopped": "Ho interrotto la risposta: avrebbe mostrato qualcosa che non deve.",
@@ -23,6 +24,7 @@
     "turn.rewriteNotLast": "Puoi modificare solo il tuo ultimo messaggio.",
     "turn.rewriteAfterWrite": "Questo messaggio non si può più modificare: la risposta ha già cambiato dei dati.",
     "turn.rewriteRunning": "Aspetta la risposta, o interrompila, prima di modificare il messaggio.",
+    "turn.notRegenerable": "Questa risposta non si può più rigenerare.",
     "voice.speechOff": "La voce non è disponibile: continuo a rispondere per iscritto.",
     "confirm.default": "Eseguire {tool}",
     "chart.other": "Altro",
@@ -109,6 +111,27 @@
       "cinque": 5,
       "quinta": 5,
       "quinto": 5
+    },
+    "numbers": {
+      "group": ["."],
+      "decimal": ",",
+      "decimalWord": "virgola",
+      "percent": "per cento",
+      "degrees": "gradi",
+      "plus": "più",
+      "minus": "meno",
+      "currency": {
+        "one": "un euro",
+        "many": "euro",
+        "millions": "di euro",
+        "centOne": "un centesimo",
+        "centMany": "centesimi",
+        "and": "e"
+      },
+      "date": {"sep": "/", "format": "{day} {month} {year}", "first": "primo"},
+      "time": {"format": "{h} e {m}", "hour": "{h}"},
+      "ordinals": true,
+      "feminine": ["o", "a"]
     }
   },
   "calendar": {

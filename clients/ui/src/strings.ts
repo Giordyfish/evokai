@@ -39,6 +39,16 @@ export interface Strings {
   /** Voice mode without any voice on this device to read the answers. */
   speechUnavailable: string
   unreachable: string
+  /** Attachments: the paper clip, a preview's remove button, refusals (`{name}`, `{max}`, `{n}`). */
+  attach: string
+  removeFile: string
+  fileTooLarge: string
+  fileKind: string
+  tooManyFiles: string
+  fileUnsupported: string
+  fileUnreadable: string
+  filesFull: string
+  fileRefused: string
   helpful: string
   notHelpful: string
   toolFailed: string
@@ -60,6 +70,8 @@ export interface Strings {
   confirmAskTitle: string
   /** Editing the last question (it replaces the last turn). */
   edit: string
+  /** Regenerate the last answer. */
+  regenerate: string
   editing: string
   cancelEdit: string
   confirmed: string
@@ -219,6 +231,15 @@ export const en: Strings = {
   recognitionFailed: 'Speech recognition did not download. Try again or type.',
   speechUnavailable: 'This device has no voice in your language: answers stay written. Install one in the system settings.',
   unreachable: 'The assistant cannot be reached.',
+  attach: 'Attach files',
+  removeFile: 'Remove {name}',
+  fileTooLarge: '{name} is too large (at most {max}).',
+  fileKind: '{name}: this kind of file is not accepted.',
+  tooManyFiles: 'At most {n} files per message.',
+  fileUnsupported: 'The assistant cannot read images.',
+  fileUnreadable: 'A file cannot be read: it has no text.',
+  filesFull: 'This conversation cannot take more files.',
+  fileRefused: 'A file was not accepted.',
   helpful: 'Helpful answer',
   notHelpful: 'Not helpful',
   toolFailed: 'failed',
@@ -235,6 +256,7 @@ export const en: Strings = {
   confirmTitle: 'Confirm this change?',
   confirmAskTitle: 'Go ahead?',
   edit: 'Edit',
+  regenerate: 'Regenerate the answer',
   editing: 'Editing your last message',
   cancelEdit: 'Cancel',
   confirmed: 'Change confirmed',
@@ -371,6 +393,15 @@ export const it: Strings = {
   recognitionFailed: 'Il riconoscimento vocale non si è scaricato. Riprova o scrivi.',
   speechUnavailable: 'Su questo dispositivo non c’è una voce in italiano: le risposte restano scritte. Puoi installarla nelle impostazioni di sistema.',
   unreachable: 'L’assistente non è raggiungibile.',
+  attach: 'Allega file',
+  removeFile: 'Rimuovi {name}',
+  fileTooLarge: '{name} è troppo grande (al massimo {max}).',
+  fileKind: '{name}: questo tipo di file non è accettato.',
+  tooManyFiles: 'Al massimo {n} file per messaggio.',
+  fileUnsupported: 'L’assistente non legge le immagini.',
+  fileUnreadable: 'Un file non si può leggere: non contiene testo.',
+  filesFull: 'Questa conversazione non accetta altri file.',
+  fileRefused: 'Un file non è stato accettato.',
   helpful: 'Risposta utile',
   notHelpful: 'Risposta non utile',
   toolFailed: 'non riuscito',
@@ -387,6 +418,7 @@ export const it: Strings = {
   confirmTitle: 'Confermi questa modifica?',
   confirmAskTitle: 'Procedo?',
   edit: 'Modifica',
+  regenerate: 'Rigenera la risposta',
   editing: 'Modifichi il tuo ultimo messaggio',
   cancelEdit: 'Annulla',
   confirmed: 'Modifica confermata',

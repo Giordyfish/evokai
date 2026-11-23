@@ -13,6 +13,7 @@ from typing import Any, Literal
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from evokai.audio.speech.markup import MarkupDef
 from evokai.guard.ask import AskRule
 from evokai.guard.ask import stored as ask_stored
 from evokai.llm.caching import PromptCache
@@ -28,6 +29,90 @@ class NavigateDef(BaseModel):
     """Only paths that match are sent to the client; anything else is refused."""
 
 
+CLIENT_TOOL_NAME = r"^[a-z][a-z0-9_]{1,47}$"
+"""The name of a custom client tool (the model sees it as ``client_<name>``)."""
+RESERVED_CLIENT_TOOLS = frozenset({"navigate", "chart", "diagram", "ask", "confirm", "memory"})
+"""Names of the built-in client tools and grant items, refused for a custom tool (``session``
+too: it is the grant of session-declared tools)."""
+MAX_CLIENT_TOOL_SCHEMA = 16_384
+"""Bytes of a custom client tool's parameters schema (as compact JSON)."""
+
+
+class ClientToolDef(BaseModel):
+    """A custom client tool: the client application runs it (``client_tool`` event)."""
+
+    name: str = Field(pattern=CLIENT_TOOL_NAME)
+    description: str = Field(min_length=1, max_length=1_000)
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    """The JSON Schema of the arguments (checked as a schema, at most 16 KB)."""
+    wait: bool = False
+    """False: Evokai sends the event and answers ``ok`` to the model at once. True: the turn waits
+    for the client's result (``POST /v1/session/tool-results``), up to the timeout."""
+
+    @field_validator("name")
+    @classmethod
+    def _not_reserved(cls, v: str) -> str:
+        if v in RESERVED_CLIENT_TOOLS or v == "session":
+            raise ValueError(f"{v} is reserved for a built-in client tool or grant")
+        return v
+
+    @field_validator("parameters")
+    @classmethod
+    def _schema(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if v.get("type") != "object":
+            raise ValueError("parameters: the schema is an object (type: object), as tools take")
+        if len(json.dumps(v, separators=(",", ":"))) > MAX_CLIENT_TOOL_SCHEMA:
+            raise ValueError("parameters: the schema is larger than 16 KB")
+        try:
+            Draft202012Validator.check_schema(v)
+        except Exception as e:  # jsonschema's SchemaError
+            raise ValueError(f"parameters: not a valid JSON Schema ({clip_message(e)})") from e
+        return v
+
+
+def clip_message(e: Exception) -> str:
+    """The first line of an error, short.
+
+    Returns:
+        At most 200 characters.
+    """
+    return str(getattr(e, "message", e)).splitlines()[0][:200]
+
+
+BUILTIN_KINDS = (
+    "web_search",
+    "web_fetch",
+    "code_execution",
+    "image_generation",
+    "file_search",
+    "mcp_server",
+    "memory",
+)
+
+
+class BuiltinToolDef(BaseModel):
+    """A provider built-in tool (``evokai.engine.builtin_tools``)."""
+
+    kind: Literal[
+        "web_search",
+        "web_fetch",
+        "code_execution",
+        "image_generation",
+        "file_search",
+        "mcp_server",
+        "memory",
+    ]
+    config: dict[str, Any] = Field(default_factory=dict)
+    """pydantic-ai's settings of the tool (``max_uses``, ``file_store_ids``...); never a secret."""
+
+    @model_validator(mode="after")
+    def _valid(self) -> BuiltinToolDef:
+        from evokai.engine.builtin_tools import build
+
+        build(self.kind, self.config)
+        return self
+
+
 class ClientToolsDef(BaseModel):
     """Which client tools the agent has."""
 
@@ -36,6 +121,16 @@ class ClientToolsDef(BaseModel):
     diagram: bool = True
     ask: bool = True
     memory: bool = True
+    custom: list[ClientToolDef] = Field(default_factory=list, max_length=32)
+    """Client tools of the application's own (``docs/client-tools.md``)."""
+
+    @field_validator("custom")
+    @classmethod
+    def _unique(cls, v: list[ClientToolDef]) -> list[ClientToolDef]:
+        names = [t.name for t in v]
+        if len(names) != len(set(names)):
+            raise ValueError("a custom client tool is declared twice")
+        return v
 
 
 class VoiceDef(BaseModel):
@@ -48,8 +143,8 @@ class VoiceDef(BaseModel):
     prompt_rule: str = (
         "The user is talking to you and your answer is also read aloud: answer in 1-3 short, "
         "natural sentences meant to be heard, with no tables or long lists; key numbers in plain "
-        "words; put charts and details in the visuals, not in the text. Do not read tax codes, "
-        "IBANs, meter codes or personal data aloud: point to the screen instead."
+        "words; put charts and details in the visuals, not in the text. Do not read codes, "
+        "account numbers or personal data aloud: point to the screen instead."
     )
     """Added to the prompt in voice mode. Write it in the agent's language in its definition."""
     voice_id: str = ""
@@ -89,6 +184,35 @@ class CodeDef(BaseModel):
     grant)."""
 
 
+AttachmentKind = Literal["png", "jpeg", "webp", "gif", "pdf", "docx", "pptx", "txt", "md", "csv"]
+"""Kinds of files a person may attach (``evokai.attachments.KINDS``)."""
+_ALL_ATTACHMENT_KINDS: list[AttachmentKind] = [
+    "png", "jpeg", "webp", "gif", "pdf", "docx", "pptx", "txt", "md", "csv"
+]  # fmt: skip
+
+
+class AttachmentsDef(BaseModel):
+    """Files people attach to their chat messages (``evokai.attachments``)."""
+
+    enabled: bool = False
+    """Accept attachments (also needs the application's ``attachments`` grant)."""
+    types: list[AttachmentKind] = Field(default_factory=lambda: list(_ALL_ATTACHMENT_KINDS))
+    """The kinds accepted, detected from the bytes (never the name or the declared type)."""
+    max_file_mb: int = Field(default=10, ge=1, le=50)
+    """Largest file, in MB."""
+    max_files: int = Field(default=5, ge=1, le=10)
+    """Files in one message."""
+    max_conversation_mb: int = Field(default=50, ge=1, le=1000)
+    """Everything kept for one conversation, in MB (Evokai storage)."""
+
+    @field_validator("types")
+    @classmethod
+    def _types(cls, v: list[AttachmentKind]) -> list[AttachmentKind]:
+        if not v:
+            raise ValueError("attachments.types needs at least one kind")
+        return list(dict.fromkeys(v))
+
+
 class CapabilityUse(BaseModel):
     """One capability of the catalog (``evokai.capabilities``) as the agent uses it."""
 
@@ -105,7 +229,34 @@ class PromptRef(BaseModel):
     version: int | None = None
 
 
+class ModuleRef(BaseModel):
+    """A prompt module the agent may use (``evokai.agents.modules``), with its defaults."""
+
+    name: str = Field(min_length=1, max_length=80)
+    """An application prompt; a module when it has a parameter schema."""
+    version: int | None = Field(default=None, ge=1)
+    """None: the latest version when a conversation starts, then pinned for that conversation."""
+    on: bool = True
+    """Whether the module is in the prompt unless a session token switches it."""
+    params: dict[str, Any] = Field(default_factory=dict)
+    """The agent's values for the module's parameters (the schema's defaults fill the rest)."""
+    session: bool = False
+    """Whether a session token may switch the module or change its parameters."""
+
+
 Channel = Literal["browser", "server", "email", "teams", "slack"]
+TemplateSyntax = Literal["legacy", "handlebars"]
+"""How a text is rendered: ``handlebars`` (``{{date}}``), or ``legacy`` for the versions saved
+before Handlebars (``{date}``, labels' ``{field|count}``), which keep rendering as they did."""
+
+_HASHED_VOICE_RULE = (
+    "The user is talking to you and your answer is also read aloud: answer in 1-3 short, "
+    "natural sentences meant to be heard, with no tables or long lists; key numbers in plain "
+    "words; put charts and details in the visuals, not in the text. Do not read tax codes, "
+    "IBANs, meter codes or personal data aloud: point to the screen instead."
+)
+"""The default voice rule the first versions were hashed with. An agent that keeps the default
+rule is hashed with this text, so rewording the default does not give it a new version."""
 
 _LATER_DEFAULTS: dict[str, Any] = {
     "preload_skills": [],
@@ -120,6 +271,12 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "capabilities": {},
     "subagents": [],
     "ask_rules": [],
+    "modules": [],
+    "template_syntax": "legacy",
+    "builtin_tools": [],
+    "openai_confirm": False,
+    "attachments": None,
+    "markup": None,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -134,7 +291,7 @@ class AgentDef(BaseModel):
     name: str
     title: str = ""
     instructions: str = ""
-    """System prompt template (or use `prompt`). Placeholders: {date}, {app}."""
+    """System prompt template (or use `prompt`): Handlebars with ``{{date}}`` and ``{{app}}``."""
     prompt: PromptRef | None = None
     """A versioned prompt of the application, instead of inline instructions."""
     model: str
@@ -156,11 +313,13 @@ class AgentDef(BaseModel):
     confirm_labels: dict[str, str | list[str]] = Field(default_factory=dict)
     """Tool name → label template(s) for its confirmation card (evokai.tools.labels)."""
     confirm_values: dict[str, dict[str, str]] = Field(default_factory=dict)
-    """Tables of words for ``{field|map:table}`` in the label templates."""
+    """Tables of words for ``{{map field "table"}}`` in the label templates."""
     max_tool_calls_per_turn: int = 6
     model_settings: dict[str, Any] = Field(default_factory=dict)
     """Sampling, reasoning effort, priority processing (evokai.llm.policy.ALLOWED_SETTINGS)."""
     voice: VoiceDef = Field(default_factory=VoiceDef)
+    markup: MarkupDef | None = None
+    """Inline markup (cues, speech tags) over the application's, kind by kind (docs/markup.md)."""
     temperature: float | None = Field(default=None, ge=0, le=2)
     output_schema: dict[str, Any] | None = None
     """JSON Schema of a structured answer (server runs): the output is validated against it."""
@@ -182,6 +341,23 @@ class AgentDef(BaseModel):
     ``handoff`` tool, and the conversation goes on with the other agent from the next turn."""
     code: CodeDef | None = None
     """Isolated code execution: ``code_run`` for analysis of data the conversation has."""
+    builtin_tools: list[BuiltinToolDef] = Field(default_factory=list, max_length=len(BUILTIN_KINDS))
+    """Provider built-in tools (web search, code execution...), each granted (``builtin``)."""
+    openai_confirm: bool = False
+    """Over the OpenAI-compatible API, offer the tools that change data: a call waits for the
+    person's yes in the next request (needs the grant ``openai:confirm``)."""
+    attachments: AttachmentsDef | None = None
+    """Files people may attach to chat messages, which kinds and how large (needs the grant
+    ``attachments``)."""
+
+    @field_validator("builtin_tools")
+    @classmethod
+    def _one_of_each(cls, v: list[BuiltinToolDef]) -> list[BuiltinToolDef]:
+        kinds = [t.kind for t in v]
+        if len(kinds) != len(set(kinds)):
+            raise ValueError("a built-in tool is listed twice")
+        return v
+
     capabilities: dict[str, CapabilityUse] = Field(default_factory=dict)
     """Capabilities of the catalog the agent turns on, with their settings (``code_mode``,
     ``compaction``, ``subagents`` and the pydantic-ai-harness ones): each also needs the deployment
@@ -193,7 +369,23 @@ class AgentDef(BaseModel):
     """Rules that make calls of this agent's tools wait for the person's confirmation, on top of
     the deployment's and the application's (in this list the last match wins;
     ``evokai.guard.ask``). They only add confirmations: never lift an ``ask`` of another level."""
+    modules: list[ModuleRef] = Field(default_factory=list, max_length=20)
+    """Prompt modules rendered after the instructions, in this order (``evokai.agents.modules``):
+    each names an application prompt, its default state and parameters, and whether a session
+    token may change them."""
+    template_syntax: TemplateSyntax = "legacy"
+    """The syntax of the instructions and the confirm labels. A definition without it was saved
+    before Handlebars and stays ``legacy``; saving through the API or the YAML file makes it
+    ``handlebars`` (``evokai.agents.templates``)."""
     version: str = ""
+
+    @field_validator("modules")
+    @classmethod
+    def _modules(cls, v: list[ModuleRef]) -> list[ModuleRef]:
+        names = [m.name for m in v]
+        if len(set(names)) != len(names):
+            raise ValueError("each module may be listed only once")
+        return v
 
     @field_validator("handoff_to", "subagents")
     @classmethod
@@ -274,6 +466,9 @@ class AgentDef(BaseModel):
         for key, default in _LATER_DEFAULTS.items():
             if out.get(key) == default:
                 out.pop(key, None)
+        ct = out.get("client_tools")
+        if isinstance(ct, dict) and not ct.get("custom"):
+            ct.pop("custom", None)  # custom client tools came later
         return out
 
     def with_version(self) -> AgentDef:
@@ -282,5 +477,9 @@ class AgentDef(BaseModel):
         Returns:
             A copy with `version` set.
         """
-        raw = json.dumps(self.content(), sort_keys=True, ensure_ascii=False)
+        content = self.content()
+        voice = content.get("voice")
+        if isinstance(voice, dict) and voice.get("prompt_rule") == VoiceDef().prompt_rule:
+            content["voice"] = {**voice, "prompt_rule": _HASHED_VOICE_RULE}
+        raw = json.dumps(content, sort_keys=True, ensure_ascii=False)
         return self.model_copy(update={"version": hashlib.sha256(raw.encode()).hexdigest()[:12]})

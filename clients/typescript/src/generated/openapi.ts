@@ -114,7 +114,8 @@ export interface paths {
          * @description Active agents with their definitions.
          *
          *     Returns:
-         *         items.
+         *         items, each with its ``template_syntax`` (``legacy`` for a version saved before
+         *         Handlebars).
          */
         get: operations["list_agents_agent_v1_admin_agents_get"];
         put?: never;
@@ -290,6 +291,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/agents/{agent}/suitability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Suitability
+         * @description How well a model suits an agent, estimated from sourced facts (``evokai.llm.suitability``).
+         *
+         *     The agent's complexity (tier and factors) and the model's estimate: recommended, not
+         *     recommended or to verify, with its reasons. For the built-in assistant a measured model shows
+         *     its measurement instead (``basis: measured``). Never an amount.
+         *
+         *     Returns:
+         *         complexity and estimate.
+         *
+         *     Raises:
+         *         NotFound: No such agent.
+         */
+        get: operations["agent_suitability_agent_v1_admin_agents__agent__suitability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/agents/{agent}/switch-model": {
         parameters: {
             query?: never;
@@ -369,6 +400,8 @@ export interface paths {
          *         AppError: A model outside the application's data residency (400 ``residency``).
          *         Forbidden: A console operator changing the agent's security policy (owner only).
          *         Conflict: The red team gate blocked this version (409 ``redteam_blocked``).
+         *         BadRequest: A prompt module that does not exist or whose parameters do not fit
+         *             (``unknown_module``, ``module_params``).
          */
         put: operations["put_agent_agent_v1_admin_agents__name__put"];
         post?: never;
@@ -480,8 +513,94 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: The application is gone.
+         *         BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its
+         *             audit log kept less (400 ``system_audit_ttl``).
          */
         patch: operations["patch_application_agent_v1_admin_application_patch"];
+        trace?: never;
+    };
+    "/agent/v1/admin/application/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Application
+         * @description Delete what the reset preview lists and apply the shipped definition again, locked (owner).
+         *
+         *     Returns:
+         *         ok and deleted (how many items).
+         *
+         *     Raises:
+         *         BadRequest: The typed slug is not the application's (400 ``confirm``).
+         *         Conflict: A system application this version of Evokai does not ship.
+         */
+        post: operations["reset_application_agent_v1_admin_application_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/application/reset/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reset Preview
+         * @description Everything a reset of the system application deletes or restores (owner).
+         *
+         *     Each deleted item carries its definition without secrets (``item``), for the owner to keep
+         *     before resetting.
+         *
+         *     Returns:
+         *         slug and items (kind, name, action: ``delete`` or ``restore``, item).
+         *
+         *     Raises:
+         *         Conflict: A system application this version of Evokai does not ship.
+         */
+        get: operations["reset_preview_agent_v1_admin_application_reset_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/application/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock Application
+         * @description Unlock a system application (owner): its changes are then the owner's to make.
+         *
+         *     Shipped updates are no longer applied while it is unlocked (they are recorded instead).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         BadRequest: The typed slug is not the application's (400 ``confirm``).
+         */
+        post: operations["unlock_application_agent_v1_admin_application_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/agent/v1/admin/ask-rules": {
@@ -514,6 +633,115 @@ export interface paths {
          */
         put: operations["put_ask_rules_agent_v1_admin_ask_rules_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant State
+         * @description The built-in assistant's state.
+         *
+         *     Whether it is active, its model, the requirements a recommended model meets and the
+         *     candidates with their measured numbers (shares, never amounts).
+         *
+         *     Returns:
+         *         available, active, model, applicationId, locked, updateAvailable, requirements,
+         *         candidates, trial.
+         */
+        get: operations["assistant_state_agent_v1_admin_assistant_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Assistant
+         * @description Pick the assistant's model (owner of its application).
+         *
+         *     Returns:
+         *         ok and the model.
+         *
+         *     Raises:
+         *         BadRequest: A model that does not meet every requirement without ``acceptNotRecommended``
+         *             (400 ``not_recommended_unconfirmed``).
+         */
+        post: operations["activate_assistant_agent_v1_admin_assistant_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Conversation
+         * @description Read another person's conversation with the assistant (owner of its application).
+         *
+         *     Read only. The reason (20 to 500 characters) is written to the audit log with who inspected and
+         *     the author's keyed subject, and the author's console lists it ("viewed by").
+         *
+         *     Returns:
+         *         The conversation, as the conversation detail returns it.
+         *
+         *     Raises:
+         *         NotFound: The assistant is off, or no such conversation.
+         */
+        post: operations["inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/try": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Try Assistant Model
+         * @description Run the assistant's eval suite on one model (owner), against the recorded admin MCP server.
+         *
+         *     Returns:
+         *         runId.
+         *
+         *     Raises:
+         *         Conflict: A try is going (409 ``try_running``).
+         */
+        post: operations["try_assistant_model_agent_v1_admin_assistant_try_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1007,12 +1235,16 @@ export interface paths {
          * Conversation
          * @description One conversation with its messages, turns, their traces and the reviewers' notes.
          *
+         *     On a system application only the caller's own conversation opens; an owner opens another
+         *     person's through an inspection (403 ``inspection_required``).
+         *
          *     Returns:
          *         The conversation: messages (with their turn), turns, traces (summaries by turn) and
          *         notes.
          *
          *     Raises:
          *         NotFound: Unknown, or the application keeps conversations itself.
+         *         Forbidden: Another person's conversation on a system application, for an owner.
          */
         get: operations["conversation_agent_v1_admin_conversations__conversation_id__get"];
         put?: never;
@@ -1730,7 +1962,8 @@ export interface paths {
          * @description Every version of every prompt.
          *
          *     Returns:
-         *         items: name, version, createdAt.
+         *         items: name, version, text, description, parameters (a module's schema, or null), data,
+         *         templateSyntax and createdAt.
          */
         get: operations["list_prompts_agent_v1_admin_prompts_get"];
         put?: never;
@@ -1751,13 +1984,47 @@ export interface paths {
         get?: never;
         /**
          * Put Prompt
-         * @description Save a prompt (a changed text becomes the next version).
+         * @description Save a prompt (a changed text, schema, description or data becomes the next version).
          *
          *     Returns:
          *         The version.
+         *
+         *     Raises:
+         *         BadRequest: A schema, template or data table that does not pass the module checks, or
+         *             a new version whose parameters no longer fit an agent's values (``module_in_use``).
          */
         put: operations["put_prompt_agent_v1_admin_prompts__name__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/prompts/{name}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Prompt
+         * @description Render a prompt (a saved version or a draft) with sample parameter values.
+         *
+         *     The values get the parameters' defaults and are checked against the schema; required ones may
+         *     be left out. ``date`` and ``app`` are today's date and the application's name.
+         *
+         *     Returns:
+         *         text: the rendered prompt.
+         *
+         *     Raises:
+         *         NotFound: No such prompt (and no draft) or application. A draft or values that do not
+         *             pass the module checks are refused as when saving (400 ``module_*``).
+         */
+        post: operations["preview_prompt_agent_v1_admin_prompts__name__preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2439,6 +2706,7 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: Unknown application.
+         *         BadRequest: An unknown locale, or a prompt module choice that is refused.
          */
         post: operations["run_agent_agent_v1_agents__name__run_post"];
         delete?: never;
@@ -2623,6 +2891,83 @@ export interface paths {
         get: operations["console_applications_agent_v1_console_applications_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/assistant/privacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant Privacy
+         * @description What the console tells a person about the assistant, for the selected application.
+         *
+         *     The first-use notice (its version and whether this login accepted it), how long conversations
+         *     are kept, the voice in use (``online`` only when the selected application's and the
+         *     assistant's data protection allow processors outside the EU, else ``device``) and every
+         *     inspection of this person's conversations: who, when and why.
+         *
+         *     Returns:
+         *         noticeVersion, accepted, acceptedAt, ttlDays, voice, inspections, unseen.
+         *
+         *     Raises:
+         *         Forbidden: A key or the assistant itself instead of a console login.
+         *         NotFound: The assistant is off.
+         */
+        get: operations["assistant_privacy_agent_v1_console_assistant_privacy_get"];
+        put?: never;
+        /**
+         * Accept Notice
+         * @description Record that this login read the current first-use notice (and the inspections listed).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         BadRequest: Not the current version of the notice (400 ``notice_version``).
+         *         NotFound: The assistant is off.
+         *         Forbidden: A key or the assistant itself instead of a console login.
+         */
+        post: operations["accept_notice_agent_v1_console_assistant_privacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/assistant/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assistant Session
+         * @description A session token for the console assistant, acting on the selected application.
+         *
+         *     It needs a console login (the cookie, its header and the application it acts on): its
+         *     forwarded credential is a delegation token for that application with the login's role, which
+         *     the admin MCP server checks against the live login on every call. The session belongs to the
+         *     assistant's system application, for the subject ``console:<login>``, with browser speech.
+         *
+         *     Returns:
+         *         What minting a session token returns, and applicationId (the assistant's).
+         *
+         *     Raises:
+         *         Forbidden: A key or the assistant itself instead of a console login (``console_required``).
+         *         NotFound: The assistant is off.
+         *         Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).
+         */
+        post: operations["assistant_session_agent_v1_console_assistant_session_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2997,7 +3342,7 @@ export interface paths {
         };
         /**
          * Conversations
-         * @description A subject's recent conversations.
+         * @description A subject's recent conversations (on a system application, only the caller's own).
          *
          *     Returns:
          *         items.
@@ -3040,6 +3385,8 @@ export interface paths {
          *
          *     Raises:
          *         NotFound: Not a conversation of this subject.
+         *         Conflict: A system application's conversation: it is kept until its time to live ends
+         *             (409 ``retention``).
          */
         delete: operations["delete_conversation_agent_v1_conversations__conversation_id__delete"];
         options?: never;
@@ -3226,8 +3573,16 @@ export interface paths {
          *     are deleted; usage rows and security events are de-identified, so the
          *     application's caps keep counting; every session token of the subject stops working. Idempotent.
          *
+         *     On a system application only an owner erases, and never their own conversations: the
+         *     console assistant's conversations stay until their time to live ends (403 ``role``, 409
+         *     ``retention``).
+         *
          *     Returns:
          *         ok and how many rows of each kind were deleted or de-identified.
+         *
+         *     Raises:
+         *         Forbidden: Not an owner, on a system application.
+         *         Conflict: Your own data on a system application.
          */
         post: operations["erase_agent_v1_privacy_erase_post"];
         delete?: never;
@@ -3252,8 +3607,13 @@ export interface paths {
          *     Conversations with messages and turns, memories, usage, security events (masked), bug reports
          *     and consents. Amounts only with a server or admin key.
          *
+         *     On a system application a person exports only their own data (403 ``own_data``).
+         *
          *     Returns:
          *         The export.
+         *
+         *     Raises:
+         *         Forbidden: Another person's data on a system application.
          */
         post: operations["export_agent_v1_privacy_export_post"];
         delete?: never;
@@ -3328,8 +3688,10 @@ export interface paths {
          *         NotFound: Unknown agent, conversation or application.
          *         Conflict: The conversation is closed, or kept in another storage mode.
          *         Forbidden: The agent runs on the server only.
-         *         NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,
-         *             are not granted to the application (403 ``*_not_granted``).
+         *         NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,
+         *             or browser sessions, are not granted to the application (403 ``*_not_granted``).
+         *         BadRequest: An unknown locale, or a prompt module choice that is refused
+         *             (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).
          */
         post: operations["mint_agent_v1_session_tokens_post"];
         delete?: never;
@@ -3355,6 +3717,35 @@ export interface paths {
          *         The event stream.
          */
         post: operations["agui_agent_v1_session_agui_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Attachment
+         * @description An image the person attached to this conversation, to show it in the history.
+         *
+         *     Only images, only of the session's own conversation, as they are kept (without their
+         *     metadata). Documents are never served back.
+         *
+         *     Returns:
+         *         The image.
+         *
+         *     Raises:
+         *         NotFound: Not an image of this conversation (another conversation's id included).
+         */
+        get: operations["attachment_agent_v1_session_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3676,6 +4067,117 @@ export interface paths {
          *         NotFound: Not a message of this subject.
          */
         post: operations["feedback_agent_v1_session_messages__message_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate
+         * @description Regenerate the last answer: the last question runs again and replaces the last turn.
+         *
+         *     Like a rewrite with the same question (a ``rewritten`` event, then the new answer), with the
+         *     same caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409
+         *     ``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a
+         *     custom client tool, or a turn is running.
+         *
+         *     Returns:
+         *         The event stream, or the turn as JSON (``Accept: application/json``).
+         */
+        post: operations["regenerate_agent_v1_session_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Speech
+         * @description Speak a text or a ``say`` segment with the session's speech engine.
+         *
+         *     A segment that is not in this conversation is 404.
+         *
+         *     Returns:
+         *         The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).
+         *
+         *     Raises:
+         *         BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.
+         */
+        post: operations["speech_agent_v1_session_speech_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/tool-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tool Result
+         * @description Answer a custom client tool call the running turn waits for (once).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: No call of this session waits under that id here (answered, timed out, or the
+         *             turn runs on another task) (``unknown_call``).
+         *         AppError: The result is larger than 32 KB (413 ``too_large``).
+         */
+        post: operations["tool_result_agent_v1_session_tool_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/transcribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe
+         * @description Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.
+         *
+         *     Returns:
+         *         The text, the audio's length and the engine.
+         *
+         *     Raises:
+         *         AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).
+         *         BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.
+         */
+        post: operations["transcribe_agent_v1_session_transcribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4012,6 +4514,19 @@ export interface components {
             runs_per_minute?: number | null;
         };
         /**
+         * Activate
+         * @description The model the assistant should answer with.
+         */
+        Activate: {
+            /**
+             * Acceptnotrecommended
+             * @default false
+             */
+            acceptNotRecommended?: boolean;
+            /** Model */
+            model: string;
+        };
+        /**
          * AgentDef
          * @description A versioned agent definition.
          */
@@ -4023,6 +4538,9 @@ export interface components {
             a2a?: boolean;
             /** Ask Rules */
             ask_rules?: components["schemas"]["AskRule"][];
+            attachments?: components["schemas"]["AttachmentsDef"] | null;
+            /** Builtin Tools */
+            builtin_tools?: components["schemas"]["BuiltinToolDef"][];
             /** Capabilities */
             capabilities?: {
                 [key: string]: components["schemas"]["CapabilityUse"];
@@ -4051,6 +4569,7 @@ export interface components {
              */
             instructions?: string;
             knowledge?: components["schemas"]["KnowledgeDef"] | null;
+            markup?: components["schemas"]["MarkupDef"] | null;
             /**
              * Max Tool Calls Per Turn
              * @default 6
@@ -4067,8 +4586,15 @@ export interface components {
             };
             /** Models */
             models?: string[];
+            /** Modules */
+            modules?: components["schemas"]["ModuleRef"][];
             /** Name */
             name: string;
+            /**
+             * Openai Confirm
+             * @default false
+             */
+            openai_confirm?: boolean;
             /** Output Schema */
             output_schema?: {
                 [key: string]: unknown;
@@ -4094,6 +4620,12 @@ export interface components {
             suggestions?: string[];
             /** Temperature */
             temperature?: number | null;
+            /**
+             * Template Syntax
+             * @default legacy
+             * @enum {string}
+             */
+            template_syntax?: "legacy" | "handlebars";
             /**
              * Title
              * @default
@@ -4234,6 +4766,7 @@ export interface components {
             exchange_rate?: number | null;
             /** Locale */
             locale?: string | null;
+            markup?: components["schemas"]["MarkupDef"] | null;
             /** Memory Mode */
             memory_mode?: ("off" | "ask" | "on") | null;
             /** Memory Ttl Days */
@@ -4314,6 +4847,34 @@ export interface components {
             }[];
         };
         /**
+         * AttachmentsDef
+         * @description Files people attach to their chat messages (``evokai.attachments``).
+         */
+        AttachmentsDef: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled?: boolean;
+            /**
+             * Max Conversation Mb
+             * @default 50
+             */
+            max_conversation_mb?: number;
+            /**
+             * Max File Mb
+             * @default 10
+             */
+            max_file_mb?: number;
+            /**
+             * Max Files
+             * @default 5
+             */
+            max_files?: number;
+            /** Types */
+            types?: ("png" | "jpeg" | "webp" | "gif" | "pdf" | "docx" | "pptx" | "txt" | "md" | "csv")[];
+        };
+        /**
          * BrowserDeclaration
          * @description What the application lets the browser send to its vendor's online services (reported).
          */
@@ -4342,6 +4903,45 @@ export interface components {
             };
             /** Description */
             description: string;
+        };
+        /**
+         * BuiltinTool
+         * @description A call of a provider built-in tool that can change data (``engine.messages``).
+         */
+        BuiltinTool: {
+            /**
+             * Changes
+             * @default true
+             */
+            changes?: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * BuiltinToolBlock
+         * @description Assistant block: a provider built-in tool that can change data ran (never sent to a model).
+         *
+         *     It keeps the answer from being regenerated: keep it as Evokai returns it.
+         */
+        BuiltinToolBlock: {
+            builtinTool: components["schemas"]["BuiltinTool"];
+        };
+        /**
+         * BuiltinToolDef
+         * @description A provider built-in tool (``evokai.engine.builtin_tools``).
+         */
+        BuiltinToolDef: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "web_search" | "web_fetch" | "code_execution" | "image_generation" | "file_search" | "mcp_server" | "memory";
         };
         /**
          * Candidate
@@ -4441,10 +5041,24 @@ export interface components {
             enabled?: boolean;
         };
         /**
+         * ChatAttachment
+         * @description A file attached to a message: the attachment of a server run, with its bytes.
+         */
+        ChatAttachment: {
+            /** Data */
+            data: string;
+            /** Mediatype */
+            mediaType?: string | null;
+            /** Name */
+            name: string;
+        };
+        /**
          * ChatBody
          * @description A user input.
          */
         ChatBody: {
+            /** Attachments */
+            attachments?: components["schemas"]["ChatAttachment"][];
             confirm?: components["schemas"]["Confirm"] | null;
             /** Endofspeechat */
             endOfSpeechAt?: number | null;
@@ -4520,6 +5134,8 @@ export interface components {
             messages?: components["schemas"]["HistoryMessage"][] | null;
             /** Reason */
             reason: string;
+            /** Regenerable */
+            regenerable?: boolean | null;
             /** Replacedfrom */
             replacedFrom?: number | null;
             /** Rewritable */
@@ -4551,6 +5167,25 @@ export interface components {
             table_max_chars?: number;
         };
         /**
+         * ClientToolDef
+         * @description A custom client tool: the client application runs it (``client_tool`` event).
+         */
+        ClientToolDef: {
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Wait
+             * @default false
+             */
+            wait?: boolean;
+        };
+        /**
          * ClientToolsDef
          * @description Which client tools the agent has.
          */
@@ -4565,6 +5200,8 @@ export interface components {
              * @default true
              */
             chart?: boolean;
+            /** Custom */
+            custom?: components["schemas"]["ClientToolDef"][];
             /**
              * Diagram
              * @default true
@@ -4642,6 +5279,16 @@ export interface components {
          * @description The user's decision on a confirmation.
          */
         Confirm: {
+            /** Actionid */
+            actionId: string;
+            /** Approve */
+            approve: boolean;
+        };
+        /**
+         * ConfirmAnswer
+         * @description A button's answer to a pending confirmation (instead of typing yes or no).
+         */
+        ConfirmAnswer: {
             /** Actionid */
             actionId: string;
             /** Approve */
@@ -4748,6 +5395,30 @@ export interface components {
             };
         };
         /**
+         * CueDef
+         * @description Cues: ``{name}`` or ``{name:arg}`` with the default delimiters.
+         */
+        CueDef: {
+            /**
+             * Close
+             * @default }
+             */
+            close?: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Names */
+            names?: string[] | null;
+            names_from?: components["schemas"]["ModuleParam"] | null;
+            /**
+             * Open
+             * @default {
+             */
+            open?: string;
+        };
+        /**
          * DataProtection
          * @description An application's data protection profile.
          */
@@ -4755,6 +5426,8 @@ export interface components {
             browser?: components["schemas"]["BrowserDeclaration"] | null;
             /** Jurisdiction */
             jurisdiction?: string[] | null;
+            /** Provider Tool Storage */
+            provider_tool_storage?: boolean | null;
             residency?: components["schemas"]["ResidencyRule"] | null;
             /** Retention */
             retention?: ("any" | "no_training" | "zero_retention") | null;
@@ -4798,9 +5471,10 @@ export interface components {
         };
         /**
          * EvokaiOptions
-         * @description Evokai's extension of the request (server key only).
+         * @description Evokai's extension of the request (``tags`` and ``groups``: server key only).
          */
         EvokaiOptions: {
+            confirm?: components["schemas"]["ConfirmAnswer"] | null;
             /** Groups */
             groups?: string[];
             /** Tags */
@@ -4821,6 +5495,40 @@ export interface components {
         Feedback: {
             /** Value */
             value?: number | null;
+        };
+        /**
+         * FileBlock
+         * @description User block: an attachment, with the text the model read of it (a document).
+         *
+         *     Without text the model read the file itself; with external storage that file is not kept, and
+         *     a later turn tells the model it is no longer available.
+         */
+        FileBlock: {
+            file: components["schemas"]["FileRef"];
+            /** Text */
+            text?: string | null;
+        };
+        /**
+         * FileRef
+         * @description An attachment as a message keeps it (``evokai.attachments``): never its bytes.
+         */
+        FileRef: {
+            /** Id */
+            id: string;
+            /** Mediatype */
+            mediaType: string;
+            /** Name */
+            name: string;
+            /**
+             * Sha256
+             * @default
+             */
+            sha256?: string;
+            /**
+             * Size
+             * @default 0
+             */
+            size?: number;
         };
         /**
          * GdprAnswers
@@ -4913,7 +5621,7 @@ export interface components {
          */
         HistoryMessage: {
             /** Content */
-            content?: (components["schemas"]["TextBlock"] | components["schemas"]["ToolUseBlock"] | components["schemas"]["ToolResultBlock"])[];
+            content?: (components["schemas"]["FileBlock"] | components["schemas"]["TextBlock"] | components["schemas"]["ToolUseBlock"] | components["schemas"]["ToolResultBlock"] | components["schemas"]["BuiltinToolBlock"])[];
             /** Events */
             events?: {
                 [key: string]: unknown;
@@ -4955,6 +5663,14 @@ export interface components {
             max_chars?: number | null;
             /** Max Run Chars */
             max_run_chars?: number | null;
+        };
+        /**
+         * Inspect
+         * @description Why the owner opens another person's conversation (kept in the audit log, shown to them).
+         */
+        Inspect: {
+            /** Reason */
+            reason: string;
         };
         /**
          * KeyRequest
@@ -5043,6 +5759,14 @@ export interface components {
             code?: string | null;
             /** Key */
             key?: string | null;
+        };
+        /**
+         * MarkupDef
+         * @description The markup an application or an agent declares (``markup:`` in YAML).
+         */
+        MarkupDef: {
+            cue?: components["schemas"]["CueDef"] | null;
+            speech?: components["schemas"]["SpeechTagDef"] | null;
         };
         /**
          * McpProbe
@@ -5145,6 +5869,52 @@ export interface components {
             threshold?: number | null;
         };
         /**
+         * ModuleChoice
+         * @description A session's choice for one prompt module (server key only, at token mint).
+         */
+        ModuleChoice: {
+            /** On */
+            on?: boolean | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * ModuleParam
+         * @description A parameter of a session's prompt module (a list of strings, or one string).
+         */
+        ModuleParam: {
+            /** Module */
+            module: string;
+            /** Param */
+            param: string;
+        };
+        /**
+         * ModuleRef
+         * @description A prompt module the agent may use (``evokai.agents.modules``), with its defaults.
+         */
+        ModuleRef: {
+            /** Name */
+            name: string;
+            /**
+             * On
+             * @default true
+             */
+            on?: boolean;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Session
+             * @default false
+             */
+            session?: boolean;
+            /** Version */
+            version?: number | null;
+        };
+        /**
          * NavigateDef
          * @description The client navigation tool.
          */
@@ -5195,6 +5965,14 @@ export interface components {
             note?: string;
             /** Turnid */
             turnId?: string | null;
+        };
+        /**
+         * NoticeAccept
+         * @description The version of the notice the person read.
+         */
+        NoticeAccept: {
+            /** Version */
+            version: number;
         };
         /**
          * OAuthAppIn
@@ -5265,7 +6043,7 @@ export interface components {
         };
         /**
          * Preferences
-         * @description One person's console preferences (version 1). JSON fields are camelCase.
+         * @description One person's console preferences (version 2). JSON fields are camelCase.
          */
         Preferences: {
             /**
@@ -5299,7 +6077,7 @@ export interface components {
             language?: "auto" | "en" | "it";
             /**
              * Mascot
-             * @default on
+             * @default hidden
              * @enum {string}
              */
             mascot?: "on" | "still" | "hidden";
@@ -5334,16 +6112,51 @@ export interface components {
             underlineLinks?: boolean;
             /**
              * Version
-             * @default 1
-             * @constant
+             * @default 2
+             * @enum {integer}
              */
-            version?: 1;
+            version?: 1 | 2;
+        };
+        /**
+         * PreviewBody
+         * @description Sample values for a prompt preview, and optionally an unsaved draft to preview instead.
+         */
+        PreviewBody: {
+            /** Data */
+            data?: {
+                [key: string]: string;
+            } | null;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            } | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Text */
+            text?: string | null;
+            /** Version */
+            version?: number | null;
         };
         /**
          * PromptBody
-         * @description A prompt's text; saving a different text makes a new version.
+         * @description A prompt's text; saving a different text, schema, description or data makes a new version.
          */
         PromptBody: {
+            /** Data */
+            data?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Description
+             * @default
+             */
+            description?: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            } | null;
             /** Text */
             text: string;
         };
@@ -5379,6 +6192,23 @@ export interface components {
             languages?: string[] | null;
             /** Version */
             version?: string | null;
+        };
+        /**
+         * RegenerateBody
+         * @description Regenerate the last answer (the question is the conversation's own).
+         */
+        RegenerateBody: {
+            /** Endofspeechat */
+            endOfSpeechAt?: number | null;
+            /** History */
+            history?: components["schemas"]["HistoryMessage"][] | null;
+            /**
+             * Mode
+             * @default text
+             * @enum {string}
+             */
+            mode?: "text" | "voice";
+            page?: components["schemas"]["PageContext"] | null;
         };
         /**
          * Residency
@@ -5550,10 +6380,18 @@ export interface components {
         RunRequest: {
             /** Attachments */
             attachments?: components["schemas"]["RunAttachment"][];
+            /** Clienttools */
+            clientTools?: components["schemas"]["ClientToolDef"][];
             /** Groups */
             groups?: string[];
             /** Input */
             input: string | components["schemas"]["RunMessage"][];
+            /** Locale */
+            locale?: string | null;
+            /** Modules */
+            modules?: {
+                [key: string]: components["schemas"]["ModuleChoice"];
+            } | null;
             /**
              * Store
              * @default false
@@ -5571,6 +6409,10 @@ export interface components {
         RunResponse: {
             /** Citations */
             citations?: {
+                [key: string]: unknown;
+            }[];
+            /** Clienttoolcalls */
+            clientToolCalls?: {
                 [key: string]: unknown;
             }[];
             /** Conversationid */
@@ -5671,6 +6513,14 @@ export interface components {
             decision: "approve" | "reject";
         };
         /**
+         * SessionBody
+         * @description The conversation to continue (a token refresh); omitted = a new one.
+         */
+        SessionBody: {
+            /** Conversationid */
+            conversationId?: string | null;
+        };
+        /**
          * SkillBody
          * @description A skill: its description, the body of SKILL.md and, optionally, its files.
          */
@@ -5737,6 +6587,63 @@ export interface components {
             title?: string | null;
             /** Url */
             url?: string | null;
+        };
+        /**
+         * SpeechChoice
+         * @description The server speech engines a session token chooses.
+         */
+        SpeechChoice: {
+            /** Stt */
+            stt?: string | null;
+            /** Tts */
+            tts?: string | null;
+        };
+        /**
+         * SpeechRequest
+         * @description What to speak: a text, or a ``say`` segment of this conversation.
+         */
+        SpeechRequest: {
+            /**
+             * Format
+             * @default pcm
+             * @enum {string}
+             */
+            format?: "pcm" | "opus";
+            /** Index */
+            index?: number | null;
+            /**
+             * Samplerate
+             * @default 24000
+             * @enum {integer}
+             */
+            sampleRate?: 16000 | 22050 | 24000 | 44100 | 48000;
+            /** Text */
+            text?: string | null;
+            /** Turnid */
+            turnId?: string | null;
+        };
+        /**
+         * SpeechTagDef
+         * @description Speech tags: ``[laughs]`` with the default delimiters.
+         */
+        SpeechTagDef: {
+            /**
+             * Close
+             * @default ]
+             */
+            close?: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Names */
+            names?: string[] | null;
+            /**
+             * Open
+             * @default [
+             */
+            open?: string;
         };
         /**
          * SsoConfigBody
@@ -5857,6 +6764,8 @@ export interface components {
             actor?: "agent";
             /** Agent */
             agent: string;
+            /** Clienttools */
+            clientTools?: components["schemas"]["ClientToolDef"][] | null;
             consent?: components["schemas"]["Consent"] | null;
             /** Conversationid */
             conversationId?: string | null;
@@ -5867,10 +6776,17 @@ export interface components {
             /** Groups */
             groups?: string[];
             limits?: components["schemas"]["SubjectLimits"] | null;
+            /** Locale */
+            locale?: string | null;
             /** Memoryconsent */
             memoryConsent?: boolean | null;
             /** Model */
             model?: string | null;
+            /** Modules */
+            modules?: {
+                [key: string]: components["schemas"]["ModuleChoice"];
+            } | null;
+            speech?: components["schemas"]["SpeechChoice"] | null;
             /** Storagemode */
             storageMode?: ("evokai" | "external") | null;
             /** Subject */
@@ -5912,6 +6828,18 @@ export interface components {
          */
         ToolResultBlock: {
             toolResult: components["schemas"]["ToolResult"];
+        };
+        /**
+         * ToolResultBody
+         * @description The client's answer to a ``client_tool`` call that waits.
+         */
+        ToolResultBody: {
+            /** Callid */
+            callId: string;
+            /** Error */
+            error?: string | null;
+            /** Result */
+            result?: unknown;
         };
         /**
          * ToolSettings
@@ -5959,6 +6887,34 @@ export interface components {
          */
         ToolUseBlock: {
             toolUse: components["schemas"]["ToolUse"];
+        };
+        /**
+         * Transcript
+         * @description What was heard.
+         */
+        Transcript: {
+            /** Durationms */
+            durationMs: number;
+            /** Engine */
+            engine: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * Try
+         * @description The model to run the assistant's eval suite on.
+         */
+        Try: {
+            /** Model */
+            model: string;
+        };
+        /**
+         * Unlock
+         * @description The application's slug, typed by the person who unlocks or resets it.
+         */
+        Unlock: {
+            /** Confirm */
+            confirm: string;
         };
         /**
          * UntrustedSettings
@@ -6053,7 +7009,7 @@ export interface components {
             first_clause_min_chars?: number;
             /**
              * Prompt Rule
-             * @default The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read tax codes, IBANs, meter codes or personal data aloud: point to the screen instead.
+             * @default The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read codes, account numbers or personal data aloud: point to the screen instead.
              */
             prompt_rule?: string;
             /**
@@ -6555,6 +7511,41 @@ export interface operations {
             };
         };
     };
+    agent_suitability_agent_v1_admin_agents__agent__suitability_get: {
+        parameters: {
+            query: {
+                model: string;
+            };
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     switch_model_agent_v1_admin_agents__agent__switch_model_post: {
         parameters: {
             query?: never;
@@ -6826,6 +7817,98 @@ export interface operations {
             };
         };
     };
+    reset_application_agent_v1_admin_application_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Unlock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_preview_agent_v1_admin_application_reset_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    unlock_application_agent_v1_admin_application_unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Unlock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_ask_rules_agent_v1_admin_ask_rules_get: {
         parameters: {
             query?: never;
@@ -6863,6 +7946,135 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_state_agent_v1_admin_assistant_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    activate_assistant_agent_v1_admin_assistant_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Activate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Inspect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    try_assistant_model_agent_v1_admin_assistant_try_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Try"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8661,6 +9873,43 @@ export interface operations {
             };
         };
     };
+    preview_prompt_agent_v1_admin_prompts__name__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     provider_catalog_agent_v1_admin_providers_get: {
         parameters: {
             query?: never;
@@ -9928,6 +11177,98 @@ export interface operations {
             };
         };
     };
+    assistant_privacy_agent_v1_console_assistant_privacy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    accept_notice_agent_v1_console_assistant_privacy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoticeAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_session_agent_v1_console_assistant_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SessionBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     deployment_audit_agent_v1_console_audit_get: {
         parameters: {
             query?: {
@@ -10939,6 +12280,44 @@ export interface operations {
             };
         };
     };
+    attachment_agent_v1_session_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     report_bug_agent_v1_session_bug_reports_post: {
         parameters: {
             query?: never;
@@ -11379,6 +12758,164 @@ export interface operations {
                     "application/json": {
                         [key: string]: boolean;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_agent_v1_session_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResult"];
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    speech_agent_v1_session_speech_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Audio and timings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_result_agent_v1_session_tool_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolResultBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcribe_agent_v1_session_transcribe_post: {
+        parameters: {
+            query?: {
+                language?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "audio/*": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcript"];
                 };
             };
             /** @description Validation Error */

@@ -88,7 +88,12 @@ async function page(res) {
 // The panel calls this on first use, when the token is about to expire and for another conversation.
 async function token(req, res) {
   const { conversationId } = await readJson(req)
-  const mint = (id) => evokai.mintSessionToken({ subject: currentUser().id, agent: AGENT, conversationId: id, ttlSeconds: 900 })
+  // POST /api/agent/token?detailed=1 shows how the backend chooses prompt modules (the agent must list a session
+  // module named tone, as config/bookshop.yaml does): the browser never sends them itself.
+  const detailed = new URL(req.url, 'http://localhost').searchParams.has('detailed')
+  const modules = detailed ? { tone: { params: { style: 'detailed' } } } : undefined
+  const mint = (id) =>
+    evokai.mintSessionToken({ subject: currentUser().id, agent: AGENT, conversationId: id, ttlSeconds: 900, modules })
   try {
     json(res, 200, await mint(conversationId || undefined))
   } catch (e) {

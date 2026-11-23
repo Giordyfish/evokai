@@ -1,6 +1,6 @@
 /**
  * One audio measurement for every source (the user's microphone, the agent's voice from Piper or the server) on the
- * same scale, so any visual (an orb, an avatar) can consume it. When the browser speaks with `speechSynthesis` there
+ * same scale, so any visual (an orb, a waveform, a meter) can consume it. When the browser speaks with `speechSynthesis` there
  * is no audio to read: the signal is estimated from the text (syllables), and marked `estimated`.
  */
 

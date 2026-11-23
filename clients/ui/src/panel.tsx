@@ -3,14 +3,17 @@
  * confirmations, the usage ring (shares only), the conversation list, starter questions, feedback, dictation and voice
  * mode (inside the panel, and minimized into the launcher orb with a speech bubble), the header menu with what the
  * agents remember, and the one-time question about memory. One orb travels between the launcher, the header and the
- * middle of the voice layer (`flow.ts`, `travel.tsx`).
+ * middle of the voice layer (`flow.ts`, `travel.tsx`); an element of the page (`slot="orb"`) or images per state can
+ * travel in its place.
  */
 import type { TargetedKeyboardEvent, TargetedMouseEvent, VNode } from 'preact'
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 
-import type { ChatMessage, Citation, Part } from '@evokai/evokai-client/browser'
+import { stripMarkup, type ChatMessage, type Citation, type Part, type ToolPart } from '@evokai/evokai-client/browser'
+import { AttachButton, fileError, MessageFiles, Previews, useFiles } from './attach'
+import type { ChatState } from './chatstate'
 import type { Controller, ControllerState } from './controller'
-import { useUi } from './context'
+import { type ToolRenderer, useUi } from './context'
 import { citedIndexes, Markdown } from './markdown'
 import { Flow, settled, viewOf, type Look, type Rest, type View } from './flow'
 import { reducedMotion } from './orb'
@@ -20,7 +23,7 @@ import { Icon, type IconName } from './icons'
 import { ConnectCard, ConnectionsView } from './connections'
 import { MemoryAsk, MemoryView } from './memory'
 import { fill } from './strings'
-import type { OrbColors } from './theme'
+import type { OrbColors, OrbImages } from './theme'
 import { UsageRing } from './usage'
 import { AskCard, ChartView, ConfirmCard, DiagramView } from './visuals'
 
@@ -44,6 +47,14 @@ export interface PanelProps {
   keyTarget: EventTarget | null
   /** The view changed (closed, chat, voice, minimized). */
   onView?: ((view: View) => void) | undefined
+  /** Where the orb is now (a resting place, or flying). */
+  onOrb?: ((at: Look['orb']) => void) | undefined
+  /** The conversation's state (`chatstate.ts`), for an orb made of images. */
+  state?: ChatState
+  /** Images per chat state in place of the orb (a slotted `orb` element wins over them). */
+  images?: OrbImages | null | undefined
+  /** The host element, whose children fill the slots (read from the first render on). */
+  host?: Element | undefined
 }
 
 const KNOWLEDGE_TOOL = 'knowledge_search'
@@ -116,8 +127,41 @@ function Sources({ cites }: { cites: Citation[] }) {
   )
 }
 
+/** A page's own element in the chat (`toolRenderers`), kept until its part changes. */
+function Own({ el }: { el: HTMLElement }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    box.current?.replaceChildren(el)
+  }, [el])
+  return <div ref={box} part="tool-card" />
+}
+
+function OwnPart({ render, part, children }: { render: ToolRenderer; part: ToolPart; children: VNode }) {
+  const el = useMemo(() => {
+    try {
+      return render(part)
+    } catch {
+      return null
+    }
+    // The part is a new object on every render: its fields say whether it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [render, part.name, part.status, part.callId, part.args, part.result, part.error])
+  return el ? <Own el={el} /> : children
+}
+
 function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string | null; c: Controller; st: ControllerState; keyTarget: EventTarget | null } }) {
-  const { s, toolLabel } = useUi()
+  const { s, toolLabel, toolRenderer } = useUi()
+  // A page's own card for this tool (`toolRenderers`), else the default view.
+  const mine = (i: number, part: ToolPart, view: VNode) => {
+    const render = toolRenderer?.(part.name)
+    return render ? (
+      <OwnPart key={i} render={render} part={part}>
+        {view}
+      </OwnPart>
+    ) : (
+      view
+    )
+  }
   const cites = new Map((m.citations ?? []).map((c) => [c.index, c]))
   const label = (name: string) => {
     const l = toolLabel(name)
@@ -128,19 +172,23 @@ function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string |
       {m.parts.map((part: Part, i) => {
         switch (part.kind) {
           case 'text':
-            return <Markdown key={i} text={part.text} cites={cites} cite={(c, k) => <Cite key={k} c={c} />} />
-          case 'tool':
-            return (
+            return <Markdown key={i} text={stripMarkup(part.text, p.st.markup)} cites={cites} cite={(c, k) => <Cite key={k} c={c} />} />
+          case 'tool': {
+            const { kind: _k, client: _c, ...shown } = part
+            return mine(
+              i,
+              shown,
               <div key={i} class={`tool ${part.status}`} part="tool" data-status={part.status}>
                 <i aria-hidden="true" />
                 {label(part.name)}
                 {part.status === 'start' ? s.toolRunning : part.status === 'error' ? `, ${s.toolFailed}` : ''}
-              </div>
+              </div>,
             )
+          }
           case 'chart':
-            return <ChartView key={i} chart={part.chart} />
+            return mine(i, { name: 'ui_chart', status: 'done', result: part.chart }, <ChartView key={i} chart={part.chart} />)
           case 'diagram':
-            return <DiagramView key={i} diagram={part.diagram} />
+            return mine(i, { name: 'ui_diagram', status: 'done', result: part.diagram }, <DiagramView key={i} diagram={part.diagram} />)
           case 'ask':
             return (
               <AskCard
@@ -169,7 +217,7 @@ function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string |
           case 'error':
             return (
               <div key={i} class="err" part="error" role="alert">
-                {part.message}
+                {fileError(s, part.code) ?? part.message}
               </div>
             )
         }
@@ -351,6 +399,7 @@ export function Panel(props: PanelProps): VNode {
   const { s, names } = useUi()
   const t = (x: string) => fill(x, { title: names.title, app: names.app })
   const [input, setInput] = useState('')
+  const attached = useFiles(st.files)
   /** Editing the last question: the next send rewrites it. */
   const [editing, setEditing] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -407,6 +456,8 @@ export function Panel(props: PanelProps): VNode {
   }, [target])
   const onView = props.onView
   useEffect(() => onView?.(target), [target, onView])
+  const onOrb = props.onOrb
+  useEffect(() => onOrb?.(look.orb), [look.orb, onOrb])
 
   // Where the focus goes after a change of view, once the place is on screen.
   const prev = useRef(target)
@@ -433,25 +484,30 @@ export function Panel(props: PanelProps): VNode {
     el.focus()
   }, [look])
 
-  // The box opens and closes around the orb: its transform origin is the orb's place, measured before it moves.
-  useLayoutEffect(() => {
-    const p = panelRef.current
-    if (!p || (look.box !== 'pre' && look.box !== 'out')) return
-    const sp = spotOf(slot(look.layer === 'voice' ? 'center' : 'head'))
-    const pr = p.getBoundingClientRect()
-    if (sp) p.style.setProperty('--ek-origin', `${(sp.x - pr.left).toFixed(1)}px ${(sp.y - pr.top).toFixed(1)}px`)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [look.box])
-
-  // A slotted launcher, avatar or stage orb stands in for the orb where it rests.
+  // A slotted launcher, avatar or stage orb stands in for the orb where it rests; a slotted `orb` replaces it. The
+  // host's children are watched too: a slot that is not rendered yet fires no slotchange.
   useEffect(() => {
     const r = rootRef.current
     const on = () => slotsChanged((n) => n + 1)
     r?.addEventListener('slotchange', on)
-    return () => r?.removeEventListener('slotchange', on)
-  }, [])
+    const host = props.host ?? (r?.getRootNode() as ShadowRoot | undefined)?.host
+    // Children added or removed, or a child's slot changed; not what happens inside a slotted element.
+    const watch =
+      host && typeof MutationObserver === 'function'
+        ? new MutationObserver((recs) => {
+            if (recs.some((m) => m.target === host || m.type === 'attributes')) on()
+          })
+        : null
+    if (host) watch?.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['slot'] })
+    // The first render ran before the root existed: read the slots again now.
+    on()
+    return () => {
+      r?.removeEventListener('slotchange', on)
+      watch?.disconnect()
+    }
+  }, [props.host])
   const slotted = (name: string) => {
-    const host = (rootRef.current?.getRootNode() as ShadowRoot | undefined)?.host
+    const host = props.host ?? (rootRef.current?.getRootNode() as ShadowRoot | undefined)?.host
     return !!host && [...host.children].some((e) => e.getAttribute('slot') === name)
   }
   const custom = (r: Look['orb']) => (r === 'launcher' ? slotted('launcher') : r === 'head' ? !!props.logo || slotted('avatar') : r === 'center' ? slotted('stage-orb') : false)
@@ -476,7 +532,17 @@ export function Panel(props: PanelProps): VNode {
     if (editing) {
       setEditing(false)
       void c.rewrite(text)
-    } else void c.send(text)
+    } else {
+      // The files leave the composer with the message, and come back if the service refused it or was not reached.
+      const sent = attached.files
+      attached.clear()
+      const back = () => {
+        if (sent.length) attached.restore(sent)
+      }
+      void c.send(text, false, sent).then((ok) => {
+        if (!ok) back()
+      }, back)
+    }
   }
   const onLink = (e: TargetedMouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest?.('a')
@@ -723,6 +789,7 @@ export function Panel(props: PanelProps): VNode {
                             ) : (
                               <>
                                 <div class="bubble" part="user-bubble">
+                                  <MessageFiles items={m.attachments} c={c} />
                                   {m.parts.map((p, i) => (p.kind === 'text' ? <span key={i}>{p.text}</span> : null))}
                                 </div>
                                 {m.rewritable && !busy && !editing ? (
@@ -745,6 +812,13 @@ export function Panel(props: PanelProps): VNode {
                           ) : (
                             <>
                               <Parts m={m} p={{ busy, openAsk, c, st, keyTarget: props.keyTarget }} />
+                              {m.regenerable && !busy ? (
+                                <div class="fb" part="regenerate">
+                                  <button type="button" aria-label={s.regenerate} onClick={() => void c.session.regenerate()}>
+                                    <Icon d="again" size={14} />
+                                  </button>
+                                </div>
+                              ) : null}
                               {m.messageId && !busy && m.parts.some((p) => p.kind === 'text') ? (
                                 <div class="fb" part="feedback">
                                   <button type="button" aria-label={s.helpful} aria-pressed={m.feedback === 1} onClick={() => void c.session.feedback(m.messageId as string, m.feedback === 1 ? null : 1)}>
@@ -796,7 +870,18 @@ export function Panel(props: PanelProps): VNode {
                       </button>
                     </div>
                   ) : null}
-                  <form class="composer" part="composer" onSubmit={submit}>
+                  <form
+                    class="composer"
+                    part="composer"
+                    onSubmit={submit}
+                    onDragOver={(e) => st.files && e.preventDefault()}
+                    onDrop={(e) => {
+                      if (!st.files || editing) return
+                      e.preventDefault()
+                      attached.add(e.dataTransfer?.files)
+                    }}
+                  >
+                    {editing ? null : <Previews files={attached.files} error={attached.error} onRemove={attached.remove} />}
                     <div class="field" part="field">
                       <textarea
                         ref={box}
@@ -807,6 +892,12 @@ export function Panel(props: PanelProps): VNode {
                         aria-label={t(s.message)}
                         placeholder={st.dictating ? s.placeholderDictating : t(s.placeholder)}
                         onInput={(e) => setInput(e.currentTarget.value)}
+                        onPaste={(e) => {
+                          const pasted = e.clipboardData?.files
+                          if (!st.files || editing || !pasted?.length) return
+                          e.preventDefault()
+                          attached.add(pasted)
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                             e.preventDefault()
@@ -814,6 +905,7 @@ export function Panel(props: PanelProps): VNode {
                           }
                         }}
                       />
+                      {st.files && !editing ? <AttachButton offer={st.files} onFiles={attached.add} /> : null}
                       <button
                         type="button"
                         class={`cb ${st.dictating ? 'on' : ''}`}
@@ -905,6 +997,9 @@ export function Panel(props: PanelProps): VNode {
         busy={busy || ss.phase === 'speaking'}
         muted={st.muted || !st.micOpen}
         colors={props.orb}
+        custom={slotted('orb')}
+        images={props.images}
+        state={props.state ?? 'idle'}
       />
     </div>
   )

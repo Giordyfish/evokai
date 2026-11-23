@@ -14,7 +14,16 @@ from pydantic_ai.messages import ModelMessage
 
 from evokai.core.util import utcnow
 from evokai.db.repositories import Who
-from evokai.evals.redteam.attacks import AWS_KEY, CF, FOREIGN, IBAN, LANGUAGES, SUITE, by_id
+from evokai.evals.redteam.attacks import (
+    ASSISTANT_SUITE,
+    AWS_KEY,
+    CF,
+    FOREIGN,
+    IBAN,
+    LANGUAGES,
+    SUITE,
+    by_id,
+)
 from evokai.evals.redteam.graders import Context, Transcript, grade_rule, mask, verdict
 from evokai.evals.redteam.service import score
 from evokai.guard.output import shingles
@@ -115,7 +124,7 @@ def test_the_suite_covers_every_category_and_many_languages_and_scripts() -> Non
     assert {"ru", "zh", "ar"} <= non_latin
     vectors = Counter(a.public()["vector"] for a in SUITE)
     assert vectors["page"] >= 3 and vectors["tool"] >= 10
-    assert len(by_id()) == len(SUITE)
+    assert len(by_id()) == len(SUITE) + len(ASSISTANT_SUITE)
     # Only a minority needs a model to judge: rules grade everything else.
     assert sum(1 for a in SUITE if a.graders == ("judge",)) <= 3
 

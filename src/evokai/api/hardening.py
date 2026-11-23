@@ -11,8 +11,14 @@ One pure ASGI middleware (it never buffers a streamed answer):
   allows, never with cookies (no ``Access-Control-Allow-Credentials``: session tokens travel in
   ``Authorization``); each application's own origin list is still checked on every request
   (``api.deps.session``);
-- **body size**: requests larger than the limit get 413 before the route reads them (the session
-  API takes less than the server API, whose runs carry attachments).
+- **body size**: requests larger than the limit get 413 before the route reads them, from
+  ``Content-Length`` and while a chunked body is read (the session API takes less than the server
+  API, whose runs carry attachments). A chat message may carry the files a person attaches
+  (``EVOKAI_ATTACHMENTS_REQUEST_MB``) only when its session token says so (the application is
+  granted ``attachments`` and the agent has them on): that is resolved before the body is read, so
+  any other session never gets more than the session limit parsed or decoded. A recording to
+  transcribe takes ``EVOKAI_TRANSCRIBE_MAX_BYTES``; a text to speak and a client tool's result take
+  a small JSON body.
 """
 
 from __future__ import annotations
@@ -32,6 +38,12 @@ SESSION_BODY_LIMIT = 2_000_000
 are kept of it)."""
 BODY_LIMIT = 8_000_000
 """Bytes: a server run with its attachments, an agent definition, a skill."""
+CHAT_EXTRA = 2_000_000
+"""Bytes a chat message may carry beside its attachments (text, page context, external history)."""
+SMALL_BODY_LIMIT = 256_000
+"""Bytes: a text to speak (at most 20,000 characters, each escaped in JSON at most 6 bytes) or a
+client tool's result (at most 32 KB as JSON, with a reason of 2,000 characters)."""
+SMALL_BODY_PATHS = ("/v1/session/speech", "/v1/session/tool-results")
 UPLOAD_LIMIT = 200_000_000
 """Bytes: a knowledge document upload (the service applies ``EVOKAI_KNOWLEDGE_MAX_FILE_MB``)."""
 CORS_HEADERS = "authorization, content-type, accept, last-event-id, x-correlation-id"
@@ -39,22 +51,44 @@ CORS_EXPOSE = "x-turn-id, x-correlation-id"
 CORS_METHODS = "GET, POST, PATCH, DELETE, OPTIONS"
 
 OriginsFn = Callable[[], Awaitable[set[str]]]
+TakesFilesFn = Callable[[str | None], Awaitable[bool]]
+"""Whether a chat request may carry attachments, from its ``Authorization`` header."""
 
 
 class Hardening:
     """Security headers, CORS for the session API and body limits."""
 
-    def __init__(self, app: ASGIApp, *, base_path: str, origins: OriginsFn) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        base_path: str,
+        origins: OriginsFn,
+        attachments_mb: int = 0,
+        takes_files: TakesFilesFn | None = None,
+        transcribe_bytes: int = 0,
+    ) -> None:
         """Wrap the application.
 
         Args:
             app: The wrapped ASGI app.
             base_path: Where the API is mounted (``/agent``).
             origins: The browser origins every application allows (cached by the caller).
+            attachments_mb: The files one chat message may carry
+                (``EVOKAI_ATTACHMENTS_REQUEST_MB``): the body limit of ``POST /v1/session/chat``
+                grows by them, base64 included, when ``takes_files`` says the request may carry
+                files.
+            takes_files: Whether a chat request may carry attachments
+                (``session_routes.takes_attachments``); without it a chat keeps the session limit.
+            transcribe_bytes: The largest recording ``POST /v1/session/transcribe`` takes
+                (``EVOKAI_TRANSCRIBE_MAX_BYTES``); the route checks it again as it reads.
         """
         self.app = app
+        self.chat_limit = max(SESSION_BODY_LIMIT, attachments_mb * 1_000_000 * 4 // 3 + CHAT_EXTRA)
         self.base = base_path.rstrip("/")
         self.origins = origins
+        self.takes_files = takes_files
+        self.transcribe_limit = max(SESSION_BODY_LIMIT, transcribe_bytes)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Handle a request."""
@@ -76,9 +110,17 @@ class Hardening:
             return
 
         limit = SESSION_BODY_LIMIT if session_api else BODY_LIMIT
+        length = headers.get("content-length")
+        if path == f"{self.base}/v1/session/chat" and not (
+            length and length.isdigit() and int(length) <= limit
+        ):
+            limit = await self._chat_limit(headers.get("authorization"))
+        elif path == f"{self.base}/v1/session/transcribe":
+            limit = self.transcribe_limit
+        elif path in {f"{self.base}{p}" for p in SMALL_BODY_PATHS}:
+            limit = SMALL_BODY_LIMIT
         if path.startswith(f"{self.base}/v1/admin/knowledge/") and path.endswith("/documents"):
             limit = UPLOAD_LIMIT
-        length = headers.get("content-length")
         if length and length.isdigit() and int(length) > limit:
             await _too_large(send, https)
             return
@@ -114,6 +156,21 @@ class Hardening:
             await send(message)
 
         await self.app(scope, counted, send_hardened)
+
+    async def _chat_limit(self, authorization: str | None) -> int:
+        """The body limit of a chat message larger than the session limit, or of unknown length.
+
+        Returns:
+            The attachments limit when the request may carry files, else the session limit (also
+            when the check itself fails).
+        """
+        if self.takes_files is None or self.chat_limit <= SESSION_BODY_LIMIT:
+            return SESSION_BODY_LIMIT
+        try:
+            ok = await self.takes_files(authorization)
+        except Exception:  # fail closed: the session limit
+            ok = False
+        return self.chat_limit if ok else SESSION_BODY_LIMIT
 
     async def _preflight(self, send: Send, origin: str | None, https: bool) -> None:
         headers = list(_security_headers(False, https, None))

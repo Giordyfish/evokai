@@ -30,6 +30,8 @@ service() {
   echo "== service: ruff"
   uv run --no-sync ruff check src tests migrations
   uv run --no-sync ruff format --check src tests migrations
+  echo "== service: the assistant's docs skill is current"
+  uv run --no-sync python scripts/assistant_docs.py --check
   echo "== service: ty"
   uv run --no-sync ty check
   # A test stuck for 2 minutes prints every thread's stack (which test, where), and the suite is stopped after 20:

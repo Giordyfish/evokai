@@ -234,6 +234,37 @@ CASES = [
         check=_token,
     ),
     Case(
+        "mint-modules",
+        lambda c: c.mint_session_token(
+            "user-1",
+            "assistant",
+            modules={
+                "tone": {"params": {"style": "detailed", "shelf_name": "New arrivals"}},
+                "reader_level": {"on": False},
+            },
+            locale="it-IT",
+        ),
+        "POST",
+        "/v1/session-tokens",
+        {
+            "token": "tok",
+            "expiresAt": 1,
+            "conversationId": "c1",
+            "usage": SHARES,
+            "suggestions": ["Hi?"],
+        },
+        body={
+            "subject": "user-1",
+            "agent": "assistant",
+            "modules": {
+                "tone": {"params": {"style": "detailed", "shelf_name": "New arrivals"}},
+                "reader_level": {"on": False},
+            },
+            "locale": "it-IT",
+        },
+        check=_token,
+    ),
+    Case(
         "mint-memory",
         lambda c: c.mint_session_token("user-1", "assistant", memory_consent=True),
         "POST",
@@ -867,6 +898,43 @@ CASES = [
         check=_eq(3),
     ),
     Case(
+        "admin.prompts.put-module",
+        lambda c: c.admin.prompts.put(
+            "tone",
+            "{{lookup data style}}",
+            parameters={
+                "type": "object",
+                "properties": {"style": {"type": "string", "enum": ["a"]}},
+            },
+            description="How long the answers are.",
+            data={"a": "Brief."},
+        ),
+        "PUT",
+        "/v1/admin/prompts/tone",
+        {"version": 1},
+        body={
+            "text": "{{lookup data style}}",
+            "parameters": {
+                "type": "object",
+                "properties": {"style": {"type": "string", "enum": ["a"]}},
+            },
+            "description": "How long the answers are.",
+            "data": {"a": "Brief."},
+        },
+        admin=True,
+        check=_eq(1),
+    ),
+    Case(
+        "admin.prompts.preview",
+        lambda c: c.admin.prompts.preview("tone", params={"style": "a"}),
+        "POST",
+        "/v1/admin/prompts/tone/preview",
+        {"text": "Brief."},
+        body={"params": {"style": "a"}},
+        admin=True,
+        check=_eq("Brief."),
+    ),
+    Case(
         "admin.voices.put",
         lambda c: c.admin.voices.put("polly", "Bianca", {"language": "it-IT", "name": "Bianca"}),
         "PUT",
@@ -1171,3 +1239,14 @@ def test_raw_paths_are_encoded(router: respx.MockRouter) -> None:
     with EvokaiServer(BASE, admin_key=ADMIN_KEY) as c:
         c.admin.skills.get("a/b?c")
     assert route.calls.last.request.url.raw_path == b"/agent/v1/admin/skills/a%2Fb%3Fc"
+
+
+def test_template_syntax_is_left_to_the_service_unless_set() -> None:
+    from evokai._calls import body
+
+    sent = body(AgentDef, AgentDef(name="a", model="m", instructions="Today is {{date}}."))
+    assert "template_syntax" not in sent
+    kept = body(AgentDef, {"name": "a", "model": "m", "template_syntax": "legacy"})
+    assert kept["template_syntax"] == "legacy"
+    version = PromptVersion.model_validate({"name": "p", "version": 1, "templateSyntax": "legacy"})
+    assert version.template_syntax == "legacy"

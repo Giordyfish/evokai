@@ -57,6 +57,28 @@
         "title": "AbuseSettings",
         "type": "object"
       },
+      "Activate": {
+        "description": "The model the assistant should answer with.",
+        "properties": {
+          "acceptNotRecommended": {
+            "default": false,
+            "title": "Acceptnotrecommended",
+            "type": "boolean"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "Activate",
+        "type": "object"
+      },
       "AgentDef": {
         "description": "A versioned agent definition.",
         "properties": {
@@ -71,6 +93,24 @@
             },
             "maxItems": 100,
             "title": "Ask Rules",
+            "type": "array"
+          },
+          "attachments": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentsDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "builtin_tools": {
+            "items": {
+              "$ref": "#/components/schemas/BuiltinToolDef"
+            },
+            "maxItems": 7,
+            "title": "Builtin Tools",
             "type": "array"
           },
           "capabilities": {
@@ -164,6 +204,16 @@
               }
             ]
           },
+          "markup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarkupDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "max_tool_calls_per_turn": {
             "default": 6,
             "title": "Max Tool Calls Per Turn",
@@ -202,9 +252,22 @@
             "title": "Models",
             "type": "array"
           },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleRef"
+            },
+            "maxItems": 20,
+            "title": "Modules",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "openai_confirm": {
+            "default": false,
+            "title": "Openai Confirm",
+            "type": "boolean"
           },
           "output_schema": {
             "anyOf": [
@@ -299,6 +362,15 @@
               }
             ],
             "title": "Temperature"
+          },
+          "template_syntax": {
+            "default": "legacy",
+            "enum": [
+              "legacy",
+              "handlebars"
+            ],
+            "title": "Template Syntax",
+            "type": "string"
           },
           "title": {
             "default": "",
@@ -723,6 +795,16 @@
             ],
             "title": "Locale"
           },
+          "markup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarkupDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "memory_mode": {
             "anyOf": [
               {
@@ -1035,6 +1117,58 @@
         "title": "AskRulesBody",
         "type": "object"
       },
+      "AttachmentsDef": {
+        "description": "Files people attach to their chat messages (``evokai.attachments``).",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_conversation_mb": {
+            "default": 50,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Conversation Mb",
+            "type": "integer"
+          },
+          "max_file_mb": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Max File Mb",
+            "type": "integer"
+          },
+          "max_files": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "types": {
+            "items": {
+              "enum": [
+                "png",
+                "jpeg",
+                "webp",
+                "gif",
+                "pdf",
+                "docx",
+                "pptx",
+                "txt",
+                "md",
+                "csv"
+              ],
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "title": "AttachmentsDef",
+        "type": "object"
+      },
       "BrowserDeclaration": {
         "additionalProperties": false,
         "description": "What the application lets the browser send to its vendor's online services (reported).",
@@ -1087,6 +1221,73 @@
           "description"
         ],
         "title": "BugReportBody",
+        "type": "object"
+      },
+      "BuiltinTool": {
+        "description": "A call of a provider built-in tool that can change data (``engine.messages``).",
+        "properties": {
+          "changes": {
+            "default": true,
+            "title": "Changes",
+            "type": "boolean"
+          },
+          "id": {
+            "maxLength": 128,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "BuiltinTool",
+        "type": "object"
+      },
+      "BuiltinToolBlock": {
+        "description": "Assistant block: a provider built-in tool that can change data ran (never sent to a model).\n\nIt keeps the answer from being regenerated: keep it as Evokai returns it.",
+        "properties": {
+          "builtinTool": {
+            "$ref": "#/components/schemas/BuiltinTool"
+          }
+        },
+        "required": [
+          "builtinTool"
+        ],
+        "title": "BuiltinToolBlock",
+        "type": "object"
+      },
+      "BuiltinToolDef": {
+        "description": "A provider built-in tool (``evokai.engine.builtin_tools``).",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "web_search",
+              "web_fetch",
+              "code_execution",
+              "image_generation",
+              "file_search",
+              "mcp_server",
+              "memory"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "BuiltinToolDef",
         "type": "object"
       },
       "Candidate": {
@@ -1286,9 +1487,51 @@
         "title": "ChannelBody",
         "type": "object"
       },
+      "ChatAttachment": {
+        "description": "A file attached to a message: the attachment of a server run, with its bytes.",
+        "properties": {
+          "data": {
+            "minLength": 1,
+            "title": "Data",
+            "type": "string"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediatype"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "data"
+        ],
+        "title": "ChatAttachment",
+        "type": "object"
+      },
       "ChatBody": {
         "description": "A user input.",
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachment"
+            },
+            "maxItems": 10,
+            "title": "Attachments",
+            "type": "array"
+          },
           "confirm": {
             "anyOf": [
               {
@@ -1543,6 +1786,17 @@
             "title": "Reason",
             "type": "string"
           },
+          "regenerable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regenerable"
+          },
           "replacedFrom": {
             "anyOf": [
               {
@@ -1612,6 +1866,38 @@
         "title": "ChunkSettings",
         "type": "object"
       },
+      "ClientToolDef": {
+        "description": "A custom client tool: the client application runs it (``client_tool`` event).",
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{1,47}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "wait": {
+            "default": false,
+            "title": "Wait",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ClientToolDef",
+        "type": "object"
+      },
       "ClientToolsDef": {
         "description": "Which client tools the agent has.",
         "properties": {
@@ -1624,6 +1910,14 @@
             "default": true,
             "title": "Chart",
             "type": "boolean"
+          },
+          "custom": {
+            "items": {
+              "$ref": "#/components/schemas/ClientToolDef"
+            },
+            "maxItems": 32,
+            "title": "Custom",
+            "type": "array"
           },
           "diagram": {
             "default": true,
@@ -1735,6 +2029,26 @@
           "approve"
         ],
         "title": "Confirm",
+        "type": "object"
+      },
+      "ConfirmAnswer": {
+        "description": "A button's answer to a pending confirmation (instead of typing yes or no).",
+        "properties": {
+          "actionId": {
+            "maxLength": 200,
+            "title": "Actionid",
+            "type": "string"
+          },
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "actionId",
+          "approve"
+        ],
+        "title": "ConfirmAnswer",
         "type": "object"
       },
       "Connection": {
@@ -1976,6 +2290,54 @@
         "title": "CredentialValues",
         "type": "object"
       },
+      "CueDef": {
+        "additionalProperties": false,
+        "description": "Cues: ``{name}`` or ``{name:arg}`` with the default delimiters.",
+        "properties": {
+          "close": {
+            "default": "}",
+            "title": "Close",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Names"
+          },
+          "names_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModuleParam"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "open": {
+            "default": "{",
+            "title": "Open",
+            "type": "string"
+          }
+        },
+        "title": "CueDef",
+        "type": "object"
+      },
       "DataProtection": {
         "additionalProperties": false,
         "description": "An application's data protection profile.",
@@ -2003,6 +2365,17 @@
               }
             ],
             "title": "Jurisdiction"
+          },
+          "provider_tool_storage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Tool Storage"
           },
           "residency": {
             "anyOf": [
@@ -2138,8 +2511,18 @@
         "type": "object"
       },
       "EvokaiOptions": {
-        "description": "Evokai's extension of the request (server key only).",
+        "description": "Evokai's extension of the request (``tags`` and ``groups``: server key only).",
         "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "groups": {
             "items": {
               "type": "string"
@@ -2192,6 +2575,70 @@
           }
         },
         "title": "Feedback",
+        "type": "object"
+      },
+      "FileBlock": {
+        "description": "User block: an attachment, with the text the model read of it (a document).\n\nWithout text the model read the file itself; with external storage that file is not kept, and\na later turn tells the model it is no longer available.",
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/FileRef"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "FileBlock",
+        "type": "object"
+      },
+      "FileRef": {
+        "description": "An attachment as a message keeps it (``evokai.attachments``): never its bytes.",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "mediaType": {
+            "maxLength": 100,
+            "title": "Mediatype",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mediaType"
+        ],
+        "title": "FileRef",
         "type": "object"
       },
       "GdprAnswers": {
@@ -2371,6 +2818,9 @@
             "items": {
               "anyOf": [
                 {
+                  "$ref": "#/components/schemas/FileBlock"
+                },
+                {
                   "$ref": "#/components/schemas/TextBlock"
                 },
                 {
@@ -2378,6 +2828,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ToolResultBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/BuiltinToolBlock"
                 }
               ]
             },
@@ -2507,6 +2960,22 @@
           }
         },
         "title": "InputSettings",
+        "type": "object"
+      },
+      "Inspect": {
+        "description": "Why the owner opens another person's conversation (kept in the audit log, shown to them).",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 20,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "Inspect",
         "type": "object"
       },
       "KeyRequest": {
@@ -2709,6 +3178,34 @@
           }
         },
         "title": "Login",
+        "type": "object"
+      },
+      "MarkupDef": {
+        "additionalProperties": false,
+        "description": "The markup an application or an agent declares (``markup:`` in YAML).",
+        "properties": {
+          "cue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CueDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speech": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeechTagDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "MarkupDef",
         "type": "object"
       },
       "McpProbe": {
@@ -2929,6 +3426,103 @@
         "title": "ModerationSettings",
         "type": "object"
       },
+      "ModuleChoice": {
+        "description": "A session's choice for one prompt module (server key only, at token mint).",
+        "properties": {
+          "on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          }
+        },
+        "title": "ModuleChoice",
+        "type": "object"
+      },
+      "ModuleParam": {
+        "additionalProperties": false,
+        "description": "A parameter of a session's prompt module (a list of strings, or one string).",
+        "properties": {
+          "module": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Module",
+            "type": "string"
+          },
+          "param": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Param",
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "param"
+        ],
+        "title": "ModuleParam",
+        "type": "object"
+      },
+      "ModuleRef": {
+        "description": "A prompt module the agent may use (``evokai.agents.modules``), with its defaults.",
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "session": {
+            "default": false,
+            "title": "Session",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ModuleRef",
+        "type": "object"
+      },
       "NavigateDef": {
         "description": "The client navigation tool.",
         "properties": {
@@ -3039,6 +3633,21 @@
           }
         },
         "title": "NoteBody",
+        "type": "object"
+      },
+      "NoticeAccept": {
+        "description": "The version of the notice the person read.",
+        "properties": {
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "NoticeAccept",
         "type": "object"
       },
       "OAuthAppIn": {
@@ -3238,7 +3847,7 @@
       },
       "Preferences": {
         "additionalProperties": false,
-        "description": "One person's console preferences (version 1). JSON fields are camelCase.",
+        "description": "One person's console preferences (version 2). JSON fields are camelCase.",
         "properties": {
           "contrast": {
             "default": "system",
@@ -3286,7 +3895,7 @@
             "type": "string"
           },
           "mascot": {
-            "default": "on",
+            "default": "hidden",
             "enum": [
               "on",
               "still",
@@ -3341,8 +3950,11 @@
             "type": "boolean"
           },
           "version": {
-            "const": 1,
-            "default": 1,
+            "default": 2,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Version",
             "type": "integer"
           }
@@ -3350,9 +3962,104 @@
         "title": "Preferences",
         "type": "object"
       },
-      "PromptBody": {
-        "description": "A prompt's text; saving a different text makes a new version.",
+      "PreviewBody": {
+        "description": "Sample values for a prompt preview, and optionally an unsaved draft to preview instead.",
         "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "PreviewBody",
+        "type": "object"
+      },
+      "PromptBody": {
+        "description": "A prompt's text; saving a different text, schema, description or data makes a new version.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
           "text": {
             "maxLength": 60000,
             "minLength": 1,
@@ -3449,6 +4156,58 @@
           }
         },
         "title": "RedTeamBody",
+        "type": "object"
+      },
+      "RegenerateBody": {
+        "description": "Regenerate the last answer (the question is the conversation's own).",
+        "properties": {
+          "endOfSpeechAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endofspeechat"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HistoryMessage"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          },
+          "mode": {
+            "default": "text",
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "RegenerateBody",
         "type": "object"
       },
       "Residency": {
@@ -3842,6 +4601,14 @@
             "title": "Attachments",
             "type": "array"
           },
+          "clientTools": {
+            "items": {
+              "$ref": "#/components/schemas/ClientToolDef"
+            },
+            "maxItems": 33,
+            "title": "Clienttools",
+            "type": "array"
+          },
           "groups": {
             "items": {
               "maxLength": 100,
@@ -3865,6 +4632,33 @@
               }
             ],
             "title": "Input"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "modules": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ModuleChoice"
+                },
+                "maxProperties": 20,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
           },
           "store": {
             "default": false,
@@ -3907,6 +4701,14 @@
               "type": "object"
             },
             "title": "Citations",
+            "type": "array"
+          },
+          "clientToolCalls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Clienttoolcalls",
             "type": "array"
           },
           "conversationId": {
@@ -4256,6 +5058,25 @@
         "title": "ServerDecisionBody",
         "type": "object"
       },
+      "SessionBody": {
+        "description": "The conversation to continue (a token refresh); omitted = a new one.",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          }
+        },
+        "title": "SessionBody",
+        "type": "object"
+      },
       "SkillBody": {
         "description": "A skill: its description, the body of SKILL.md and, optionally, its files.",
         "properties": {
@@ -4420,6 +5241,140 @@
           "kind"
         ],
         "title": "SourceDef",
+        "type": "object"
+      },
+      "SpeechChoice": {
+        "description": "The server speech engines a session token chooses.",
+        "properties": {
+          "stt": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt"
+          },
+          "tts": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts"
+          }
+        },
+        "title": "SpeechChoice",
+        "type": "object"
+      },
+      "SpeechRequest": {
+        "description": "What to speak: a text, or a ``say`` segment of this conversation.",
+        "properties": {
+          "format": {
+            "default": "pcm",
+            "enum": [
+              "pcm",
+              "opus"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "sampleRate": {
+            "default": 24000,
+            "enum": [
+              16000,
+              22050,
+              24000,
+              44100,
+              48000
+            ],
+            "title": "Samplerate",
+            "type": "integer"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "turnId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnid"
+          }
+        },
+        "title": "SpeechRequest",
+        "type": "object"
+      },
+      "SpeechTagDef": {
+        "additionalProperties": false,
+        "description": "Speech tags: ``[laughs]`` with the default delimiters.",
+        "properties": {
+          "close": {
+            "default": "]",
+            "title": "Close",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Names"
+          },
+          "open": {
+            "default": "[",
+            "title": "Open",
+            "type": "string"
+          }
+        },
+        "title": "SpeechTagDef",
         "type": "object"
       },
       "SsoConfigBody": {
@@ -4685,6 +5640,21 @@
             "title": "Agent",
             "type": "string"
           },
+          "clientTools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClientToolDef"
+                },
+                "maxItems": 33,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clienttools"
+          },
           "consent": {
             "anyOf": [
               {
@@ -4751,6 +5721,18 @@
               }
             ]
           },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
           "memoryConsent": {
             "anyOf": [
               {
@@ -4772,6 +5754,31 @@
               }
             ],
             "title": "Model"
+          },
+          "modules": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ModuleChoice"
+                },
+                "maxProperties": 20,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
+          },
+          "speech": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeechChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "storageMode": {
             "anyOf": [
@@ -4903,6 +5910,37 @@
           "toolResult"
         ],
         "title": "ToolResultBlock",
+        "type": "object"
+      },
+      "ToolResultBody": {
+        "description": "The client's answer to a ``client_tool`` call that waits.",
+        "properties": {
+          "callId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Callid",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "result": {
+            "title": "Result"
+          }
+        },
+        "required": [
+          "callId"
+        ],
+        "title": "ToolResultBody",
         "type": "object"
       },
       "ToolSettings": {
@@ -5072,6 +6110,62 @@
           "toolUse"
         ],
         "title": "ToolUseBlock",
+        "type": "object"
+      },
+      "Transcript": {
+        "description": "What was heard.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "durationMs",
+          "engine"
+        ],
+        "title": "Transcript",
+        "type": "object"
+      },
+      "Try": {
+        "description": "The model to run the assistant's eval suite on.",
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "Try",
+        "type": "object"
+      },
+      "Unlock": {
+        "description": "The application's slug, typed by the person who unlocks or resets it.",
+        "properties": {
+          "confirm": {
+            "maxLength": 60,
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "Unlock",
         "type": "object"
       },
       "UntrustedSettings": {
@@ -5312,7 +6406,7 @@
             "type": "integer"
           },
           "prompt_rule": {
-            "default": "The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read tax codes, IBANs, meter codes or personal data aloud: point to the screen instead.",
+            "default": "The user is talking to you and your answer is also read aloud: answer in 1-3 short, natural sentences meant to be heard, with no tables or long lists; key numbers in plain words; put charts and details in the visuals, not in the text. Do not read codes, account numbers or personal data aloud: point to the screen instead.",
             "title": "Prompt Rule",
             "type": "string"
           },
@@ -5360,7 +6454,7 @@
   "info": {
     "summary": "Agents runtime: any model provider, MCP tools, skills and voice sessions.",
     "title": "Evokai",
-    "version": "0.1.3"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5555,7 +6649,7 @@
     },
     "/agent/v1/admin/agents": {
       "get": {
-        "description": "Active agents with their definitions.\n\nReturns:\n    items.",
+        "description": "Active agents with their definitions.\n\nReturns:\n    items, each with its ``template_syntax`` (``legacy`` for a version saved before\n    Handlebars).",
         "operationId": "list_agents_agent_v1_admin_agents_get",
         "responses": {
           "200": {
@@ -6054,6 +7148,63 @@
         ]
       }
     },
+    "/agent/v1/admin/agents/{agent}/suitability": {
+      "get": {
+        "description": "How well a model suits an agent, estimated from sourced facts (``evokai.llm.suitability``).\n\nThe agent's complexity (tier and factors) and the model's estimate: recommended, not\nrecommended or to verify, with its reasons. For the built-in assistant a measured model shows\nits measurement instead (``basis: measured``). Never an amount.\n\nReturns:\n    complexity and estimate.\n\nRaises:\n    NotFound: No such agent.",
+        "operationId": "agent_suitability_agent_v1_admin_agents__agent__suitability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9_.:/@-]+$",
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Agent Suitability Agent V1 Admin Agents  Agent  Suitability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Suitability",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/agent/v1/admin/agents/{agent}/switch-model": {
       "post": {
         "description": "Save a new version of the agent with another primary model.\n\nIt is saved like any version: allow-lists, residency, grants, evals, red team and its gate.\n\nReturns:\n    What saving the agent returns (version, created, published...).\n\nRaises:\n    NotFound: Unknown agent.",
@@ -6220,7 +7371,7 @@
         ]
       },
       "put": {
-        "description": "Create or update an agent; a changed definition becomes a new active version.\n\nReturns:\n    version and whether it is new.\n\nRaises:\n    BadRequest: Name mismatch, or a model outside the deployment's allow-list.\n    NotGrantedInAgent: The definition references a model, MCP server, skill, client tool or\n        channel the application is not granted (400 ``not_granted``, with ``problems``).\n    NotFound: The application is gone.\n    AppError: A model outside the application's data residency (400 ``residency``).\n    Forbidden: A console operator changing the agent's security policy (owner only).\n    Conflict: The red team gate blocked this version (409 ``redteam_blocked``).",
+        "description": "Create or update an agent; a changed definition becomes a new active version.\n\nReturns:\n    version and whether it is new.\n\nRaises:\n    BadRequest: Name mismatch, or a model outside the deployment's allow-list.\n    NotGrantedInAgent: The definition references a model, MCP server, skill, client tool or\n        channel the application is not granted (400 ``not_granted``, with ``problems``).\n    NotFound: The application is gone.\n    AppError: A model outside the application's data residency (400 ``residency``).\n    Forbidden: A console operator changing the agent's security policy (owner only).\n    Conflict: The red team gate blocked this version (409 ``redteam_blocked``).\n    BadRequest: A prompt module that does not exist or whose parameters do not fit\n        (``unknown_module``, ``module_params``).",
         "operationId": "put_agent_agent_v1_admin_agents__name__put",
         "parameters": [
           {
@@ -6421,7 +7572,7 @@
         ]
       },
       "patch": {
-        "description": "Change caps, origins, models, storage mode or the default voice engine (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: The application is gone.",
+        "description": "Change caps, origins, models, storage mode or the default voice engine (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: The application is gone.\n    BadRequest: A system application kept longer than 30 days (400 ``system_ttl``), or its\n        audit log kept less (400 ``system_audit_ttl``).",
         "operationId": "patch_application_agent_v1_admin_application_patch",
         "requestBody": {
           "content": {
@@ -6460,6 +7611,120 @@
           }
         },
         "summary": "Patch Application",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/application/reset": {
+      "post": {
+        "description": "Delete what the reset preview lists and apply the shipped definition again, locked (owner).\n\nReturns:\n    ok and deleted (how many items).\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).\n    Conflict: A system application this version of Evokai does not ship.",
+        "operationId": "reset_application_agent_v1_admin_application_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Unlock"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Application Agent V1 Admin Application Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Application",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/application/reset/preview": {
+      "get": {
+        "description": "Everything a reset of the system application deletes or restores (owner).\n\nEach deleted item carries its definition without secrets (``item``), for the owner to keep\nbefore resetting.\n\nReturns:\n    slug and items (kind, name, action: ``delete`` or ``restore``, item).\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
+        "operationId": "reset_preview_agent_v1_admin_application_reset_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Preview Agent V1 Admin Application Reset Preview Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset Preview",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/application/unlock": {
+      "post": {
+        "description": "Unlock a system application (owner): its changes are then the owner's to make.\n\nShipped updates are no longer applied while it is unlocked (they are recorded instead).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).",
+        "operationId": "unlock_application_agent_v1_admin_application_unlock_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Unlock"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Unlock Application Agent V1 Admin Application Unlock Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlock Application",
         "tags": [
           "admin"
         ]
@@ -6526,6 +7791,173 @@
           }
         },
         "summary": "Put Ask Rules",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant": {
+      "get": {
+        "description": "The built-in assistant's state.\n\nWhether it is active, its model, the requirements a recommended model meets and the\ncandidates with their measured numbers (shares, never amounts).\n\nReturns:\n    available, active, model, applicationId, locked, updateAvailable, requirements,\n    candidates, trial.",
+        "operationId": "assistant_state_agent_v1_admin_assistant_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant State Agent V1 Admin Assistant Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant State",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/activate": {
+      "post": {
+        "description": "Pick the assistant's model (owner of its application).\n\nReturns:\n    ok and the model.\n\nRaises:\n    BadRequest: A model that does not meet every requirement without ``acceptNotRecommended``\n        (400 ``not_recommended_unconfirmed``).",
+        "operationId": "activate_assistant_agent_v1_admin_assistant_activate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Activate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Assistant Agent V1 Admin Assistant Activate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Assistant",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect": {
+      "post": {
+        "description": "Read another person's conversation with the assistant (owner of its application).\n\nRead only. The reason (20 to 500 characters) is written to the audit log with who inspected and\nthe author's keyed subject, and the author's console lists it (\"viewed by\").\n\nReturns:\n    The conversation, as the conversation detail returns it.\n\nRaises:\n    NotFound: The assistant is off, or no such conversation.",
+        "operationId": "inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Inspect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Conversation Agent V1 Admin Assistant Conversations  Conversation Id  Inspect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Conversation",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/try": {
+      "post": {
+        "description": "Run the assistant's eval suite on one model (owner), against the recorded admin MCP server.\n\nReturns:\n    runId.\n\nRaises:\n    Conflict: A try is going (409 ``try_running``).",
+        "operationId": "try_assistant_model_agent_v1_admin_assistant_try_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Try"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Try Assistant Model Agent V1 Admin Assistant Try Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Try Assistant Model",
         "tags": [
           "admin"
         ]
@@ -7736,7 +9168,7 @@
     },
     "/agent/v1/admin/conversations/{conversation_id}": {
       "get": {
-        "description": "One conversation with its messages, turns, their traces and the reviewers' notes.\n\nReturns:\n    The conversation: messages (with their turn), turns, traces (summaries by turn) and\n    notes.\n\nRaises:\n    NotFound: Unknown, or the application keeps conversations itself.",
+        "description": "One conversation with its messages, turns, their traces and the reviewers' notes.\n\nOn a system application only the caller's own conversation opens; an owner opens another\nperson's through an inspection (403 ``inspection_required``).\n\nReturns:\n    The conversation: messages (with their turn), turns, traces (summaries by turn) and\n    notes.\n\nRaises:\n    NotFound: Unknown, or the application keeps conversations itself.\n    Forbidden: Another person's conversation on a system application, for an owner.",
         "operationId": "conversation_agent_v1_admin_conversations__conversation_id__get",
         "parameters": [
           {
@@ -9243,7 +10675,7 @@
     },
     "/agent/v1/admin/prompts": {
       "get": {
-        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, createdAt.",
+        "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data,\n    templateSyntax and createdAt.",
         "operationId": "list_prompts_agent_v1_admin_prompts_get",
         "responses": {
           "200": {
@@ -9267,7 +10699,7 @@
     },
     "/agent/v1/admin/prompts/{name}": {
       "put": {
-        "description": "Save a prompt (a changed text becomes the next version).\n\nReturns:\n    The version.",
+        "description": "Save a prompt (a changed text, schema, description or data becomes the next version).\n\nReturns:\n    The version.\n\nRaises:\n    BadRequest: A schema, template or data table that does not pass the module checks, or\n        a new version whose parameters no longer fit an agent's values (``module_in_use``).",
         "operationId": "put_prompt_agent_v1_admin_prompts__name__put",
         "parameters": [
           {
@@ -9317,6 +10749,63 @@
           }
         },
         "summary": "Put Prompt",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/prompts/{name}/preview": {
+      "post": {
+        "description": "Render a prompt (a saved version or a draft) with sample parameter values.\n\nThe values get the parameters' defaults and are checked against the schema; required ones may\nbe left out. ``date`` and ``app`` are today's date and the application's name.\n\nReturns:\n    text: the rendered prompt.\n\nRaises:\n    NotFound: No such prompt (and no draft) or application. A draft or values that do not\n        pass the module checks are refused as when saving (400 ``module_*``).",
+        "operationId": "preview_prompt_agent_v1_admin_prompts__name__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Preview Prompt Agent V1 Admin Prompts  Name  Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Prompt",
         "tags": [
           "admin"
         ]
@@ -11223,7 +12712,7 @@
     },
     "/agent/v1/agents/{name}/run": {
       "post": {
-        "description": "Run an agent that allows the ``server`` channel and return its (structured) answer.\n\nReturns:\n    The output, the model that answered and the usage.\n\nRaises:\n    NotFound: Unknown application.",
+        "description": "Run an agent that allows the ``server`` channel and return its (structured) answer.\n\nReturns:\n    The output, the model that answered and the usage.\n\nRaises:\n    NotFound: Unknown application.\n    BadRequest: An unknown locale, or a prompt module choice that is refused.",
         "operationId": "run_agent_agent_v1_agents__name__run_post",
         "parameters": [
           {
@@ -11593,6 +13082,125 @@
           }
         },
         "summary": "Console Applications",
+        "tags": [
+          "console"
+        ]
+      }
+    },
+    "/agent/v1/console/assistant/privacy": {
+      "get": {
+        "description": "What the console tells a person about the assistant, for the selected application.\n\nThe first-use notice (its version and whether this login accepted it), how long conversations\nare kept, the voice in use (``online`` only when the selected application's and the\nassistant's data protection allow processors outside the EU, else ``device``) and every\ninspection of this person's conversations: who, when and why.\n\nReturns:\n    noticeVersion, accepted, acceptedAt, ttlDays, voice, inspections, unseen.\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login.\n    NotFound: The assistant is off.",
+        "operationId": "assistant_privacy_agent_v1_console_assistant_privacy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant Privacy Agent V1 Console Assistant Privacy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Privacy",
+        "tags": [
+          "console"
+        ]
+      },
+      "post": {
+        "description": "Record that this login read the current first-use notice (and the inspections listed).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: Not the current version of the notice (400 ``notice_version``).\n    NotFound: The assistant is off.\n    Forbidden: A key or the assistant itself instead of a console login.",
+        "operationId": "accept_notice_agent_v1_console_assistant_privacy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeAccept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Accept Notice Agent V1 Console Assistant Privacy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Notice",
+        "tags": [
+          "console"
+        ]
+      }
+    },
+    "/agent/v1/console/assistant/session": {
+      "post": {
+        "description": "A session token for the console assistant, acting on the selected application.\n\nIt needs a console login (the cookie, its header and the application it acts on): its\nforwarded credential is a delegation token for that application with the login's role, which\nthe admin MCP server checks against the live login on every call. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.\n    Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).",
+        "operationId": "assistant_session_agent_v1_console_assistant_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant Session Agent V1 Console Assistant Session Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Session",
         "tags": [
           "console"
         ]
@@ -12238,7 +13846,7 @@
     },
     "/agent/v1/conversations": {
       "get": {
-        "description": "A subject's recent conversations.\n\nReturns:\n    items.",
+        "description": "A subject's recent conversations (on a system application, only the caller's own).\n\nReturns:\n    items.",
         "operationId": "conversations_agent_v1_conversations_get",
         "parameters": [
           {
@@ -12297,7 +13905,7 @@
     },
     "/agent/v1/conversations/{conversation_id}": {
       "delete": {
-        "description": "Delete a subject's conversation.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Not a conversation of this subject.",
+        "description": "Delete a subject's conversation.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Not a conversation of this subject.\n    Conflict: A system application's conversation: it is kept until its time to live ends\n        (409 ``retention``).",
         "operationId": "delete_conversation_agent_v1_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -12740,7 +14348,7 @@
     },
     "/agent/v1/privacy/erase": {
       "post": {
-        "description": "Erase a subject (right to be forgotten).\n\nConversations, messages, replay events, turns, pending confirmations, memories, bug reports,\nworkflow runs, OAuth connections (revoked at the provider when it can be) and channel threads\nare deleted; usage rows and security events are de-identified, so the\napplication's caps keep counting; every session token of the subject stops working. Idempotent.\n\nReturns:\n    ok and how many rows of each kind were deleted or de-identified.",
+        "description": "Erase a subject (right to be forgotten).\n\nConversations, messages, replay events, turns, pending confirmations, memories, bug reports,\nworkflow runs, OAuth connections (revoked at the provider when it can be) and channel threads\nare deleted; usage rows and security events are de-identified, so the\napplication's caps keep counting; every session token of the subject stops working. Idempotent.\n\nOn a system application only an owner erases, and never their own conversations: the\nconsole assistant's conversations stay until their time to live ends (403 ``role``, 409\n``retention``).\n\nReturns:\n    ok and how many rows of each kind were deleted or de-identified.\n\nRaises:\n    Forbidden: Not an owner, on a system application.\n    Conflict: Your own data on a system application.",
         "operationId": "erase_agent_v1_privacy_erase_post",
         "requestBody": {
           "content": {
@@ -12784,7 +14392,7 @@
     },
     "/agent/v1/privacy/export": {
       "post": {
-        "description": "Everything Evokai keeps about a subject, as JSON (right of access and portability).\n\nConversations with messages and turns, memories, usage, security events (masked), bug reports\nand consents. Amounts only with a server or admin key.\n\nReturns:\n    The export.",
+        "description": "Everything Evokai keeps about a subject, as JSON (right of access and portability).\n\nConversations with messages and turns, memories, usage, security events (masked), bug reports\nand consents. Amounts only with a server or admin key.\n\nOn a system application a person exports only their own data (403 ``own_data``).\n\nReturns:\n    The export.\n\nRaises:\n    Forbidden: Another person's data on a system application.",
         "operationId": "export_agent_v1_privacy_export_post",
         "requestBody": {
           "content": {
@@ -12898,7 +14506,7 @@
     },
     "/agent/v1/session-tokens": {
       "post": {
-        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice or storage mode, or browser sessions,\n        are not granted to the application (403 ``*_not_granted``).",
+        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,\n        or browser sessions, are not granted to the application (403 ``*_not_granted``).\n    BadRequest: An unknown locale, or a prompt module choice that is refused\n        (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).",
         "operationId": "mint_agent_v1_session_tokens_post",
         "requestBody": {
           "content": {
@@ -12976,6 +14584,48 @@
           }
         },
         "summary": "Agui",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/attachments/{attachment_id}": {
+      "get": {
+        "description": "An image the person attached to this conversation, to show it in the history.\n\nOnly images, only of the session's own conversation, as they are kept (without their\nmetadata). Documents are never served back.\n\nReturns:\n    The image.\n\nRaises:\n    NotFound: Not an image of this conversation (another conversation's id included).",
+        "operationId": "attachment_agent_v1_session_attachments__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/*": {}
+            },
+            "description": "The image"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attachment",
         "tags": [
           "session"
         ]
@@ -13561,6 +15211,204 @@
         "summary": "Feedback",
         "tags": [
           "session"
+        ]
+      }
+    },
+    "/agent/v1/session/regenerate": {
+      "post": {
+        "description": "Regenerate the last answer: the last question runs again and replaces the last turn.\n\nLike a rewrite with the same question (a ``rewritten`` event, then the new answer), with the\nsame caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409\n``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a\ncustom client tool, or a turn is running.\n\nReturns:\n    The event stream, or the turn as JSON (``Accept: application/json``).",
+        "operationId": "regenerate_agent_v1_session_regenerate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResult"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/speech": {
+      "post": {
+        "description": "Speak a text or a ``say`` segment with the session's speech engine.\n\nA segment that is not in this conversation is 404.\n\nReturns:\n    The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).\n\nRaises:\n    BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.",
+        "operationId": "speech_agent_v1_session_speech_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Audio and timings"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Speech",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/agent/v1/session/tool-results": {
+      "post": {
+        "description": "Answer a custom client tool call the running turn waits for (once).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: No call of this session waits under that id here (answered, timed out, or the\n        turn runs on another task) (``unknown_call``).\n    AppError: The result is larger than 32 KB (413 ``too_large``).",
+        "operationId": "tool_result_agent_v1_session_tool_results_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolResultBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Tool Result Agent V1 Session Tool Results Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "413": {
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tool Result",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/transcribe": {
+      "post": {
+        "description": "Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.\n\nReturns:\n    The text, the audio's length and the engine.\n\nRaises:\n    AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).\n    BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.",
+        "operationId": "transcribe_agent_v1_session_transcribe_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 35,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transcript"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transcribe",
+        "tags": [
+          "voice"
         ]
       }
     },

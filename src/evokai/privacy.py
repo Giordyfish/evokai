@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 from datetime import datetime
@@ -138,6 +139,26 @@ async def export_subject(store: Store, who: Who, *, amounts: bool) -> dict[str, 
             if ids
             else []
         )
+        files = (
+            list(
+                (
+                    await s.execute(
+                        sa
+                        .select(m.Attachment)
+                        .where(
+                            m.Attachment.session_id.in_(ids),
+                            m.Attachment.application_id == who.application_id,
+                            m.Attachment.subject == who.subject,
+                        )
+                        .order_by(m.Attachment.created_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if ids
+            else []
+        )
         turns = (
             list(
                 (
@@ -199,6 +220,19 @@ async def export_subject(store: Store, who: Who, *, amounts: bool) -> dict[str, 
         }
         for x in summaries
     }
+    # The files the person attached, as they are kept (images without their metadata).
+    files_of: dict[str, list[dict[str, Any]]] = {}
+    for f in files:
+        files_of.setdefault(f.session_id, []).append({
+            "id": f.id,
+            "messageId": f.message_id,
+            "name": f.name,
+            "mediaType": f.media_type,
+            "size": f.size,
+            "sha256": f.sha256,
+            "dataBase64": base64.b64encode(f.data).decode(),
+            "createdAt": _iso(f.created_at),
+        })
     turns_of: dict[str, list[dict[str, Any]]] = {}
     for t in turns:
         turns_of.setdefault(t.session_id, []).append({
@@ -244,6 +278,7 @@ async def export_subject(store: Store, who: Who, *, amounts: bool) -> dict[str, 
                 "createdAt": _iso(x.created_at),
                 "updatedAt": _iso(x.updated_at),
                 "messages": by_session.get(x.id, []),
+                "attachments": files_of.get(x.id, []),
                 "summary": summary_of.get(x.id),
                 "turns": turns_of.get(x.id, []),
             }
@@ -379,6 +414,12 @@ async def erase_subject(
             )
         )
         out["memories"] = int(getattr(r, "rowcount", 0) or 0)
+        await s.execute(
+            sa.delete(m.Attachment).where(
+                m.Attachment.application_id == who.application_id,
+                m.Attachment.subject == who.subject,
+            )
+        )
         r = await s.execute(
             sa.delete(m.CapabilityRecord).where(
                 m.CapabilityRecord.application_id == who.application_id,

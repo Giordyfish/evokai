@@ -23,14 +23,19 @@ const GROUPS: Record<string, { title: TextKey; note: TextKey }> = {
   mcp: { title: 'perms.g.mcp', note: 'perms.g.mcpNote' },
   skills: { title: 'perms.g.skills', note: 'perms.g.skillsNote' },
   client: { title: 'perms.g.client', note: 'perms.g.clientNote' },
+  clientCustom: { title: 'perms.g.clientCustom', note: 'perms.g.clientCustomNote' },
   voice: { title: 'perms.g.voice', note: 'perms.g.voiceNote' },
   storage: { title: 'perms.g.storage', note: 'perms.g.storageNote' },
   channels: { title: 'perms.g.channels', note: 'perms.g.channelsNote' },
   knowledge: { title: 'perms.g.knowledge', note: 'perms.g.knowledgeNote' },
   workflows: { title: 'perms.g.workflows', note: 'perms.g.workflowsNote' },
   code: { title: 'perms.g.code', note: 'perms.g.codeNote' },
+  openai: { title: 'perms.g.openai', note: 'perms.g.openaiNote' },
+  attachments: { title: 'perms.g.attachments', note: 'perms.g.attachmentsNote' },
+  builtin: { title: 'perms.g.builtin', note: 'perms.g.builtinNote' },
   connections: { title: 'perms.g.connections', note: 'perms.g.connectionsNote' },
   capabilities: { title: 'perms.g.capabilities', note: 'perms.g.capabilitiesNote' },
+  modules: { title: 'perms.g.modules', note: 'perms.g.modulesNote' },
 }
 const CHANNEL_LABEL: Record<string, TextKey> = {
   browser: 'perms.browserSessions',
@@ -81,6 +86,9 @@ function label(x: GrantItem): string {
   if (x.kind === 'knowledge' && x.name === '*') return t('perms.knowledgeAll')
   if (x.kind === 'workflow') return t(x.name === '*' ? 'perms.workflowsAll' : 'perms.workflowsAutonomous')
   if (x.kind === 'code') return t('perms.code')
+  if (x.kind === 'openai') return t('perms.openaiConfirm')
+  if (x.kind === 'attachments') return t('perms.attachments')
+  if (x.kind === 'builtin') return t(`ag.builtin.${x.name}` as TextKey)
   return x.label ?? x.name
 }
 
@@ -95,7 +103,10 @@ function sub(x: GrantItem, appName: string): string {
     case 'skill':
       return x.missing ? t('perms.missing') : (x.description ?? '')
     case 'client':
-      return CLIENT[x.name] ? t(CLIENT[x.name]!) : ''
+      if (CLIENT[x.name]) return t(CLIENT[x.name]!)
+      if (x.name === 'session') return t('perms.c.session')
+      if (x.pattern) return t('perms.pattern')
+      return x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''
     case 'voice':
       return x.name === 'browser' ? t('perms.browserVoiceSub') : `${t('perms.serverVoiceSub')}${x.enabled === false ? t('perms.voiceNotEnabled') : ''}`
     case 'stt':
@@ -136,6 +147,10 @@ function sub(x: GrantItem, appName: string): string {
       ]
         .filter(Boolean)
         .join(', ')
+    case 'attachments':
+      return x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''
+    case 'module':
+      return [t('perms.moduleSub'), x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''].filter(Boolean).join(', ')
     case 'code':
       return `${t('perms.codeSub', { region: x.region ?? '' })}${x.enabled === false ? t('perms.codeNotEnabled') : ''}${x.usedBy?.length ? `, ${t('perms.usedBy', { agents: x.usedBy.join(', ') })}` : ''}`
     default:

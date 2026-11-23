@@ -8,13 +8,13 @@ import { progress } from './magic'
 import { t } from './i18n'
 
 export type Tab =
-  | 'overview' | 'agents' | 'evals' | 'perms' | 'mcp' | 'connections' | 'channels' | 'skills' | 'knowledge' | 'workflows' | 'approvals' | 'keys' | 'limits'
+  | 'overview' | 'agents' | 'evals' | 'perms' | 'mcp' | 'connections' | 'channels' | 'skills' | 'prompts' | 'knowledge' | 'workflows' | 'approvals' | 'keys' | 'limits'
   | 'usage' | 'traces' | 'conversations' | 'security' | 'privacy' | 'providers' | 'compliance' | 'audit'
 export type Route =
   | { view: 'app'; app: string; tab: Tab; id: string | null; q: URLSearchParams }
-  | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
+  | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'assistant' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
 
-const TABS: Tab[] = ['overview', 'agents', 'evals', 'perms', 'mcp', 'connections', 'channels', 'skills', 'knowledge', 'workflows', 'approvals', 'keys', 'limits', 'usage', 'traces', 'conversations', 'security', 'privacy', 'providers', 'compliance', 'audit']
+const TABS: Tab[] = ['overview', 'agents', 'evals', 'perms', 'mcp', 'connections', 'channels', 'skills', 'prompts', 'knowledge', 'workflows', 'approvals', 'keys', 'limits', 'usage', 'traces', 'conversations', 'security', 'privacy', 'providers', 'compliance', 'audit']
 
 export function parseRoute(hash = location.hash): Route {
   const [path = '', query = ''] = hash.replace(/^#\/?/, '').split('?')
@@ -27,7 +27,7 @@ export function parseRoute(hash = location.hash): Route {
   }
   const view = p[0] as Route['view']
   if (p[0] === 'me') return { view: 'preferences', q }
-  if (['apps', 'setup', 'playground', 'usage', 'health', 'access', 'preferences', 'login'].includes(view)) return { view, q } as Route
+  if (['apps', 'setup', 'playground', 'usage', 'health', 'access', 'assistant', 'preferences', 'login'].includes(view)) return { view, q } as Route
   if (view === 'states' && import.meta.env.DEV) return { view, q }
   return { view: 'missing', q }
 }

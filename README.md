@@ -86,21 +86,37 @@ Evokai pays particular attention to the European regulatory space; see [data pro
 Three steps, and your users have an assistant:
 
 1. **Connect the app** in the console: it gets a server key, its agent (a model from the allowed list, instructions,
-   your MCP server, skills) and its limits.
-2. **Mint a token** from your backend for the signed-in user:
+   your MCP server, skills) and its limits. List the web addresses your pages are served from (`http://localhost:3000`
+   while you develop) among the application's **allowed origins**: Evokai refuses browsers from any other origin.
+2. **Mint a token** from your backend for the signed-in user. The browser calls this route on first use, before the
+   token expires and to open another conversation, sending the `conversationId` it wants to continue:
 
    ```ts
    import { EvokaiServer } from '@evokai/evokai-client/server'
 
    const evokai = new EvokaiServer({ baseUrl: process.env.EVOKAI_URL!, serverKey: process.env.EVOKAI_SERVER_KEY! })
-   app.post('/api/agent/token', async (req, res) => res.json(await evokai.mintSessionToken({ subject: req.user.id, agent: 'assistant' })))
+   app.use(express.json())
+   app.post('/api/agent/token', async (req, res) =>
+     res.json(await evokai.mintSessionToken({
+       subject: req.user.id, // your id for the signed-in user
+       agent: 'assistant',
+       conversationId: req.body?.conversationId ?? undefined, // omitted = a new conversation
+     })))
    ```
 
-3. **Drop the interface** into your page:
+3. **Drop the interface** into your page (`npm install @evokai/evokai-ui @evokai/evokai-client`, then register the
+   elements once):
 
    ```html
+   <script type="module">
+     import { defineElements } from '@evokai/evokai-ui'
+     defineElements()
+   </script>
    <evokai-chat base-url="http://localhost:8787/agent" token-url="/api/agent/token" title="Ada"></evokai-chat>
    ```
+
+   The bare import needs a bundler (Vite, webpack, Next.js) or an import map; the
+   [bookshop example](examples/bookshop-app) serves the built files with an import map and no bundler.
 
 The agent calls your app's tools over MCP as that user, asks before it changes anything, stays within the budgets
 you set, and every turn shows up in the console. A complete app is in [examples/bookshop-app](examples/bookshop-app).
@@ -213,12 +229,19 @@ import { EvokaiSession, createVoiceEngine } from '@evokai/evokai-client/browser'
 
 const session = new EvokaiSession({
   baseUrl: 'https://agents.example.com/agent',
+  // Your token route (above); conversationId continues a conversation, null starts a new one.
   getToken: ({ conversationId }) =>
-    fetch('/api/agent/token', { method: 'POST', body: JSON.stringify({ conversationId }) }).then((r) => r.json()),
+    fetch('/api/agent/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId }),
+    }).then((r) => r.json()),
 })
+// Your own interface: appendToAnswer, drawChart, askTheUser and showShare are yours.
 session.on('text', (e) => appendToAnswer(e.delta))
 session.on('chart', (e) => drawChart(e.chart))
-session.on('confirm', (e) => askTheUser(e.actionId, e.items))
+// A tool that changes data waits for the person: answer with session.confirm, and the turn goes on.
+session.on('confirm', async (e) => session.confirm(e.actionId, await askTheUser(e.items)))
 session.on('usage', (u) => showShare(u.dayPct))
 await session.chat({ text: 'How did October go?' })
 
