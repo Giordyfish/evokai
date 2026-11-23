@@ -4474,6 +4474,11 @@ export interface components {
             modules?: components["schemas"]["ModuleRef"][];
             /** Name */
             name: string;
+            /**
+             * Openai Confirm
+             * @default false
+             */
+            openai_confirm?: boolean;
             /** Output Schema */
             output_schema?: {
                 [key: string]: unknown;
@@ -5080,6 +5085,16 @@ export interface components {
             approve: boolean;
         };
         /**
+         * ConfirmAnswer
+         * @description A button's answer to a pending confirmation (instead of typing yes or no).
+         */
+        ConfirmAnswer: {
+            /** Actionid */
+            actionId: string;
+            /** Approve */
+            approve: boolean;
+        };
+        /**
          * Connection
          * @description A person's connection to a provider.
          */
@@ -5230,9 +5245,10 @@ export interface components {
         };
         /**
          * EvokaiOptions
-         * @description Evokai's extension of the request (server key only).
+         * @description Evokai's extension of the request (``tags`` and ``groups``: server key only).
          */
         EvokaiOptions: {
+            confirm?: components["schemas"]["ConfirmAnswer"] | null;
             /** Groups */
             groups?: string[];
             /** Tags */

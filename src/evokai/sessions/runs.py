@@ -41,10 +41,12 @@ from pydantic_ai.messages import (
     TextPart,
     TextPartDelta,
     ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tool_manager import ToolManager
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
 from evokai.agents.definitions import AgentDef, ClientToolDef
@@ -61,7 +63,7 @@ from evokai.engine.tools import EvokaiToolset, GuardedToolset, ToolSpec
 from evokai.grants import NotGranted, grants_of
 from evokai.guard import TurnGuard
 from evokai.guard.output import SentenceGate
-from evokai.i18n import message
+from evokai.i18n import locale_of, message
 from evokai.knowledge.tool import (
     CITE_NOTE,
     format_results,
@@ -83,6 +85,7 @@ from evokai.sandbox.tool import tool_def as code_tool
 from evokai.sessions.limits import cap_state, limit_message
 from evokai.tools import custom
 from evokai.tools.client_tools import SKILL_LOAD
+from evokai.tools.labels import confirm_label
 
 log = logging.getLogger("evokai.runs")
 
@@ -127,6 +130,19 @@ class Attachment:
 
 
 @dataclass
+class Resume:
+    """A confirmation being carried out in a run (the OpenAI-compatible API)."""
+
+    calls: list[dict[str, Any]]
+    """The waiting calls, with their stored arguments (never regenerated)."""
+    ready: list[dict[str, Any]]
+    """What ran in the same step before the confirmation (id, name, ok, text)."""
+    approve: bool
+    waited_ms: int = 0
+    channel: str = "openai"
+
+
+@dataclass
 class RunResult:
     """What a run returns."""
 
@@ -145,6 +161,10 @@ class RunResult:
     timings: dict[str, Any] = field(default_factory=dict)
     citations: list[dict[str, Any]] = field(default_factory=list)
     """The knowledge passages found, as ``citation`` events (numbered as the answer cites them)."""
+    waiting: list[dict[str, Any]] = field(default_factory=list)
+    """Calls that change data and wait for the person's yes (``confirm`` runs): id, name, input,
+    label. The run ended on them; ``ready`` holds what ran in the same step."""
+    ready: list[dict[str, Any]] = field(default_factory=list)
     client_calls: list[dict[str, Any]] = field(default_factory=list)
     """Custom client tool calls (``callId``, ``name``, ``args``), for the caller to carry out."""
 
@@ -184,6 +204,8 @@ class AgentRunner:
         prompt_options: dict[str, Any] | None = None,
         client_tools: Sequence[ClientToolDef] = (),
         on_text: Callable[[str], None] | None = None,
+        confirm: bool = False,
+        resume: Resume | None = None,
     ) -> RunResult:
         """Run the agent to its answer.
 
@@ -217,6 +239,11 @@ class AgentRunner:
                 ``evokai.agents.modules``); None renders the agent's defaults.
             client_tools: Custom client tools the caller declares for this run (already checked
                 and granted; none waits): their calls come back in ``client_calls``.
+            confirm: Offer the tools that change data: a call ends the run waiting for the
+                person (``RunResult.waiting``), as over the OpenAI-compatible API with
+                ``openai:confirm``. An agent with an ``output_schema`` never waits.
+            resume: Carry out a confirmation: the stored calls run (approved) or are cancelled
+                without a model call.
             on_text: Streams the answer as it is written (an answer without ``output_schema``):
                 called with each piece once the output guard let it through, token by token when
                 no output control rewrites text, else sentence by sentence (``SentenceGate``).
@@ -307,6 +334,8 @@ class AgentRunner:
                 modules=modules,
                 client_tools=client_tools,
                 on_text=on_text,
+                confirm=confirm,
+                resume=resume,
             )
             return result
         except LimitReached:
@@ -386,6 +415,8 @@ class AgentRunner:
         modules: list[Any] | None = None,
         client_tools: Sequence[ClientToolDef] = (),
         on_text: Callable[[str], None] | None = None,
+        confirm: bool = False,
+        resume: Resume | None = None,
     ) -> RunResult:
         """The run itself, under its guard, on the same engine as the turns.
 
@@ -400,6 +431,9 @@ class AgentRunner:
             UnexpectedModelBehavior: The model kept answering what could not be used (no schema).
         """
         eng = self.engine
+        confirm = (confirm or resume is not None) and not agent.output_schema
+        if resume is not None and not resume.approve:
+            return self._cancelled(app, guard, run_id, candidates[0], resume)
         self._check_size(guard, text, messages, attachments)
         toolbox = await eng.mcp.toolbox(
             app.id,
@@ -414,13 +448,14 @@ class AgentRunner:
         )
         # Nobody can confirm in a server run: tools that change data, and tools an ask rule may
         # make wait for the person, are not offered.
+        mutating = {
+            t.name for t in toolbox.tools if t.mutating or guard.forced_confirmation(t.name)
+        }
         read_only = [
             t
             for t in toolbox.tools
-            if not t.mutating
-            and guard.offered(t.name)
-            and not guard.forced_confirmation(t.name)
-            and not guard.askable(t.name)
+            if guard.offered(t.name)
+            and (confirm or (t.name not in mutating and not guard.askable(t.name)))
         ]
         skills = await eng._skills(app.id, agent, grants)
         preloaded, on_demand = split_skills(agent, skills)
@@ -466,6 +501,7 @@ class AgentRunner:
             groups,
             result,
             loadable=bool(on_demand) or any(s.files for s in preloaded),
+            mutating=mutating if confirm else set(),
         )
         names = {s.name for s in specs}
         specs += [
@@ -473,8 +509,12 @@ class AgentRunner:
             for s in self._client_tools(agent, client_tools, result)
             if s.name not in names and guard.offered(s.name)
         ]
-        specs = [s for s in specs if not guard.askable(s.name)]
+        if not confirm:
+            specs = [s for s in specs if not guard.askable(s.name)]
         rs.tools = {s.name: s for s in specs}
+        if confirm:
+            rs.label = lambda name, args: confirm_label(agent, name, args, app)
+            rs.locale = locale_of(app)
         if on_event is not None:
             rs.on_tool = lambda name, status: on_event({
                 "type": "tool",
@@ -542,7 +582,7 @@ class AgentRunner:
         rs.before_call = before_call
         rs.on_response = on_response
         schema = agent.output_schema
-        output_type: Any = str
+        output_type: Any = [str, DeferredToolRequests] if confirm else str
         if schema:
             output_type = ToolOutput(
                 StructuredDict(schema),
@@ -588,6 +628,10 @@ class AgentRunner:
 
         gate = SentenceGate(guard.output_filter()) if on_text is not None and not schema else None
         stopped = GuardStopped(message(app, "turn.guardStopped"))
+        deferred = None
+        if resume is not None:
+            history.extend(self._resumed(resume, rs))
+            deferred = DeferredToolResults(approvals={c["toolUseId"]: True for c in resume.calls})
 
         async def stream(_ctx: Any, events: Any) -> None:
             assert gate is not None and on_text is not None  # ruff: ignore[assert] (set together)
@@ -616,6 +660,7 @@ class AgentRunner:
                         request_limit=agent.max_tool_calls_per_turn + MAX_SCHEMA_RETRIES + 1
                     ),
                     event_stream_handler=stream if gate is not None else None,
+                    deferred_tool_results=deferred,
                 )
         except UsageLimitExceeded as e:
             raise InvalidOutput("The agent did not finish within its step limit.") from e
@@ -630,6 +675,14 @@ class AgentRunner:
             guard.after_output(gate.filter)
             if gate.blocked:
                 raise stopped
+        if isinstance(answer.output, DeferredToolRequests):
+            # A change waits for the person: the caller asks and keeps the calls.
+            result.waiting = list(rs.waiting)
+            result.ready = _ready(answer.all_messages(), rs.ok)
+            result.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
+            guard.trace.root.set(confirm="asked")
+            return result
+        if gate is not None:
             result.text = result.output = gate.filter.shown
         elif schema:
             result.output = guard.check_final(dict(answer.output))
@@ -672,8 +725,12 @@ class AgentRunner:
         result: RunResult,
         *,
         loadable: bool,
+        mutating: set[str] | None = None,
     ) -> list[ToolSpec]:
         """The tools of a run: read-only MCP tools, skills, knowledge, code, skill scripts.
+
+        With ``mutating`` (a run that may ask for confirmations) those MCP tools are offered too
+        and wait for the person.
 
         Every result goes back to the model marked as data, its identifiers protected.
 
@@ -701,7 +758,8 @@ class AgentRunner:
                 run=app_tool(t.name),
                 kind="app",
                 server=toolbox.server_of(t.name),
-                read_only=True,
+                mutating=t.name in (mutating or set()),
+                read_only=t.name not in (mutating or set()),
                 return_schema=t.output_schema,
             )
             for t in read_only
@@ -808,6 +866,70 @@ class AgentRunner:
                 )
             )
         return specs
+
+    @staticmethod
+    def _resumed(resume: Resume, rs: RunState) -> list[ModelMessage]:
+        """The step a confirmation resumes.
+
+        The model's calls with their stored arguments, then what had already run.
+
+        Returns:
+            Messages to append to the run's history.
+        """
+        rs.confirm = {"approve": True, "waitedMs": resume.waited_ms, "channel": resume.channel}
+        for c in resume.calls:
+            rs.args[c["toolUseId"]] = c["input"]
+        for r in resume.ready:
+            rs.ok[r["toolUseId"]] = r["ok"]
+        out: list[ModelMessage] = [
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=x["name"], args=x.get("input") or {}, tool_call_id=x["toolUseId"]
+                    )
+                    for x in [*resume.ready, *resume.calls]
+                ]
+            )
+        ]
+        if resume.ready:
+            out.append(
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name=r["name"],
+                            content=r["text"] or ("ok" if r["ok"] else "error"),
+                            tool_call_id=r["toolUseId"],
+                        )
+                        for r in resume.ready
+                    ]
+                )
+            )
+        return out
+
+    def _cancelled(
+        self, app: m.Application, guard: TurnGuard, run_id: str, model: str, resume: Resume
+    ) -> RunResult:
+        """A confirmation the person did not give: nothing runs and no model is called.
+
+        Returns:
+            The fixed answer.
+        """
+        tr = guard.trace
+        for c in resume.calls:
+            with tr.span(
+                "tool",
+                f"execute_tool {c['name']}",
+                tool=c["name"],
+                callId=c["toolUseId"],
+                confirmed=False,
+                confirmChannel=resume.channel,
+                waitedMs=resume.waited_ms,
+            ) as ts:
+                tr.put(ts, args=c["input"])
+                ts.set(outcome="rejected")
+        tr.root.set(confirm="rejected", confirmChannel=resume.channel)
+        text = message(app, "turn.refusal")
+        return RunResult(run_id=run_id, output=text, text=text, model=model)
 
     @staticmethod
     def _client_tools(
@@ -1037,6 +1159,38 @@ class AgentRunner:
                 interrupted=False,
             )
         return sess.id
+
+
+def _ready(messages: list[ModelMessage], ok: dict[str, bool]) -> list[dict[str, Any]]:
+    """What ran in the step that ended waiting for a confirmation.
+
+    Returns:
+        ``toolUseId``, ``name``, ``input``, ``ok`` and ``text`` of each call that has a result.
+    """
+    last = max((i for i, x in enumerate(messages) if isinstance(x, ModelResponse)), default=-1)
+    if last < 0:
+        return []
+    step = messages[last]
+    assert isinstance(step, ModelResponse)  # ruff: ignore[assert] (found above)
+    calls = {p.tool_call_id: p for p in step.parts if isinstance(p, ToolCallPart)}
+    out = []
+    returns = [
+        p
+        for msg in messages[last + 1 :]
+        if isinstance(msg, ModelRequest)
+        for p in msg.parts
+        if isinstance(p, ToolReturnPart) and p.tool_call_id in calls
+    ]
+    for p in returns:
+        call = calls[p.tool_call_id]
+        out.append({
+            "toolUseId": p.tool_call_id,
+            "name": p.tool_name,
+            "input": call.args_as_dict(),
+            "ok": ok.get(p.tool_call_id, True),
+            "text": str(p.content),
+        })
+    return out
 
 
 def check_channel(agent: AgentDef, grants: Any, channel: str) -> None:

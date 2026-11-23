@@ -52,6 +52,7 @@ CODE = "code"
 CONNECTION = "connection"
 CAPABILITY = "capability"
 MODULE = "module"
+OPENAI = "openai"
 KINDS = (
     MODEL,
     MCP,
@@ -69,6 +70,7 @@ KINDS = (
     CONNECTION,
     CAPABILITY,
     MODULE,
+    OPENAI,
 )
 KNOWLEDGE_ALL = "*"
 """The knowledge grant of the whole capability (each base is also an item of its own)."""
@@ -78,6 +80,9 @@ WORKFLOW_ITEMS = ("*", "autonomous")
 may change data without an approval (default off)."""
 
 CODE_ITEMS = ("*",)
+OPENAI_ITEMS = ("confirm",)
+"""The OpenAI-compatible API: ``confirm``, changes wait for a yes in the next request (off until
+granted, and the agent turns it on with ``openai_confirm``)."""
 """Isolated code execution (``code_run``) as a whole, off until granted."""
 
 CLIENT_TOOLS = ("navigate", "chart", "diagram", "ask", "confirm", "memory")
@@ -110,6 +115,7 @@ OFF_BY_DEFAULT = frozenset(
     | {(CONNECTION, p) for p in CONNECTION_PROVIDERS}
     | {(CODE, "*")}
     | {(CLIENT, CLIENT_SESSION)}
+    | {(OPENAI, "confirm")}
 )
 """Items an application does not have until it is granted them: A2A publishes agents to anyone
 holding the server key, autonomous workflows change data without a person deciding, channels
@@ -135,6 +141,7 @@ YAML_SECTIONS = {
     "connections": CONNECTION,
     "capabilities": CAPABILITY,
     "modules": MODULE,
+    "openai": OPENAI,
 }
 """Sections of ``grants:`` in an application YAML (and ``EVOKAI_BOOTSTRAP_APPS``) → kinds."""
 
@@ -190,6 +197,7 @@ def check_value(kind: str, name: str, value: Any) -> Any:
         WORKFLOW: WORKFLOW_ITEMS,
         CODE: CODE_ITEMS,
         CONNECTION: CONNECTION_ITEMS,
+        OPENAI: OPENAI_ITEMS,
     }
     if kind in fixed and name not in fixed[kind]:
         raise BadRequest(f"Unknown {kind}: {name}", code="grant")
@@ -404,6 +412,14 @@ class Grants:
         """
         return self._flag(CODE, "*")
 
+    def openai(self, name: str = "confirm") -> bool:
+        """Whether the OpenAI-compatible API may do it (``confirm``: changes wait for a yes).
+
+        Returns:
+            True if granted (off by default).
+        """
+        return self._flag(OPENAI, name)
+
     def capability(self, name: str) -> bool:
         """Whether agents may use a capability of the catalog (``evokai.capabilities``).
 
@@ -553,6 +569,8 @@ class Grants:
             out.append("A2A is not granted")
         if agent.code is not None and agent.code.enabled and not self.code():
             out.append("code execution is not granted")
+        if agent.openai_confirm and not self.openai("confirm"):
+            out.append("confirmations over the OpenAI-compatible API are not granted")
         out += [
             f"capability {name} is not granted"
             for name, use in agent.capabilities.items()

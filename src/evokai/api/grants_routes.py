@@ -362,6 +362,15 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
             ),
         )
     ]
+    openai = [
+        _item(
+            grants,
+            g.OPENAI,
+            "confirm",
+            grants.openai("confirm"),
+            usedBy=sorted(a.name for a in agents if a.definition.get("openai_confirm") is True),
+        )
+    ]
     connections = [
         _item(
             grants,
@@ -414,6 +423,7 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         {"id": "knowledge", "items": knowledge},
         {"id": "workflows", "items": workflows},
         {"id": "code", "items": code},
+        {"id": "openai", "items": openai},
         {"id": "connections", "items": connections},
         {"id": "capabilities", "items": capabilities},
         {"id": "modules", "items": modules},

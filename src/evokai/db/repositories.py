@@ -1413,6 +1413,23 @@ class PendingRepository(_Repo):
             )
             return _rowcount(await s.execute(q))
 
+    async def take(self, w: Who, pending_id: str, status: str) -> bool:
+        """Close an open, unexpired confirmation once (approved, rejected, superseded).
+
+        Returns:
+            False when it was already closed, expired or not this subject's: nothing may run.
+        """
+        async with self.db.session() as s:
+            p = m.PendingAction
+            q = sa.update(p).where(
+                p.id == pending_id,
+                p.application_id == w.application_id,
+                p.subject == w.subject,
+                p.status == "open",
+                sa.or_(p.expires_at.is_(None), p.expires_at > utcnow()),
+            )
+            return _rowcount(await s.execute(q.values(status=status))) == 1
+
     async def close(self, w: Who, pending_id: str, status: str) -> None:
         """Close a confirmation (approved, rejected, superseded)."""
         async with self.db.session() as s:

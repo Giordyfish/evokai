@@ -236,6 +236,11 @@
             "title": "Name",
             "type": "string"
           },
+          "openai_confirm": {
+            "default": false,
+            "title": "Openai Confirm",
+            "type": "boolean"
+          },
           "output_schema": {
             "anyOf": [
               {
@@ -1816,6 +1821,26 @@
         "title": "Confirm",
         "type": "object"
       },
+      "ConfirmAnswer": {
+        "description": "A button's answer to a pending confirmation (instead of typing yes or no).",
+        "properties": {
+          "actionId": {
+            "maxLength": 200,
+            "title": "Actionid",
+            "type": "string"
+          },
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "actionId",
+          "approve"
+        ],
+        "title": "ConfirmAnswer",
+        "type": "object"
+      },
       "Connection": {
         "description": "A person's connection to a provider.",
         "properties": {
@@ -2217,8 +2242,18 @@
         "type": "object"
       },
       "EvokaiOptions": {
-        "description": "Evokai's extension of the request (server key only).",
+        "description": "Evokai's extension of the request (``tags`` and ``groups``: server key only).",
         "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "groups": {
             "items": {
               "type": "string"

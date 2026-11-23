@@ -24,7 +24,8 @@ tools, skills), its security policy, its caps and its abuse limits apply exactly
 ## Semantics
 
 - **Server side tools.** The agent's tools run inside the request. Tools that change data (and tools the policy
-  forces to a confirmation) are **not offered**, as in every server run: nobody could confirm them.
+  forces to a confirmation) are **not offered**, as in every server run: nobody could confirm them, unless the
+  application opts in to [confirmations in text](#confirmations-in-text).
 - **Stateless.** The client sends the conversation every time (`messages`); nothing is stored and there is no
   conversation id to pass.
 - **The agent's own instructions.** `system` and `developer` messages are ignored: the agent's instructions are its
@@ -33,8 +34,33 @@ tools, skills), its security policy, its caps and its abuse limits apply exactly
   request: the agent definition sets them. An agent with an `output_schema` answers with its JSON as the message
   content.
 - **Text only.** Content parts other than `text` are refused (`400 unsupported_content`).
-- **Client tools are not supported**: a request with `tools` is refused (`400 tools_not_supported`); `n` above 1 is
+- **Client tools are not supported** ([custom client tools](client-tools.md) run on the session's own stream): a request with `tools` is refused (`400 tools_not_supported`); `n` above 1 is
   refused (`400 n_not_supported`).
+
+## Confirmations in text
+
+An application can let an agent change data over this API, with the person's confirmation typed in the next message.
+It is opt-in twice, off by default: the grant `openai:confirm` (Permissions, "OpenAI-compatible API") and the agent's
+`openai_confirm: true`.
+
+1. When the model calls a tool that changes data, the call does not run. Evokai keeps the pending action (the subject,
+   the agent, the exact arguments, the hash of the assistant message it answers with; it expires after 10 minutes and
+   is used once) and answers in plain text in the application's language, for example "Before I go ahead, please
+   confirm: Refund the orders of 2026-10. Reply yes or no.", plus `evokai.confirm` `{actionId, items, why}` for
+   clients that draw buttons. A streamed answer asks in its last content chunk, after what it already said.
+2. The next request must carry that assistant message unmodified, from the same subject (the server key's `user`, or
+   the session token's subject), followed by the answer:
+   - **yes** (the locale's yes words, or `evokai.confirm: {actionId, approve: true}` from a button) runs the stored
+     arguments, never regenerated, and the agent goes on to its answer;
+   - **no** cancels without calling the model ("OK, I have not changed anything.");
+   - **anything else** cancels the action and is answered as a new message.
+
+   An edited assistant message, another subject, an expired or used action: nothing runs.
+
+Every decision is in the run's trace: the tool's span carries `confirmed` and `confirmChannel: "openai"`.
+
+**The limit:** the protocol cannot prove that a person typed the yes. A client could send it on its own, so grant
+`openai:confirm` only to applications whose clients show the question to a person.
 
 ## The answer
 

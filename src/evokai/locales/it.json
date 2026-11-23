@@ -16,6 +16,7 @@
     "turn.empty": "Scrivi qualcosa.",
     "turn.refusal": "Va bene, non ho cambiato nulla.",
     "turn.confirmPrompt": "Prima di procedere ti chiedo conferma: {items}.",
+    "openai.confirmPrompt": "Prima di procedere ti chiedo conferma: {items}. Rispondi sì o no.",
     "turn.maxSteps": "Ho raggiunto il numero massimo di passaggi per questa richiesta. Dimmi come proseguire.",
     "turn.guard": "Non posso aiutarti con questa richiesta.",
     "turn.guardStopped": "Ho interrotto la risposta: avrebbe mostrato qualcosa che non deve.",

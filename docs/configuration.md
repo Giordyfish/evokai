@@ -248,7 +248,7 @@ which choices exist, and the console grants or revokes them one by one.
 | `mcp` (`mcp_servers`) | a registered MCP server | true / false | true |
 | `tool` (`tools`) | `server/tool` (the server's own tool name) | true / false | true |
 | `skill` (`skills`) | a skill | true / false | true |
-| `client` (`client_tools`) | `navigate`, `chart`, `diagram`, `ask`, `confirm`, `memory` | true / false | true |
+| `client` (`client_tools`) | `navigate`, `chart`, `diagram`, `ask`, `confirm`, `memory`; `session` (custom client tools a session token or a server run declares); a custom client tool's name or a pattern (`kiosk_*`) ([client tools](client-tools.md)) | true / false | true; `session` false |
 | `voice` (`voice`) | `browser` (on-device speech), `server` (Pipecat) | true / false | true |
 | `stt` (`stt`) | a server speech-to-text engine (`EVOKAI_VOICE_STT`) | true / false | true |
 | `tts` (`tts`) | `browser/<voice id>` or `server/<voice id>` | true / false | true |
@@ -258,6 +258,7 @@ which choices exist, and the console grants or revokes them one by one.
 | `workflow` (`workflows`) | `*` (workflows run at all), `autonomous` (tool steps marked `safe` change data without an approval) | true / false | true; `autonomous` false |
 | `code` (`code`) | `*` (isolated code execution, [code](code.md)) | true / false | false |
 | `connection` (`connections`) | a provider people may connect (`microsoft365`, `google`) or one of its tool families (`microsoft365/mail`, `/calendar`, `/files`) | true / false | providers false; families true (they need their provider) |
+| `openai` (`openai`) | `confirm` (tools that change data over the OpenAI-compatible API, with a typed yes: [confirmations in text](openai-compatible.md#confirmations-in-text)) | true / false | false |
 | `capability` (`capabilities`) | a capability of the catalog (`code_mode`, `compaction`, `subagents`, every pydantic-ai-harness one: [capabilities](capabilities.md)) | true / false | false |
 
 Every item either follows its default or is overridden for the application, and an override can be reset. The

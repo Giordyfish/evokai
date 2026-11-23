@@ -235,6 +235,8 @@ class GuardedToolset(WrapperToolset[RunState]):
             attrs.update(askedBy="rule", askRule=asked.rule, askRuleLevel=asked.level)
         if approved and st.confirm is not None:
             attrs.update(confirmed=True, waitedMs=st.confirm.get("waitedMs"))
+            if st.confirm.get("channel"):
+                attrs["confirmChannel"] = st.confirm["channel"]
         elif approved:
             # Approved inside the run, not by the person: a capability the admin turned on for this
             # agent (approval_reviewer). The guard still checks the call below.

@@ -10,7 +10,7 @@ import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBa
 import { adminJson, describe, forApp } from '../api'
 import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
-import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
+import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
 import { done, Fx, HAT, sparkle, toast } from '../magic'
 import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { rulesOf, toRow, type RuleRow } from '../askRules'
@@ -825,6 +825,15 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             t('ag.code'),
             ok ? t('ag.codeSub') : code.granted ? t('ag.codeNoSandbox') : t('ag.codeNotGranted'),
             ok ? <Switch on={!!draft.code?.enabled} aria={t('ag.code')} onChange={(v) => set({ code: { enabled: v } })} /> : locked,
+            !ok,
+          )
+        })()}
+        {(() => {
+          const ok = openaiConfirmGranted(g)
+          return row(
+            t('ag.openaiConfirm'),
+            ok ? t('ag.openaiConfirmSub') : t('ag.openaiConfirmNotGranted'),
+            ok ? <Switch on={!!draft.openai_confirm} aria={t('ag.openaiConfirm')} onChange={(v) => set({ openai_confirm: v })} /> : locked,
             !ok,
           )
         })()}

@@ -16,6 +16,7 @@
     "turn.empty": "Write something.",
     "turn.refusal": "OK, I have not changed anything.",
     "turn.confirmPrompt": "Before I go ahead, please confirm: {items}.",
+    "openai.confirmPrompt": "Before I go ahead, please confirm: {items}. Reply yes or no.",
     "turn.maxSteps": "I've reached the maximum number of steps for this request. Tell me how to go on.",
     "turn.guard": "I can't help with this request.",
     "turn.guardStopped": "I've stopped this answer: it would have shown something it must not.",
