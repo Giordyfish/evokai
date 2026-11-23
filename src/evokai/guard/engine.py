@@ -926,6 +926,29 @@ class TurnGuard:
             and tp.needs_confirmation(name, tools)
         )
 
+    def provider_tool_refusal(self, names: tuple[str, ...]) -> str | None:
+        """Why the policy refuses a tool the model's provider runs (a built-in tool), if it does.
+
+        The provider runs it, so no call can wait for the person's confirmation: a tool the policy
+        confirms, or an ask rule may ask for, is refused like a denied one. A tool known by several
+        names (``builtin:web_search`` and ``web_search``) is refused when any of them is denied,
+        confirmed or asked for, and offered under an allow-list when one of them is on it.
+
+        Returns:
+            ``denied``, ``not_allowed``, ``confirm`` or ``ask_rule``; None when it may run.
+        """
+        tools = self.policy.settings.tools
+        if tools is not None and self.policy.enforced("tools.policy"):
+            if any(tp.matches(n, tools.deny) for n in names):
+                return "denied"
+            if tools.allow is not None and not any(tp.matches(n, tools.allow) for n in names):
+                return "not_allowed"
+            if any(tp.needs_confirmation(n, tools) for n in names):
+                return "confirm"
+        if any(self.ask.askable(n) for n in names):
+            return "ask_rule"
+        return None
+
     def asks(self, name: str, args: dict[str, Any]) -> AskMatch | None:
         """The ask rule that makes this call wait for the person's confirmation, if any.
 

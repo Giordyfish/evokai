@@ -32,6 +32,8 @@ __all__ = [
     "Attachment",
     "AttachmentOffer",
     "BugReport",
+    "BuiltinTool",
+    "BuiltinToolBlock",
     "CapConfig",
     "CapPeriod",
     "CapShare",
@@ -387,7 +389,24 @@ class ToolResultBlock(WireModel):
     tool_result: ToolResult
 
 
-ContentBlock = FileBlock | TextBlock | ToolUseBlock | ToolResultBlock
+class BuiltinTool(WireModel):
+    """A provider built-in tool that can change data ran during the answer."""
+
+    id: str
+    name: str
+    changes: bool = True
+
+
+class BuiltinToolBlock(WireModel):
+    """A content block marking a provider built-in tool that can change data.
+
+    The answer cannot be regenerated: keep it as the service returns it.
+    """
+
+    builtin_tool: BuiltinTool
+
+
+ContentBlock = FileBlock | TextBlock | ToolUseBlock | ToolResultBlock | BuiltinToolBlock
 
 
 class HistoryMessage(WireModel):

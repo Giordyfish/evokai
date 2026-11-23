@@ -24,8 +24,9 @@ new messages replace the old ones (``replacedFrom``).
 Regenerating the last answer is a rewrite with the same question (``POST /v1/session/regenerate``):
 the question runs again and its new answer replaces the last one. It is refused
 (``not_regenerable``) whenever a rewrite would be, and also after a custom client tool ran (the
-client acted on it, and running it again could act twice). The replaced answer stays in its turn's
-trace.
+client acted on it, and running it again could act twice) or a provider built-in tool that can
+change data was called (an MCP server the provider calls, its memory, its code execution). The
+replaced answer stays in its turn's trace.
 
 On the event stream a rewrite is one ``rewritten`` event, the first of the new turn after
 ``conversation``: ``{type: "rewritten", turnId: <the new turn>, replaced: [<turn ids>], messageId,
@@ -146,14 +147,29 @@ def acted_on_client(messages: list[Any]) -> bool:
     return False
 
 
+def acted_at_provider(messages: list[Any]) -> bool:
+    """Whether a provider built-in tool that can change data was called in these messages.
+
+    Returns:
+        True when an answer carries a ``builtinTool`` mark (``engine.messages.response_blocks``).
+    """
+    for msg in messages:
+        for b in _get(msg, "content") or []:
+            bt = b.get("builtinTool") if isinstance(b, dict) else None
+            if isinstance(bt, dict) and bt.get("changes"):
+                return True
+    return False
+
+
 def regenerable_index(messages: list[Any]) -> int | None:
     """The index of the question whose answer can be regenerated, if any.
 
     Returns:
-        The last question's index when nothing after it changed data or ran a client tool.
+        The last question's index when nothing after it changed data, ran a client tool or called
+        a provider built-in tool that can change data.
     """
     i = rewritable_index(messages)
-    if i is None or acted_on_client(messages[i:]):
+    if i is None or acted_on_client(messages[i:]) or acted_at_provider(messages[i:]):
         return None
     return i
 

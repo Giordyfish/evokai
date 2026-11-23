@@ -2795,6 +2795,8 @@ export const it: Messages = {
   'dp.builtinTool': 'Strumento',
   'dp.builtinAgent': 'Agente',
   'dp.builtinKeeps': 'Conserva dati presso il provider',
+  'dp.builtinAnyAddress': 'Raggiunge qualsiasi indirizzo: la policy di sicurezza non fissa un elenco di destinazioni consentite (tools.egress)',
+  'dp.builtinAllowList': 'Limitato alle destinazioni consentite dalla policy di sicurezza',
   "dp.browserLabel": "Cosa il browser può inviare al suo fornitore",
   "dp.browserHint": "Una scelta della vostra applicazione (allowOnlineVoices, allowOnlineRecognition), riportata nel pacchetto di conformità.",
   "dp.onlineVoices": "Voci online dove il dispositivo non ne ha",

@@ -131,6 +131,17 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   length plus 10 seconds, or its session token's expiry when sooner (`expired`, close code 4401). Only audio resets
   its idle timer. Before, a client sending a text message every 29 seconds kept the socket, its pipeline and the
   engine's connection open forever. Every early close carries its code as the close reason.
+- Provider built-in tools follow the security policy: the tool policy and the ask rules apply to each under the names
+  `builtin:<kind>` and `<kind>`. A denied tool, or one outside an allow-list, is not offered; since the provider runs
+  them and nothing can wait for a confirmation, a tool the policy confirms or an ask rule may ask for is refused
+  instead of running unconfirmed. Before, they bypassed the policy entirely.
+- **Breaking:** a built-in `mcp_server` must list its `allowed_tools`, each of which runs without a confirmation (in
+  browser turns, server runs and the OpenAI-compatible API); a listed tool the policy denies or confirms, or an ask
+  rule may ask for, is taken off the list. Its address must be on the egress allow-list whenever one is set and
+  `tools.egress` is not off, in monitor too. The Protection page says which built-in tools may reach any address
+  because no egress allow-list holds them (`egress` in `GET /v1/admin/data-protection`).
+- An answer that called a provider built-in tool that can change data (`mcp_server`, `memory`, `code_execution`)
+  cannot be regenerated, as after a custom client tool: running it again could act twice.
 
 ### Upgrading
 
@@ -145,6 +156,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   labels, so convert them through the API or the YAML file first. Migration `0032` adds `template_syntax` to prompt
   versions (existing rows are `legacy`).
 - Workflow approval labels keep the older grammar: leave them as they are.
+- An agent whose `builtin_tools` has an `mcp_server` without `allowed_tools` cannot be saved any more, and its turns
+  leave that tool out until you list the tools the provider may call on it.
 - Going back to 0.1.3 after saving Handlebars versions is not supported: 0.1.3 does not know `template_syntax`, so a
   `{{date}}` saved by this version reaches the model as `{date}`. To go back, restore the database backup taken before
   the upgrade, or start 0.1.3 with the YAML file you used before converting it, so its agents get versions in the old

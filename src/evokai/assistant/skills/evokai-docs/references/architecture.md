@@ -197,7 +197,7 @@ conversation (`storageMode`), and the conversation keeps it for good (older conv
   saw), turns, numbered events (for replay), pending confirmations and memories in Evokai's
   database.
 - **`external`**: the application sends `history` (the stable `HistoryMessage` contract: `role`,
-  `content` blocks `text` / `toolUse` / `toolResult`, `text`, `events`, `interrupted`) with every
+  `content` blocks `text` / `toolUse` / `toolResult` / `builtinTool`, `text`, `events`, `interrupted`) with every
   request; Evokai validates and windows it, runs the turn and returns the new messages in the
   `done` event or the JSON response (`Accept: application/json`). No message content, events or
   memories are kept at rest; a pending confirmation holds only the waiting tool calls and the
@@ -251,8 +251,8 @@ and the traces are a turn's, and the replaced answer stays only in its turn's tr
 
 - **Refused** with 409 `not_regenerable` (`turn.notRegenerable` in the language packs) when there is no question yet,
   the last turn changed data (a `wrote` result or an approved change), it ran a custom
-  [client tool](client-tools.md) (the client acted on it, and running it again could act twice), or a turn is
-  running.
+  [client tool](client-tools.md) (the client acted on it, and running it again could act twice), it called a
+  [provider built-in tool](builtin-tools.md#regenerating) that can change data, or a turn is running.
 - **The flag.** Every `done` event carries `regenerable`, and in `GET /v1/session/conversation` the last assistant
   message has `regenerable: true` while it can be regenerated and no turn runs. The TypeScript client's
   `session.regenerate()` and `ChatMessage.regenerable`, `<evokai-chat>`'s regenerate button on the last answer, and

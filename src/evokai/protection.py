@@ -530,7 +530,20 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
                 processor_verdict(prof, "observability-exporter"),
             )
         )
-    from evokai.engine.builtin_tools import STORING, storage_allowed
+    from types import SimpleNamespace
+
+    from evokai.engine.builtin_tools import REACHING, STORING, storage_allowed
+
+    def egress(agent: Any, kind: str) -> str | None:
+        # Whether a tool that reaches the network is held to an egress allow-list: without one
+        # (or with the control off) it reaches any address, like every other tool.
+        if kind not in REACHING:
+            return None
+        policy = svc.guard.policy(app, SimpleNamespace(security=agent.definition.get("security")))
+        tools = policy.settings.tools
+        held = tools is not None and tools.egress_allow is not None
+        on = policy.on("tools.egress") if kind == "mcp_server" else policy.enforced("tools.egress")
+        return "allow_list" if held and on else "unrestricted"
 
     builtin = [
         {
@@ -538,6 +551,7 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
             "kind": str(t.get("kind")),
             "keepsData": t.get("kind") in STORING,
             "allowed": t.get("kind") not in STORING or storage_allowed(prof),
+            "egress": egress(a, str(t.get("kind"))),
         }
         for a in agents
         for t in a.definition.get("builtin_tools") or []

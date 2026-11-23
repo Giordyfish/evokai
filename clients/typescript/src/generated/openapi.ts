@@ -4905,6 +4905,30 @@ export interface components {
             description: string;
         };
         /**
+         * BuiltinTool
+         * @description A call of a provider built-in tool that can change data (``engine.messages``).
+         */
+        BuiltinTool: {
+            /**
+             * Changes
+             * @default true
+             */
+            changes?: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * BuiltinToolBlock
+         * @description Assistant block: a provider built-in tool that can change data ran (never sent to a model).
+         *
+         *     It keeps the answer from being regenerated: keep it as Evokai returns it.
+         */
+        BuiltinToolBlock: {
+            builtinTool: components["schemas"]["BuiltinTool"];
+        };
+        /**
          * BuiltinToolDef
          * @description A provider built-in tool (``evokai.engine.builtin_tools``).
          */
@@ -5597,7 +5621,7 @@ export interface components {
          */
         HistoryMessage: {
             /** Content */
-            content?: (components["schemas"]["FileBlock"] | components["schemas"]["TextBlock"] | components["schemas"]["ToolUseBlock"] | components["schemas"]["ToolResultBlock"])[];
+            content?: (components["schemas"]["FileBlock"] | components["schemas"]["TextBlock"] | components["schemas"]["ToolUseBlock"] | components["schemas"]["ToolResultBlock"] | components["schemas"]["BuiltinToolBlock"])[];
             /** Events */
             events?: {
                 [key: string]: unknown;

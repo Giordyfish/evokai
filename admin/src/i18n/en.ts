@@ -2797,6 +2797,8 @@ export const en = {
   'dp.builtinTool': 'Tool',
   'dp.builtinAgent': 'Agent',
   'dp.builtinKeeps': 'Keeps data at the provider',
+  'dp.builtinAnyAddress': 'Reaches any address: the security policy sets no egress allow-list (tools.egress)',
+  'dp.builtinAllowList': 'Held to the egress allow-list of the security policy',
   "dp.browserLabel": "What the browser may send to its vendor",
   "dp.browserHint": "Your application's own choice (allowOnlineVoices, allowOnlineRecognition), stated in the compliance pack.",
   "dp.onlineVoices": "Online voices where the device has none",

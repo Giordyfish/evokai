@@ -45,6 +45,8 @@ REQUESTS: dict[type[BaseModel], str] = {
     models.ToolUse: "ToolUse",
     models.ToolResultBlock: "ToolResultBlock",
     models.ToolResult: "ToolResult",
+    models.BuiltinToolBlock: "BuiltinToolBlock",
+    models.BuiltinTool: "BuiltinTool",
     models.SubjectRequest: "SubjectRequest",
     models.AppPatch: "AppPatch",
     models.Residency: "Residency",
