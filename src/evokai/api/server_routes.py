@@ -18,6 +18,7 @@ from evokai.agents.modules import (
 )
 from evokai.api.deps import server_app, services
 from evokai.assistant.privacy import own_subject
+from evokai.audio.choice import SpeechChoice, check_speech, speech_view
 from evokai.core.caps import CapSpec, caps_of, currency_of, rate_of, zone_of
 from evokai.core.caps import window as cap_window
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
@@ -108,6 +109,11 @@ class TokenRequest(BaseModel):
     Requesting an engine the application is not granted is refused (403
     ``voice_engine_not_granted``).
     """
+    speech: SpeechChoice | None = None
+    """Server speech engines for this session, among those the deployment offers (400
+    ``speech_engine`` otherwise): ``tts`` for ``POST /v1/session/speech`` and server voice, ``stt``
+    for transcription and server voice. Omitted = the deployment's defaults. Needs server speech
+    granted, the recognition engine's ``stt`` grant and the data protection profile."""
     storageMode: Literal["evokai", "external"] | None = None
     """Where a new conversation lives: in Evokai, or kept by the application (it sends the
     history with each request). Omitted = the application's storage mode. Fixed for the
@@ -185,6 +191,15 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
     engine = _voice_engine(body, application, grants, svc.settings.voice_stt)
     if body.voice and not grants.tts(engine, body.voice):
         raise NotGranted("voice", f"The voice {body.voice} is not granted for {engine} speech.")
+    if body.speech is not None and (body.speech.tts or body.speech.stt):
+        check_speech(
+            svc.settings,
+            application,
+            grants,
+            tts=body.speech.tts,
+            stt=body.speech.stt,
+            voice=body.voice if body.speech.tts else None,
+        )
     mode = _storage_mode(body.storageMode, application.storage_mode, grants)
     if body.locale is not None and pack_language(body.locale) is None:
         raise BadRequest(f"No language pack for the locale {body.locale}.", code="unknown_locale")
@@ -242,6 +257,10 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         claims["mdl"] = body.model
     if body.voice:
         claims["voc"] = body.voice
+    if body.speech and body.speech.tts:
+        claims["spt"] = body.speech.tts
+    if body.speech and body.speech.stt:
+        claims["sps"] = body.speech.stt
     if body.forwardCredential:
         claims["crd"] = True
     if body.groups:
@@ -269,6 +288,7 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         "expiresAt": exp,
         "conversationId": conversation_id,
         "voiceEngine": engine,
+        "speech": speech_view(body.speech.tts, body.speech.stt) if body.speech else None,
         "storageMode": mode,
         "usage": caps.view(),
         "suggestions": agent.suggestions,

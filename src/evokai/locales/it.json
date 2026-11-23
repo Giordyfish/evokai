@@ -111,6 +111,27 @@
       "cinque": 5,
       "quinta": 5,
       "quinto": 5
+    },
+    "numbers": {
+      "group": ["."],
+      "decimal": ",",
+      "decimalWord": "virgola",
+      "percent": "per cento",
+      "degrees": "gradi",
+      "plus": "più",
+      "minus": "meno",
+      "currency": {
+        "one": "un euro",
+        "many": "euro",
+        "millions": "di euro",
+        "centOne": "un centesimo",
+        "centMany": "centesimi",
+        "and": "e"
+      },
+      "date": {"sep": "/", "format": "{day} {month} {year}", "first": "primo"},
+      "time": {"format": "{h} e {m}", "hour": "{h}"},
+      "ordinals": true,
+      "feminine": ["o", "a"]
     }
   },
   "calendar": {

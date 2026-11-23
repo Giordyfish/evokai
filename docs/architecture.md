@@ -286,6 +286,8 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | POST | `/v1/session/messages/{id}/feedback` | session | thumbs |
 | POST | `/v1/session/exit`, `/v1/session/bug-reports` | session | kiosk exit, bug report |
 | POST/PATCH | `/v1/session/voice/offer` | session | server voice: WebRTC offer / ICE candidates (only when enabled) |
+| POST | `/v1/session/speech`, `/v1/session/transcribe` | session | [server speech](voice.md): a text or a `say` segment as audio and timings (SSE); a recording transcribed (only when enabled) |
+| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled) |
 | POST | `/v1/session/agui` | session | a turn as an [AG-UI](ag-ui.md) run: `RunAgentInput` in, AG-UI events out (SSE); confirmations and questions are interrupts |
 | POST | `/v1/openai/chat/completions` | server key or session | [OpenAI-compatible](openai-compatible.md) Chat Completions: model = agent, server-run semantics, streaming |
 | GET | `/v1/openai/models` | server key or session | the agents the caller can use, as OpenAI models |
@@ -317,7 +319,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET | `/v1/console/me`, `/applications`, `/health` | console cookie | who is logged in, its applications, health |
 | GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility), per console identity; audited |
 
-Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, filler?}`), `tool` (start/done/error),
+Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (start/done/error),
 `chart` (a chart, or an `image` the agent's code drew), `diagram`, `ask`, `navigate`, `confirm` (`{actionId, items, why}`: `why[i]` says why
 `items[i]` waits, an i18n key and an [ask rule](security.md#ask-rules)'s label), `rewritten` (`{replaced, messageId, replacedFrom?}`, the
 last question was [rewritten](#rewriting-the-last-question)), `citation` (`{index, kb, documentId, title,
@@ -334,12 +336,17 @@ own identifiers the way each one asks. Charts and schemas are never read aloud.
 
 A speech engine reads «1.000» as «uno punto zero zero zero», so a `say` also carries `spoken`, the
 same sentence with its numbers in words, whenever that differs from `text`
-(`evokai.audio.speech.numbers`, by the application's locale; Italian today, other languages are
-spoken as written). Italian covers integers with thousand dots, decimals («12,5»: «dodici virgola
-cinque»), percentages, euros («1.234,56 €»: «milleduecentotrentaquattro euro e cinquantasei»),
-dates («16/11/2026»: «sedici novembre duemilaventisei»), times («17:26»), signs and ordinals
-(«1°»: «primo»); digits inside identifiers, versions («2.0.1») and codes (a leading zero, more than
-twelve digits) are left alone. The voice speaks `spoken ?? text`; everything shown (the chat, the
+(`evokai.audio.speech.numbers`, by the session's locale: Italian, Spanish, French, German, Romanian
+and Swedish; English is spoken as written). The words come from
+[num2words](https://pypi.org/project/num2words/) (Italian keeps its own speller, which num2words
+gets wrong for 118 and «ventitré»), and each pack's `speech.numbers` block says how the language
+writes numbers (group and decimal separators, the date separator) and the words around them. Every
+language covers integers with group separators («1.000», «1 000» with a no-break space in French
+and Swedish), decimals («12,5»: «dodici virgola cinque»), percentages, euros («1.234,56 €»:
+«milleduecentotrentaquattro euro e cinquantasei»), dates («16/11/2026»: «sedici novembre
+duemilaventisei»; «16.11.2026» in German and Romanian), times («17:26»), signs and, in Italian and
+Spanish, ordinals («1°»: «primo»); digits inside identifiers, versions («2.0.1») and codes (a
+leading zero, more than twelve digits) are left alone. The voice speaks `spoken ?? text`; everything shown (the chat, the
 subtitles) keeps `text`, and the stored messages and `text` events never change.
 
 ## Server runs (back-office agents)
@@ -389,7 +396,9 @@ A session declares its **voice engine** (token claim, else the application defau
   as an RTVI server message `{"evokai": event}`. Pipecat handles interruptions; the agent cancels
   its turn on barge-in (`barge_in`). A failing TTS (quota, outage) turns the session to text and
   says so. STT and TTS are pluggable (registered names or `module:factory`); EU-hosted providers
-  plug in without touching the pipeline. Connections stay bound to their session.
+  plug in without touching the pipeline. Connections stay bound to their session. The engines are
+  the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
+  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming).
 
 ## Module map (`src/evokai`)
 

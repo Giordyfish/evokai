@@ -33,6 +33,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/features.md`: Features
 - `references/index.md`: Evokai
 - `references/knowledge.md`: Knowledge bases
+- `references/markup.md`: Inline markup
 - `references/memory.md`: Long-term memory
 - `references/models.md`: Model suitability
 - `references/openai-compatible.md`: OpenAI-compatible API
@@ -44,4 +45,5 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/security-assessment.md`: Security assessment of the browser session API
 - `references/security.md`: Security of agents
 - `references/templates.md`: Templates
+- `references/voice.md`: Server speech
 - `references/workflows.md`: Workflows

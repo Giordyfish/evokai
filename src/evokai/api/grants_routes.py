@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from evokai import audit
 from evokai import grants as g
 from evokai.api.deps import admin_app, services
+from evokai.audio.choice import stt_engines
 from evokai.core.errors import NotFound
 from evokai.db import models as m
 from evokai.grants import Grants
@@ -271,10 +272,10 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         ]  # fmt: skip
         return out
 
-    configured = svc.settings.voice_stt
-    stt_names = sorted({configured} | {r.name for r in rows if r.kind == g.STT})
+    offered = set(stt_engines(svc.settings))
+    stt_names = sorted(offered | {r.name for r in rows if r.kind == g.STT})
     stt = [
-        _item(grants, g.STT, n, _flag(grants, g.STT, n), label=n, configured=n == configured)
+        _item(grants, g.STT, n, _flag(grants, g.STT, n), label=n, configured=n in offered)
         for n in stt_names
     ]
     voice = [

@@ -107,7 +107,22 @@ describe('English (the default)', () => {
     const custom = { ...locales.en, speech: { ...locales.en.speech, yes: ['aye'] } }
     expect(spokenDecision('aye captain', custom)).toBe(true)
     expect(localePack('it-IT').code).toBe('it')
-    expect(localePack('fr').code).toBe('en')
+    expect(localePack('ja').code).toBe('en')
+    expect(localePack('de-DE').code).toBe('de')
+  })
+})
+
+describe('spoken replies in the other packs', () => {
+  test.each([
+    ['es', 'sí, adelante', 'no, déjalo', 'la segunda'],
+    ['fr', 'oui, vas-y', 'non merci', 'la deuxième'],
+    ['de', 'ja, mach weiter', 'nein danke', 'die zweite'],
+    ['ro', 'da, continuă', 'nu, mulțumesc', 'a doua'],
+    ['sv', 'ja, kör', 'nej tack', 'den andra'],
+  ] as const)('%s', (code, yes, no, second) => {
+    expect(spokenDecision(yes, code)).toBe(true)
+    expect(spokenDecision(no, code)).toBe(false)
+    expect(spokenOption(second, ['Rome', 'Milan', 'Turin'], code)).toBe('Milan')
   })
 })
 
@@ -116,7 +131,7 @@ describe('client packs mirror the server packs', () => {
     const file = new URL(`../../../src/evokai/locales/${code}.json`, import.meta.url)
     return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { speech: Record<string, unknown> }) : null
   }
-  test.each(['en', 'it'] as const)('%s', (code) => {
+  test.each(['en', 'it', 'es', 'fr', 'de', 'ro', 'sv'] as const)('%s', (code) => {
     const s = server(code)
     if (!s) return // the package is built outside the repository
     const c = locales[code].speech

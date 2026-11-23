@@ -4101,6 +4101,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/session/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Speech
+         * @description Speak a text or a ``say`` segment with the session's speech engine.
+         *
+         *     A segment that is not in this conversation is 404.
+         *
+         *     Returns:
+         *         The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).
+         *
+         *     Raises:
+         *         BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.
+         */
+        post: operations["speech_agent_v1_session_speech_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/session/tool-results": {
         parameters: {
             query?: never;
@@ -4123,6 +4151,33 @@ export interface paths {
          *         AppError: The result is larger than 32 KB (413 ``too_large``).
          */
         post: operations["tool_result_agent_v1_session_tool_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/transcribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe
+         * @description Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.
+         *
+         *     Returns:
+         *         The text, the audio's length and the engine.
+         *
+         *     Raises:
+         *         AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).
+         *         BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.
+         */
+        post: operations["transcribe_agent_v1_session_transcribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4514,6 +4569,7 @@ export interface components {
              */
             instructions?: string;
             knowledge?: components["schemas"]["KnowledgeDef"] | null;
+            markup?: components["schemas"]["MarkupDef"] | null;
             /**
              * Max Tool Calls Per Turn
              * @default 6
@@ -4710,6 +4766,7 @@ export interface components {
             exchange_rate?: number | null;
             /** Locale */
             locale?: string | null;
+            markup?: components["schemas"]["MarkupDef"] | null;
             /** Memory Mode */
             memory_mode?: ("off" | "ask" | "on") | null;
             /** Memory Ttl Days */
@@ -5314,6 +5371,30 @@ export interface components {
             };
         };
         /**
+         * CueDef
+         * @description Cues: ``{name}`` or ``{name:arg}`` with the default delimiters.
+         */
+        CueDef: {
+            /**
+             * Close
+             * @default }
+             */
+            close?: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Names */
+            names?: string[] | null;
+            names_from?: components["schemas"]["ModuleParam"] | null;
+            /**
+             * Open
+             * @default {
+             */
+            open?: string;
+        };
+        /**
          * DataProtection
          * @description An application's data protection profile.
          */
@@ -5656,6 +5737,14 @@ export interface components {
             key?: string | null;
         };
         /**
+         * MarkupDef
+         * @description The markup an application or an agent declares (``markup:`` in YAML).
+         */
+        MarkupDef: {
+            cue?: components["schemas"]["CueDef"] | null;
+            speech?: components["schemas"]["SpeechTagDef"] | null;
+        };
+        /**
          * McpProbe
          * @description An MCP server to try before it is registered.
          */
@@ -5766,6 +5855,16 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ModuleParam
+         * @description A parameter of a session's prompt module (a list of strings, or one string).
+         */
+        ModuleParam: {
+            /** Module */
+            module: string;
+            /** Param */
+            param: string;
         };
         /**
          * ModuleRef
@@ -6466,6 +6565,63 @@ export interface components {
             url?: string | null;
         };
         /**
+         * SpeechChoice
+         * @description The server speech engines a session token chooses.
+         */
+        SpeechChoice: {
+            /** Stt */
+            stt?: string | null;
+            /** Tts */
+            tts?: string | null;
+        };
+        /**
+         * SpeechRequest
+         * @description What to speak: a text, or a ``say`` segment of this conversation.
+         */
+        SpeechRequest: {
+            /**
+             * Format
+             * @default pcm
+             * @enum {string}
+             */
+            format?: "pcm" | "opus";
+            /** Index */
+            index?: number | null;
+            /**
+             * Samplerate
+             * @default 24000
+             * @enum {integer}
+             */
+            sampleRate?: 16000 | 22050 | 24000 | 44100 | 48000;
+            /** Text */
+            text?: string | null;
+            /** Turnid */
+            turnId?: string | null;
+        };
+        /**
+         * SpeechTagDef
+         * @description Speech tags: ``[laughs]`` with the default delimiters.
+         */
+        SpeechTagDef: {
+            /**
+             * Close
+             * @default ]
+             */
+            close?: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Names */
+            names?: string[] | null;
+            /**
+             * Open
+             * @default [
+             */
+            open?: string;
+        };
+        /**
          * SsoConfigBody
          * @description The provider; leave ``client_secret`` out to keep the one already stored.
          */
@@ -6606,6 +6762,7 @@ export interface components {
             modules?: {
                 [key: string]: components["schemas"]["ModuleChoice"];
             } | null;
+            speech?: components["schemas"]["SpeechChoice"] | null;
             /** Storagemode */
             storageMode?: ("evokai" | "external") | null;
             /** Subject */
@@ -6706,6 +6863,18 @@ export interface components {
          */
         ToolUseBlock: {
             toolUse: components["schemas"]["ToolUse"];
+        };
+        /**
+         * Transcript
+         * @description What was heard.
+         */
+        Transcript: {
+            /** Durationms */
+            durationMs: number;
+            /** Engine */
+            engine: string;
+            /** Text */
+            text: string;
         };
         /**
          * Try
@@ -12619,6 +12788,39 @@ export interface operations {
             };
         };
     };
+    speech_agent_v1_session_speech_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Audio and timings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     tool_result_agent_v1_session_tool_results_post: {
         parameters: {
             query?: never;
@@ -12656,6 +12858,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcribe_agent_v1_session_transcribe_post: {
+        parameters: {
+            query?: {
+                language?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "audio/*": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcript"];
+                };
             };
             /** @description Validation Error */
             422: {

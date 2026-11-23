@@ -25,6 +25,7 @@ import {
   type TokenInfo,
   type TokenRequestContext,
   type VoiceEngine,
+  type MarkupView,
 } from '@evokai/evokai-client/browser'
 
 export interface ConversationItem {
@@ -65,6 +66,8 @@ export interface ControllerState {
   suggestions: string[]
   /** What the person may attach (null: nothing; the paper clip shows only otherwise). */
   files: AttachmentOffer | null
+  /** The delimiters of the answers' inline markup, hidden in what the chat shows (null without). */
+  markup: MarkupView | null
   history: ConversationItem[] | null
   support: Support
   installing: Installing
@@ -172,6 +175,7 @@ export class Controller {
       session: this.session.state,
       suggestions: [],
       files: null,
+      markup: null,
       history: null,
       support: 'checking',
       installing: 'no',
@@ -276,6 +280,7 @@ export class Controller {
     if (this.opened) return
     this.opened = true
     void this.checkSupport()
+    let read = false
     try {
       const saved = this.saved()
       if (saved && !this.session.state.conversationId && (this.opts.getToken || this.opts.tokenUrl)) {
@@ -288,16 +293,21 @@ export class Controller {
       } else if (!this.opts.session) {
         const info = await this.session.info()
         if (info.suggestions?.length) this.patch({ suggestions: info.suggestions })
+        this.patch({ markup: info.markup ?? null })
         this.noteMemory(info.memory)
         this.patch({ files: info.attachments ?? null })
-      } else {
-        // A resumed conversation (or a session of your own) has not read the session yet.
-        void this.session.info().then((i) => {
-          this.noteMemory(i.memory)
-          this.patch({ files: i.attachments ?? null })
-        }, () => undefined)
+        read = true
       }
       this.patch({ error: null })
+      // A resumed conversation (or a session of your own) has not read the session yet: its memory state comes apart.
+      if (!read)
+        void this.session.info().then(
+          (i) => {
+            this.noteMemory(i.memory)
+            this.patch({ markup: i.markup ?? null, files: i.attachments ?? null })
+          },
+          () => undefined,
+        )
       // Whether there is anything to connect: the menu offers the connections view only then.
       void this.readConnections()
     } catch (e) {
@@ -523,7 +533,8 @@ export class Controller {
     // Before any await: still inside the gesture, or the assistant hears but is never heard (Safari, iOS, and Chrome
     // when the page had no click yet).
     unlockAudio()
-    if (this.session.voiceEngine === 'browser' && !(await this.ensureRecognition())) return
+    // On-device recognition is needed unless the token chose a server recognition engine.
+    if (this.session.voiceEngine === 'browser' && !this.session.speech?.stt && !(await this.ensureRecognition())) return
     this.dictation?.stop()
     const v = createVoiceEngine(this.session, { locale: this.opts.locale ?? 'en', ...this.opts.voice, talkOver: this.st.talkOver } as CreateVoiceOptions)
     this.voice_ = v

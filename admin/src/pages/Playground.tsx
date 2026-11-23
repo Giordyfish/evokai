@@ -483,6 +483,11 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
           <option value="">{t('pg.localeApp')}</option>
           <option value="en">{t('pg.localeEn')}</option>
           <option value="it">{t('pg.localeIt')}</option>
+          <option value="es">{t('pg.localeEs')}</option>
+          <option value="fr">{t('pg.localeFr')}</option>
+          <option value="de">{t('pg.localeDe')}</option>
+          <option value="ro">{t('pg.localeRo')}</option>
+          <option value="sv">{t('pg.localeSv')}</option>
         </select>
       </div>
       {sessionModules.length ? (

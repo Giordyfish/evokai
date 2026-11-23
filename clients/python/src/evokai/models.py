@@ -532,6 +532,8 @@ class SessionInfo(WireModel):
     suggestions: list[str] = Field(default_factory=list)
     attachments: AttachmentOffer | None = None
     """What the person may attach to a message (None: nothing)."""
+    markup: dict[str, Any] | None = None
+    """The delimiters of the answers' inline markup (``cue``, ``speech``), None without."""
 
 
 # Server runs

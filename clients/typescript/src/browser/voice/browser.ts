@@ -24,6 +24,8 @@ import type { EvokaiSession } from '../session'
 import { isEcho, isTrailingEcho, meaningfulWords, spokenDecision, stripEcho, tailWords } from '../speech'
 import { OnDeviceStt, type OnDeviceSttOptions } from '../stt/on-device'
 import { chooseTts, type ChooseTtsOptions } from '../tts/device'
+import { ServerTts } from '../tts/server'
+import { ServerStt } from '../stt/server'
 import { localePack, type LocalePack } from '../../locales'
 import {
   Emitter,
@@ -40,6 +42,8 @@ import {
 interface Line {
   text: string
   spoken: string
+  /** The `say` segment it is (server speech speaks it by turn and index). */
+  say?: { turnId: string; index: number }
 }
 
 /** Both forms of a line, for the echo guard: the microphone hears the words, a transcript may write the digits. */
@@ -123,8 +127,14 @@ export class BrowserVoiceEngine implements VoiceEngine {
     this.microphone = opts.microphone ?? new Microphone()
     this.pack = localePack(opts.locale ?? opts.session.locale)
     const lang = opts.lang ?? this.pack.lang
-    this.stt = opts.stt ?? new OnDeviceStt({ lang, recognition: opts.recognition, restartMs: opts.restartMs, allowOnline: opts.allowOnlineRecognition })
-    this.tts = opts.tts ?? chooseTts({ locale: this.pack, ...opts.ttsOptions, browser: { lang, ...opts.ttsOptions?.browser } })
+    // The token may have chosen server engines: speech and recognition then go through Evokai.
+    const server = opts.session.speech
+    this.stt =
+      opts.stt ??
+      (server?.stt
+        ? new ServerStt({ session: opts.session, lang })
+        : new OnDeviceStt({ lang, recognition: opts.recognition, restartMs: opts.restartMs, allowOnline: opts.allowOnlineRecognition }))
+    this.tts = opts.tts ?? (server?.tts ? new ServerTts({ session: opts.session }) : chooseTts({ locale: this.pack, ...opts.ttsOptions, browser: { lang, ...opts.ttsOptions?.browser } }))
   }
 
   get state(): VoiceState {
@@ -182,7 +192,9 @@ export class BrowserVoiceEngine implements VoiceEngine {
         if (e.turnStarted && e.turnId) this.beginTurn(e.turnId)
         if (e.turnStarted) this.agentsTurn()
       }),
-      this.session.on('say', (e) => this.onSay(e.turnId ?? null, e.index, { text: e.text, spoken: e.spoken || e.text })),
+      this.session.on('say', (e) =>
+        this.onSay(e.turnId ?? null, e.index, { text: e.text, spoken: e.spoken || e.text, ...(e.turnId ? { say: { turnId: e.turnId, index: e.index } } : {}) }),
+      ),
       this.session.on('done', () => this.settle()),
       this.stt.on('interim', (t) => this.onInterim(t)),
       this.stt.on('final', (t) => this.onFinal(t)),
@@ -207,6 +219,7 @@ export class BrowserVoiceEngine implements VoiceEngine {
         this.events.emit('boundary', { segment: this.segment(line), charIndex: shown })
       }),
       this.tts.on('signal', (s) => this.signals.push(s)),
+      this.tts.on('mark', ({ text, mark }) => this.events.emit('mark', { segment: this.segment(this.lineOf(text)), mark })),
     ]
     try {
       if (this.opts.meterMicrophone !== false) {
@@ -485,6 +498,8 @@ export class BrowserVoiceEngine implements VoiceEngine {
       const t = this.waiting.get(this.nextIndex) as Line
       this.waiting.delete(this.nextIndex)
       this.nextIndex++
+      // A segment of cues alone (the answer ended on them) has nothing to say.
+      if (!t.spoken.trim()) continue
       // While holding, new sentences wait with the rest.
       if (this.stash) this.stash.push(t)
       else this.say(t)
@@ -497,7 +512,7 @@ export class BrowserVoiceEngine implements VoiceEngine {
     this.pending++
     this.queue.push(line)
     this.session.setVoiceActivity('speaking')
-    const u = this.tts.speak(line.spoken, this.opts.rate ? { rate: this.opts.rate } : {})
+    const u = this.tts.speak(line.spoken, { ...(this.opts.rate ? { rate: this.opts.rate } : {}), ...(line.say ? { say: line.say } : {}) })
     void u.done.then(({ cancelled }) => {
       const i = this.queue.indexOf(line)
       if (i >= 0) this.queue.splice(i, 1)

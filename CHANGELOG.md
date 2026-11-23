@@ -64,9 +64,35 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   reduced motion, optional one-shot images per change of state). It rests and flies exactly as the orb does, and the
   host says where it is as `data-orb`. With `position="bottom-left"` the minimized bubble and its actions mirror
   around a launcher of any size.
+- Inline markup ([docs](docs/markup.md)): an application (and an agent, kind by kind) declares cues (`{wave}`,
+  `{point:left}`) and speech tags (`[laughs]`) with their delimiters and optional allowed names, static or from a
+  session's prompt module. Spoken segments carry the cleaned text plus `marks` (`{name, arg?, at, spokenAt?}`) and
+  `tagged` (the spoken form with its speech tags); unknown names are dropped and counted in the trace
+  (`markupDropped`). `text` events and stored messages keep the markup; a person's markup is neutralised before the
+  model sees it; the leak check reads the answer without it. `GET /v1/session` returns the delimiters (`markup`), the
+  TypeScript client's `stripMarkup` hides them and `<evokai-chat>` uses it. Set in the application YAML (`markup:`),
+  `PATCH /v1/admin/application` and the console's Limits page.
+- Server speech ([docs](docs/voice.md)), mounted with voice: `POST /v1/session/speech` speaks a text or a `say`
+  segment and streams audio (PCM or Ogg Opus) with word times, the segment's cues as times and visemes;
+  `POST /v1/session/transcribe` transcribes a recording; `WS /v1/session/transcribe/stream` transcribes the
+  microphone (session token in the subprotocol, one socket per session, Silero VAD parameters, a maximum
+  length). Engines are Pipecat services: ElevenLabs, OpenAI, Azure, Piper, Kokoro and faster-whisper, each in
+  the provider catalog with residency, retention and price, so data protection judges them and their usage
+  (characters, seconds) counts in the caps. A session token chooses them with `speech: {tts, stt}` within the
+  grants. The TypeScript client gets `session.speak`, `TimedSpeechPlayer`, `ServerTts` and `ServerStt`, which
+  the browser voice engine and `<evokai-chat>` use when the token chose server engines; the Python client gets
+  `speak` and `transcribe`. Real engines are tested from recorded cassettes (`scripts/record-cassettes.sh
+  speech`).
+- Language packs for Spanish, French, German, Romanian and Swedish (`es`, `fr`, `de`, `ro`, `sv`): messages, speech
+  rules (spoken yes and no, ordinals, abbreviations, redaction words) and calendar, on the server and in the TypeScript
+  client. A session `locale` and an application `locale` accept every shipped pack; the playground offers them.
 
 ### Changed
 
+- Numbers read aloud (`say.spoken`) come from num2words, driven by each pack's new `speech.numbers` block (separators,
+  decimal word, per cent, currency, date and time shapes), in every language but English, which is spoken as written.
+  Italian keeps its own cardinal speller. Spoken ordinals («la deuxième») are matched without accents on the server
+  too.
 - The console assistant has no button: the mascot is its launcher at the bottom left and travels like the chat's orb
   (to the header, to the middle in voice mode, back to the launcher while voice is minimized). There is no launcher
   while the assistant is not active; it is activated from the Assistant page.
@@ -92,6 +118,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The console assistant can never change an agent's security policy, whoever it acts for.
 - The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
+- The WebRTC voice pipeline uses the session's voice (token `voice`, else the agent's `voice.voice_id`): it was
+  never passed to the speech engine before. The fake recognition engine hears «hello» unless given phrases.
 
 ### Upgrading
 

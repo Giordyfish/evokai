@@ -59,6 +59,7 @@ class EvokaiAgentProcessor(FrameProcessor):
         external: bool = False,
         is_speech_error: Callable[[ErrorFrame], bool] | None = None,
         app: Any = None,
+        speech_tags: bool = False,
         **kwargs: Any,
     ) -> None:
         """Bind the processor to a session.
@@ -70,6 +71,7 @@ class EvokaiAgentProcessor(FrameProcessor):
             external: The application keeps the conversation (history goes with every turn).
             is_speech_error: Whether an upstream error comes from the speech provider.
             app: The application (its locale and messages).
+            speech_tags: The TTS performs speech tags (it gets a segment's ``tagged`` form).
             **kwargs: Passed to FrameProcessor.
         """
         super().__init__(**kwargs)
@@ -78,6 +80,7 @@ class EvokaiAgentProcessor(FrameProcessor):
         self.principal = principal
         self.external = external
         self.history: list[HistoryMessage] = list(history or [])
+        self.speech_tags = speech_tags
         self._is_speech_error = is_speech_error or (lambda _f: False)
         self.speech = True
         self._heard: list[str] = []
@@ -172,11 +175,12 @@ class EvokaiAgentProcessor(FrameProcessor):
 
     async def _deliver(self, run: TurnRun, event: dict[str, Any]) -> None:
         kind = event["type"]
-        if kind == "say" and self.speech and self._muted_turn != run.turn_id:
+        if kind == "say" and event["text"] and self.speech and self._muted_turn != run.turn_id:
             # Numbers in words for the engine; the microphone may hear either form back.
             spoken = event.get("spoken") or event["text"]
             self._last_said = f"{event['text']} {spoken}" if spoken != event["text"] else spoken
-            await self.push_frame(TTSSpeakFrame(spoken))
+            said = (event.get("tagged") if self.speech_tags else None) or spoken
+            await self.push_frame(TTSSpeakFrame(said))
         elif kind == "done" and self.external:
             self.history += [HistoryMessage.model_validate(x) for x in event["messages"]]
         await self._event(event)

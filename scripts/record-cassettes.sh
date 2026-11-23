@@ -8,6 +8,10 @@
 #                                         eu-north-1 with tiny prompts (three calls, a fraction of a
 #                                         cent); needs credentials with Bedrock access, for example
 #                                         AWS_PROFILE=<profile> scripts/record-cassettes.sh bedrock
+#   scripts/record-cassettes.sh speech    the speech engines of tests/test_speech_recorded.py: ElevenLabs
+#                                         and OpenAI speech and transcription of one short sentence
+#                                         (a fraction of a cent); needs ELEVENLABS_API_KEY and
+#                                         OPENAI_API_KEY
 #
 # Afterwards the suite replays what was recorded with the network unused, and the cassettes must
 # pass a secrets scan (gitleaks dir tests/cassettes) before they are committed.
@@ -45,14 +49,26 @@ case "${1:-}" in
     cp tests/cassettes/seeds/test_bedrock_*.yaml "$dir"/
     uv run --no-sync pytest -q tests/test_recorded.py -k bedrock --record-mode=new_episodes
     ;;
+  speech)
+    if [[ -z "${ELEVENLABS_API_KEY:-}" || -z "${OPENAI_API_KEY:-}" ]]; then
+      echo "Speech keys needed: export ELEVENLABS_API_KEY and OPENAI_API_KEY first." >&2
+      exit 2
+    fi
+    rm -f tests/cassettes/test_speech_recorded/*.yaml
+    uv run --no-sync pytest -q tests/test_speech_recorded.py --record-mode=new_episodes
+    ;;
   *)
-    echo "usage: $0 mcp|bedrock" >&2
+    echo "usage: $0 mcp|bedrock|speech" >&2
     exit 2
     ;;
 esac
 
 echo "== replay, offline"
-uv run --no-sync pytest -q tests/test_recorded.py
+if [[ "${1:-}" == speech ]]; then
+  env -u ELEVENLABS_API_KEY -u OPENAI_API_KEY uv run --no-sync pytest -q tests/test_speech_recorded.py
+else
+  uv run --no-sync pytest -q tests/test_recorded.py
+fi
 if command -v gitleaks >/dev/null; then
   gitleaks dir tests/cassettes --no-banner
 else

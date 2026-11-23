@@ -69,13 +69,17 @@ class SayEvent(BaseEvent):
     """Voice mode: a speakable segment, numbered from 0 within the turn.
 
     ``text`` is what is shown; ``spoken``, set only when it differs, is what the speech engine
-    says (numbers in words: «1.000» is shown, «mille» is said).
+    says (numbers in words: «1.000» is shown, «mille» is said); ``tagged`` the spoken form with its
+    speech tags (``[laughs]``); ``marks`` the answer's cues (``{name, arg?, at, spokenAt?}``). An
+    empty ``text`` carries cues only.
     """
 
     type: Literal["say"] = "say"
     index: int
     text: str
     spoken: str | None = None
+    tagged: str | None = None
+    marks: list[dict[str, Any]] = Field(default_factory=list)
     filler: bool = False
 
 

@@ -144,7 +144,7 @@ The mint refuses:
 | 400 | `unknown_locale` | the locale's language has no shipped pack |
 
 `locale` is a BCP 47 tag; speech rules (numbers read aloud, spoken yes and no) and the messages the person reads use the
-shipped pack of its language, today `en` and `it`. Without it the session follows the application's `locale`.
+shipped pack of its language: `en`, `it`, `es`, `fr`, `de`, `ro` or `sv`. Without it the session follows the application's `locale`.
 
 ## Who may set what
 

@@ -198,6 +198,14 @@ and has a health check on `{EVOKAI_BASE_PATH}/health`. Released images are publi
 A pipeline runs it after the image is pushed (`--image <repo>@<digest>`) and keeps `sbom/` as the build's
 artifacts (`evokai-sbom-<commit>`). The image SBOM only warns when syft cannot be fetched, unless `SBOM_STRICT=1`.
 
+### Third-party licences
+
+The SBOMs list every dependency with its licence. Two Python packages of the service are under the GNU Lesser General
+Public License: `num2words` (LGPL-2.1, numbers in spoken text) and `psycopg` (LGPL-3.0, when installed with the
+Postgres tooling). They are used unmodified, as separately installed packages that can be replaced with another
+version of the same library, and their source code is on the Python Package Index and in their own repositories;
+an image that ships them carries their licence files in their `dist-info` folders.
+
 ### Image signing
 
 `scripts/sign-image.sh <repo>@sha256:<digest> [--sbom sbom/image.cdx.json]` signs the image with cosign (2.6.5,

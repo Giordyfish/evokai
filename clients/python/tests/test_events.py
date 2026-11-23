@@ -45,6 +45,17 @@ CASES: list[tuple[dict[str, Any], type, dict[str, Any]]] = [
         {"index": 1, "text": "Sono 1.000 punti.", "spoken": "Sono mille punti.", "filler": False},
     ),
     (
+        {
+            "type": "say",
+            "index": 2,
+            "text": "Hi!",
+            "tagged": "[laughs] Hi!",
+            "marks": [{"name": "wave", "at": 2}],
+        },
+        SayEvent,
+        {"tagged": "[laughs] Hi!", "marks": [{"name": "wave", "at": 2}]},
+    ),
+    (
         {"type": "tool", "name": "crm_search", "status": "done"},
         ToolEvent,
         {"name": "crm_search", "status": "done"},

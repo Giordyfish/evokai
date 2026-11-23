@@ -9,7 +9,7 @@
 import type { TargetedKeyboardEvent, TargetedMouseEvent, VNode } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 
-import type { ChatMessage, Citation, Part, ToolPart } from '@evokai/evokai-client/browser'
+import { stripMarkup, type ChatMessage, type Citation, type Part, type ToolPart } from '@evokai/evokai-client/browser'
 import { AttachButton, fileError, MessageFiles, Previews, useFiles } from './attach'
 import type { ChatState } from './chatstate'
 import type { Controller, ControllerState } from './controller'
@@ -172,7 +172,7 @@ function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string |
       {m.parts.map((part: Part, i) => {
         switch (part.kind) {
           case 'text':
-            return <Markdown key={i} text={part.text} cites={cites} cite={(c, k) => <Cite key={k} c={c} />} />
+            return <Markdown key={i} text={stripMarkup(part.text, p.st.markup)} cites={cites} cite={(c, k) => <Cite key={k} c={c} />} />
           case 'tool': {
             const { kind: _k, client: _c, ...shown } = part
             return mine(

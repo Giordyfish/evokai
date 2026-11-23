@@ -116,7 +116,32 @@ export interface TextEvent extends EventMeta { type: 'text'; delta: string }
  * Voice mode only: a speakable segment, numbered from 0 within the turn. `text` is what is shown; `spoken`, present only
  * when it differs, is what the speech engine says (numbers in words: «1.000» is shown, «mille» is said).
  */
-export interface SayEvent extends EventMeta { type: 'say'; index: number; text: string; spoken?: string; filler?: boolean }
+/** A cue of the answer (`{wave}`, `{point:left}`) on a spoken segment: `at` is the offset in `text`, `spokenAt` in `spoken`. */
+export interface SayMark {
+  name: string
+  arg?: string
+  at: number
+  spokenAt?: number
+}
+/**
+ * A spoken segment (voice mode). `text` is the subtitle; `spoken` what the voice says, when it differs (numbers in
+ * words); `tagged` the spoken form with its speech tags (`[laughs]`), for engines that perform them; `marks` the
+ * cues. An empty `text` carries only cues (the answer ended on them): nothing to speak.
+ */
+export interface SayEvent extends EventMeta {
+  type: 'say'
+  index: number
+  text: string
+  spoken?: string
+  tagged?: string
+  marks?: SayMark[]
+  filler?: boolean
+}
+/** The delimiters of the answers' inline markup (`docs/markup.md`), to hide it in what a chat shows. */
+export interface MarkupView {
+  cue?: { open: string; close: string }
+  speech?: { open: string; close: string }
+}
 export interface ToolEvent extends EventMeta { type: 'tool'; name: string; status: 'start' | 'done' | 'error' }
 export interface ChartEvent extends EventMeta { type: 'chart'; chart: Chart }
 export interface DiagramEvent extends EventMeta { type: 'diagram'; diagram: Diagram }
@@ -356,8 +381,18 @@ export interface SessionInfo {
   memory?: MemoryState | null
   /** The agent's starter questions, to show before the first message. */
   suggestions?: string[]
+  /** The inline markup the agent may write (null without): `stripMarkup` hides it. */
+  markup?: MarkupView | null
+  /** The server speech engines the token chose, null for the deployment's defaults. */
+  speech?: SpeechChoice | null
   /** What the person may attach to a message (`docs/attachments.md`); null when nothing. */
   attachments?: AttachmentOffer | null
+}
+
+/** The server speech engines of a session (`speech` at token mint). */
+export interface SpeechChoice {
+  tts: string | null
+  stt: string | null
 }
 
 /** The files a session accepts: kinds read from the bytes, sizes in bytes. */
@@ -566,6 +601,11 @@ export interface Application {
   messages: Partial<Record<LimitMessageKey, string>>
   /** The limit messages of the application's locale (what applies without an override). */
   messageDefaults: Record<LimitMessageKey, string>
+  /** Inline markup the agents may write (`docs/markup.md`); null without. */
+  markup?: {
+    cue?: { open: string; close: string; names?: string[] | null; names_from?: { module: string; param: string } | null; enabled?: boolean } | null
+    speech?: { open: string; close: string; names?: string[] | null; enabled?: boolean } | null
+  } | null
   /** What content traces keep (default `masked`; external storage keeps none). */
   tracing_content?: TraceContent
   /** The monthly budget of its evals (null: the default, 2), apart from its caps. */

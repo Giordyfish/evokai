@@ -150,6 +150,10 @@ class SessionClaims:
     """Voice override for this session (else the agent's, else the application's default)."""
     voice_engine: str = "browser"
     """Who does speech: ``browser`` (on-device STT/TTS in the client) or ``server`` (Pipecat)."""
+    speech_tts: str | None = None
+    """The server speech engine the token chose (else the deployment's ``voice_tts``)."""
+    speech_stt: str | None = None
+    """The server recognition engine the token chose (else the deployment's ``voice_stt``)."""
     storage_mode: str | None = None
     """Where the conversation lives (``evokai`` or ``external``); None = the application's mode."""
     issued_at: float = 0
@@ -317,6 +321,8 @@ class Keyring:
             model=str(p["mdl"]) if p.get("mdl") else None,
             voice=str(p["voc"]) if p.get("voc") else None,
             voice_engine="server" if p.get("ven") == "server" else "browser",
+            speech_tts=str(p["spt"]) if p.get("spt") else None,
+            speech_stt=str(p["sps"]) if p.get("sps") else None,
             storage_mode=str(p["stm"]) if p.get("stm") in {"evokai", "external"} else None,
             issued_at=int(p["ims"]) / 1000 if p.get("ims") else float(p["iat"]),
             groups=[str(x) for x in p.get("grp") or []],

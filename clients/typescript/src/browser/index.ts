@@ -13,6 +13,26 @@ export {
   EvokaiValidationError,
 } from '../core/http'
 export type { FetchLike } from '../core/http'
+export { markupPattern, stripMarkup } from '../core/markup'
+export { speak, speechEvents, transcribe, transcribeSocketUrl } from './speech-server'
+export type {
+  MarkTiming,
+  SpeakInput,
+  SpeechDone,
+  SpeechResult,
+  SpeechSession,
+  SpeechStart,
+  SpeechStreamEvent,
+  SpeechTimings,
+  VisemeTiming,
+  WordTiming,
+} from './speech-server'
+export { TimedSpeechPlayer } from './tts/player'
+export type { PlaybackContext, PlayerEvents, TimedSpeechPlayerOptions } from './tts/player'
+export { ServerTts } from './tts/server'
+export type { ServerTtsOptions } from './tts/server'
+export { MicrophonePcm, ServerStt, toPcm16 } from './stt/server'
+export type { PcmSource, ServerSttOptions, SocketLike } from './stt/server'
 
 // session and state
 export { EvokaiSession, isLimitError } from './session'

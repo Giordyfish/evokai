@@ -318,9 +318,10 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(channel_routes.public)
     root.include_router(channel_routes.admin)
     if settings.voice_enabled:
-        from evokai.api import voice_routes
+        from evokai.api import speech_routes, voice_routes
 
         root.include_router(voice_routes.router)
+        root.include_router(speech_routes.router)
 
     app.include_router(root)
     # The admin API as an MCP server, for AI agents acting with their caller's rights.

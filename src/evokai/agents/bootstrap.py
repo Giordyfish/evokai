@@ -23,6 +23,7 @@ from evokai.agents.modules import (
 )
 from evokai.agents.skills import Skill, SkillError, check_skill, make_file, skills_in
 from evokai.agents.templates import check_agent_templates, check_prompt
+from evokai.audio.speech.markup import MarkupDef
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import validate as validate_connector
 from evokai.core.caps import (
@@ -115,6 +116,12 @@ async def bootstrap(
         )
         if k in spec
     }
+    if spec.get("markup") is not None:
+        try:
+            markup = MarkupDef.model_validate(spec["markup"])
+        except ValueError as e:
+            raise ConfigError(f"bootstrap: markup: {e}") from e
+        in_defaults["markup"] = markup.model_dump(exclude_none=True)
     memory = spec.get("memory")
     if isinstance(memory, dict):
         if memory.get("mode") is not None:

@@ -13,6 +13,7 @@ from typing import Any, Literal
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from evokai.audio.speech.markup import MarkupDef
 from evokai.guard.ask import AskRule
 from evokai.guard.ask import stored as ask_stored
 from evokai.llm.caching import PromptCache
@@ -275,6 +276,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "builtin_tools": [],
     "openai_confirm": False,
     "attachments": None,
+    "markup": None,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -316,6 +318,8 @@ class AgentDef(BaseModel):
     model_settings: dict[str, Any] = Field(default_factory=dict)
     """Sampling, reasoning effort, priority processing (evokai.llm.policy.ALLOWED_SETTINGS)."""
     voice: VoiceDef = Field(default_factory=VoiceDef)
+    markup: MarkupDef | None = None
+    """Inline markup (cues, speech tags) over the application's, kind by kind (docs/markup.md)."""
     temperature: float | None = Field(default=None, ge=0, le=2)
     output_schema: dict[str, Any] | None = None
     """JSON Schema of a structured answer (server runs): the output is validated against it."""

@@ -16,7 +16,7 @@ import hmac
 import logging
 import re
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -760,8 +760,11 @@ class TurnGuard:
 
     # output
 
-    def output_filter(self) -> output.OutputFilter:
+    def output_filter(self, clean: Callable[[str], str] | None = None) -> output.OutputFilter:
         """A filter for one model step's text.
+
+        Args:
+            clean: Takes the answer's inline markup out of what the leak check reads.
 
         Returns:
             The filter.
@@ -779,6 +782,7 @@ class TurnGuard:
             known_secrets=self.guard.known_secrets,
             prompt_shingles=self.prompt_shingles() if p.enforced("output.system_prompt") else set(),
             vault=self.vault,
+            clean=clean,
         )
         return output.OutputFilter(rules)
 
