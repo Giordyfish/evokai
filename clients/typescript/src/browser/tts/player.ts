@@ -79,7 +79,7 @@ export class TimedSpeechPlayer {
     let last: { onended?: (() => void) | null } | null = null
     const waiting: Array<() => void> = []
     const at = (ms: number, fn: () => void) => {
-      if (t0 === null) waiting.push(() => this.at(t0! + shift, ms, fn))
+      if (t0 === null) waiting.push(() => this.at((t0 ?? 0) + shift, ms, fn))
       else this.at(t0 + shift, ms, fn)
     }
     const ended = new Promise<boolean>((resolve) => (this.finish = resolve))
