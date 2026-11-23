@@ -25,8 +25,11 @@ Regenerating the last answer is a rewrite with the same question (``POST /v1/ses
 the question runs again and its new answer replaces the last one. It is refused
 (``not_regenerable``) whenever a rewrite would be, and also after a custom client tool ran (the
 client acted on it, and running it again could act twice) or a provider built-in tool that can
-change data was called (an MCP server the provider calls, its memory, its code execution). The
-replaced answer stays in its turn's trace.
+change data was called (an MCP server the provider calls, its memory, its code execution). It is
+refused too when the question could not be asked again as it was: its identifiers were masked when
+it was stored (``pii.history`` enforced: the original is not kept anywhere), or, with external
+storage, it carried a file the model read as it is (an image, a PDF), whose bytes lived only during
+its turn. The replaced answer stays in its turn's trace.
 
 On the event stream a rewrite is one ``rewritten`` event, the first of the new turn after
 ``conversation``: ``{type: "rewritten", turnId: <the new turn>, replaced: [<turn ids>], messageId,
@@ -55,6 +58,9 @@ AFTER_WRITE = "rewrite_after_write"
 NOT_REGENERABLE = "not_regenerable"
 """The last answer cannot be regenerated (nothing to regenerate, a write, a client tool, a turn
 running)."""
+MASKED = "masked"
+"""The mark of a question stored with identifiers masked (``pii.history``): a block
+``{"masked": true}`` beside its text."""
 CLIENT_PREFIX = "client_"
 """The model-facing prefix of custom client tools (``evokai.tools.custom.PREFIX``)."""
 RUNNING = "rewrite_running"
@@ -161,15 +167,39 @@ def acted_at_provider(messages: list[Any]) -> bool:
     return False
 
 
-def regenerable_index(messages: list[Any]) -> int | None:
+def asked_again(question: Any, *, files_kept: bool) -> bool:
+    """Whether a question can be asked again exactly as the person asked it.
+
+    Args:
+        question: The stored question.
+        files_kept: Whether the bytes of its files are kept (Evokai storage).
+
+    Returns:
+        False when it was stored masked, or carries a file read as it is whose bytes are gone.
+    """
+    blocks = [b for b in _get(question, "content") or [] if isinstance(b, dict)]
+    if any(b.get(MASKED) for b in blocks):
+        return False
+    return files_kept or not any("file" in b and not b.get("text") for b in blocks)
+
+
+def regenerable_index(messages: list[Any], *, files_kept: bool = True) -> int | None:
     """The index of the question whose answer can be regenerated, if any.
+
+    Args:
+        messages: The conversation's latest messages, oldest first.
+        files_kept: Whether the bytes of the question's files are kept (false with external
+            storage, where they live only during their turn).
 
     Returns:
         The last question's index when nothing after it changed data, ran a client tool or called
-        a provider built-in tool that can change data.
+        a provider built-in tool that can change data, and the question can be asked again as it
+        was (``asked_again``).
     """
     i = rewritable_index(messages)
     if i is None or acted_on_client(messages[i:]) or acted_at_provider(messages[i:]):
+        return None
+    if not asked_again(messages[i], files_kept=files_kept):
         return None
     return i
 
@@ -185,7 +215,9 @@ def question_text(msg: Any) -> str:
         return text
     blocks = [b for b in _get(msg, "content") or [] if isinstance(b, dict)]
     return "\n".join(
-        str(b.get("text") or "") for b in blocks if not b.get("summary") and "file" not in b
+        str(b.get("text") or "")
+        for b in blocks
+        if b.get("text") and not b.get("summary") and "file" not in b
     ).strip()
 
 

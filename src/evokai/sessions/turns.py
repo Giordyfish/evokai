@@ -479,7 +479,7 @@ class TurnEngine:
             dumped = [h.model_dump() for h in sent]
             index, code = rewrite.check(dumped, None)
             if index is not None and inp.regenerate:
-                index, inp.text = self._regenerated(dumped, index)
+                index, inp.text = self._regenerated(dumped, index, files_kept=False)
             if index is not None:
                 inp.kept_files = _attached_blocks(dumped[index].get("content"))
                 inp.history = sent[:index]
@@ -626,13 +626,15 @@ class TurnEngine:
         return files_.binaries(wanted, data)
 
     @staticmethod
-    def _regenerated(messages: list[Any], index: int) -> tuple[int | None, str | None]:
+    def _regenerated(
+        messages: list[Any], index: int, *, files_kept: bool = True
+    ) -> tuple[int | None, str | None]:
         """The question a regeneration runs again, when its answer may be regenerated.
 
         Returns:
             Its index and text, or ``(None, None)``.
         """
-        if rewrite.regenerable_index(messages) != index:
+        if rewrite.regenerable_index(messages, files_kept=files_kept) != index:
             return None, None
         text = rewrite.question_text(messages[index])
         return (index, text) if text else (None, None)
@@ -664,6 +666,7 @@ class TurnEngine:
         Returns:
             Both answers.
         """
+        external = isinstance(run.threads, ExternalThreads)
         try:
             if isinstance(run.threads, ExternalThreads):
                 msgs: list[Any] = [*run.threads.history, *run.threads.added]
@@ -676,7 +679,7 @@ class TurnEngine:
             return False, False
         return (
             rewrite.rewritable_index(msgs) is not None,
-            rewrite.regenerable_index(msgs) is not None,
+            rewrite.regenerable_index(msgs, files_kept=not external) is not None,
         )
 
     def new_trace(
@@ -3019,7 +3022,11 @@ class TurnEngine:
         """
         assert run.threads is not None  # ruff: ignore[assert] (set by open())
         if run.storage == "evokai":
-            content, text = self._guard(run).for_storage(content, text)
+            stored, kept = self._guard(run).for_storage(content, text)
+            if role == "user" and (stored != content or kept != text):
+                # Identifiers were masked: the question cannot be asked again as it was.
+                stored = [*stored, {rewrite.MASKED: True}]
+            content, text = stored, kept
         msg = ThreadMessage(role, content, text, events, interrupted=interrupted)
         return await run.threads.add(msg, run.turn_id)
 

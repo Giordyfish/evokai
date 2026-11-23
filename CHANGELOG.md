@@ -150,6 +150,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   by a blank line, in both and in the stored conversation. Before, `"stream": true` glued the steps' texts together
   ("Let me check.October has 24 orders.") while `"stream": false` returned only the last step's. Server runs follow
   the same rule.
+- Regenerating no longer asks a different question than the person did: an answer is not regenerable (`done`,
+  `GET /v1/session/conversation`, 409 `not_regenerable`) when its question was stored with identifiers masked
+  (`pii.history` enforced: the original is kept nowhere), or, with external storage, when it carried an image or a PDF
+  the model read as a file (its bytes are gone after the turn).
 
 ### Upgrading
 
