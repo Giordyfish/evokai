@@ -336,12 +336,17 @@ own identifiers the way each one asks. Charts and schemas are never read aloud.
 
 A speech engine reads «1.000» as «uno punto zero zero zero», so a `say` also carries `spoken`, the
 same sentence with its numbers in words, whenever that differs from `text`
-(`evokai.audio.speech.numbers`, by the application's locale; Italian today, other languages are
-spoken as written). Italian covers integers with thousand dots, decimals («12,5»: «dodici virgola
-cinque»), percentages, euros («1.234,56 €»: «milleduecentotrentaquattro euro e cinquantasei»),
-dates («16/11/2026»: «sedici novembre duemilaventisei»), times («17:26»), signs and ordinals
-(«1°»: «primo»); digits inside identifiers, versions («2.0.1») and codes (a leading zero, more than
-twelve digits) are left alone. The voice speaks `spoken ?? text`; everything shown (the chat, the
+(`evokai.audio.speech.numbers`, by the session's locale: Italian, Spanish, French, German, Romanian
+and Swedish; English is spoken as written). The words come from
+[num2words](https://pypi.org/project/num2words/) (Italian keeps its own speller, which num2words
+gets wrong for 118 and «ventitré»), and each pack's `speech.numbers` block says how the language
+writes numbers (group and decimal separators, the date separator) and the words around them. Every
+language covers integers with group separators («1.000», «1 000» with a no-break space in French
+and Swedish), decimals («12,5»: «dodici virgola cinque»), percentages, euros («1.234,56 €»:
+«milleduecentotrentaquattro euro e cinquantasei»), dates («16/11/2026»: «sedici novembre
+duemilaventisei»; «16.11.2026» in German and Romanian), times («17:26»), signs and, in Italian and
+Spanish, ordinals («1°»: «primo»); digits inside identifiers, versions («2.0.1») and codes (a
+leading zero, more than twelve digits) are left alone. The voice speaks `spoken ?? text`; everything shown (the chat, the
 subtitles) keeps `text`, and the stored messages and `text` events never change.
 
 ## Server runs (back-office agents)

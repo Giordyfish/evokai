@@ -198,10 +198,70 @@ def test_punctuation_around_numbers_stays() -> None:
 
 def test_other_languages_are_spoken_as_written() -> None:
     assert spell_numbers("1.000 points, 12.5%", "en") == "1.000 points, 12.5%"
-    assert spell_numbers("1.000", "fr") == "1.000"
+    assert spell_numbers("1.000", "xx") == "1.000"
     assert spell_numbers("1.000", "it-IT") == "mille"
 
 
 def test_speech_rules_carry_their_locale() -> None:
     assert speech_rules("it").locale == "it"
     assert speech_rules().locale == "en"
+
+
+@pytest.mark.parametrize(
+    ("locale", "text", "spoken"),
+    [
+        # Spanish: dot groups, comma decimals, "de" in dates
+        ("es", "1.000", "mil"),
+        ("es", "12,5%", "doce coma cinco por ciento"),
+        ("es", "1.234,56 €", "mil doscientos treinta y cuatro euros con cincuenta y seis"),
+        ("es", "1 €", "un euro"),
+        ("es", "0,01 €", "un céntimo"),
+        ("es", "1.000.000 €", "un millón de euros"),
+        ("es", "16/11/2026", "dieciséis de noviembre de dos mil veintiséis"),
+        ("es", "17:26", "diecisiete y veintiséis"),
+        ("es", "1º", "primero"),
+        ("es", "2ª", "segunda"),
+        ("es", "-3", "menos tres"),
+        # French: narrow no-break space groups, comma decimals
+        ("fr", "1\u202f000", "mille"),
+        ("fr", "1\u00a0234,5", "mille deux cent trente-quatre virgule cinq"),
+        ("fr", "12,5 %", "douze virgule cinq pour cent"),
+        ("fr", "2 €", "deux euros"),
+        ("fr", "1/3/2026", "premier mars deux mille vingt-six"),
+        ("fr", "17:26", "dix-sept heures vingt-six"),
+        ("fr", "9:00", "neuf heures"),
+        ("fr", "25°C", "vingt-cinq degrés"),
+        # German: dot groups and dot dates
+        ("de", "1.000", "eintausend"),
+        ("de", "12,5%", "zwölf Komma fünf Prozent"),
+        ("de", "16.11.2026", "sechzehnte November zweitausendsechsundzwanzig"),
+        ("de", "17:26", "siebzehn Uhr sechsundzwanzig"),
+        ("de", "3 €", "drei Euro"),
+        # Romanian
+        ("ro", "1.000", "o mie"),
+        ("ro", "12,5%", "doisprezece virgulă cinci la sută"),
+        ("ro", "16.11.2026", "șaisprezece noiembrie două mii douăzeci și șase"),
+        # Swedish: space groups, comma decimals
+        ("sv", "1\u00a0000", "etttusen"),
+        ("sv", "12,5 %", "tolv komma fem procent"),
+        ("fr", "1 000 points", "mille points"),
+        ("fr", "12 345,5", "douze mille trois cent quarante-cinq virgule cinq"),
+        ("sv", "1 000 kronor", "etttusen kronor"),
+        ("fr", "3 et 4", "trois et quatre"),
+        ("sv", "17:26", "sjutton och tjugosex"),
+        ("sv", "-2", "minus två"),
+    ],
+)
+def test_other_languages_spell_numbers(locale: str, text: str, spoken: str) -> None:
+    assert spell_numbers(text, locale) == spoken
+
+
+@pytest.mark.parametrize("locale", ["es", "fr", "de", "ro", "sv"])
+def test_other_languages_leave_codes_and_versions(locale: str) -> None:
+    for text in ("COVID-19", "v2", "2.0.1", "00184", "123456789012345"):
+        assert spell_numbers(text, locale) == text
+
+
+def test_a_plain_space_groups_only_where_the_language_groups_with_spaces() -> None:
+    assert spell_numbers("Ho 3 100 punti", "it") == "Ho tre cento punti"
+    assert spell_numbers("Les 3 10 points", "fr") == "Les trois dix points"

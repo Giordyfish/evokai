@@ -4,7 +4,7 @@
  */
 import type { MicSoundName } from '../browser/audio/mic-sounds'
 
-export type LocaleCode = 'en' | 'it'
+export type LocaleCode = 'en' | 'it' | 'es' | 'fr' | 'de' | 'ro' | 'sv'
 
 export interface SpeechRules {
   /** Spoken confirmations, matched at the start of a phrase (normalised: lower case, no accents). */

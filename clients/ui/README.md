@@ -152,7 +152,7 @@ import { EvokaiChat } from '@evokai/evokai-ui/react'
 | `token-url` | | Your token endpoint (or the `getToken` property) |
 | `conversations-url` | | Your conversation list (or `listConversations`); without one the history button is hidden |
 | `title`, `app-name` | `Assistant`, none | The assistant's name (`{title}` in the texts) and your application's (`{app}`) |
-| `locale` | `en` | `en` or `it`: texts, speech rules, voices |
+| `locale` | `en` | `en` or `it` for the texts (other languages show English texts); speech rules and voices also in `es`, `fr`, `de`, `ro`, `sv` |
 | `theme` | `evokai` | A preset (`evokai`) or, as a property, a `Theme` object |
 | `unstyled` | | Drop the default look; only the tokens and a reset remain (see [Skins](#skins)) |
 | `scheme` | system | `light` or `dark` |

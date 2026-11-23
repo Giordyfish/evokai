@@ -1,0 +1,90 @@
+{
+  "messages": {
+    "limit.app": "Se ha alcanzado el límite mensual del asistente para {appName}: se restablece {resets}.",
+    "limit.appWeek": "Se ha alcanzado el límite semanal del asistente para {appName}: se restablece {resets}.",
+    "limit.appDay": "Se ha alcanzado el límite diario del asistente para {appName}: se restablece {resets}.",
+    "limit.subjectMonth": "Has alcanzado tu límite mensual del asistente: se restablece {resets}.",
+    "limit.subjectWeek": "Has alcanzado tu límite semanal del asistente: se restablece {resets}.",
+    "limit.subjectDay": "Has alcanzado tu límite de hoy del asistente: se restablece {resets}.",
+    "limit.agentBudget": "Este agente ha agotado el presupuesto que tiene por ahora: inténtalo más tarde.",
+    "limit.resetsDay": "mañana a las 00:00",
+    "limit.resetsWeek": "el {weekday} a las 00:00",
+    "limit.resetsMonth": "el {day} de {month} a las 00:00",
+    "turn.failed": "Algo ha salido mal.",
+    "turn.modelUnavailable": "El asistente no responde. Inténtalo de nuevo en unos momentos.",
+    "turn.confirmExpired": "Esta confirmación ya no es válida.",
+    "turn.empty": "Escribe algo.",
+    "turn.refusal": "De acuerdo, no he cambiado nada.",
+    "turn.confirmPrompt": "Antes de continuar, confirma: {items}.",
+    "turn.maxSteps": "He llegado al número máximo de pasos para esta solicitud. Dime cómo seguir.",
+    "turn.guard": "No puedo ayudarte con esta solicitud.",
+    "turn.guardStopped": "He detenido esta respuesta: habría mostrado algo que no debe.",
+    "turn.rewriteNothing": "Todavía no hay ningún mensaje que editar.",
+    "turn.rewriteNotLast": "Solo se puede editar tu último mensaje.",
+    "turn.rewriteAfterWrite": "Este mensaje ya no se puede editar: su respuesta ya ha cambiado datos.",
+    "turn.rewriteRunning": "Espera la respuesta, o detenla, antes de editar tu mensaje.",
+    "openai.confirmPrompt": "Antes de continuar, confirma: {items}. Responde sí o no.",
+    "turn.notRegenerable": "Esta respuesta ya no se puede regenerar.",
+    "voice.speechOff": "La voz no está disponible: seguiré respondiendo por escrito.",
+    "confirm.default": "Ejecutar {tool}",
+    "chart.other": "Otros",
+    "channel.confirmTitle": "Antes de continuar, confirma:",
+    "channel.approve": "Confirmar",
+    "channel.cancel": "Cancelar",
+    "channel.whyRule": "lo pide una regla del asistente",
+    "channel.whyPolicy": "lo pide la política de seguridad",
+    "channel.approved": "Confirmado.",
+    "channel.cancelled": "Cancelado.",
+    "channel.connect": "Conectar {provider}",
+    "channel.connectText": "Para hacerlo necesito acceso a tu cuenta de {provider}. Conéctala y vuelve a pedírmelo.",
+    "channel.unknownUser": "No puedo responderte aquí: tu cuenta no está habilitada para este asistente.",
+    "channel.tooMany": "Demasiados mensajes en poco tiempo. Inténtalo más tarde.",
+    "channel.notAvailable": "El asistente no está disponible en este canal."
+  },
+  "speech": {
+    "redactions": {
+      "taxCode": "el número de identificación fiscal",
+      "iban": "el IBAN",
+      "vat": "el número de IVA",
+      "email": "la dirección de correo",
+      "phone": "el número de teléfono"
+    },
+    "sourcesHeadings": ["fuentes", "fuente", "referencias", "sources", "source"],
+    "abbreviations": ["p", "ej", "etc", "sr", "sra", "srta", "dr", "dra", "núm", "pág", "tel", "vs", "aprox"],
+    "yes": ["sí", "si", "claro", "confirmo", "confirmado", "confirma", "vale", "ok", "de acuerdo", "adelante", "hazlo", "exacto", "correcto"],
+    "no": ["no", "cancela", "cancelar", "déjalo", "olvídalo", "para", "stop", "no lo hagas", "nada"],
+    "ordinals": {
+      "uno": 1, "una": 1, "primero": 1, "primera": 1, "primer": 1,
+      "dos": 2, "segundo": 2, "segunda": 2,
+      "tres": 3, "tercero": 3, "tercera": 3, "tercer": 3,
+      "cuatro": 4, "cuarto": 4, "cuarta": 4,
+      "cinco": 5, "quinto": 5, "quinta": 5
+    },
+    "numbers": {
+      "group": ["."],
+      "decimal": ",",
+      "decimalWord": "coma",
+      "percent": "por ciento",
+      "degrees": "grados",
+      "plus": "más",
+      "minus": "menos",
+      "currency": {
+        "one": "un euro",
+        "many": "euros",
+        "millions": "de euros",
+        "centOne": "un céntimo",
+        "centMany": "céntimos",
+        "and": "con"
+      },
+      "date": {"sep": "/", "format": "{day} de {month} de {year}", "first": "uno"},
+      "time": {"format": "{h} y {m}", "hour": "{h}"},
+      "ordinals": true,
+      "feminine": ["o", "a"]
+    }
+  },
+  "calendar": {
+    "weekdays": ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"],
+    "months": ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
+    "firstDay": "1"
+  }
+}
