@@ -150,6 +150,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "ask_rules": [],
     "modules": [],
     "template_syntax": "legacy",
+    "markup": None,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 

@@ -32,7 +32,7 @@ export function stripMarkup(text: string, view: MarkupView | null | undefined): 
   const re = markupPattern(view)
   if (!re) return text
   return text
-    .replace(re, '\u0000')
-    .replace(/ ?\u0000(?= |[.,;:!?…)\]»]|$)/g, '')
-    .replace(/\u0000 ?/g, '')
+    .replace(re, '\uE000')
+    .replace(/ ?\uE000(?= |[.,;:!?…)\]»]|$)/g, '')
+    .replace(/\uE000 ?/g, '')
 }
