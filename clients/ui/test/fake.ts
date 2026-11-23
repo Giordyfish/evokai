@@ -31,6 +31,7 @@ export function fakeEvokai(
   turns: Array<Array<Partial<EvokaiEvent> & { type: string }>>,
   mem: FakeMemory = { mode: 'on', consent: 'unknown', items: [] },
   connections: Connection[] = [],
+  attachments: unknown = null,
 ) {
   const calls: Call[] = []
   let seq = 0
@@ -42,7 +43,7 @@ export function fakeEvokai(
     calls.push({ method, url, body })
     const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } })
     if (url.endsWith('/token')) return json({ token: 'tok', conversationId: 'c1', expiresAt: Date.now() / 1000 + 600, usage, suggestions: ['How did last week go?', 'What ships this week?'] })
-    if (url.endsWith('/v1/session')) return json({ conversationId: 'c1', agent: 'helper', expiresAt: Date.now() / 1000 + 600, usage, memories: [], memory: memoryState(mem) })
+    if (url.endsWith('/v1/session')) return json({ conversationId: 'c1', agent: 'helper', expiresAt: Date.now() / 1000 + 600, usage, memories: [], memory: memoryState(mem), attachments })
     if (url.endsWith('/v1/session/memories') && method === 'GET') return json({ memory: memoryState(mem), items: memoryState(mem).active ? mem.items : [] })
     if (url.endsWith('/v1/session/memory-consent')) {
       if (mem.mode === 'off') return json({ error: 'memory_off', message: 'Memory is off for this application.' }, 409)

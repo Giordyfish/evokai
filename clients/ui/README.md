@@ -222,6 +222,14 @@ person's tokens are deleted). When a tool needs a provider the person has not co
 `connectionsTitle`, `connectionsIntro`, `connect`, `disconnect`, `connectCardTitle`, `connectCardText` and the others
 starting with `connection`.
 
+## Attachments
+
+When the session takes files (the agent's `attachments` and the application's grant, see
+[attachments](../../docs/attachments.md)), the composer shows a paper clip, and files can also be dropped on it or
+pasted. Each file waits as a preview, removable, until the message is sent. The panel checks the kinds, size and count
+the session announces and says why it refuses a file; the service checks again, reading the kind from the bytes. A
+question shows its files: images as thumbnails (fetched with the session token), documents by name.
+
 ## Memory
 
 When the application has long-term memory (`memory_mode` `ask` or `on`), the header gets a menu (the `⋯` button) with
@@ -311,7 +319,7 @@ questions, confirmations, usage, history, dictation, voice) and redraw the compo
 - **Icons.** `chat.icons = { up: '<svg ...>...</svg>', mic: '<path d="..."/>' }`: a whole SVG, or its content drawn in
   a 24 by 24 box with `currentColor`. Names: `history`, `plus`, `x`, `mic`, `wave`, `up`, `stop`, `thumbUp`,
   `thumbDown`, `more`, `back`, `memory`, `edit`, `trash`, `keyboard`, `minimize` and `restore` (one family: an arrow
-  into the orb's corner and out of it), `chart` (the bubble's chart chip).
+  into the orb's corner and out of it), `chart` (the bubble's chart chip), `clip` (attach files).
 
 Parts: `root`, `dock` (the launcher with the bubble and its buttons), `launcher`, `orb` (the travelling orb, with
 `data-kind` = `orb`, `element` or `images`), `orb-image` (the image of an orb made of images, with `data-state`),
@@ -326,8 +334,10 @@ and `data-layer`), `aurora`, `header`, `avatar` (a logo), `title`, `tagline`, `u
 `confirm-card` or `connect-card`, whose button is `connect-button`), `confirm-reason` (why an item waits, when an
 ask rule asked), `edit-message` (the button that edits the last question while it can be rewritten), `editing` (the
 notice while it is being edited),
-`feedback`, `thinking`, `notice`, `composer`, `field`, `input`, `composer-button` (with `dictate-button`,
-`voice-button`, `send-button`, `stop-button`); voice mode (the layer inside the panel, and the full-screen stage of
+`feedback`, `thinking`, `notice`, `composer`, `field`, `input`, `composer-button` (with `attach-button`,
+`dictate-button`, `voice-button`, `send-button`, `stop-button`); attachments: `attachments` (the files waiting to
+be sent), `attachment-preview`, `attachment-remove`, `attachment-error`, `user-attachments` (the files of a question,
+inside its bubble), `user-attachment`; voice mode (the layer inside the panel, and the full-screen stage of
 `<evokai-voice>`): `stage`, `stage-orb`, `stage-status`, `stage-notice`, `subtitles`, `said`, `to-say`,
 `stage-controls`, `stage-button` (with `keyboard-button`, `mute-button`, `end-button`), `talk-over`, `stage-cards`,
 `stage-card`; minimized voice: `voice-bubble` (with `data-phase`), `voice-bubble-status`, `voice-bubble-text`,
@@ -388,6 +398,6 @@ EVOKAI_URL=http://localhost:8787/agent EVOKAI_SERVER_KEY=evk_srv_... EVOKAI_AGEN
 VITE_EVOKAI_URL=http://localhost:8787/agent npm run demo      # http://localhost:5174 (add it to the allowed origins)
 ```
 
-**Size budget** (gzip, checked by `npm run build`): the components with Preact 47.5 KB (today about 47.2 KB); the
+**Size budget** (gzip, checked by `npm run build`): the components with Preact 49.5 KB (today about 49.2 KB); the
 headless client is a peer dependency (its browser entry about 31 KB, budget 60 KB). The in-browser neural voice and its
 runtime load on demand and are never part of these.

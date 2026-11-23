@@ -10,6 +10,7 @@ import type { TargetedKeyboardEvent, TargetedMouseEvent, VNode } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import type { ChatMessage, Citation, Part, ToolPart } from '@evokai/evokai-client/browser'
+import { AttachButton, fileError, MessageFiles, Previews, useFiles } from './attach'
 import type { ChatState } from './chatstate'
 import type { Controller, ControllerState } from './controller'
 import { type ToolRenderer, useUi } from './context'
@@ -216,7 +217,7 @@ function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string |
           case 'error':
             return (
               <div key={i} class="err" part="error" role="alert">
-                {part.message}
+                {fileError(s, part.code) ?? part.message}
               </div>
             )
         }
@@ -398,6 +399,7 @@ export function Panel(props: PanelProps): VNode {
   const { s, names } = useUi()
   const t = (x: string) => fill(x, { title: names.title, app: names.app })
   const [input, setInput] = useState('')
+  const attached = useFiles(st.files)
   /** Editing the last question: the next send rewrites it. */
   const [editing, setEditing] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -540,7 +542,10 @@ export function Panel(props: PanelProps): VNode {
     if (editing) {
       setEditing(false)
       void c.rewrite(text)
-    } else void c.send(text)
+    } else {
+      void c.send(text, false, attached.files)
+      attached.clear()
+    }
   }
   const onLink = (e: TargetedMouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest?.('a')
@@ -787,6 +792,7 @@ export function Panel(props: PanelProps): VNode {
                             ) : (
                               <>
                                 <div class="bubble" part="user-bubble">
+                                  <MessageFiles items={m.attachments} c={c} />
                                   {m.parts.map((p, i) => (p.kind === 'text' ? <span key={i}>{p.text}</span> : null))}
                                 </div>
                                 {m.rewritable && !busy && !editing ? (
@@ -867,7 +873,18 @@ export function Panel(props: PanelProps): VNode {
                       </button>
                     </div>
                   ) : null}
-                  <form class="composer" part="composer" onSubmit={submit}>
+                  <form
+                    class="composer"
+                    part="composer"
+                    onSubmit={submit}
+                    onDragOver={(e) => st.files && e.preventDefault()}
+                    onDrop={(e) => {
+                      if (!st.files || editing) return
+                      e.preventDefault()
+                      attached.add(e.dataTransfer?.files)
+                    }}
+                  >
+                    <Previews files={attached.files} error={attached.error} onRemove={attached.remove} />
                     <div class="field" part="field">
                       <textarea
                         ref={box}
@@ -878,6 +895,12 @@ export function Panel(props: PanelProps): VNode {
                         aria-label={t(s.message)}
                         placeholder={st.dictating ? s.placeholderDictating : t(s.placeholder)}
                         onInput={(e) => setInput(e.currentTarget.value)}
+                        onPaste={(e) => {
+                          const pasted = e.clipboardData?.files
+                          if (!st.files || editing || !pasted?.length) return
+                          e.preventDefault()
+                          attached.add(pasted)
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                             e.preventDefault()
@@ -885,6 +908,7 @@ export function Panel(props: PanelProps): VNode {
                           }
                         }}
                       />
+                      {st.files && !editing ? <AttachButton offer={st.files} onFiles={attached.add} /> : null}
                       <button
                         type="button"
                         class={`cb ${st.dictating ? 'on' : ''}`}
