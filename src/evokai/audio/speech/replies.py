@@ -64,7 +64,7 @@ def spoken_option(said: str, options: list[str], rules: SpeechRules | None = Non
         found = [
             (m.start(), n)
             for w, n in ordinals.items()
-            if (m := re.search(rf"\b{re.escape(w)}\b", s))
+            if (m := re.search(rf"\b{re.escape(norm(w))}\b", s))
         ]
         num = min(found)[1] if found else None
     if num and 0 < num <= len(options):

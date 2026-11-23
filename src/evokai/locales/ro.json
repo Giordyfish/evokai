@@ -1,0 +1,86 @@
+{
+  "messages": {
+    "limit.app": "Limita lunară a asistentului pentru {appName} a fost atinsă: se resetează {resets}.",
+    "limit.appWeek": "Limita săptămânală a asistentului pentru {appName} a fost atinsă: se resetează {resets}.",
+    "limit.appDay": "Limita zilnică a asistentului pentru {appName} a fost atinsă: se resetează {resets}.",
+    "limit.subjectMonth": "Ați atins limita lunară a asistentului: se resetează {resets}.",
+    "limit.subjectWeek": "Ați atins limita săptămânală a asistentului: se resetează {resets}.",
+    "limit.subjectDay": "Ați atins limita de azi a asistentului: se resetează {resets}.",
+    "limit.agentBudget": "Acest agent și-a epuizat bugetul alocat deocamdată: încercați mai târziu.",
+    "limit.resetsDay": "mâine la ora 00:00",
+    "limit.resetsWeek": "{weekday} la ora 00:00",
+    "limit.resetsMonth": "pe {day} {month} la ora 00:00",
+    "turn.failed": "Ceva nu a funcționat.",
+    "turn.modelUnavailable": "Asistentul nu răspunde. Încercați din nou peste puțin timp.",
+    "turn.confirmExpired": "Această confirmare nu mai este valabilă.",
+    "turn.empty": "Scrieți ceva.",
+    "turn.refusal": "Bine, nu am modificat nimic.",
+    "turn.confirmPrompt": "Înainte să continui, vă rog să confirmați: {items}.",
+    "turn.maxSteps": "Am ajuns la numărul maxim de pași pentru această cerere. Spuneți-mi cum să continui.",
+    "turn.guard": "Nu vă pot ajuta cu această cerere.",
+    "turn.guardStopped": "Am oprit acest răspuns: ar fi arătat ceva ce nu trebuie.",
+    "turn.rewriteNothing": "Încă nu există niciun mesaj de editat.",
+    "turn.rewriteNotLast": "Doar ultimul dumneavoastră mesaj poate fi editat.",
+    "turn.rewriteAfterWrite": "Acest mesaj nu mai poate fi editat: răspunsul lui a modificat deja date.",
+    "turn.rewriteRunning": "Așteptați răspunsul sau opriți-l înainte de a vă edita mesajul.",
+    "voice.speechOff": "Vocea nu este disponibilă: voi continua să răspund în scris.",
+    "confirm.default": "Rulează {tool}",
+    "chart.other": "Altele",
+    "channel.confirmTitle": "Înainte să continui, vă rog să confirmați:",
+    "channel.approve": "Confirmă",
+    "channel.cancel": "Anulează",
+    "channel.whyRule": "cerut de o regulă a asistentului",
+    "channel.whyPolicy": "cerut de politica de securitate",
+    "channel.approved": "Confirmat.",
+    "channel.cancelled": "Anulat.",
+    "channel.connect": "Conectează {provider}",
+    "channel.connectText": "Pentru asta am nevoie de acces la contul dumneavoastră {provider}. Conectați-l, apoi întrebați-mă din nou.",
+    "channel.unknownUser": "Nu vă pot răspunde aici: contul dumneavoastră nu este activat pentru acest asistent.",
+    "channel.tooMany": "Prea multe mesaje într-un timp scurt. Încercați mai târziu.",
+    "channel.notAvailable": "Asistentul nu este disponibil pe acest canal."
+  },
+  "speech": {
+    "redactions": {
+      "taxCode": "codul fiscal",
+      "iban": "IBAN-ul",
+      "vat": "codul de TVA",
+      "email": "adresa de e-mail",
+      "phone": "numărul de telefon"
+    },
+    "sourcesHeadings": ["surse", "sursă", "sursa", "referințe", "sources", "source"],
+    "abbreviations": ["ex", "etc", "dl", "dna", "dr", "prof", "nr", "pag", "tel", "vs", "aprox", "str"],
+    "yes": ["da", "sigur", "confirm", "confirmat", "confirmă", "ok", "bine", "de acord", "continuă", "fă-o", "exact", "corect"],
+    "no": ["nu", "anulează", "anulat", "lasă", "las-o baltă", "oprește", "stop", "nu face asta", "nimic"],
+    "ordinals": {
+      "unu": 1, "una": 1, "primul": 1, "prima": 1,
+      "doi": 2, "două": 2, "doua": 2, "al doilea": 2,
+      "trei": 3, "treia": 3, "al treilea": 3,
+      "patru": 4, "patra": 4, "al patrulea": 4,
+      "cinci": 5, "cincea": 5, "al cincilea": 5
+    },
+    "numbers": {
+      "group": ["."],
+      "decimal": ",",
+      "decimalWord": "virgulă",
+      "percent": "la sută",
+      "degrees": "grade",
+      "plus": "plus",
+      "minus": "minus",
+      "currency": {
+        "one": "un euro",
+        "many": "euro",
+        "millions": "de euro",
+        "centOne": "un cent",
+        "centMany": "cenți",
+        "and": "și"
+      },
+      "date": {"sep": ".", "format": "{day} {month} {year}", "first": "întâi"},
+      "time": {"format": "{h} și {m}", "hour": "{h}"}
+    }
+  },
+  "calendar": {
+    "weekdays": ["luni", "marți", "miercuri", "joi", "vineri", "sâmbătă", "duminică"],
+    "months": ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"],
+    "firstDay": "1"
+  }
+}

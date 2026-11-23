@@ -1,0 +1,85 @@
+{
+  "messages": {
+    "limit.app": "Das monatliche Limit des Assistenten für {appName} ist erreicht: Es wird {resets} zurückgesetzt.",
+    "limit.appWeek": "Das wöchentliche Limit des Assistenten für {appName} ist erreicht: Es wird {resets} zurückgesetzt.",
+    "limit.appDay": "Das tägliche Limit des Assistenten für {appName} ist erreicht: Es wird {resets} zurückgesetzt.",
+    "limit.subjectMonth": "Sie haben Ihr monatliches Limit für den Assistenten erreicht: Es wird {resets} zurückgesetzt.",
+    "limit.subjectWeek": "Sie haben Ihr wöchentliches Limit für den Assistenten erreicht: Es wird {resets} zurückgesetzt.",
+    "limit.subjectDay": "Sie haben Ihr heutiges Limit für den Assistenten erreicht: Es wird {resets} zurückgesetzt.",
+    "limit.agentBudget": "Dieser Agent hat sein Budget für den Moment aufgebraucht: Versuchen Sie es später erneut.",
+    "limit.resetsDay": "morgen um 00:00 Uhr",
+    "limit.resetsWeek": "am {weekday} um 00:00 Uhr",
+    "limit.resetsMonth": "am {day}. {month} um 00:00 Uhr",
+    "turn.failed": "Etwas ist schiefgelaufen.",
+    "turn.modelUnavailable": "Der Assistent antwortet nicht. Versuchen Sie es gleich noch einmal.",
+    "turn.confirmExpired": "Diese Bestätigung ist nicht mehr gültig.",
+    "turn.empty": "Schreiben Sie etwas.",
+    "turn.refusal": "In Ordnung, ich habe nichts geändert.",
+    "turn.confirmPrompt": "Bevor ich fortfahre, bestätigen Sie bitte: {items}.",
+    "turn.maxSteps": "Ich habe die maximale Anzahl an Schritten für diese Anfrage erreicht. Sagen Sie mir, wie es weitergehen soll.",
+    "turn.guard": "Bei dieser Anfrage kann ich nicht helfen.",
+    "turn.guardStopped": "Ich habe diese Antwort angehalten: Sie hätte etwas gezeigt, das sie nicht zeigen darf.",
+    "turn.rewriteNothing": "Es gibt noch keine Nachricht zum Bearbeiten.",
+    "turn.rewriteNotLast": "Nur Ihre letzte Nachricht kann bearbeitet werden.",
+    "turn.rewriteAfterWrite": "Diese Nachricht kann nicht mehr bearbeitet werden: Ihre Antwort hat bereits Daten geändert.",
+    "turn.rewriteRunning": "Warten Sie die Antwort ab oder stoppen Sie sie, bevor Sie Ihre Nachricht bearbeiten.",
+    "voice.speechOff": "Die Sprachausgabe ist nicht verfügbar: Ich antworte weiter schriftlich.",
+    "confirm.default": "{tool} ausführen",
+    "chart.other": "Sonstige",
+    "channel.confirmTitle": "Bevor ich fortfahre, bestätigen Sie bitte:",
+    "channel.approve": "Bestätigen",
+    "channel.cancel": "Abbrechen",
+    "channel.whyRule": "von einer Regel des Assistenten verlangt",
+    "channel.whyPolicy": "von der Sicherheitsrichtlinie verlangt",
+    "channel.approved": "Bestätigt.",
+    "channel.cancelled": "Abgebrochen.",
+    "channel.connect": "{provider} verbinden",
+    "channel.connectText": "Dafür brauche ich Zugriff auf Ihr {provider}-Konto. Verbinden Sie es und fragen Sie mich dann noch einmal.",
+    "channel.unknownUser": "Ich kann Ihnen hier nicht antworten: Ihr Konto ist für diesen Assistenten nicht freigeschaltet.",
+    "channel.tooMany": "Zu viele Nachrichten in kurzer Zeit. Versuchen Sie es später erneut.",
+    "channel.notAvailable": "Der Assistent ist auf diesem Kanal nicht verfügbar."
+  },
+  "speech": {
+    "redactions": {
+      "taxCode": "die Steuernummer",
+      "iban": "die IBAN",
+      "vat": "die Umsatzsteuer-ID",
+      "email": "die E-Mail-Adresse",
+      "phone": "die Telefonnummer"
+    },
+    "sourcesHeadings": ["quellen", "quelle", "referenzen", "sources", "source"],
+    "abbreviations": ["z", "b", "zb", "bzw", "usw", "ca", "evtl", "ggf", "hr", "fr", "dr", "prof", "nr", "s", "tel", "vgl", "inkl"],
+    "yes": ["ja", "klar", "sicher", "bestätigt", "bestätige", "ok", "okay", "in ordnung", "einverstanden", "mach weiter", "mach es", "genau", "richtig"],
+    "no": ["nein", "abbrechen", "brich ab", "lass es", "vergiss es", "stopp", "stop", "nicht", "nichts"],
+    "ordinals": {
+      "eins": 1, "ein": 1, "eine": 1, "erste": 1, "ersten": 1, "erster": 1,
+      "zwei": 2, "zweite": 2, "zweiten": 2, "zweiter": 2,
+      "drei": 3, "dritte": 3, "dritten": 3, "dritter": 3,
+      "vier": 4, "vierte": 4, "vierten": 4, "vierter": 4,
+      "fünf": 5, "fünfte": 5, "fünften": 5, "fünfter": 5
+    },
+    "numbers": {
+      "group": ["."],
+      "decimal": ",",
+      "decimalWord": "Komma",
+      "percent": "Prozent",
+      "degrees": "Grad",
+      "plus": "plus",
+      "minus": "minus",
+      "currency": {
+        "one": "ein Euro",
+        "many": "Euro",
+        "centOne": "ein Cent",
+        "centMany": "Cent",
+        "and": "und"
+      },
+      "date": {"sep": ".", "format": "{day} {month} {year}", "ordinal": true},
+      "time": {"format": "{h} Uhr {m}", "hour": "{h} Uhr"}
+    }
+  },
+  "calendar": {
+    "weekdays": ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+    "months": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
+    "firstDay": "1"
+  }
+}

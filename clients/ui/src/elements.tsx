@@ -5,7 +5,7 @@
  */
 import { render, type VNode } from 'preact'
 
-import type { CreateVoiceOptions, EvokaiSession, FetchLike, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
+import { localePack, type CreateVoiceOptions, type EvokaiSession, type FetchLike, type PageContext, type SessionEvent, type TokenInfo, type TokenRequestContext } from '@evokai/evokai-client/browser'
 import { type ChatState, chatState, fromEvent } from './chatstate'
 import { Ui, defaultFormat, type UiContext, type ValueFormatter } from './context'
 import { Controller, type ConversationItem } from './controller'
@@ -236,7 +236,7 @@ abstract class EvokaiBase extends HTMLBase {
     const labels = this.toolLabels
     const ctx: UiContext = {
       s: stringsFor(locale, this.strings_),
-      lang: this.controller?.lang ?? (locale === 'it' ? 'it-IT' : 'en-US'),
+      lang: this.controller?.lang ?? localePack(locale).lang,
       fmt: this.formatValue ?? defaultFormat,
       toolLabel: (name) => (typeof labels === 'function' ? labels(name) : labels?.[name]) ?? name,
       names: { title: this.getAttribute('title') ?? 'Assistant', app: this.getAttribute('app-name') ?? '' },
