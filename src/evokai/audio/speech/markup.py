@@ -33,15 +33,17 @@ from evokai.i18n import SpeechRules
 
 log = logging.getLogger("evokai.markup")
 
-NAME = r"[A-Za-z][\w-]{0,39}"
-"""A cue's name."""
-WORDS = r"[^\W\d_][\w' -]{0,39}"
-"""A speech tag's words."""
+NAME = r"[A-Za-z][A-Za-z0-9_-]{0,39}"
+"""A cue's name (ASCII, as the clients read it)."""
+WORDS = r"[^\W\d_][\w' -]{1,39}"
+"""A speech tag's words (two characters at least: ``[x]`` is a task list)."""
 MAX_TOKENS = 200
 """Markup tokens read in one segment; more are removed without being delivered."""
 _SENTINEL = 0xE000
 """Private-use characters stand for the tokens while the text is made speakable."""
 _PUNCT = set(".,;:!?…)]»\"'")
+_NUMBER_SEPS = set(".,:/\u00a0\u202f")
+_NUMBER_UNITS = set("%°ºª€")
 
 
 def _delimiter(value: str) -> str:
@@ -145,6 +147,10 @@ class Markup:
     """The markup in effect for one turn."""
 
     pattern: re.Pattern[str]
+    cue_prefix: re.Pattern[str] | None = None
+    """What may follow an opening delimiter while a cue is still being written."""
+    speech_prefix: re.Pattern[str] | None = None
+    """What may follow an opening delimiter while a speech tag is still being written."""
     cue_names: frozenset[str] | None = None
     speech_names: frozenset[str] | None = None
     view: dict[str, Any] = field(default_factory=dict)
@@ -172,9 +178,12 @@ class Markup:
         Returns:
             True when an opening delimiter is not closed.
         """
-        for kind in ("cue", "speech"):
+        for kind, prefix in (("cue", self.cue_prefix), ("speech", self.speech_prefix)):
             d = self.view.get(kind)
-            if d and text.rfind(d["open"]) > text.rfind(d["close"]):
+            if not d or prefix is None:
+                continue
+            at = text.rfind(d["open"])
+            if at > text.rfind(d["close"]) and prefix.fullmatch(text[at + len(d["open"]) :]):
                 return True
         return False
 
@@ -246,7 +255,8 @@ def _place(text: str, count: int) -> tuple[str, dict[int, int]]:
     for idx, ch in enumerate(text):
         code = ord(ch) - _SENTINEL
         if 0 <= code < count:
-            nxt = text[idx + 1] if idx + 1 < len(text) else ""
+            rest = text[idx + 1 :]
+            nxt = next((c for c in rest if not 0 <= ord(c) - _SENTINEL < count), "")
             if out and out[-1] == " " and (nxt in ("", " ") or nxt in _PUNCT):
                 out.pop()
             at[code] = len(out)
@@ -266,24 +276,49 @@ def _spell(text: str, cuts: list[int], locale: str) -> tuple[str, dict[int, int]
     Returns:
         The spoken text and each offset of ``text`` among ``cuts`` in it.
     """
-    points = sorted({0, len(text), *cuts})
+    snapped = {c: _after_number(text, c) for c in cuts}
+    points = sorted({0, len(text), *snapped.values()})
     spoken: list[str] = []
-    moved: dict[int, int] = {}
+    at: dict[int, int] = {}
     size = 0
     for a, b in itertools.pairwise(points):
-        moved[a] = size
+        at[a] = size
         chunk = spell_numbers(text[a:b], locale)
         spoken.append(chunk)
         size += len(chunk)
-    moved[len(text)] = size
-    return "".join(spoken), moved
+    at[len(text)] = size
+    return "".join(spoken), {c: at[p] for c, p in snapped.items()}
+
+
+def _after_number(text: str, p: int) -> int:
+    """A cut moved past the number it would split («5{x}%» keeps «5%» whole for the speller).
+
+    Returns:
+        The offset.
+    """
+    while 0 < p < len(text):
+        before, here = text[p - 1], text[p]
+        nxt = text[p + 1] if p + 1 < len(text) else ""
+        if not (before.isdigit() or before in _NUMBER_SEPS):
+            break
+        if here.isdigit() or here in _NUMBER_UNITS:
+            p += 1
+        elif here in _NUMBER_SEPS and nxt.isdigit():
+            p += 1
+        elif here == " " and before.isdigit() and nxt in _NUMBER_UNITS:
+            p += 2
+        else:
+            break
+    return p
 
 
 def _tag(spoken: str, tags: list[tuple[int, str]]) -> str | None:
     if not tags:
         return None
     out = spoken
-    for at, words in sorted(tags, reverse=True):
+    # Right to left, so offsets hold; tags at one offset keep the order they were written in.
+    order = sorted(enumerate(tags), key=lambda t: (t[1][0], t[0]), reverse=True)
+    for _, (at, words) in order:
         left, right = out[:at], out[at:]
         pad_l = " " if left and not left.endswith(" ") else ""
         pad_r = " " if right and not right.startswith((" ", *_PUNCT)) else ""
@@ -301,6 +336,16 @@ def _compile(cue: CueDef | None, speech: SpeechTagDef | None) -> re.Pattern[str]
         o, c = re.escape(speech.open), re.escape(speech.close)
         parts.append(rf"{o}(?P<words>{WORDS}){c}(?!\()")
     return re.compile("|".join(parts))
+
+
+def _prefixes(cue: CueDef | None, speech: SpeechTagDef | None) -> tuple[Any, Any]:
+    cue_p = speech_p = None
+    if cue:
+        stop = re.escape(cue.close[0])
+        cue_p = re.compile(rf"(?:[A-Za-z][A-Za-z0-9_-]{{0,39}}(?::[^{stop}\n]{{0,80}})?)?")
+    if speech:
+        speech_p = re.compile(r"(?:[^\W\d_][\w' -]{0,39})?")
+    return cue_p, speech_p
 
 
 def markup_of(
@@ -336,8 +381,11 @@ def markup_of(
         view["cue"] = {"open": cue.open, "close": cue.close}
     if speech:
         view["speech"] = {"open": speech.open, "close": speech.close}
+    cue_prefix, speech_prefix = _prefixes(cue, speech)
     return Markup(
         pattern=_compile(cue, speech),
+        cue_prefix=cue_prefix,
+        speech_prefix=speech_prefix,
         cue_names=names,
         speech_names=frozenset(n.lower() for n in speech.names)
         if speech and speech.names is not None
@@ -355,6 +403,7 @@ def _cue_names(cue: CueDef, session: Any) -> frozenset[str] | None:
         cue.names_from.param
     )
     if value is None:
-        return static
+        # The names come from the session: without them, only the static list (if any) applies.
+        return static if static is not None else frozenset()
     given = frozenset([value] if isinstance(value, str) else (str(v) for v in value))
     return given & static if static is not None else given

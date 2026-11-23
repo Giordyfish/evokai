@@ -157,3 +157,49 @@ def test_markup_off() -> None:
 def test_invalid_definitions(bad: dict) -> None:
     with pytest.raises(ValidationError):
         MarkupDef.model_validate(bad)
+
+
+@pytest.mark.parametrize(
+    ("piece", "spoken", "after"),
+    [
+        ("Il 5{x}% in più.", "Il cinque per cento in più.", " in più."),
+        ("Sono 1{x},5 litri.", "Sono uno virgola cinque litri.", " litri."),
+        ("Il 1{x}° posto.", "Il primo posto.", " posto."),
+        ("Il 5{x} % dopo.", "Il cinque per cento dopo.", " dopo."),
+    ],
+)
+def test_a_cue_inside_a_number_does_not_split_it(piece: str, spoken: str, after: str) -> None:
+    f = mk(CUES).forms(piece, speech_rules("it"))
+    assert f.spoken == spoken
+    assert f.spoken[f.marks[0]["spokenAt"] :] == after
+
+
+def test_an_unclosed_bracket_that_cannot_be_a_token_does_not_hold_the_voice() -> None:
+    m = mk(BOTH)
+    assert not m.inside("The range [0, 1) is open")
+    assert not m.inside("Use {} in code")
+    assert not m.inside("Use { x } in code")
+    assert m.inside("Look {poi")
+    assert m.inside("Look {point:le")
+    assert m.inside("Hear [lau")
+
+
+def test_adjacent_cues_keep_their_order_and_tags_at_one_place_too() -> None:
+    f = mk(BOTH).forms("a {x}{y} b [laughs][sighs] c", speech_rules())
+    assert [(x["name"], x["at"]) for x in f.marks] == [("x", 1), ("y", 1)]
+    assert f.tagged == "a b [laughs] [sighs] c"
+
+
+def test_task_lists_are_not_speech_tags() -> None:
+    m = mk(BOTH)
+    assert m.clean("- [x] done") == "- [x] done"
+
+
+def test_names_from_without_a_value_and_without_names_allows_no_cue() -> None:
+    spec = {"cue": {"names_from": {"module": "gestures", "param": "allowed"}}}
+    f = mk(spec).forms("{wave}Hi.", speech_rules())
+    assert f.marks == [] and f.dropped == 1
+
+
+def test_cue_names_are_ascii() -> None:
+    assert mk(CUES).clean("{saluté} ok") == "{saluté} ok"

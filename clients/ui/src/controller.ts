@@ -276,6 +276,7 @@ export class Controller {
     if (this.opened) return
     this.opened = true
     void this.checkSupport()
+    let read = false
     try {
       const saved = this.saved()
       if (saved && !this.session.state.conversationId && (this.opts.getToken || this.opts.tokenUrl)) {
@@ -290,10 +291,11 @@ export class Controller {
         if (info.suggestions?.length) this.patch({ suggestions: info.suggestions })
         this.patch({ markup: info.markup ?? null })
         this.noteMemory(info.memory)
+        read = true
       }
       this.patch({ error: null })
       // A resumed conversation (or a session of your own) has not read the session yet: its memory state comes apart.
-      if (!this.st.memory || !this.st.markup)
+      if (!read)
         void this.session.info().then(
           (i) => {
             this.noteMemory(i.memory)

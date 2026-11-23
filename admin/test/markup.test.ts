@@ -28,6 +28,8 @@ describe('markup settings', () => {
   test.each([
     [{ cueOn: true, cueOpen: 'ab' }, 'limits.markupDelimiter'],
     [{ cueOn: true, cueOpen: '{{{{' }, 'limits.markupDelimiter'],
+    [{ cueOn: true, cueOpen: '_' }, 'limits.markupDelimiter'],
+    [{ speechOn: true, speechNames: 'x' }, 'limits.markupTag'],
     [{ cueOn: true, cueNames: '9lives' }, 'limits.markupCueName'],
     [{ cueOn: true, cueModule: 'gestures' }, 'limits.markupModule'],
     [{ cueOn: true, speechOn: true, speechOpen: '{' }, 'limits.markupSame'],

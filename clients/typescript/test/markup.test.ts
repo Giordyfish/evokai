@@ -8,6 +8,10 @@ describe('stripMarkup', () => {
     expect(stripMarkup('Hi {wave}! [laughs] It is {point:left}there.', BOTH)).toBe('Hi! It is there.')
   })
 
+  test('task lists and accented cue names stay, as on the server', () => {
+    expect(stripMarkup('- [x] done {saluté}', BOTH)).toBe('- [x] done {saluté}')
+  })
+
   test('links, citations and JSON stay', () => {
     expect(stripMarkup('See [the guide](https://x.example) [1] and {"a": 1}', BOTH)).toBe('See [the guide](https://x.example) [1] and {"a": 1}')
   })

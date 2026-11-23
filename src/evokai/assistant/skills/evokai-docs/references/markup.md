@@ -37,14 +37,17 @@ tags it may use and what they mean: Evokai never adds them to the prompt.
 |---|---|---|
 | `cue.open`, `cue.close` | `{`, `}` | 1 to 3 ASCII punctuation characters each |
 | `cue.names` | every name | the names delivered; a cue with another name is dropped and counted in the turn's trace (`markupDropped` on its speech span) |
-| `cue.names_from` | none | `{module, param}`: a parameter of a session's [prompt module](prompt-modules.md) that lists the names (a multiple choice or a short text); with `names` too, it narrows them; when the session does not give it, `names` applies |
+| `cue.names_from` | none | `{module, param}`: a parameter of a session's [prompt module](prompt-modules.md) that lists the names (a multiple choice or a short text); with `names` too, it narrows them; when the session does not give it, `names` applies, and without `names` no cue is delivered |
 | `speech.open`, `speech.close` | `[`, `]` | as for cues; they must differ from the cues' opening delimiter |
 | `speech.names` | every tag | the tags kept for the voice |
 | `enabled` | `true` | per kind |
 
-A cue is `open name close` or `open name:argument close`: the name starts with a letter and has up to 40 letters,
-digits, `_` or `-`; the argument has up to 80 characters. A speech tag is up to 40 letters, spaces, hyphens and
-apostrophes; with square brackets, a Markdown link (`[text](url)`) and a citation (`[1]`) are never read as tags.
+A cue is `open name close` or `open name:argument close`: the name starts with an ASCII letter and has up to 40 ASCII
+letters, digits, `_` or `-`; the argument has up to 80 characters. A speech tag is 2 to 40 letters, digits, spaces,
+hyphens and apostrophes, starting with a letter; with square brackets, a Markdown link (`[text](url)`), a citation
+(`[1]`) and a task list box (`[x]`) are never read as tags, but a reference-style link (`[text][ref]`) is, so avoid
+those when speech tags use square brackets. An opening delimiter that cannot start a token (`[0, 1)`, `{ }` in code)
+never holds the voice back.
 
 ## What the events carry
 

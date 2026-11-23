@@ -21,7 +21,7 @@ export function markupPattern(view: MarkupView | null | undefined): RegExp | nul
     const c = esc(view.cue.close)
     parts.push(`${o}[A-Za-z][\\w-]{0,39}(?::[^${esc(view.cue.close[0] ?? '}')}\\n]{0,80})?${c}`)
   }
-  if (view.speech) parts.push(`${esc(view.speech.open)}\\p{L}[\\p{L}\\p{N}_' -]{0,39}${esc(view.speech.close)}(?!\\()`)
+  if (view.speech) parts.push(`${esc(view.speech.open)}\\p{L}[\\p{L}\\p{N}_' -]{1,39}${esc(view.speech.close)}(?!\\()`)
   const re = new RegExp(parts.join('|'), 'gu')
   cache.set(key, re)
   return re

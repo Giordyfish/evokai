@@ -49,9 +49,9 @@ export function markupForm(m: MarkupSettings | null | undefined): MarkupForm {
   }
 }
 
-const DELIMITER = /^[!-/:-@[-`{-~]{1,3}$/
+const DELIMITER = /^[!-/:-@[-^`{-~]{1,3}$/
 const CUE_NAME = /^[A-Za-z][\w-]{0,39}$/
-const TAG = /^[\p{L}][\p{L}\p{N}' -]{0,39}$/u
+const TAG = /^[\p{L}][\p{L}\p{N}_' -]{1,39}$/u
 
 const list = (s: string): string[] =>
   s
