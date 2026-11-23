@@ -376,6 +376,17 @@ With `talkOver` off the turns are strict: the microphone closes (with its sound)
 opens again when it has finished speaking, so the agent is never cut off (`mic` events; `setTalkOver` switches it at
 once).
 
+Keeping the microphone alive (Safari and every iOS browser, where the online recogniser is WebKit's):
+
+- when the agent has finished speaking, a device recogniser (`OnDeviceStt`) that was open while it spoke is replaced
+  by a fresh one, once the user has been quiet for 1.5 s; the microphone stays open (no `mic` events). On iOS the
+  agent's audio can leave a running recogniser deaf without ending it. What a recogniser started after the agent
+  finished hears is the user's, so the echo tail no longer drops a short reply that repeats the agent's words;
+- a recogniser that ends with its last phrase still interim delivers it as final before restarting, and a result that
+  repeats the phrases already final in its session is reported without them;
+- a phrase sent when it settled loses its words only from a transcript that goes on from it: a different phrase that
+  follows without a final result is sent in full.
+
 **Server engine**: Pipecat over WebRTC. The offer goes to `/v1/session/voice/offer` with the bearer token; with
 external storage the history is sent as `requestData.history`. RTVI messages `{evokai: event}` are fed into the
 session; the call's audio tracks are measured (`onTrackStarted`): the bot's track is the `agent` signal, the local
@@ -393,7 +404,7 @@ interface SttEngine {
   stop(): void; abort(): void
   on('interim' | 'final', (text) => void); on('speechstart' | 'end', () => void); on('error', (e: VoiceError) => void)
 }
-class OnDeviceStt implements SttEngine { constructor(opts?: { lang? = 'en-US'; recognition?; restartMs? }) }
+class OnDeviceStt implements SttEngine { constructor(opts?: { lang? = 'en-US'; recognition?; restartMs? = 150; allowOnline? }) }
 recognitionSupport(opts?), installRecognition(opts?), ensureRecognition(opts?)
 ```
 
