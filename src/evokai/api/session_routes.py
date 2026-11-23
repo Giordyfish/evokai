@@ -164,7 +164,11 @@ class ToolResultBody(BaseModel):
     """Instead of a result: why the client could not do it (the model reads it)."""
 
 
-@router.post("/tool-results", responses={404: {}, 413: {}})
+@router.post(
+    "/tool-results",
+    # Explicit description: the default is the status phrase, which changed in Python 3.13.
+    responses={404: {}, 413: {"description": "Content Too Large"}},
+)
 async def tool_result(body: ToolResultBody, svc: Svc, s: Sess) -> dict[str, bool]:
     """Answer a custom client tool call the running turn waits for (once).
 
