@@ -20,6 +20,7 @@ the run's trace with ``confirmChannel: openai``.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,22 +36,44 @@ TTL_SECONDS = 600
 """How long a pending action waits for its yes."""
 
 
-def allowed(grants: Grants, agent: Any) -> bool:
+def allowed(grants: Grants, agent: Any, *, named: bool) -> bool:
     """Whether this agent asks for confirmations over the OpenAI-compatible API.
 
-    Returns:
-        True with the grant and the agent's switch.
-    """
-    return grants.openai("confirm") and bool(getattr(agent, "openai_confirm", False))
-
-
-def pending_key(agent: str) -> str:
-    """The conversation key of an agent's pending actions over this API (no conversation here).
+    Args:
+        grants: The application's grants.
+        agent: The agent.
+        named: The caller names the person (a session token, or the server key's ``user``):
+            without one every call is the same subject, ``system:<agent>``, and nobody in
+            particular could confirm.
 
     Returns:
-        ``openai:`` and a hash of the agent's name.
+        True with the grant, the agent's switch and a named subject.
     """
-    return "openai:" + hashlib.sha256(agent.encode()).hexdigest()[:24]
+    return named and grants.openai("confirm") and bool(getattr(agent, "openai_confirm", False))
+
+
+def conversation(text: str | None, messages: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """A request's conversation as ``role`` and ``text`` (one text is one user message).
+
+    Returns:
+        The messages.
+    """
+    if messages is not None:
+        return [{"role": m.get("role"), "text": str(m.get("text") or "")} for m in messages]
+    return [{"role": "user", "text": text or ""}]
+
+
+def pending_key(agent: str, convo: list[dict[str, Any]]) -> str:
+    """The key of a pending action: the agent and the conversation that asked for it.
+
+    The protocol has no conversation id: the conversation the question followed is it, so a yes in
+    one conversation never runs what another conversation of the same subject asked for.
+
+    Returns:
+        ``openai:`` and a hash of both.
+    """
+    raw = json.dumps([agent, [[m["role"], m["text"].strip()] for m in convo]], ensure_ascii=False)
+    return "openai:" + hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
 def text_hash(text: str) -> str:
@@ -94,7 +117,7 @@ async def decide(
     if asked.get("role") != "assistant" or reply.get("role") != "user":
         return None
     who = Who(app.id, subject)
-    pending = await store.pending.open(who, pending_key(agent.name))
+    pending = await store.pending.open(who, pending_key(agent.name, conversation(None, before)))
     if pending is None or (pending.state or {}).get("textHash") != text_hash(str(asked["text"])):
         return None
     approve: bool | None
@@ -122,8 +145,14 @@ async def decide(
 
 
 async def ask(
-    store: Any, app: Any, agent: Any, subject: str, result: RunResult, shown: str
-) -> dict:
+    store: Any,
+    app: Any,
+    agent: Any,
+    subject: str,
+    result: RunResult,
+    shown: str,
+    convo: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Keep the run's waiting calls and build the question.
 
     Args:
@@ -133,6 +162,7 @@ async def ask(
         subject: Who answers.
         result: The run that stopped on calls that change data.
         shown: What the client already received of this answer (a streamed text).
+        convo: The request's conversation (``conversation``), which the question follows.
 
     Returns:
         ``content`` (the whole assistant message, question included) and ``confirm`` (the
@@ -140,7 +170,8 @@ async def ask(
     """
     items = [str(w["label"]) for w in result.waiting]
     question = message(app, "openai.confirmPrompt", items="; ".join(items))
-    content = f"{shown.rstrip()}\n\n{question}" if shown.strip() else question
+    # Exactly what the client receives: its copy of the message must hash the same.
+    content = f"{shown}\n\n{question}" if shown.strip() else question
     state = {
         "kind": "openai",
         "agent": agent.name,
@@ -149,7 +180,7 @@ async def ask(
         "textHash": text_hash(content),
     }
     action = await store.pending.create(
-        Who(app.id, subject), pending_key(agent.name), state, ttl_seconds=TTL_SECONDS
+        Who(app.id, subject), pending_key(agent.name, convo), state, ttl_seconds=TTL_SECONDS
     )
     why = [w.get("why") or {"key": REASON_WRITES} for w in result.waiting]
     return {

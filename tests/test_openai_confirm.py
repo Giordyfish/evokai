@@ -176,3 +176,59 @@ async def test_a_streamed_answer_asks_in_its_last_content_chunk(env: Env) -> Non
     yes = [*FIRST, {"role": "assistant", "content": content}, {"role": "user", "content": "yes"}]
     await _ask(env, h, yes)
     assert env.mcp.calls == [("order_refund", {"period": "2026-10"})]
+
+
+async def test_a_streamed_text_ending_in_a_space_can_still_be_confirmed(env: Env) -> None:
+    from tests.test_openai_compat import _chunks
+
+    await _setup(env)
+    h = await _caller(env)
+    env.script.add("function:primary", ["I'll refund it. ", REFUND])
+    r = await env.client.post(
+        URL, json={"model": "clerk", "messages": FIRST, "stream": True}, headers=h
+    )
+    content = "".join(
+        c["choices"][0]["delta"].get("content", "")
+        for c in _chunks(r.text)
+        if c != "[DONE]" and c.get("choices")
+    )
+    env.script.add("function:primary", ["Refunded."])
+    yes = [*FIRST, {"role": "assistant", "content": content}, {"role": "user", "content": "yes"}]
+    await _ask(env, h, yes)
+    assert env.mcp.calls == [("order_refund", {"period": "2026-10"})]
+
+
+async def test_two_conversations_of_one_subject_keep_their_own_actions(env: Env) -> None:
+    # Without labels both questions read "Run order_refund": the conversation tells them apart.
+    await _setup(env, agent={**CLERK, "confirm_labels": {}})
+    h = await _caller(env)
+    a = [{"role": "user", "content": "Refund October"}]
+    b = [{"role": "user", "content": "Refund September"}]
+    env.script.add(
+        "function:primary",
+        [Tool("order_refund", {"period": "2026-10"}, "ra")],
+        [Tool("order_refund", {"period": "2026-09"}, "rb")],
+        ["Done."],
+    )
+    asked_a = _content(await _ask(env, h, a))
+    asked_b = _content(await _ask(env, h, b))
+    assert asked_a == asked_b
+    await _ask(
+        env,
+        h,
+        [*a, {"role": "assistant", "content": asked_a}, {"role": "user", "content": "yes"}],
+    )
+    assert env.mcp.calls == [("order_refund", {"period": "2026-10"})]
+
+
+def test_a_server_key_without_user_never_confirms() -> None:
+    from evokai.agents.definitions import AgentDef
+    from evokai.api.openai_confirm import allowed
+    from evokai.grants import Grants
+
+    agent = AgentDef.model_validate({**CLERK, "version": ""})
+    granted = Grants(overrides={("openai", "confirm"): True})
+    assert allowed(granted, agent, named=True)
+    # Every call without a user is the same subject (system:<agent>): nobody in particular.
+    assert not allowed(granted, agent, named=False)
+    assert not allowed(Grants(), agent, named=True)

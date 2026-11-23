@@ -250,6 +250,8 @@ class _Prepared:
     """Changes may wait for a yes (``openai:confirm`` and the agent's ``openai_confirm``)."""
     resume: Resume | None = None
     """The person's answer to a pending change, being carried out."""
+    convo: list[dict[str, Any]] | None = None
+    """The request's whole conversation (a question the run asks follows it)."""
 
 
 async def _prepare(svc: Services, who: Caller, body: ChatCompletionRequest) -> _Prepared:
@@ -281,7 +283,9 @@ async def _prepare(svc: Services, who: Caller, body: ChatCompletionRequest) -> _
     else:
         subject = body.user or f"system:{agent.name}"
         p = _Prepared(who, agent, text, messages, subject, ext.tags, ext.groups)
-    if openai_confirm.allowed(grants, agent):
+    p.convo = openai_confirm.conversation(text, messages)
+    named = s is not None or bool(body.user)
+    if openai_confirm.allowed(grants, agent, named=named):
         p.confirm = True
         explicit = ext.confirm.model_dump() if ext.confirm else None
         decision = await openai_confirm.decide(
@@ -409,7 +413,7 @@ async def chat_completions(
         content = _content(result)
         if result.waiting:
             asked = await openai_confirm.ask(
-                svc.store, p.caller.app, p.agent, p.subject, result, ""
+                svc.store, p.caller.app, p.agent, p.subject, result, "", p.convo or []
             )
             content, extension["confirm"] = asked["content"], asked["confirm"]
         return {
@@ -503,7 +507,9 @@ async def _stream(
         extension = await _extension(svc, p, result)
         if result.waiting:
             app = p.caller.app
-            asked = await openai_confirm.ask(svc.store, app, p.agent, p.subject, result, shown)
+            asked = await openai_confirm.ask(
+                svc.store, app, p.agent, p.subject, result, shown, p.convo or []
+            )
             extension["confirm"] = asked["confirm"]
             question = asked["question"]
             yield chunk({"content": f"\n\n{question}" if shown.strip() else question})
