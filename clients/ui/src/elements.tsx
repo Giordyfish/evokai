@@ -182,6 +182,8 @@ abstract class EvokaiBase extends HTMLBase {
       this.skinEl.setAttribute('data-evokai-skin', '')
       this.mount = document.createElement('div')
       this.mount.setAttribute('part', 'root')
+      // Any tap on the conversation is a user gesture: the voice engine may start its recogniser again from it.
+      this.mount.addEventListener('click', () => this.controller?.wakeMic(), true)
       this.root.append(this.base, this.skinEl, this.mount)
     }
     this.update()

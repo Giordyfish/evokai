@@ -80,6 +80,8 @@ export interface ControllerState {
   muted: boolean
   talkOver: boolean
   micOpen: boolean
+  /** The recogniser stopped and could not start again by itself: the next tap on the conversation wakes it. */
+  micAsleep?: boolean
   /** What the user is saying now (voice mode). */
   heard: string
   /** What the agent is saying now and how far it got (subtitles). */
@@ -544,6 +546,7 @@ export class Controller {
       v.on('interim', (t) => this.patch({ heard: t })),
       v.on('heard', () => this.patch({ heard: '' })),
       v.on('mic', (open) => this.patch({ micOpen: open })),
+      v.on('asleep', (asleep) => this.patch({ micAsleep: asleep })),
       v.on('segmentStart', (seg) => this.followLine(seg.text, seg.spoken)),
       v.on('boundary', ({ segment, charIndex }) => {
         if (this.st.line.text === segment.text && charIndex > this.st.line.upto) this.patch({ line: { text: segment.text, upto: charIndex } })
@@ -578,8 +581,16 @@ export class Controller {
     for (const u of this.voiceUnsub) u()
     this.voiceUnsub = []
     cancelAnimationFrame(this.lineTimer)
-    this.patch({ voiceOn: false, heard: '', line: { text: '', upto: 0 }, micOpen: false, muted: false, noVoice: false })
+    this.patch({ voiceOn: false, heard: '', line: { text: '', upto: 0 }, micOpen: false, micAsleep: false, muted: false, noVoice: false })
     await v?.stop()
+  }
+
+  /**
+   * A tap anywhere on the conversation (a user gesture): the browser engine starts its recogniser again when it went
+   * to sleep or may have gone deaf, as iOS can after the agent has spoken.
+   */
+  wakeMic(): void {
+    ;(this.voice_ as Partial<BrowserVoiceEngine> | null)?.wake?.()
   }
 
   setMuted(muted: boolean): void {
