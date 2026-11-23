@@ -30,6 +30,32 @@ describe('attachments', () => {
     expect(question.attachments?.[1]?.url).toBeUndefined()
   })
 
+  test('the local preview of an image is revoked once no message shows it, not before', async () => {
+    const revoked: string[] = []
+    const spy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation((u: string) => void revoked.push(u))
+    try {
+      const m = mockFetch({ 'POST /agent/v1/session/chat': () => sse(done.map(frame), { turnId: 't1' }) })
+      const s = new EvokaiSession({ baseUrl: BASE, token: 'tok', fetch: m.fetch })
+      const photo = new File([new Uint8Array([0x89, 0x50])], 'me.png', { type: 'image/png' })
+      await s.chat({ text: 'Look', files: [photo] })
+      const url = s.state.messages[0]!.attachments![0]!.url!
+      expect(url).toMatch(/^blob:/)
+      // Still shown after the turn, and after other changes of the conversation.
+      s.store.dispatch({ type: 'usage', usage: { dayPct: 1, monthPct: 1, companyPct: 1, monthOut: false } })
+      expect(revoked).toEqual([])
+      // The conversation is reloaded from the service (its copy has ids, no local URLs): revoked.
+      s.store.dispatch({ type: 'loaded', conversation: { messages: [], pending: null, lastSeq: 5, runningTurnId: null } })
+      expect(revoked).toEqual([url])
+      // A new conversation drops the rest.
+      await s.chat({ text: 'Again', files: [photo] })
+      const next = s.state.messages.find((x) => x.role === 'user')!.attachments![0]!.url!
+      s.store.dispatch({ type: 'reset' })
+      expect(revoked).toEqual([url, next])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   test('the history carries the attachments of a question, and an image is fetched with the token', async () => {
     const msgs = fromStored(
       [

@@ -58,7 +58,9 @@ export function useFiles(offer: AttachmentOffer | null | undefined) {
     setFiles(next)
     setError('')
   }
-  return { files, error, add, remove: (i: number) => set(files.filter((_, j) => j !== i)), clear: () => set([]) }
+  // A send that failed gives its files back, before any picked meanwhile.
+  const restore = (sent: File[]) => setFiles((cur) => [...sent, ...cur].slice(0, offer?.maxFiles ?? sent.length + cur.length))
+  return { files, error, add, restore, remove: (i: number) => set(files.filter((_, j) => j !== i)), clear: () => set([]) }
 }
 
 /** A local preview URL of a blob, revoked when it is no longer shown (none where the browser has none). */

@@ -543,8 +543,15 @@ export function Panel(props: PanelProps): VNode {
       setEditing(false)
       void c.rewrite(text)
     } else {
-      void c.send(text, false, attached.files)
+      // The files leave the composer with the message, and come back if the service refused it or was not reached.
+      const sent = attached.files
       attached.clear()
+      const back = () => {
+        if (sent.length) attached.restore(sent)
+      }
+      void c.send(text, false, sent).then((ok) => {
+        if (!ok) back()
+      }, back)
     }
   }
   const onLink = (e: TargetedMouseEvent<HTMLDivElement>) => {

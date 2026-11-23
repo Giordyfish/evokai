@@ -7,8 +7,8 @@ defineElements()
 
 const OFFER = { kinds: ['png', 'pdf'], mediaTypes: ['image/png', 'application/pdf'], maxFileBytes: 1000, maxFiles: 2 }
 
-async function mounted(offer: typeof OFFER | null, lang?: string) {
-  const evokai = fakeEvokai([], undefined, [], offer)
+async function mounted(offer: typeof OFFER | null, lang?: string, refusals: Array<{ status: number; code: string }> = []) {
+  const evokai = fakeEvokai([], undefined, [], offer, refusals)
   const el = document.createElement('evokai-chat') as EvokaiChatElement
   el.fetcher = evokai.fetch
   el.setAttribute('base-url', 'https://agents.test/agent')
@@ -68,6 +68,30 @@ describe('<evokai-chat>: attachments', () => {
     await until(() => $$('[part~="attachment-preview"]').length === 0)
     await until(() => $('[part~="user-attachments"]'))
     expect($('[part~="user-attachments"]')!.textContent).toContain('a.pdf')
+  })
+
+  test('a refused send gives its files back to the composer; the next one sends them', async () => {
+    const { $, $$, evokai } = await mounted(OFFER, undefined, [{ status: 413, code: 'attachment_too_large' }])
+    await until(() => $('[part~="attach-button"]'))
+    choose($('input[type="file"]') as HTMLInputElement, [new File(['%PDF-1'], 'a.pdf', { type: 'application/pdf' })])
+    await until(() => $$('[part~="attachment-preview"]').length === 1)
+    const box = $('textarea') as HTMLTextAreaElement
+    const say = async (text: string) => {
+      box.value = text
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+      await tick()
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    }
+    await say('Read it')
+    const chats = () => evokai.calls.filter((c) => c.url.endsWith('/v1/session/chat'))
+    await until(() => chats().length === 1)
+    await until(() => $$('[part~="attachment-preview"]').length === 1)
+    expect($('[part~="attachment-preview"]')!.textContent).toContain('a.pdf')
+    await say('Read it again')
+    await until(() => chats().length === 2)
+    expect((chats()[1]!.body as { attachments: Array<{ name: string }> }).attachments.map((a) => a.name)).toEqual(['a.pdf'])
+    await tick(50)
+    expect($$('[part~="attachment-preview"]').length).toBe(0)
   })
 
   test('a file too large, of a kind not taken, or one too many is refused in the language of the panel', async () => {

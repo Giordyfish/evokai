@@ -317,10 +317,12 @@ export class Controller {
     }
   }
 
-  async send(text: string, answer = false, files: File[] = []): Promise<void> {
+  /** Send a message. Resolves false when the service refused it or could not be reached (not when stopped). */
+  async send(text: string, answer = false, files: File[] = []): Promise<boolean> {
     const t = text.trim()
-    if (!t) return
-    await this.session.chat({ text: t, mode: this.st.voiceOn ? 'voice' : 'text', ...(answer ? { answer } : {}), ...(files.length ? { files } : {}) })
+    if (!t) return false
+    const done = await this.session.chat({ text: t, mode: this.st.voiceOn ? 'voice' : 'text', ...(answer ? { answer } : {}), ...(files.length ? { files } : {}) })
+    return done !== null || !this.session.state.error
   }
 
   /** Edit the last question: it and its answer are replaced by a new turn (refused once it changed data). */

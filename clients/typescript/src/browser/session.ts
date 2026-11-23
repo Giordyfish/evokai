@@ -138,6 +138,8 @@ export class EvokaiSession {
   private readonly renderers = new Map<string, (part: ToolPart) => void>()
   private readonly controllers = new Set<AbortController>()
   private replaying: Promise<void> | null = null
+  /** Local preview URLs of images just sent, revoked once no message shows them (`fileRef`). */
+  private readonly previews = new Set<string>()
 
   constructor(opts: EvokaiSessionOptions) {
     if (!opts.baseUrl) throw new Error('EvokaiSession: baseUrl is required')
@@ -150,7 +152,12 @@ export class EvokaiSession {
     // Client-side events derived from the state: the turn phase and the usage shares.
     let phase: TurnPhase = this.state.phase
     let usage = this.state.usage
+    let messages = this.state.messages
     this.store.subscribe((st) => {
+      if (st.messages !== messages) {
+        messages = st.messages
+        if (this.previews.size) this.revokePreviews(st.messages)
+      }
       if (st.phase !== phase) {
         const previous = phase
         phase = st.phase
@@ -206,6 +213,16 @@ export class EvokaiSession {
     this.renderEvent(event)
     if (event.type === 'client_tool') void this.runTool(event)
     if (event.type === 'done' && event.messages?.length) this.opts.onMessages?.(event.messages, event)
+  }
+
+  /** Revoke the preview URLs no message shows any more (a reload, a new conversation, a refused rewrite). */
+  private revokePreviews(messages: SessionState['messages']): void {
+    const shown = new Set(messages.flatMap((m) => m.attachments?.flatMap((a) => (a.url ? [a.url] : [])) ?? []))
+    for (const url of this.previews) {
+      if (shown.has(url)) continue
+      this.previews.delete(url)
+      URL.revokeObjectURL(url)
+    }
   }
 
   private emit(event: SessionEvent): void {
@@ -331,6 +348,7 @@ export class EvokaiSession {
     const rewrite = input.rewrite && text !== undefined && !input.confirm
     const files = !input.confirm && !input.regenerate ? (input.files ?? []) : []
     const attachments = files.map(fileRef)
+    for (const a of attachments) if (a.url) this.previews.add(a.url)
     // The question being rewritten (Evokai storage: the service refuses it if it is no longer the last one).
     const editing = rewrite ? [...this.state.messages].reverse().find((m) => m.role === 'user' && m.local === undefined) : undefined
     this.store.dispatch({
