@@ -425,6 +425,8 @@ class TurnEngine:
         await self.store.turns.start(who, session.id, inp.mode, turn_id)
         threads = self._threads(storage, who, session.id, thread_id, inp)
         await self.guard.started(guard)
+        markup = markup_of((app.defaults or {}).get("markup"), agent.markup, session)
+        guard.neutralise = markup.neutralise if markup is not None else None
         return TurnRun(
             rewrite=plan,
             replaced_from=replaced_from,
@@ -432,7 +434,7 @@ class TurnEngine:
             guard=guard,
             trace=guard.trace,
             rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
-            markup=markup_of((app.defaults or {}).get("markup"), agent.markup, session),
+            markup=markup,
             threads=threads,
             grants=grants,
             storage=storage,
@@ -1050,6 +1052,13 @@ class TurnEngine:
             tr = self._trace(run, inp)
             with tr.span("guard", "guard input", control="input") as gs:
                 decision = await guard.check_input(text)
+                # A file's name is the person's input too: the same checks, before the model.
+                for p in run.files:
+                    if decision.blocked:
+                        break
+                    named = await guard.check_input(p.name)
+                    if named.blocked:
+                        decision = named
                 gs.set(decision="blocked" if decision.blocked else "allowed")
             if decision.blocked:
                 if decision.refusal:

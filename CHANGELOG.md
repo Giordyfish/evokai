@@ -142,6 +142,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   because no egress allow-list holds them (`egress` in `GET /v1/admin/data-protection`).
 - An answer that called a provider built-in tool that can change data (`mcp_server`, `memory`, `code_execution`)
   cannot be regenerated, as after a custom client tool: running it again could act twice.
+- An attachment's name is the person's input: it passes the same input checks as their message (a name they refuse
+  refuses the turn), and on its way to the model its identifiers are protected (`pii.model`) and its markup is made
+  inert. Before, it reached the model as raw text outside the data markers. Markup in a document's text and in a
+  client tool's result is made inert too, so nobody can write cues for the agent through them.
 
 ### Upgrading
 

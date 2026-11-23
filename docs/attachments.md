@@ -108,9 +108,14 @@ Whether a model reads images or PDF comes from its pydantic-ai profile (`support
 
 Anything read from a file is untrusted data, like the output of an MCP tool:
 
+- a file's name is the person's input, like their message: it passes the same input checks (`input.injection`,
+  `input.moderation`, `scope` and the others: a name they refuse refuses the turn), and on its way to the model its
+  identifiers are protected (`pii.model`) and its markup made inert ([markup](markup.md)). The person still sees the
+  name they gave;
+
 - a document's text is scanned for hidden instructions (`untrusted.injection`: in enforce mode the lines that read as
   instructions are removed) and reaches the model marked as data (`untrusted.spotlight`, source
-  `attachment:<name>`);
+  `attachment:<name>`), with its markup made inert;
 - a PDF the models would read as a file is scanned the same way through its text; when the scan removes anything,
   or when `pii.model` is enforced and the text holds identifiers, the model gets the cleaned and protected text
   instead of the file;
