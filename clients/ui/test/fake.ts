@@ -76,10 +76,13 @@ export function fakeEvokai(
       return new Response(null, { status: 204 })
     }
     if (url.endsWith('/v1/session/conversation')) return json({ messages: [], pending: null, lastSeq: 0, runningTurnId: null })
-    if (url.endsWith('/v1/session/chat')) {
+    if (url.endsWith('/v1/session/chat') || url.endsWith('/v1/session/regenerate')) {
       const events = (turns.shift() ?? [{ type: 'text', delta: 'ok' }]).map((e) => ({ ...e, seq: ++seq, turnId: `t${seq}` }))
-      const all = [{ type: 'conversation', id: 'c1', turnStarted: true, seq: ++seq, turnId: 'tt' }, ...events, { type: 'done', conversationId: 'c1', reason: 'end_turn', seq: ++seq, turnId: 'tt' }]
-      const text = all.map((e) => `event: ${e.type}\ndata: ${JSON.stringify({ ...e, turnId: 'tt' })}\n\n`).join('')
+      // Every turn is 'tt' unless the test names its own (a regeneration replaces an earlier turn).
+      const named = events.find((e) => 'turn' in e) as { turn?: string } | undefined
+      const tid = named?.turn ?? 'tt'
+      const all = [{ type: 'conversation', id: 'c1', turnStarted: true, seq: ++seq, turnId: tid }, ...events, { type: 'done', conversationId: 'c1', reason: 'end_turn', seq: ++seq, turnId: tid }]
+      const text = all.map((e) => `event: ${e.type}\ndata: ${JSON.stringify({ ...e, turnId: tid })}\n\n`).join('')
       return new Response(text, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
     }
     if (url.includes('/feedback')) return json({ ok: true })

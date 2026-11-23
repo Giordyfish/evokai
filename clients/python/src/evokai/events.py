@@ -230,6 +230,7 @@ class DoneEvent(BaseEvent):
     replaced_from: int | None = None
     """External storage, a rewrite: drop the sent history from this index before appending."""
     rewritable: bool | None = None
+    regenerable: bool | None = None
     """Whether the conversation's last question can still be rewritten."""
 
 
@@ -374,6 +375,7 @@ class StoredMessage(WireModel):
     feedback: int | None = None
     interrupted: bool = False
     rewritable: bool | None = None
+    regenerable: bool | None = None
     """User messages: the last question, which can still be rewritten (``session.rewrite``)."""
 
 
@@ -409,3 +411,4 @@ class ChatResult(WireModel):
     """External storage, a rewrite: drop the sent history from this index before appending
     ``messages``."""
     rewritable: bool | None = None
+    regenerable: bool | None = None

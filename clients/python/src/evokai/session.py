@@ -56,6 +56,7 @@ __all__ = ["AsyncChatStream", "AsyncEvokaiSession", "ChatMode", "ChatStream", "E
 
 ChatMode = Literal["text", "voice"]
 CHAT_PATH = "/v1/session/chat"
+REGENERATE_PATH = "/v1/session/regenerate"
 
 
 def chat_body(
@@ -162,9 +163,10 @@ class ChatStream:
         events: Every event yielded so far.
     """
 
-    def __init__(self, session: EvokaiSession, body: dict[str, Any]) -> None:
+    def __init__(self, session: EvokaiSession, body: dict[str, Any], path: str = CHAT_PATH) -> None:
         self._session = session
         self._body = body
+        self._path = path
         self._state = _StreamState(session.last_seq)
         self._gen: Generator[Any, None, None] | None = None
 
@@ -240,7 +242,7 @@ class ChatStream:
     def _run(self) -> Generator[Any, None, None]:
         s = self._session
         state = self._state
-        with s._transport.stream(CHAT_PATH, self._body, s.token) as response:
+        with s._transport.stream(self._path, self._body, s.token) as response:
             state.turn_id = response.headers.get("x-turn-id") or None
             yield _OPENED
             parser = SseParser()
@@ -284,9 +286,12 @@ class AsyncChatStream:
         events: Every event yielded so far.
     """
 
-    def __init__(self, session: AsyncEvokaiSession, body: dict[str, Any]) -> None:
+    def __init__(
+        self, session: AsyncEvokaiSession, body: dict[str, Any], path: str = CHAT_PATH
+    ) -> None:
         self._session = session
         self._body = body
+        self._path = path
         self._state = _StreamState(session.last_seq)
         self._gen: AsyncGenerator[Any, None] | None = None
 
@@ -362,7 +367,7 @@ class AsyncChatStream:
     async def _run(self) -> AsyncGenerator[Any, None]:
         s = self._session
         state = self._state
-        async with s._transport.stream(CHAT_PATH, self._body, s.token) as response:
+        async with s._transport.stream(self._path, self._body, s.token) as response:
             state.turn_id = response.headers.get("x-turn-id") or None
             yield _OPENED
             parser = SseParser()
@@ -575,6 +580,32 @@ class EvokaiSession(_SessionBase):
             text=text, page=page, mode=mode, history=history, rewrite=message_id or True
         )
         return ChatStream(self, body)
+
+    def regenerate(
+        self,
+        *,
+        page: PageContext | Mapping[str, Any] | None = None,
+        mode: ChatMode = "text",
+        history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
+    ) -> ChatStream:
+        """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+        The stream starts with ``conversation`` and ``rewritten``. Refused with
+        :class:`ConflictError` ``not_regenerable`` when there is nothing to regenerate, the last
+        turn changed data or ran a client tool, or a turn is running (``done.regenerable`` and
+        ``regenerable`` on a stored message say when it is allowed).
+
+        Args:
+            page: The page the user is looking at.
+            mode: ``text`` or ``voice``.
+            history: External storage: the conversation so far, oldest first (with the last
+                question and the answer to replace).
+
+        Returns:
+            The stream of the new turn's events.
+        """
+        body = chat_body(page=page, mode=mode, history=history)
+        return ChatStream(self, body, REGENERATE_PATH)
 
     def confirm(
         self,
@@ -882,6 +913,32 @@ class AsyncEvokaiSession(_SessionBase):
             text=text, page=page, mode=mode, history=history, rewrite=message_id or True
         )
         return AsyncChatStream(self, body)
+
+    def regenerate(
+        self,
+        *,
+        page: PageContext | Mapping[str, Any] | None = None,
+        mode: ChatMode = "text",
+        history: Sequence[HistoryMessage | Mapping[str, Any]] | None = None,
+    ) -> AsyncChatStream:
+        """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+        The stream starts with ``conversation`` and ``rewritten``. Refused with
+        :class:`ConflictError` ``not_regenerable`` when there is nothing to regenerate, the last
+        turn changed data or ran a client tool, or a turn is running (``done.regenerable`` and
+        ``regenerable`` on a stored message say when it is allowed).
+
+        Args:
+            page: The page the user is looking at.
+            mode: ``text`` or ``voice``.
+            history: External storage: the conversation so far, oldest first (with the last
+                question and the answer to replace).
+
+        Returns:
+            The stream of the new turn's events.
+        """
+        body = chat_body(page=page, mode=mode, history=history)
+        return AsyncChatStream(self, body, REGENERATE_PATH)
 
     def confirm(
         self,

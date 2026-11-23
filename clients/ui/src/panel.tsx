@@ -772,6 +772,13 @@ export function Panel(props: PanelProps): VNode {
                           ) : (
                             <>
                               <Parts m={m} p={{ busy, openAsk, c, st, keyTarget: props.keyTarget }} />
+                              {m.regenerable && !busy ? (
+                                <div class="fb" part="regenerate">
+                                  <button type="button" aria-label={s.regenerate} onClick={() => void c.session.regenerate()}>
+                                    <Icon d="again" size={14} />
+                                  </button>
+                                </div>
+                              ) : null}
                               {m.messageId && !busy && m.parts.some((p) => p.kind === 'text') ? (
                                 <div class="fb" part="feedback">
                                   <button type="button" aria-label={s.helpful} aria-pressed={m.feedback === 1} onClick={() => void c.session.feedback(m.messageId as string, m.feedback === 1 ? null : 1)}>

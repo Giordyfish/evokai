@@ -24,6 +24,7 @@
     "turn.rewriteNotLast": "Only your last message can be edited.",
     "turn.rewriteAfterWrite": "This message can no longer be edited: its answer already changed data.",
     "turn.rewriteRunning": "Wait for the answer, or stop it, before editing your message.",
+    "turn.notRegenerable": "This answer can no longer be regenerated.",
     "voice.speechOff": "Voice is not available: I'll keep answering in writing.",
     "confirm.default": "Run {tool}",
     "chart.other": "Other",

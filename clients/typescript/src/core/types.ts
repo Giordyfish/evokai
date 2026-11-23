@@ -200,6 +200,8 @@ export interface DoneEvent extends EventMeta {
   replacedFrom?: number
   /** Whether the conversation's last question can still be rewritten (absent from older services). */
   rewritable?: boolean
+  /** Whether the conversation's last answer can still be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
 }
 /** Server voice: speech went off (provider failure); the session goes on in text. */
 export interface SpeechEvent extends EventMeta { type: 'speech'; enabled: boolean; reason?: string; message?: string }
@@ -352,6 +354,8 @@ export interface StoredMessage {
   interrupted?: boolean
   /** User messages: whether this is the last question and can still be rewritten (`EvokaiSession.rewrite`). */
   rewritable?: boolean
+  /** The last assistant message, when it can still be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
 }
 
 export interface PendingConfirmation { actionId: string; items: string[]; why?: ConfirmReason[] }

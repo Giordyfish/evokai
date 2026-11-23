@@ -92,6 +92,8 @@ export interface ChatInput {
    * external storage, `onMessages` gets `done.replacedFrom`: drop your history from that index before appending.
    */
   rewrite?: boolean
+  /** Regenerate the last answer instead of sending `text` (use `EvokaiSession.regenerate`). */
+  regenerate?: boolean
   signal?: AbortSignal
 }
 
@@ -310,12 +312,15 @@ export class EvokaiSession {
     const history = input.history !== undefined ? input.history : await this.opts.getHistory?.()
     const page = input.page !== undefined ? input.page : this.opts.getPage?.()
     const body: Record<string, unknown> = { mode: input.mode ?? 'text' }
-    if (input.confirm) body.confirm = input.confirm
+    if (input.regenerate) {
+      // The service runs its own copy of the question again.
+    } else if (input.confirm) body.confirm = input.confirm
     else if (text !== undefined) body.text = text
     if (page) body.page = page
     if (history) body.history = history
     if (input.endOfSpeechAt) body.endOfSpeechAt = input.endOfSpeechAt
-    if (rewrite) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
+    if (rewrite && !input.regenerate) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
+    const path = input.regenerate ? '/v1/session/regenerate' : '/v1/session/chat'
 
     const ctrl = new AbortController()
     this.controllers.add(ctrl)
@@ -324,8 +329,8 @@ export class EvokaiSession {
     let turnId: string | null = null
     let done: DoneEvent | null = null
     try {
-      let res = await this.post(body, await this.getAccessToken(), ctrl.signal)
-      if (res.status === 401 && this.opts.getToken) res = await this.post(body, await this.getAccessToken(true), ctrl.signal)
+      let res = await this.post(body, await this.getAccessToken(), ctrl.signal, path)
+      if (res.status === 401 && this.opts.getToken) res = await this.post(body, await this.getAccessToken(true), ctrl.signal, path)
       if (!res.ok || !res.body) throw await errorFromResponse(res)
       const header = res.headers.get('X-Turn-Id')
       if (header) {
@@ -369,9 +374,9 @@ export class EvokaiSession {
     }
   }
 
-  private async post(body: Record<string, unknown>, token: string, signal: AbortSignal): Promise<Response> {
+  private async post(body: Record<string, unknown>, token: string, signal: AbortSignal, path = '/v1/session/chat'): Promise<Response> {
     try {
-      return await this.fetchFn(joinUrl(this.baseUrl, '/v1/session/chat'), {
+      return await this.fetchFn(joinUrl(this.baseUrl, path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -442,6 +447,17 @@ export class EvokaiSession {
    */
   rewrite(text: string, opts: Omit<ChatInput, 'confirm' | 'text' | 'rewrite'> = {}): Promise<DoneEvent | null> {
     return this.chat({ ...opts, text, rewrite: true })
+  }
+
+  /**
+   * Regenerate the last answer: the last question runs again and its new answer replaces the last one (a `rewritten`
+   * event, then the new turn). Allowed while `ChatMessage.regenerable` (the service refuses with `not_regenerable`
+   * after a turn that changed data or ran a client tool); resolves with the new turn's `done`, or null.
+   */
+  regenerate(opts: Omit<ChatInput, 'confirm' | 'text' | 'rewrite' | 'regenerate'> = {}): Promise<DoneEvent | null> {
+    const question = [...this.state.messages].reverse().find((m) => m.role === 'user' && m.parts.some((p) => p.kind === 'text'))
+    const text = question?.parts.map((p) => (p.kind === 'text' ? p.text : '')).join('') ?? ''
+    return this.chat({ ...opts, text, rewrite: true, regenerate: true })
   }
 
   /** Approve or reject an open confirmation. */

@@ -177,6 +177,9 @@ class TurnInput:
     rewrite: dict[str, Any] | None = None
     """Rewrite the last question with ``text`` (``{messageId?}``): the last turn is replaced
     (``evokai.sessions.rewrite``)."""
+    regenerate: bool = False
+    """Regenerate the last answer: the last question (its stored or sent text) runs again as a
+    rewrite (409 ``not_regenerable`` when it cannot)."""
 
 
 @dataclass
@@ -435,13 +438,18 @@ class TurnEngine:
             Conflict: Nothing to rewrite, not the last question, the last turn changed data, or a
                 turn is running (409, ``rewrite_*`` codes, with the application's message).
         """
-        if inp.rewrite is None or inp.confirm is not None or not (inp.text or "").strip():
+        if inp.regenerate:
+            inp.rewrite, inp.confirm = inp.rewrite or {}, None
+        elif inp.rewrite is None or inp.confirm is not None or not (inp.text or "").strip():
             return None, None  # a decision is not a rewrite; an empty message is refused later
         rows: list[Any] = []
         index: int | None = None
         if storage == "external":
             sent = list(inp.history or [])
-            index, code = rewrite.check([h.model_dump() for h in sent], None)
+            dumped = [h.model_dump() for h in sent]
+            index, code = rewrite.check(dumped, None)
+            if index is not None and inp.regenerate:
+                index, inp.text = self._regenerated(dumped, index)
             if index is not None:
                 inp.history = sent[:index]
         elif session is None:
@@ -452,12 +460,26 @@ class TurnEngine:
             thread = await self.store.sessions.thread(session.id)
             rows = await self.store.messages.recent(who, thread.id, 400)
             index, code = rewrite.check(rows, inp.rewrite.get("messageId"))
+            if index is not None and inp.regenerate:
+                index, inp.text = self._regenerated(rows, index)
         if code is not None or index is None:
-            code = code or rewrite.NOTHING
+            code = rewrite.NOT_REGENERABLE if inp.regenerate else code or rewrite.NOTHING
             raise Conflict(message(app, rewrite.MESSAGE_KEYS[code], session=session), code=code)
         if storage == "external":
             return None, index
         return rewrite.plan_of(rows, index), None
+
+    @staticmethod
+    def _regenerated(messages: list[Any], index: int) -> tuple[int | None, str | None]:
+        """The question a regeneration runs again, when its answer may be regenerated.
+
+        Returns:
+            Its index and text, or ``(None, None)``.
+        """
+        if rewrite.regenerable_index(messages) != index:
+            return None, None
+        text = rewrite.question_text(messages[index])
+        return (index, text) if text else (None, None)
 
     async def _idle(self, session_id: str, wait: float = 2.0) -> bool:
         """Whether no turn of the conversation runs.
@@ -478,11 +500,13 @@ class TurnEngine:
             await asyncio.wait_for(running.finished.wait(), timeout=timeout)
         return self.turns.running(session_id) is None
 
-    async def _rewritable(self, run: TurnRun) -> bool:
-        """Whether the conversation's last question can still be rewritten (the ``done`` event).
+    async def _rewritable(self, run: TurnRun) -> tuple[bool, bool]:
+        """Whether the last question can be rewritten, and the last answer regenerated.
+
+        For the ``done`` event.
 
         Returns:
-            True when it can.
+            Both answers.
         """
         try:
             if isinstance(run.threads, ExternalThreads):
@@ -493,8 +517,11 @@ class TurnEngine:
             log.warning(
                 "rewritable_unknown", extra={"turnId": run.turn_id, "error": error_class(e)}
             )
-            return False
-        return rewrite.rewritable_index(msgs) is not None
+            return False, False
+        return (
+            rewrite.rewritable_index(msgs) is not None,
+            rewrite.regenerable_index(msgs) is not None,
+        )
 
     def new_trace(
         self,
@@ -692,7 +719,7 @@ class TurnEngine:
                 done["messages"] = [x.as_json() for x in run.threads.added]
                 if run.replaced_from is not None:
                     done["replacedFrom"] = run.replaced_from
-            done["rewritable"] = await self._rewritable(run)
+            done["rewritable"], done["regenerable"] = await self._rewritable(run)
             # Security events are stored before the end is announced: whoever reads them next
             # (the console, a test) finds them.
             await guard.flush()

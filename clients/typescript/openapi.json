@@ -1623,6 +1623,17 @@
             "title": "Reason",
             "type": "string"
           },
+          "regenerable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regenerable"
+          },
           "replacedFrom": {
             "anyOf": [
               {
@@ -3812,6 +3823,58 @@
           }
         },
         "title": "RedTeamBody",
+        "type": "object"
+      },
+      "RegenerateBody": {
+        "description": "Regenerate the last answer (the question is the conversation's own).",
+        "properties": {
+          "endOfSpeechAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endofspeechat"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HistoryMessage"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          },
+          "mode": {
+            "default": "text",
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "RegenerateBody",
         "type": "object"
       },
       "Residency": {
@@ -14603,6 +14666,52 @@
           }
         },
         "summary": "Feedback",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/regenerate": {
+      "post": {
+        "description": "Regenerate the last answer: the last question runs again and replaces the last turn.\n\nLike a rewrite with the same question (a ``rewritten`` event, then the new answer), with the\nsame caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409\n``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a\ncustom client tool, or a turn is running.\n\nReturns:\n    The event stream, or the turn as JSON (``Accept: application/json``).",
+        "operationId": "regenerate_agent_v1_session_regenerate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResult"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate",
         "tags": [
           "session"
         ]

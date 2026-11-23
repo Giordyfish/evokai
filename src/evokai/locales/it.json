@@ -24,6 +24,7 @@
     "turn.rewriteNotLast": "Puoi modificare solo il tuo ultimo messaggio.",
     "turn.rewriteAfterWrite": "Questo messaggio non si può più modificare: la risposta ha già cambiato dei dati.",
     "turn.rewriteRunning": "Aspetta la risposta, o interrompila, prima di modificare il messaggio.",
+    "turn.notRegenerable": "Questa risposta non si può più rigenerare.",
     "voice.speechOff": "La voce non è disponibile: continuo a rispondere per iscritto.",
     "confirm.default": "Eseguire {tool}",
     "chart.other": "Altro",

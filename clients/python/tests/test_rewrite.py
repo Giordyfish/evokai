@@ -66,6 +66,26 @@ def test_rewrite_streams_the_new_turn(router: respx.MockRouter) -> None:
     assert isinstance(done, DoneEvent) and done.rewritable is True
 
 
+def test_regenerate_streams_the_new_answer(router: respx.MockRouter) -> None:
+    response, _ = sse_response(REWRITE, turn_id="t2")
+    route = router.post("/v1/session/regenerate").mock(return_value=response)
+    with EvokaiSession(BASE, TOKEN, replay_delay=0) as s:
+        events = list(s.regenerate())
+    assert sent_json(route) == {"mode": "text"}
+    assert isinstance(events[1], RewrittenEvent)
+
+
+async def test_async_regenerate_refused(router: respx.MockRouter) -> None:
+    router.post("/v1/session/regenerate").mock(
+        return_value=httpx.Response(409, json={"error": "not_regenerable", "message": "No."})
+    )
+    async with AsyncEvokaiSession(BASE, TOKEN, replay_delay=0) as s:
+        with pytest.raises(EvokaiConflictError) as e:
+            async for _ in s.regenerate():
+                pass
+    assert e.value.code == "not_regenerable"
+
+
 async def test_async_rewrite_and_a_refusal(router: respx.MockRouter) -> None:
     router.post("/v1/session/chat").mock(
         return_value=httpx.Response(

@@ -4044,6 +4044,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/session/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate
+         * @description Regenerate the last answer: the last question runs again and replaces the last turn.
+         *
+         *     Like a rewrite with the same question (a ``rewritten`` event, then the new answer), with the
+         *     same caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409
+         *     ``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a
+         *     custom client tool, or a turn is running.
+         *
+         *     Returns:
+         *         The event stream, or the turn as JSON (``Accept: application/json``).
+         */
+        post: operations["regenerate_agent_v1_session_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/session/tool-results": {
         parameters: {
             query?: never;
@@ -4953,6 +4981,8 @@ export interface components {
             messages?: components["schemas"]["HistoryMessage"][] | null;
             /** Reason */
             reason: string;
+            /** Regenerable */
+            regenerable?: boolean | null;
             /** Replacedfrom */
             replacedFrom?: number | null;
             /** Rewritable */
@@ -5933,6 +5963,23 @@ export interface components {
             languages?: string[] | null;
             /** Version */
             version?: string | null;
+        };
+        /**
+         * RegenerateBody
+         * @description Regenerate the last answer (the question is the conversation's own).
+         */
+        RegenerateBody: {
+            /** Endofspeechat */
+            endOfSpeechAt?: number | null;
+            /** History */
+            history?: components["schemas"]["HistoryMessage"][] | null;
+            /**
+             * Mode
+             * @default text
+             * @enum {string}
+             */
+            mode?: "text" | "voice";
+            page?: components["schemas"]["PageContext"] | null;
         };
         /**
          * Residency
@@ -12375,6 +12422,47 @@ export interface operations {
                         [key: string]: boolean;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_agent_v1_session_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResult"];
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

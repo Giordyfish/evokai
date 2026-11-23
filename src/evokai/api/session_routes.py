@@ -24,7 +24,7 @@ from evokai.identity.models import SessionPrincipal
 from evokai.memory.store import memory_view as view
 from evokai.services import Services
 from evokai.sessions.limits import cap_state
-from evokai.sessions.rewrite import rewritable_index
+from evokai.sessions.rewrite import regenerable_index, rewritable_index
 from evokai.sessions.threads import MAX_HISTORY_MESSAGES, HistoryMessage
 from evokai.sessions.turns import TurnInput
 from evokai.tools.custom import MAX_RESULT_CHARS
@@ -89,6 +89,9 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
     running = svc.turns.answering(sess.id)
     # The last question can be rewritten while nothing after it changed data and no turn runs.
     editable = None if running else rewritable_index(msgs)
+    # The last answer can be regenerated under the same rule, unless a client tool acted.
+    again = None if running else regenerable_index(msgs)
+    last_answer = max((i for i, x in enumerate(msgs) if x.role == "assistant"), default=None)
     return {
         "messages": [
             {
@@ -99,6 +102,11 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
                 "feedback": x.feedback,
                 "interrupted": x.interrupted,
                 **({"rewritable": i == editable} if x.role == "user" else {}),
+                **(
+                    {"regenerable": True}
+                    if again is not None and i == last_answer and i > again
+                    else {}
+                ),
             }
             for i, x in enumerate(msgs)
             if x.text or x.events
@@ -249,6 +257,8 @@ class ChatResult(BaseModel):
     ``messages``."""
     rewritable: bool | None = None
     """Whether the conversation's last question can still be rewritten."""
+    regenerable: bool | None = None
+    """Whether the conversation's last answer can still be regenerated."""
 
 
 def sse(event: dict[str, Any]) -> str:
@@ -286,6 +296,17 @@ async def chat(
         end_of_speech_at=body.endOfSpeechAt,
         rewrite=body.rewrite.model_dump() if body.rewrite else None,
     )
+    return await _run_turn(svc, inp, request)
+
+
+async def _run_turn(
+    svc: Services, inp: TurnInput, request: Request
+) -> StreamingResponse | ChatResult:
+    """Open and run a turn: its event stream, or the whole turn as JSON.
+
+    Returns:
+        The response.
+    """
     run = await svc.engine.open(inp)
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
@@ -315,6 +336,7 @@ async def chat(
             messages=done.get("messages"),
             replacedFrom=done.get("replacedFrom"),
             rewritable=done.get("rewritable"),
+            regenerable=done.get("regenerable"),
         )
 
     async def stream() -> AsyncIterator[str]:
@@ -340,6 +362,46 @@ async def chat(
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no", "X-Turn-Id": run.turn_id},
     )
+
+
+class RegenerateBody(BaseModel):
+    """Regenerate the last answer (the question is the conversation's own)."""
+
+    page: PageContext | None = None
+    mode: Literal["text", "voice"] = "text"
+    history: list[HistoryMessage] | None = Field(default=None, max_length=MAX_HISTORY_MESSAGES)
+    """External storage only: the conversation so far (oldest first), with the last question and
+    the answer to replace."""
+    endOfSpeechAt: float | None = None
+
+
+@router.post(
+    "/regenerate",
+    response_model=ChatResult,
+    responses={200: {"content": {"text/event-stream": {}, "application/json": {}}}, 409: {}},
+)
+async def regenerate(
+    body: RegenerateBody, svc: Svc, s: Sess, request: Request
+) -> StreamingResponse | ChatResult:
+    """Regenerate the last answer: the last question runs again and replaces the last turn.
+
+    Like a rewrite with the same question (a ``rewritten`` event, then the new answer), with the
+    same caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409
+    ``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a
+    custom client tool, or a turn is running.
+
+    Returns:
+        The event stream, or the turn as JSON (``Accept: application/json``).
+    """
+    inp = TurnInput(
+        principal=s,
+        page=body.page,
+        mode=body.mode,
+        history=body.history,
+        end_of_speech_at=body.endOfSpeechAt,
+        regenerate=True,
+    )
+    return await _run_turn(svc, inp, request)
 
 
 class ExitBody(BaseModel):
