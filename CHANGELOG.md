@@ -122,6 +122,12 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The WebRTC voice pipeline uses the session's voice (token `voice`, else the agent's `voice.voice_id`): it was
   never passed to the speech engine before. The fake recognition engine hears «hello» unless given phrases.
 
+### Fixed
+
+- `POST /v1/session/transcribe` takes recordings up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB): the session API's 2 MB
+  body limit refused anything longer than about a minute of 16 kHz WAV with 413. `POST /v1/session/speech` and
+  `POST /v1/session/tool-results` now take at most 256 KB, which their own maxima fit in.
+
 ### Upgrading
 
 - **Convert the application YAML before you start the new version.** A file whose agents or prompts still use

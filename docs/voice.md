@@ -92,7 +92,8 @@ Content-Type: audio/webm
 <the recording>
 ```
 
-WAV, WebM, Ogg, MP3 or M4A, up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB, else 413 `audio_too_large`) and
+WAV, WebM, Ogg, MP3 or M4A, up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB, else 413 `too_large` or `audio_too_large`;
+this route's body limit is that setting, not the session API's 2 MB) and
 `EVOKAI_TRANSCRIBE_MAX_SECONDS` (120, else 400 `audio_too_long`); anything else is 400 `audio_invalid`. The answer is
 `{text, durationMs, engine}`. `language` defaults to the session's.
 
