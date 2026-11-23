@@ -58,6 +58,8 @@ class ClientToolDef(BaseModel):
     @field_validator("parameters")
     @classmethod
     def _schema(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if v.get("type") != "object":
+            raise ValueError("parameters: the schema is an object (type: object), as tools take")
         if len(json.dumps(v, separators=(",", ":"))) > MAX_CLIENT_TOOL_SCHEMA:
             raise ValueError("parameters: the schema is larger than 16 KB")
         try:

@@ -151,6 +151,7 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
         groups=body.groups,
         prompt_options=options,
         client_tools=body.clientTools,
+        offer_client_tools=True,
     )
     return RunResponse(
         runId=result.run_id,

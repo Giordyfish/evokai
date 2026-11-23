@@ -21,7 +21,6 @@ export interface ClientTool {
 
 const NAME = /^[a-z][a-z0-9_]{1,47}$/
 const RESERVED = new Set(['navigate', 'chart', 'diagram', 'ask', 'confirm', 'memory', 'session'])
-const JSON_TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'])
 export const MAX_TOOLS = 32
 const MAX_SCHEMA_BYTES = 16_384
 const MAX_DESCRIPTION = 1000
@@ -51,11 +50,8 @@ export const fromRow = (r: ClientToolRow): ClientTool => ({
 function schemaProblem(v: unknown): boolean {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return true
   const s = v as Record<string, unknown>
-  const type = s.type
-  if (type !== undefined) {
-    const types = Array.isArray(type) ? type : [type]
-    if (!types.length || types.some((x) => typeof x !== 'string' || !JSON_TYPES.has(x))) return true
-  }
+  // Tools take an object of arguments.
+  if (s.type !== 'object') return true
   if (s.properties !== undefined && (typeof s.properties !== 'object' || s.properties === null || Array.isArray(s.properties))) return true
   if (s.required !== undefined && (!Array.isArray(s.required) || s.required.some((x) => typeof x !== 'string'))) return true
   return false

@@ -15,7 +15,7 @@ A tool has a name, a description for the model, a JSON Schema of its arguments a
 |---|---|
 | `name` | `^[a-z][a-z0-9_]{1,47}$`, not the name of a built-in client tool (`navigate`, `chart`, `diagram`, `ask`, `confirm`, `memory`) nor `session`. The model sees it as `client_<name>`, a namespace of its own beside MCP tools. |
 | `description` | What the tool does, for the model (at most 1000 characters). |
-| `parameters` | The JSON Schema of the arguments, checked as a schema (at most 16 KB). |
+| `parameters` | The JSON Schema of the arguments, an object schema (`type: object`), checked as a schema (at most 16 KB). |
 | `wait` | `false` (the default): Evokai sends the event and tells the model at once that the call was received. `true`: the turn waits for the client's result, up to `EVOKAI_CLIENT_TOOL_TIMEOUT_SECONDS` (120 s by default); then the model reads that no answer came. |
 
 At most 32 tools per session, the agent's and the session's together. Tools can be declared in three places:
@@ -108,5 +108,8 @@ service.
 
 ## Not carried
 
-The [OpenAI-compatible API](openai-compatible.md) and [AG-UI](ag-ui.md) do not carry custom client tools: they run
-on the session's own stream.
+Custom client tools are offered only where a client receives their events: the session's own stream
+(`/v1/session/chat`, `/v1/session/regenerate`) and server runs (`/v1/agents/{name}/run`, tools that do not wait).
+The [OpenAI-compatible API](openai-compatible.md), [AG-UI](ag-ui.md), A2A, workflows and the messaging channels do
+not offer them. A turn asked for as JSON (`Accept: application/json`) sees its events only at the end, so it offers
+only the tools that do not wait.

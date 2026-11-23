@@ -307,6 +307,11 @@ async def _run_turn(
     Returns:
         The response.
     """
+    accept = request.headers.get("accept", "")
+    as_json = "application/json" in accept and "text/event-stream" not in accept
+    if as_json:
+        # The client sees the events only at the end: it cannot answer a client tool that waits.
+        inp.client_wait = False
     run = await svc.engine.open(inp)
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
@@ -317,8 +322,7 @@ async def _run_turn(
     stop_listening = run.channel.listen(on_event)
     task = asyncio.create_task(svc.engine.execute(run, inp))
 
-    accept = request.headers.get("accept", "")
-    if "application/json" in accept and "text/event-stream" not in accept:
+    if as_json:
         try:
             await task
         finally:

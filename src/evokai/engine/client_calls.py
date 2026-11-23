@@ -132,6 +132,8 @@ class ClientToolWait(AbstractCapability[RunState]):
     names: frozenset[str]
     """Model-facing names of the client tools that wait."""
     accept: Accept
+    announce: Callable[[list[str]], None]
+    """Sends the ``client_tool`` events of the calls the client is now asked to answer."""
     timed_out: Callable[[list[str]], None]
     """Called with the calls nobody answered in time (they read ``TIMEOUT_TEXT``)."""
     timeout_seconds: float
@@ -159,6 +161,7 @@ class ClientToolWait(AbstractCapability[RunState]):
             nonlocal token
             token = t
             self.calls.open(t, self.session_id, self.turn_id, mine, self.accept)
+            self.announce(mine)
 
         try:
             payload = await wait_for_external_event(

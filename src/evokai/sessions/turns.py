@@ -177,6 +177,11 @@ class TurnInput:
     rewrite: dict[str, Any] | None = None
     """Rewrite the last question with ``text`` (``{messageId?}``): the last turn is replaced
     (``evokai.sessions.rewrite``)."""
+    client_tools: bool = True
+    """Offer custom client tools: only where the client receives ``client_tool`` events (the
+    session stream; not AG-UI or the messaging channels)."""
+    client_wait: bool = True
+    """Offer the custom client tools that wait (not in a JSON turn: it cannot answer them)."""
     regenerate: bool = False
     """Regenerate the last answer: the last question (its stored or sent text) runs again as a
     rewrite (409 ``not_regenerable`` when it cannot)."""
@@ -1979,7 +1984,8 @@ class TurnEngine:
                     read_only=t["name"] == "skill_load",
                 )
             )
-        out += self._client_tools(run, rs, app_names)
+        if inp.client_tools and inp.channel == "browser":
+            out += self._client_tools(run, rs, app_names, wait=inp.client_wait)
         if targets and guard.offered(HANDOFF) and HANDOFF not in app_names:
             handoff = handoff_tool([(n, t.title) for n, t in targets.items()])
 
@@ -2119,7 +2125,9 @@ class TurnEngine:
             sources=len(found),
         )
 
-    def _client_tools(self, run: TurnRun, rs: RunState, app_names: set[str]) -> list[ToolSpec]:
+    def _client_tools(
+        self, run: TurnRun, rs: RunState, app_names: set[str], *, wait: bool = True
+    ) -> list[ToolSpec]:
         """The custom client tools of a turn: the agent's, then the session token's.
 
         Each sends a ``client_tool`` event; one that waits defers its call until the client
@@ -2134,26 +2142,32 @@ class TurnEngine:
             if run.grants.client_tool(t.name, static=False)
         ]
         tools = custom.merged(run.agent.client_tools.custom, session_tools)
+        if not wait:
+            tools = [t for t in tools if not t.wait]
         emit = rs.emit
         assert emit is not None  # ruff: ignore[assert] (a turn always emits)
         waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
         names: dict[str, str] = rs.extra.setdefault("clientNames", {})
+        announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
 
         def handler(tool: Any) -> Any:
             async def handle(  # ruff: ignore[unused-async] (a handler is awaited)
                 args: dict[str, Any], cid: str, span: Any
             ) -> ToolResult:
-                emit({
+                event = {
                     "type": "client_tool",
                     "callId": cid,
                     "name": tool.name,
                     "args": args,
                     "wait": tool.wait,
-                })
+                }
                 if span is not None:
                     span.set(type="client", wait=tool.wait)
                 if not tool.wait:
+                    emit(event)
                     return ToolResult(True, custom.OK_TEXT)
+                # Sent when the wait opens: a step that ends on a confirmation never sends it.
+                announce[cid] = event
                 waits[cid] = time.perf_counter()
                 names[cid] = custom.model_name(tool.name)
                 if span is not None:
@@ -2225,6 +2239,14 @@ class TurnEngine:
             trace.put(span, result=text)
             return text
 
+        announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
+
+        def announced(cids: list[str]) -> None:
+            for cid in cids:
+                event = announce.pop(cid, None)
+                if event is not None and rs.emit is not None:
+                    rs.emit(event)
+
         def timed_out(cids: list[str]) -> None:
             for cid in cids:
                 rs.ok[cid] = False
@@ -2245,6 +2267,7 @@ class TurnEngine:
             turn_id=run.turn_id,
             names=names,
             accept=accept,
+            announce=announced,
             timed_out=timed_out,
             timeout_seconds=self.settings.client_tool_timeout_seconds,
         )

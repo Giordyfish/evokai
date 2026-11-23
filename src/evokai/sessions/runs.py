@@ -206,6 +206,7 @@ class AgentRunner:
         on_text: Callable[[str], None] | None = None,
         confirm: bool = False,
         resume: Resume | None = None,
+        offer_client_tools: bool = False,
     ) -> RunResult:
         """Run the agent to its answer.
 
@@ -239,6 +240,8 @@ class AgentRunner:
                 ``evokai.agents.modules``); None renders the agent's defaults.
             client_tools: Custom client tools the caller declares for this run (already checked
                 and granted; none waits): their calls come back in ``client_calls``.
+            offer_client_tools: Offer custom client tools at all (a server run returns their
+                calls; the other callers have nobody to deliver them to).
             confirm: Offer the tools that change data: a call ends the run waiting for the
                 person (``RunResult.waiting``), as over the OpenAI-compatible API with
                 ``openai:confirm``. An agent with an ``output_schema`` never waits.
@@ -336,6 +339,7 @@ class AgentRunner:
                 on_text=on_text,
                 confirm=confirm,
                 resume=resume,
+                offer_client_tools=offer_client_tools,
             )
             return result
         except LimitReached:
@@ -417,6 +421,7 @@ class AgentRunner:
         on_text: Callable[[str], None] | None = None,
         confirm: bool = False,
         resume: Resume | None = None,
+        offer_client_tools: bool = False,
     ) -> RunResult:
         """The run itself, under its guard, on the same engine as the turns.
 
@@ -506,7 +511,7 @@ class AgentRunner:
         names = {s.name for s in specs}
         specs += [
             s
-            for s in self._client_tools(agent, client_tools, result)
+            for s in (self._client_tools(agent, client_tools, result) if offer_client_tools else [])
             if s.name not in names and guard.offered(s.name)
         ]
         if not confirm:

@@ -64,6 +64,7 @@ async def _mint(env: Env, **body: Any) -> httpx.Response:
         {"description": "d" * 1001},
         {"parameters": {"type": 3}},
         {"parameters": {"type": "object", "description": "p" * 17_000}},
+        {"parameters": {"type": "string"}},
     ],
 )
 def test_a_client_tool_definition_is_checked(change: dict[str, Any]) -> None:
@@ -345,3 +346,59 @@ async def test_a_server_run_returns_the_calls_of_tools_that_do_not_wait(env: Env
     assert r.json()["clientToolCalls"] == [
         {"callId": "c9", "name": "kiosk_light", "args": {"on": False}}
     ]
+
+
+# Only where a client can receive them
+
+
+async def test_client_tools_are_offered_only_where_a_client_receives_them(env: Env) -> None:
+    runner = {**RUNNER, "channels": ["browser", "server"], "client_tools": {"custom": [LIGHT]}}
+    r = await env.client.put("/agent/v1/admin/agents/runner", json=runner, headers=_adm(env))
+    assert r.status_code == 200, r.text
+    # The OpenAI-compatible API never delivers a client_tool event.
+    env.script.add("function:primary", ["Hi."])
+    r = await env.client.post(
+        "/agent/v1/openai/chat/completions",
+        json={"model": "runner", "messages": [{"role": "user", "content": "Hi"}], "user": "u9"},
+        headers={"Authorization": f"Bearer {env.server_key}"},
+    )
+    assert r.status_code == 200, r.text
+    assert "client_kiosk_light" not in env.script.tools_seen
+    # AG-UI drops client_tool events: not offered there either.
+    token = await _session(env, {**LIGHT, "name": "kiosk_door", "wait": True})
+    env.script.add("function:primary", ["Hi."])
+    r = await env.client.post(
+        "/agent/v1/session/agui",
+        json={"threadId": "t", "runId": "r", "messages": [{"role": "user", "content": "Hi"}]},
+        headers=_h(token),
+    )
+    assert r.status_code == 200, r.text
+    assert "client_kiosk_door" not in env.script.tools_seen
+    # A JSON turn cannot answer a tool that waits: only the others are offered.
+    env.script.add("function:primary", ["Hi."])
+    r = await env.client.post(
+        "/agent/v1/session/chat",
+        json={"text": "Hi"},
+        headers={**_h(token), "Accept": "application/json"},
+    )
+    assert r.status_code == 200, r.text
+    assert "client_kiosk_door" not in env.script.tools_seen
+    env.script.add("function:primary", ["Hi."])
+    await env.chat(token, text="Hi")
+    assert "client_kiosk_door" in env.script.tools_seen
+
+
+async def test_a_step_waiting_for_a_confirmation_never_announces_its_client_calls(
+    env: Env,
+) -> None:
+    token = await _session(env, {**LIGHT, "wait": True})
+    env.script.add(
+        "function:primary",
+        [
+            Tool("client_kiosk_light", {"on": True}, "c1"),
+            Tool("order_refund", {"period": "2026-10"}, "r1"),
+        ],
+    )
+    ev = await asyncio.wait_for(env.chat(token, text="Light and refund"), 5)
+    assert ev[-1]["reason"] == "confirm"
+    assert not [e for e in ev if e["type"] == "client_tool"]

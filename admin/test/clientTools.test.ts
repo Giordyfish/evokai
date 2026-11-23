@@ -24,6 +24,7 @@ describe('custom client tools', () => {
     expect(toolProblem({ ...LIGHT, parameters: '{"type":' }, [])).toBe('ag.customJson')
     expect(toolProblem({ ...LIGHT, parameters: '{"type": 3}' }, [])).toBe('ag.customSchema')
     expect(toolProblem({ ...LIGHT, parameters: '[]' }, [])).toBe('ag.customSchema')
+    expect(toolProblem({ ...LIGHT, parameters: '{"type": "string"}' }, [])).toBe('ag.customSchema')
     expect(toolProblem({ ...LIGHT, parameters: JSON.stringify({ type: 'object', description: 'x'.repeat(17_000) }) }, [])).toBe('ag.customSize')
   })
 
