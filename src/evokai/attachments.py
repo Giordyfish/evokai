@@ -127,7 +127,10 @@ def clean_name(name: str) -> str:
     return base[:MAX_NAME_CHARS] or "file"
 
 
-_MARKUP = (b"<!doctype", b"<html", b"<svg", b"<?xml", b"<script", b"<body", b"<head", b"<iframe")
+_MARKUP_ANYWHERE = re.compile(
+    rb"<\s*(!doctype|html|svg|\?xml|script|body|head|iframe|object|embed)\b|<[a-z][^>]*\son[a-z]+\s*="
+)
+"""Markup that a browser would render or run, anywhere in a text file's first 8 KB."""
 
 
 def sniff(name: str, data: bytes) -> str:
@@ -155,10 +158,11 @@ def sniff(name: str, data: bytes) -> str:
         if office:
             return office
         raise AttachmentError("This kind of archive is not accepted.", code="attachment_type")
-    head = data[:2048].lstrip(b"\xef\xbb\xbf \t\r\n\x0c").lower()
+    head = data[:8192].lstrip(b"\xef\xbb\xbf \t\r\n\x0c").lower()
     if not head:
         raise AttachmentError("The file is empty.", code="attachment_type")
-    if head.startswith(b"<") and any(m in head for m in _MARKUP):
+    # Markup anywhere in the first 8 KB, not only at the start: a browser sniffs a page late too.
+    if (head.startswith(b"<") and b">" in head) or _MARKUP_ANYWHERE.search(head):
         raise AttachmentError("SVG, HTML and XML files are not accepted.", code="attachment_type")
     if b"\x00" in data[:8192] or not _is_text(data[:8192]):
         raise AttachmentError("This kind of file is not accepted.", code="attachment_type")
@@ -217,7 +221,7 @@ def _need(data: bytes, end: int) -> None:
         raise ValueError("truncated")
 
 
-_JPEG_KEEP_APP = {0xE0: b"", 0xE2: b"ICC_PROFILE\x00", 0xEE: b"Adobe"}
+_JPEG_KEEP_APP = {0xE0: b"JFIF\x00", 0xE2: b"ICC_PROFILE\x00", 0xEE: b"Adobe"}
 """APP segments that carry no metadata: JFIF, the colour profile and Adobe's colour transform."""
 
 
@@ -247,7 +251,11 @@ def _jpeg(data: bytes) -> bytes:
         keep = marker not in range(0xE0, 0xF0) and marker != 0xFE
         if marker in _JPEG_KEEP_APP:
             keep = body.startswith(_JPEG_KEEP_APP[marker])
-        if keep:
+        if marker == 0xE0 and keep:
+            # JFIF only, rebuilt without its thumbnail (one could show the uncropped picture).
+            if body.startswith(b"JFIF\x00") and len(body) >= 12:
+                out += b"\xff\xe0\x00\x10" + body[:12] + b"\x00\x00"
+        elif keep:
             out += data[i:end]
         i = end
         if marker == 0xDA:
@@ -353,11 +361,25 @@ def _gif(data: bytes) -> bytes:
 # ── reading ─────────────────────────────────────────────────────────────────────────────────────
 
 
+MAX_UNPACKED_BYTES = 30_000_000
+"""Bytes a Word or PowerPoint attachment may hold once unpacked (people send these, not admins)."""
+
+
+def _unpacked(data: bytes) -> int:
+    try:
+        return sum(i.file_size for i in zipfile.ZipFile(io.BytesIO(data)).infolist())
+    except (zipfile.BadZipFile, OSError, ValueError):
+        return 0
+
+
 def _text_of(kind: str, name: str, data: bytes) -> tuple[str | None, str | None]:
     if kind in IMAGES:
         return None, None
     if kind in ("txt", "md", "csv"):
         return decode(data), None
+    if kind in ("docx", "pptx") and _unpacked(data) > MAX_UNPACKED_BYTES:
+        # A small archive of very compressible XML would cost far more memory once parsed.
+        return None, "the file is too large once unpacked"
     try:
         return extract(name, MEDIA_TYPES[kind], data).text(), None
     except Unreadable as e:
@@ -501,7 +523,16 @@ def check(
             raise AttachmentError(
                 "The models of this agent do not read images.", code="attachment_unsupported"
             )
-        p.native = p.image or (p.kind == "pdf" and pdf)
+        if p.image and p.size > NATIVE_IMAGE_BYTES:
+            raise AttachmentError(
+                f"An image is larger than {NATIVE_IMAGE_BYTES / 1e6:g} MB, the most models read.",
+                code="attachment_too_large",
+                status=413,
+            )
+        pdfs = sum(1 for x in out if x.native and x.kind == "pdf")
+        p.native = p.image or (
+            p.kind == "pdf" and pdf and p.size <= NATIVE_PDF_BYTES and pdfs < MAX_NATIVE_PDFS
+        )
         if not p.native and p.text is None:
             raise AttachmentError(
                 f"{p.name} cannot be read: {p.unreadable or 'it has no text'}.",
@@ -510,9 +541,15 @@ def check(
     return out
 
 
-MAX_NATIVE_FILES = 20
-"""Files read as they are (images, PDFs) sent with one model request, the latest first; older
-ones become a note that they are no longer available."""
+NATIVE_IMAGE_BYTES = 3_750_000
+"""The largest image Evokai sends: Bedrock's limit (Anthropic's is 5 MB), so a fallback to another
+provider does not fail the turn."""
+NATIVE_PDF_BYTES = 4_500_000
+"""The largest PDF sent as a file (Bedrock's document limit); a larger one goes as its text."""
+MAX_NATIVE_IMAGES = 10
+MAX_NATIVE_PDFS = 5
+"""Files read as they are sent with one model request, the latest first (Bedrock takes at most 20
+images and 5 documents); older ones become a note that they are no longer available."""
 
 
 def native_files(messages: list[Any], *, images: bool, pdf: bool) -> list[dict[str, Any]]:
@@ -524,18 +561,27 @@ def native_files(messages: list[Any], *, images: bool, pdf: bool) -> list[dict[s
         pdf: The models read PDF files.
 
     Returns:
-        Their ``file`` metadata, at most ``MAX_NATIVE_FILES``.
+        Their ``file`` metadata, at most ``MAX_NATIVE_IMAGES`` images and ``MAX_NATIVE_PDFS`` PDFs.
     """
     out: list[dict[str, Any]] = []
+    left = {"image": MAX_NATIVE_IMAGES if images else 0, "pdf": MAX_NATIVE_PDFS if pdf else 0}
     for msg in reversed(messages):
         for b in reversed(msg.content):
             f = b.get("file") if isinstance(b, dict) and not b.get("text") else None
             if not isinstance(f, dict) or not f.get("id"):
                 continue
             kind = str(f.get("mediaType") or "")
-            if (kind.startswith("image/") and images) or (kind == MEDIA_TYPES["pdf"] and pdf):
+            group = (
+                "image"
+                if kind.startswith("image/")
+                else "pdf"
+                if kind == MEDIA_TYPES["pdf"]
+                else ""
+            )
+            if left.get(group, 0) > 0:
+                left[group] -= 1
                 out.append(f)
-    return out[:MAX_NATIVE_FILES]
+    return out
 
 
 def binaries(wanted: list[dict[str, Any]], data: dict[str, bytes]) -> dict[str, Any]:
@@ -553,6 +599,23 @@ def binaries(wanted: list[dict[str, Any]], data: dict[str, bytes]) -> dict[str, 
         for f in wanted
         if str(f["id"]) in data
     }
+
+
+MAX_BLOCK_CHARS = 60_000
+"""A document's text as a message keeps it (the history contract's limit): the guard's scan may
+make the text longer (each removed line becomes a note)."""
+
+
+def clip(text: str) -> str:
+    """A document's text within ``MAX_BLOCK_CHARS``.
+
+    Returns:
+        The text, cut with a note when longer.
+    """
+    if len(text) <= MAX_BLOCK_CHARS:
+        return text
+    note = TRUNCATED_NOTE.format(n=f"{MAX_TEXT_CHARS:,}")
+    return text[: MAX_BLOCK_CHARS - len(note)] + note
 
 
 def traced(block: dict[str, Any]) -> dict[str, Any]:

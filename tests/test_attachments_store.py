@@ -36,6 +36,36 @@ async def grant(env: Env, value: bool = True) -> None:
     assert r.status_code == 200, r.text
 
 
+def test_the_window_keeps_an_older_question_without_its_documents() -> None:
+    from evokai.sessions.history import FILE_TEXT_GONE, Stored, window
+
+    meta = {"id": "a1", "name": "big.txt", "mediaType": "text/plain", "size": 9}
+    old = Stored("user", [{"file": meta, "text": "x" * 5_000}, {"text": "What does it say?"}])
+    msgs = [old, Stored("assistant", [{"text": "It says x."}]), Stored("user", [{"text": "Sure?"}])]
+    kept = window(msgs, 20, 1_000)
+    assert len(kept) == 3
+    assert kept[0].content == [
+        {"file": meta, "text": FILE_TEXT_GONE},
+        {"text": "What does it say?"},
+    ]
+
+
+def test_a_file_block_never_passes_as_text() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from evokai.sessions.threads import FileBlock, HistoryMessage
+
+    meta = {"id": "a1", "name": "n.txt", "mediaType": "text/plain"}
+    h = HistoryMessage.model_validate({"role": "user", "content": [{"file": meta, "text": "x"}]})
+    assert isinstance(h.content[0], FileBlock)
+    with pytest.raises(ValidationError):
+        HistoryMessage.model_validate({
+            "role": "user",
+            "content": [{"file": meta, "text": "x" * 70_000}],
+        })
+
+
 def test_the_settings_and_their_defaults() -> None:
     d = AttachmentsDef()
     assert (d.enabled, d.max_file_mb, d.max_files, d.max_conversation_mb) == (False, 10, 5, 50)

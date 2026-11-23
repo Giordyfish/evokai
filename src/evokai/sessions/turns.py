@@ -239,6 +239,8 @@ class TurnRun:
     from."""
     files: list[files_.Prepared] = field(default_factory=list)
     """The message's attachments, checked and prepared (``evokai.attachments``)."""
+    dropped: bool = False
+    """A rewrite deleted the question it replaces (Evokai storage)."""
 
 
 class _Cancelled(Exception):
@@ -524,7 +526,9 @@ class TurnEngine:
                 if session is None
                 else await self.store.attachments.total(inp.principal.who, session.id)
             )
-        return files_.check(
+        # Stripping and reading a file takes a while: off the event loop, so other streams go on.
+        return await asyncio.to_thread(
+            files_.check,
             inp.files,
             granted=grants.attachments(),
             config=restricted.attachments,
@@ -559,8 +563,11 @@ class TurnEngine:
         for p in run.files:
             meta = p.meta()
             if p.text is not None:
-                cleaned = await guard.untrusted(p.text, f"attachment:{p.name}")
-                if not p.native or cleaned != p.text:
+                cleaned = files_.clip(await guard.untrusted(p.text, f"attachment:{p.name}"))
+                # A PDF goes as its text when the scan removed something, or when it holds
+                # personal data the policy protects towards the model (the file cannot be masked).
+                protects = guard.policy.enforced("pii.model") and guard.has_pii(cleaned)
+                if not p.native or cleaned != p.text or protects:
                     p.native = False
                     blocks.append({"file": meta, "text": cleaned})
                     continue
@@ -578,6 +585,23 @@ class TurnEngine:
         await self.store.attachments.add(run.who, run.session.id, message_id, run.files)
         kept = [str(b["file"]["id"]) for b in inp.kept_files]
         await self.store.attachments.relink(run.who, run.session.id, kept, message_id)
+        inp.kept_files = []
+
+    async def _drop_unkept(self, run: TurnRun, inp: TurnInput) -> None:
+        """Drop the attachments of a replaced question that no new question kept (never raises).
+
+        A rewrite whose new question was never stored (refused, cancelled) deleted the question:
+        its attachments go with it.
+        """
+        if run.storage != "evokai" or not run.dropped or not inp.kept_files:
+            return
+        ids = [str(b["file"]["id"]) for b in inp.kept_files]
+        try:
+            await self.store.attachments.delete(run.who, run.session.id, ids)
+        except Exception as e:
+            log.warning(
+                "attachments_not_dropped", extra={"turnId": run.turn_id, "error": error_class(e)}
+            )
 
     async def _file_bytes(self, run: TurnRun, stored: list[Any], models: list[Any]) -> Any:
         """The files of the history the models read as they are, by id (``history.file_part``).
@@ -585,6 +609,8 @@ class TurnEngine:
         Returns:
             id to ``BinaryContent``.
         """
+        if not run.grants.attachments():
+            return {}  # revoked: earlier files are no longer sent (their text stays in the history)
         images, pdf = files_.readable(models)
         wanted = files_.native_files(stored, images=images, pdf=pdf)
         data = {p.id: p.data for p in run.files}
@@ -827,6 +853,7 @@ class TurnEngine:
                 "message": message(run.app, "turn.failed", session=run.session),
             })
         finally:
+            await self._drop_unkept(run, inp)
             # The turn is over: its capability workers' call tokens stop working.
             await self.mcp.end_run(run.turn_id)
             run.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -1242,6 +1269,7 @@ class TurnEngine:
         plan = run.rewrite
         if plan is not None:
             await rewrite.drop(self.store, run.who, run.session.id, run.thread_id, plan)
+            run.dropped = True
             event.update(replaced=plan.turn_ids, messageId=plan.message_id)
         if run.replaced_from is not None:
             event["replacedFrom"] = run.replaced_from

@@ -185,8 +185,10 @@ async def attachment(attachment_id: str, svc: Svc, s: Sess) -> Response:
     Raises:
         NotFound: Not an image of this conversation (another conversation's id included).
     """
+    # An expired conversation is gone for readers before the purge deletes it.
+    alive = await svc.store.sessions.get(s.who, s.claims.conversation_id)
     row = await svc.store.attachments.get(s.who, s.claims.conversation_id, attachment_id)
-    if row is None or not row.media_type.startswith("image/"):
+    if alive is None or row is None or not row.media_type.startswith("image/"):
         raise NotFound("Unknown attachment.", code="unknown_attachment")
     return Response(
         content=row.data,

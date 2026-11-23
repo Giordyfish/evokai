@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import struct
+import zipfile
 import zlib
 
 import pytest
@@ -10,6 +12,7 @@ import pytest
 from evokai.attachments import (
     KINDS,
     MAX_TEXT_CHARS,
+    MAX_UNPACKED_BYTES,
     AttachmentError,
     media_type_of,
     prepare,
@@ -119,6 +122,9 @@ def test_the_kind_comes_from_the_bytes(name: str, data: bytes, kind: str) -> Non
         ("feed.md", b"<?xml version='1.0'?><rss></rss>"),
         ("tool.exe", b"MZ\x90\x00\x03\x00\x00\x00binary\x00\x00"),
         ("archive.docx", b"PK\x03\x04not really a word file"),
+        ("late.txt", b"hello\n<html><script>alert(1)</script></html>"),
+        ("div.md", b"notes <div><img src=x onerror=alert(1)></div>"),
+        ("spaced.txt", b"<" + b" " * 3000 + b"<svg onload=x()>"),
         ("empty.txt", b""),
     ],
 )
@@ -176,6 +182,33 @@ def test_documents_are_not_rewritten() -> None:
 
 
 # ── prepare ─────────────────────────────────────────────────────────────────────────────────────
+
+
+def test_plain_words_that_look_like_attributes_are_text() -> None:
+    assert sniff("notes.txt", b"the onboarding = done, 3 < 4 and 5 > 2") == "txt"
+
+
+def test_a_jfif_thumbnail_goes_and_jfxx_too() -> None:
+    thumb = bytes([2, 2]) + b"\x99" * 12  # a 2 by 2 thumbnail
+    data = (
+        b"\xff\xd8"
+        + _jpeg_segment(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01" + thumb)
+        + _jpeg_segment(0xE0, b"JFXX\x00\x10" + b"\x88" * 20)
+        + _jpeg_segment(0xDA, b"\x01\x01\x00\x00\x3f\x00")
+        + b"\x12\xff\xd9"
+    )
+    out = strip_metadata("jpeg", data)
+    assert out.startswith(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00")
+    assert out[18:20] == b"\x00\x00"  # no thumbnail
+    assert b"\x99" not in out and b"JFXX" not in out
+
+
+def test_an_office_file_too_large_once_unpacked_is_not_read() -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("word/document.xml", b" " * (MAX_UNPACKED_BYTES + 1))
+    p = prepare("bomb.docx", buf.getvalue(), kinds=set(KINDS), max_bytes=1_000_000)
+    assert p.text is None and p.unreadable == "the file is too large once unpacked"
 
 
 def test_prepare_an_image() -> None:

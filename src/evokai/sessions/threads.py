@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from evokai.db.repositories import MessageRepository, Who
 
@@ -27,6 +27,14 @@ class TextBlock(BaseModel):
     """Plain text."""
 
     text: str = Field(max_length=100_000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _not_a_file(cls, v: Any) -> Any:
+        # An attachment block that does not validate as one must never pass as the person's words.
+        if isinstance(v, dict) and "file" in v:
+            raise ValueError("an attachment block is not a text block")
+        return v
 
 
 class ToolUse(BaseModel):

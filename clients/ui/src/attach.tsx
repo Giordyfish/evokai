@@ -39,16 +39,20 @@ export function useFiles(offer: AttachmentOffer | null | undefined) {
   const [error, setError] = useState('')
   const add = (list: ArrayLike<File> | null | undefined) => {
     if (!offer || !list) return
-    const next = [...files]
-    let err = ''
-    for (const f of Array.from(list)) {
-      if (!taken(offer, f)) err = fill(s.fileKind, { name: f.name })
-      else if (f.size > offer.maxFileBytes) err = fill(s.fileTooLarge, { name: f.name, max: size(offer.maxFileBytes) })
-      else if (next.length >= offer.maxFiles) err = fill(s.tooManyFiles, { n: String(offer.maxFiles) })
-      else next.push(f)
-    }
-    setFiles(next)
-    setError(err)
+    const picked = Array.from(list)
+    // From the latest list: two drops before a render must not lose the first.
+    setFiles((cur) => {
+      const next = [...cur]
+      let err = ''
+      for (const f of picked) {
+        if (!taken(offer, f)) err = fill(s.fileKind, { name: f.name })
+        else if (f.size > offer.maxFileBytes) err = fill(s.fileTooLarge, { name: f.name, max: size(offer.maxFileBytes) })
+        else if (next.length >= offer.maxFiles) err = fill(s.tooManyFiles, { n: String(offer.maxFiles) })
+        else next.push(f)
+      }
+      setError(err)
+      return next
+    })
   }
   const set = (next: File[]) => {
     setFiles(next)

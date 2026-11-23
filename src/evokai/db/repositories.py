@@ -1104,6 +1104,18 @@ class AttachmentRepository(_Repo):
             q = sa.update(m.Attachment).where(m.Attachment.id.in_(ids), *self._owned(w, session_id))
             await s.execute(q.values(message_id=message_id))
 
+    async def delete(self, w: Who, session_id: str, ids: list[str]) -> int:
+        """Delete attachments of a conversation (a rewritten question that was never replaced).
+
+        Returns:
+            How many were deleted.
+        """
+        if not ids:
+            return 0
+        async with self.db.session() as s:
+            q = sa.delete(m.Attachment).where(m.Attachment.id.in_(ids), *self._owned(w, session_id))
+            return _rowcount(await s.execute(q))
+
 
 class MessageRepository(_Repo):
     """Messages of a thread."""

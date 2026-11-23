@@ -264,8 +264,9 @@ class Message(Base):
 class Attachment(Base):
     """A file a person attached to a chat message (``evokai.attachments``), Evokai storage only.
 
-    Kept with its conversation: deleted with it (time to live, erase, deletion) and when the
-    message is rewritten. Images are stored without their metadata.
+    Kept with its conversation: deleted with it (time to live, erase, deletion). A rewritten
+    question keeps its attachments; they go when its rewrite never stores a new question. Images
+    are stored without their metadata.
     """
 
     __tablename__ = "evokai_attachments"

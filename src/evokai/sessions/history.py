@@ -62,12 +62,35 @@ def window(messages: list[Stored], max_messages: int, max_chars: int) -> list[St
             break
         size = len(json.dumps(m.content, ensure_ascii=False))
         if picked and chars + size > max_chars:
-            break
+            # An older question whose attached documents do not fit keeps its words without them.
+            m = _without_file_text(m)
+            size = len(json.dumps(m.content, ensure_ascii=False))
+            if chars + size > max_chars:
+                break
         picked.insert(0, m)
         chars += size
     while picked and not _is_plain_user(picked[0]):
         picked.pop(0)
     return repair([Stored(role=m.role, content=list(m.content)) for m in picked])
+
+
+FILE_TEXT_GONE = "[The text of this attachment no longer fits in the conversation's window.]"
+
+
+def _without_file_text(m: Stored) -> Stored:
+    """A message whose attachments keep their names but not their text.
+
+    Returns:
+        The message (the same one when it has no attachment text).
+    """
+    if not any(isinstance(b, dict) and "file" in b and b.get("text") for b in m.content):
+        return m
+    return Stored(
+        role=m.role,
+        content=[
+            {**b, "text": FILE_TEXT_GONE} if "file" in b and b.get("text") else b for b in m.content
+        ],
+    )
 
 
 def repair(messages: list[Stored]) -> list[Stored]:

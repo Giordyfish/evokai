@@ -884,7 +884,7 @@ export function Panel(props: PanelProps): VNode {
                       attached.add(e.dataTransfer?.files)
                     }}
                   >
-                    <Previews files={attached.files} error={attached.error} onRemove={attached.remove} />
+                    {editing ? null : <Previews files={attached.files} error={attached.error} onRemove={attached.remove} />}
                     <div class="field" part="field">
                       <textarea
                         ref={box}

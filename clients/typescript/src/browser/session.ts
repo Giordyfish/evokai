@@ -333,7 +333,7 @@ export class EvokaiSession {
     if (input.endOfSpeechAt) body.endOfSpeechAt = input.endOfSpeechAt
     if (files.length) {
       body.attachments = await Promise.all(
-        files.map(async (f, i) => ({ name: attachments[i]!.name, mediaType: f.type, data: await base64(f) })),
+        files.map(async (f, i) => ({ name: attachments[i]?.name ?? 'file', mediaType: f.type, data: await base64(f) })),
       )
     }
     if (rewrite && !input.regenerate) body.rewrite = editing?.messageId ? { messageId: editing.messageId } : {}
