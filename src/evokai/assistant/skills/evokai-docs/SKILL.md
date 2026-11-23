@@ -8,10 +8,13 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/a2a.md`: A2A (Agent2Agent)
 - `references/admin-mcp.md`: Operate Evokai from an AI agent
 - `references/ag-ui.md`: AG-UI
+- `references/ai-sdk.md`: Use Evokai from the AI SDK
 - `references/architecture.md`: Evokai architecture
 - `references/assistant.md`: The console assistant
+- `references/builtin-tools.md`: Provider built-in tools
 - `references/capabilities.md`: Capabilities
 - `references/channels-readme.md`: Channels beyond the web panel: e-mail, Microsoft Teams, Slack
+- `references/client-tools.md`: Client tools
 - `references/code.md`: Isolated code execution
 - `references/compliance.md`: Compliance packs
 - `references/configuration.md`: Configuration

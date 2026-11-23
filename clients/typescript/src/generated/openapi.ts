@@ -4044,6 +4044,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/session/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate
+         * @description Regenerate the last answer: the last question runs again and replaces the last turn.
+         *
+         *     Like a rewrite with the same question (a ``rewritten`` event, then the new answer), with the
+         *     same caps, guard and traces; the replaced answer stays in its turn's trace. Refused with 409
+         *     ``not_regenerable`` when there is nothing to regenerate, the last turn changed data or ran a
+         *     custom client tool, or a turn is running.
+         *
+         *     Returns:
+         *         The event stream, or the turn as JSON (``Accept: application/json``).
+         */
+        post: operations["regenerate_agent_v1_session_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/session/tool-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tool Result
+         * @description Answer a custom client tool call the running turn waits for (once).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: No call of this session waits under that id here (answered, timed out, or the
+         *             turn runs on another task) (``unknown_call``).
+         *         AppError: The result is larger than 32 KB (413 ``too_large``).
+         */
+        post: operations["tool_result_agent_v1_session_tool_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/session/turns/{turn_id}/cancel": {
         parameters: {
             query?: never;
@@ -4398,6 +4454,8 @@ export interface components {
             a2a?: boolean;
             /** Ask Rules */
             ask_rules?: components["schemas"]["AskRule"][];
+            /** Builtin Tools */
+            builtin_tools?: components["schemas"]["BuiltinToolDef"][];
             /** Capabilities */
             capabilities?: {
                 [key: string]: components["schemas"]["CapabilityUse"];
@@ -4447,6 +4505,11 @@ export interface components {
             modules?: components["schemas"]["ModuleRef"][];
             /** Name */
             name: string;
+            /**
+             * Openai Confirm
+             * @default false
+             */
+            openai_confirm?: boolean;
             /** Output Schema */
             output_schema?: {
                 [key: string]: unknown;
@@ -4729,6 +4792,21 @@ export interface components {
             description: string;
         };
         /**
+         * BuiltinToolDef
+         * @description A provider built-in tool (``evokai.engine.builtin_tools``).
+         */
+        BuiltinToolDef: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "web_search" | "web_fetch" | "code_execution" | "image_generation" | "file_search" | "mcp_server" | "memory";
+        };
+        /**
          * Candidate
          * @description A trickled ICE candidate.
          */
@@ -4905,6 +4983,8 @@ export interface components {
             messages?: components["schemas"]["HistoryMessage"][] | null;
             /** Reason */
             reason: string;
+            /** Regenerable */
+            regenerable?: boolean | null;
             /** Replacedfrom */
             replacedFrom?: number | null;
             /** Rewritable */
@@ -4936,6 +5016,25 @@ export interface components {
             table_max_chars?: number;
         };
         /**
+         * ClientToolDef
+         * @description A custom client tool: the client application runs it (``client_tool`` event).
+         */
+        ClientToolDef: {
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Wait
+             * @default false
+             */
+            wait?: boolean;
+        };
+        /**
          * ClientToolsDef
          * @description Which client tools the agent has.
          */
@@ -4950,6 +5049,8 @@ export interface components {
              * @default true
              */
             chart?: boolean;
+            /** Custom */
+            custom?: components["schemas"]["ClientToolDef"][];
             /**
              * Diagram
              * @default true
@@ -5027,6 +5128,16 @@ export interface components {
          * @description The user's decision on a confirmation.
          */
         Confirm: {
+            /** Actionid */
+            actionId: string;
+            /** Approve */
+            approve: boolean;
+        };
+        /**
+         * ConfirmAnswer
+         * @description A button's answer to a pending confirmation (instead of typing yes or no).
+         */
+        ConfirmAnswer: {
             /** Actionid */
             actionId: string;
             /** Approve */
@@ -5164,6 +5275,8 @@ export interface components {
             browser?: components["schemas"]["BrowserDeclaration"] | null;
             /** Jurisdiction */
             jurisdiction?: string[] | null;
+            /** Provider Tool Storage */
+            provider_tool_storage?: boolean | null;
             residency?: components["schemas"]["ResidencyRule"] | null;
             /** Retention */
             retention?: ("any" | "no_training" | "zero_retention") | null;
@@ -5207,9 +5320,10 @@ export interface components {
         };
         /**
          * EvokaiOptions
-         * @description Evokai's extension of the request (server key only).
+         * @description Evokai's extension of the request (``tags`` and ``groups``: server key only).
          */
         EvokaiOptions: {
+            confirm?: components["schemas"]["ConfirmAnswer"] | null;
             /** Groups */
             groups?: string[];
             /** Tags */
@@ -5895,6 +6009,23 @@ export interface components {
             version?: string | null;
         };
         /**
+         * RegenerateBody
+         * @description Regenerate the last answer (the question is the conversation's own).
+         */
+        RegenerateBody: {
+            /** Endofspeechat */
+            endOfSpeechAt?: number | null;
+            /** History */
+            history?: components["schemas"]["HistoryMessage"][] | null;
+            /**
+             * Mode
+             * @default text
+             * @enum {string}
+             */
+            mode?: "text" | "voice";
+            page?: components["schemas"]["PageContext"] | null;
+        };
+        /**
          * Residency
          * @description Where an application's data lives and where its models may run.
          */
@@ -6064,6 +6195,8 @@ export interface components {
         RunRequest: {
             /** Attachments */
             attachments?: components["schemas"]["RunAttachment"][];
+            /** Clienttools */
+            clientTools?: components["schemas"]["ClientToolDef"][];
             /** Groups */
             groups?: string[];
             /** Input */
@@ -6091,6 +6224,10 @@ export interface components {
         RunResponse: {
             /** Citations */
             citations?: {
+                [key: string]: unknown;
+            }[];
+            /** Clienttoolcalls */
+            clientToolCalls?: {
                 [key: string]: unknown;
             }[];
             /** Conversationid */
@@ -6408,6 +6545,8 @@ export interface components {
             actor?: "agent";
             /** Agent */
             agent: string;
+            /** Clienttools */
+            clientTools?: components["schemas"]["ClientToolDef"][] | null;
             consent?: components["schemas"]["Consent"] | null;
             /** Conversationid */
             conversationId?: string | null;
@@ -6469,6 +6608,18 @@ export interface components {
          */
         ToolResultBlock: {
             toolResult: components["schemas"]["ToolResult"];
+        };
+        /**
+         * ToolResultBody
+         * @description The client's answer to a ``client_tool`` call that waits.
+         */
+        ToolResultBody: {
+            /** Callid */
+            callId: string;
+            /** Error */
+            error?: string | null;
+            /** Result */
+            result?: unknown;
         };
         /**
          * ToolSettings
@@ -12338,6 +12489,96 @@ export interface operations {
                         [key: string]: boolean;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_agent_v1_session_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResult"];
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_result_agent_v1_session_tool_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolResultBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

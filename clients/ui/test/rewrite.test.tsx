@@ -37,6 +37,31 @@ afterEach(() => {
   localStorage.clear()
 })
 
+describe('<evokai-chat>: regenerating the last answer', () => {
+  test('the last answer offers regenerate while the service allows it', async () => {
+    const { $, evokai } = await mounted([
+      [
+        { type: 'text', delta: 'Order 1042 is shipped.' },
+        { type: 'done', conversationId: 'c1', reason: 'end_turn', rewritable: true, regenerable: true } as never,
+      ],
+      [
+        { type: 'rewritten', replaced: ['tt'], turn: 't2' } as never,
+        { type: 'text', delta: 'Order 1042 shipped on Monday.' },
+        { type: 'done', conversationId: 'c1', reason: 'end_turn', rewritable: true, regenerable: false } as never,
+      ],
+    ])
+    $('.launcher')!.click()
+    await until(() => $('textarea'))
+    await type($, 'Where is order 1042?')
+    await until(() => $('[part~="regenerate"] button'))
+    $('[part~="regenerate"] button')!.click()
+    await until(() => evokai.calls.some((c) => c.url.endsWith('/v1/session/regenerate')))
+    await until(() => $('.panel')!.textContent!.includes('shipped on Monday'))
+    expect($('.panel')!.textContent).not.toContain('Order 1042 is shipped.')
+    expect($('[part~="regenerate"] button')).toBeNull()
+  })
+})
+
 describe('<evokai-chat>: the last question and confirmations', () => {
   test('the last question can be edited while the service allows it; sending rewrites it', async () => {
     const { $, evokai } = await mounted([

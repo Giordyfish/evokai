@@ -31,6 +31,7 @@ from evokai.models import (
     AskRule,
     AskRulesView,
     BugReport,
+    ClientToolDef,
     CompliancePack,
     ComplianceProfile,
     ComplianceSnapshot,
@@ -93,6 +94,7 @@ def _run_request(
     attachments: Sequence[RunAttachment | Obj] | None,
     store: bool | None,
     groups: Sequence[str] | None = None,
+    client_tools: Sequence[ClientToolDef | Obj] | None = None,
 ) -> RunRequest:
     data: dict[str, Any] = {"input": input if isinstance(input, str) else list(input)}
     if subject is not None:
@@ -105,6 +107,8 @@ def _run_request(
         data["store"] = store
     if groups is not None:
         data["groups"] = list(groups)
+    if client_tools is not None:
+        data["client_tools"] = list(client_tools)
     return RunRequest.model_validate(data)
 
 
@@ -200,6 +204,7 @@ class EvokaiServer:
         memory_consent: bool | None = None,
         modules: Mapping[str, ModuleChoice | Obj] | None = None,
         locale: str | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> SessionToken:
         """Mint a short-lived session token for the browser (it creates the conversation).
 
@@ -224,6 +229,8 @@ class EvokaiServer:
                 (``{"tone": {"params": {"style": "brief"}}}``): only those the agent lets a session
                 change. On a continued conversation it replaces the earlier choice.
             locale: The session's language, a BCP 47 tag with a shipped pack (``it-IT``).
+            client_tools: Custom client tools of this session (``docs/client-tools.md``), granted
+                by ``client:session``; on a continued conversation a list replaces the earlier one.
 
         Returns:
             The token, its expiry, the conversation, the voice engine, the storage mode, the usage
@@ -248,6 +255,7 @@ class EvokaiServer:
                 "memory_consent": memory_consent,
                 "modules": dict(modules) if modules is not None else None,
                 "locale": locale,
+                "client_tools": list(client_tools) if client_tools is not None else None,
             },
         )
         return self._send(calls.mint(req))
@@ -262,6 +270,7 @@ class EvokaiServer:
         attachments: Sequence[RunAttachment | Obj] | None = None,
         store: bool | None = None,
         groups: Sequence[str] | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> RunResult:
         """Run an agent that allows the ``server`` channel and wait for its answer.
 
@@ -273,13 +282,17 @@ class EvokaiServer:
             attachments: Text attachments (``RunAttachment`` or ``{name, text, mediaType}``).
             store: Keep the run as a conversation of the subject.
             groups: The subject's groups, for knowledge bases restricted to some groups.
+            client_tools: Custom client tools of this run (none may wait): their calls come back
+                in ``client_tool_calls``.
 
         Returns:
             The output (JSON when the agent has an ``output_schema``, else text), the model and
             the usage with its cost.
         """
         return self._send(
-            calls.run(agent, _run_request(input, subject, tags, attachments, store, groups))
+            calls.run(
+                agent, _run_request(input, subject, tags, attachments, store, groups, client_tools)
+            )
         )
 
     def usage(
@@ -877,6 +890,7 @@ class AsyncEvokaiServer:
         memory_consent: bool | None = None,
         modules: Mapping[str, ModuleChoice | Obj] | None = None,
         locale: str | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> SessionToken:
         """Mint a short-lived session token; see :meth:`EvokaiServer.mint_session_token`.
 
@@ -902,6 +916,7 @@ class AsyncEvokaiServer:
                 "memory_consent": memory_consent,
                 "modules": dict(modules) if modules is not None else None,
                 "locale": locale,
+                "client_tools": list(client_tools) if client_tools is not None else None,
             },
         )
         return await self._send(calls.mint(req))
@@ -916,13 +931,14 @@ class AsyncEvokaiServer:
         attachments: Sequence[RunAttachment | Obj] | None = None,
         store: bool | None = None,
         groups: Sequence[str] | None = None,
+        client_tools: Sequence[ClientToolDef | Obj] | None = None,
     ) -> RunResult:
         """Run a server agent and wait for its answer; see :meth:`EvokaiServer.run`.
 
         Returns:
             The run's answer.
         """
-        req = _run_request(input, subject, tags, attachments, store, groups)
+        req = _run_request(input, subject, tags, attachments, store, groups, client_tools)
         return await self._send(calls.run(agent, req))
 
     async def usage(

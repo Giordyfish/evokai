@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     page_text_chars: int = 6_000
     tool_result_chars: int = 12_000
     max_output_tokens: int = 1_200
+    client_tool_timeout_seconds: float = Field(default=120.0, gt=0)
+    """How long a turn waits for the client's result of a custom client tool with ``wait``; then
+    the model reads that no answer came."""
 
     # Voice
     voice_enabled: bool = False

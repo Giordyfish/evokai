@@ -774,6 +774,17 @@ class TurnGuard:
         )
         return output.OutputFilter(rules)
 
+    def link_allowed(self, url: str) -> bool:
+        """Whether a link may reach the browser (``output.links``, as for links in answers).
+
+        Returns:
+            False only when the control is enforced, towards the browser, for a target outside the
+            allowed domains.
+        """
+        if self.channel != "browser" or not self.policy.enforced("output.links"):
+            return True
+        return content.url_allowed(url, self._link_domains())
+
     def _link_domains(self) -> list[str]:
         links = self.policy.settings.links
         return content.origin_hosts(self.origins) + list((links.allow if links else None) or [])

@@ -100,6 +100,29 @@ describe('confirmation reasons', () => {
   })
 })
 
+describe('regenerating the last answer', () => {
+  test('the last answer is regenerable when the service says so, and regenerate replaces it', async () => {
+    const turn = [
+      frame({ type: 'conversation', id: 'c1', turnStarted: true, turnId: 't3', seq: 11 }),
+      frame({ type: 'rewritten', replaced: ['t2'], messageId: 'q2', turnId: 't3', seq: 12 }),
+      frame({ type: 'text', delta: 'Second, again.', turnId: 't3', seq: 13 }),
+      frame({ type: 'done', conversationId: 'c1', reason: 'end_turn', rewritable: true, regenerable: true, turnId: 't3', seq: 14 }),
+    ]
+    const m = mockFetch({ 'POST /agent/v1/session/regenerate': () => sse(turn, { turnId: 't3' }) })
+    const s = new EvokaiSession({ baseUrl: BASE, token: 'tok', fetch: m.fetch })
+    s.store.dispatch({
+      type: 'loaded',
+      conversation: { ...stored, messages: stored.messages.map((x) => (x.id === 'a2' ? { ...x, regenerable: true } : x)) },
+    })
+    expect(s.state.messages.map((x) => x.regenerable)).toEqual([undefined, undefined, undefined, true])
+    const done = await s.regenerate()
+    expect(done?.regenerable).toBe(true)
+    expect(m.calls[0]!.body).toEqual({ mode: 'text' })
+    expect(shown(s.state)).toEqual(['One', 'First.', 'Two', 'Second, again.'])
+    expect(s.state.messages.at(-1)?.regenerable).toBe(true)
+  })
+})
+
 describe('EvokaiServer: rewrite with external storage, and the ask rules', () => {
   test('chatJson sends the rewrite and returns where the history is replaced from', async () => {
     const m = mockFetch({

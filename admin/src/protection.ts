@@ -20,6 +20,8 @@ export function profileFrom(f: {
   voices: boolean
   recognition: boolean
   vendors: string
+  /** Built-in tools may keep data at the provider (never with zero retention). */
+  storage?: boolean
 }): DataProtection | null {
   const out: DataProtection = {}
   const countries = list(f.countries).map((c) => c.toUpperCase())
@@ -31,6 +33,7 @@ export function profileFrom(f: {
   const j = [...(f.eu ? ['eu'] : []), ...list(f.jurisdictions).map((c) => c.toUpperCase())]
   if (j.length) out.jurisdiction = j
   if (f.retention !== 'any') out.retention = f.retention
+  if (f.storage && f.retention !== 'zero_retention') out.provider_tool_storage = true
   const vendors = list(f.vendors)
   if (f.voices || f.recognition || vendors.length) {
     out.browser = { online_voices: f.voices, online_recognition: f.recognition }

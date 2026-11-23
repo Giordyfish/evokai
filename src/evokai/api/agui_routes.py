@@ -172,6 +172,7 @@ def turn_input(body: RunAgentInput, principal: SessionPrincipal) -> TurnInput:
         page=page,
         mode="text",
         history=history[-MAX_HISTORY_MESSAGES:],
+        client_tools=False,  # AG-UI has no client_tool event (its client-defined tools are unused)
     )
 
 

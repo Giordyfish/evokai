@@ -28,7 +28,17 @@ export type ConfirmState = 'open' | 'approved' | 'rejected' | 'closed'
 
 export type Part =
   | { kind: 'text'; text: string }
-  | { kind: 'tool'; name: string; status: 'start' | 'done' | 'error' }
+  | {
+      kind: 'tool'
+      name: string
+      status: 'start' | 'done' | 'error'
+      /** A custom client tool: its call, arguments and (once your handler answered) result or error. */
+      client?: true
+      callId?: string
+      args?: Record<string, unknown>
+      result?: unknown
+      error?: string
+    }
   | { kind: 'chart'; chart: Chart }
   | { kind: 'diagram'; diagram: Diagram }
   | {
@@ -56,6 +66,8 @@ export interface ChatMessage {
   messageId?: string
   /** A user message: the last question, which can still be rewritten (`EvokaiSession.rewrite`). */
   rewritable?: boolean
+  /** The last assistant message, when the service says it can be regenerated (`EvokaiSession.regenerate`). */
+  regenerable?: boolean
   /** Being replaced by a rewrite of the last question (hide it): dropped on `rewritten`, restored on a refusal. */
   replacing?: boolean
   feedback?: number | null
@@ -108,6 +120,7 @@ export interface SessionState {
 }
 
 export type Action =
+  | { type: 'toolResult'; callId: string; status: 'done' | 'error'; result?: unknown; error?: string }
   | { type: 'reset'; conversationId?: string | null }
   | { type: 'conversation'; conversationId: string }
   | { type: 'voiceEngine'; voiceEngine: VoiceEngineKind }
@@ -239,6 +252,12 @@ function applyEvent(state: SessionState, e: EvokaiEvent): SessionState {
         }
         return { ...m, parts: [...m.parts, { kind: 'tool', name: e.name, status: e.status }] }
       })
+    case 'client_tool':
+      return withTurnMessage(
+        state,
+        turnId,
+        addPart({ kind: 'tool', name: e.name, status: e.wait ? 'start' : 'done', client: true, callId: e.callId, args: e.args }),
+      )
     case 'chart':
       return withTurnMessage(state, turnId, addPart({ kind: 'chart', chart: e.chart }))
     case 'diagram':
@@ -320,6 +339,18 @@ function withRewritable(messages: ChatMessage[], rewritable: boolean | undefined
   })
 }
 
+/** After a turn: only the last answer may be regenerated, and only when the service says so. */
+function withRegenerable(messages: ChatMessage[], regenerable: boolean | undefined): ChatMessage[] {
+  if (regenerable === undefined) return messages
+  let last = -1
+  for (let i = messages.length - 1; i >= 0 && last < 0; i--) if (messages[i]?.role === 'assistant') last = i
+  return mapMessages(messages, (m) => {
+    if (m.role !== 'assistant') return m
+    const value = messages[last] === m && regenerable
+    return (m.regenerable ?? false) === value ? m : { ...m, regenerable: value }
+  })
+}
+
 function applyDone(state: SessionState, e: DoneEvent): SessionState {
   const turnId = e.turnId ?? null
   let messages = state.messages
@@ -341,7 +372,7 @@ function applyDone(state: SessionState, e: DoneEvent): SessionState {
     }
   }
   const running = !!state.currentTurn && state.currentTurn.turnId === turnId
-  messages = withRewritable(messages, e.rewritable)
+  messages = withRegenerable(withRewritable(messages, e.rewritable), e.regenerable)
   return {
     ...state,
     messages,
@@ -398,6 +429,7 @@ export function fromStored(stored: StoredMessage[], pending: PendingConfirmation
       ...(cites ? { citations: cites } : {}),
       ...(m.id ? { messageId: m.id } : {}),
       ...(m.role === 'user' && m.rewritable !== undefined ? { rewritable: m.rewritable } : {}),
+      ...(m.role === 'assistant' && m.regenerable ? { regenerable: true } : {}),
       feedback: m.feedback ?? null,
       ...(m.interrupted ? { interrupted: true } : {}),
     })
@@ -451,6 +483,22 @@ export function seen(state: SessionState, seq: number): boolean {
 
 function reduceRaw(state: SessionState, action: Action): SessionState {
   switch (action.type) {
+    case 'toolResult':
+      return {
+        ...state,
+        messages: mapMessages(state.messages, (m) =>
+          m.parts.some((p) => p.kind === 'tool' && p.callId === action.callId)
+            ? {
+                ...m,
+                parts: m.parts.map((p) =>
+                  p.kind === 'tool' && p.callId === action.callId
+                    ? { ...p, status: action.status, ...(action.status === 'done' ? { result: action.result } : { error: action.error }) }
+                    : p,
+                ),
+              }
+            : m,
+        ),
+      }
     case 'reset':
       return { ...initialState(action.conversationId ?? null), voiceEngine: state.voiceEngine, voiceActivity: state.voiceActivity }
     case 'voice':

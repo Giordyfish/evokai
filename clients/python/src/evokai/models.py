@@ -417,6 +417,18 @@ class ModuleChoice(WireModel):
     """Parameter values over the agent's defaults."""
 
 
+class ClientToolDef(SnakeModel):
+    """A custom client tool: your client application runs it (``client_tool`` events)."""
+
+    name: str
+    """``^[a-z][a-z0-9_]{1,47}$``; the model sees it as ``client_<name>``."""
+    description: str
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    """The JSON Schema of the arguments (at most 16 KB)."""
+    wait: bool = False
+    """True: the turn waits for the client's result (``tool_result``)."""
+
+
 class TokenRequest(WireModel):
     """The body of ``POST /v1/session-tokens``."""
 
@@ -441,6 +453,8 @@ class TokenRequest(WireModel):
     """Prompt modules of the agent to switch and fill for this session, by name."""
     locale: str | None = None
     """The session's language (a BCP 47 tag with a shipped pack: ``en``, ``it``)."""
+    client_tools: list[ClientToolDef] | None = None
+    """Custom client tools of this session (granted by ``client:session``)."""
 
 
 class SessionToken(WireModel):
@@ -501,6 +515,8 @@ class RunRequest(WireModel):
     attachments: list[RunAttachment] = Field(default_factory=list)
     store: bool = False
     groups: list[str] = Field(default_factory=list)
+    client_tools: list[ClientToolDef] = Field(default_factory=list)
+    """Custom client tools of this run; none may wait (their calls come back in the result)."""
 
 
 class RunUsage(WireModel):
@@ -524,6 +540,8 @@ class RunResult(WireModel):
     model: str
     usage: RunUsage
     conversation_id: str | None = None
+    client_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    """Calls of custom client tools the run made (``callId``, ``name``, ``args``), to carry out."""
 
 
 # Conversations, usage, catalogue, privacy
@@ -863,6 +881,8 @@ class ClientToolsDef(SnakeModel):
     ask: bool = True
     memory: bool = True
     navigate: NavigateDef | None = None
+    custom: list[ClientToolDef] = Field(default_factory=list)
+    """Client tools of the application's own."""
 
 
 class CodeDef(SnakeModel):

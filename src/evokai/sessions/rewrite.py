@@ -21,6 +21,12 @@ With external storage the application owns the history: it sends ``rewrite`` wit
 has it; Evokai checks and cuts it, runs the turn, and says from which index of the sent history the
 new messages replace the old ones (``replacedFrom``).
 
+Regenerating the last answer is a rewrite with the same question (``POST /v1/session/regenerate``):
+the question runs again and its new answer replaces the last one. It is refused
+(``not_regenerable``) whenever a rewrite would be, and also after a custom client tool ran (the
+client acted on it, and running it again could act twice). The replaced answer stays in its turn's
+trace.
+
 On the event stream a rewrite is one ``rewritten`` event, the first of the new turn after
 ``conversation``: ``{type: "rewritten", turnId: <the new turn>, replaced: [<turn ids>], messageId,
 replacedFrom?}``. A client drops what it shows of the replaced turns. A replay after a rewrite never
@@ -45,6 +51,11 @@ NOT_LAST = "rewrite_not_last"
 """The message the client names is not the last question any more."""
 AFTER_WRITE = "rewrite_after_write"
 """The last turn changed data: it cannot be rewritten."""
+NOT_REGENERABLE = "not_regenerable"
+"""The last answer cannot be regenerated (nothing to regenerate, a write, a client tool, a turn
+running)."""
+CLIENT_PREFIX = "client_"
+"""The model-facing prefix of custom client tools (``evokai.tools.custom.PREFIX``)."""
 RUNNING = "rewrite_running"
 """A turn of the conversation is running: stop it or wait for it first."""
 MESSAGE_KEYS = {
@@ -52,6 +63,7 @@ MESSAGE_KEYS = {
     NOT_LAST: "turn.rewriteNotLast",
     AFTER_WRITE: "turn.rewriteAfterWrite",
     RUNNING: "turn.rewriteRunning",
+    NOT_REGENERABLE: "turn.notRegenerable",
 }
 """The user-facing message (``evokai.i18n``) of each refusal."""
 
@@ -117,6 +129,45 @@ def rewritable_index(messages: list[Any]) -> int | None:
     if i is None or wrote(messages[i:]):
         return None
     return i
+
+
+def acted_on_client(messages: list[Any]) -> bool:
+    """Whether a custom client tool ran in these messages (the client may have acted).
+
+    Returns:
+        True when a result of a ``client_<name>`` tool is there.
+    """
+    for msg in messages:
+        for b in _get(msg, "content") or []:
+            tr = b.get("toolResult") if isinstance(b, dict) else None
+            if isinstance(tr, dict) and str(tr.get("name") or "").startswith(CLIENT_PREFIX):
+                return True
+    return False
+
+
+def regenerable_index(messages: list[Any]) -> int | None:
+    """The index of the question whose answer can be regenerated, if any.
+
+    Returns:
+        The last question's index when nothing after it changed data or ran a client tool.
+    """
+    i = rewritable_index(messages)
+    if i is None or acted_on_client(messages[i:]):
+        return None
+    return i
+
+
+def question_text(msg: Any) -> str:
+    """The text the person wrote in a question.
+
+    Returns:
+        The shown text, else its text blocks.
+    """
+    text = (_get(msg, "text") or "").strip()
+    if text:
+        return text
+    blocks = [b for b in _get(msg, "content") or [] if isinstance(b, dict)]
+    return "\n".join(str(b.get("text") or "") for b in blocks if not b.get("summary")).strip()
 
 
 @dataclass

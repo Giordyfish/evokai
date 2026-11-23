@@ -82,7 +82,7 @@ async def test_overrides_are_validated_and_can_be_reset(env: Env) -> None:
     for bad in (
         {"kind": "nope", "name": "x", "value": True},
         {"kind": "model", "name": "function:primary", "value": True},
-        {"kind": "client", "name": "teleport", "value": False},
+        {"kind": "client", "name": "Teleport me", "value": False},
         {"kind": "tool", "name": "no-slash", "value": False},
         {"kind": "skill", "name": "procedura", "value": "off"},
     ):

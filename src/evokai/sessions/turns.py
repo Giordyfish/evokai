@@ -29,10 +29,13 @@ from typing import Any, Literal, cast
 from urllib.parse import unquote_plus
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
@@ -68,8 +71,10 @@ from evokai.core.errors import ConfigError, Conflict, Forbidden, NotFound, Unaut
 from evokai.core.util import clip, new_id, utcnow
 from evokai.db import models as m
 from evokai.db.repositories import DEFAULT_TITLE, Store, Who
+from evokai.engine import builtin_tools
 from evokai.engine.agent import build_agent
 from evokai.engine.capability import finish_attempt
+from evokai.engine.client_calls import ClientCalls, ClientToolWait
 from evokai.engine.code_mode import EvokaiCodeMode
 from evokai.engine.compaction import Compactor, EvokaiCompaction, estimate_tokens, over
 from evokai.engine.messages import response_blocks, result_blocks, to_stored
@@ -130,7 +135,7 @@ from evokai.sessions.threads import (
     ThreadMessage,
     ThreadStore,
 )
-from evokai.tools import visuals
+from evokai.tools import custom, visuals
 from evokai.tools.client_tools import HANDOFF, handoff_tool, local_tools
 from evokai.tools.labels import confirm_label
 
@@ -173,6 +178,14 @@ class TurnInput:
     rewrite: dict[str, Any] | None = None
     """Rewrite the last question with ``text`` (``{messageId?}``): the last turn is replaced
     (``evokai.sessions.rewrite``)."""
+    client_tools: bool = True
+    """Offer custom client tools: only where the client receives ``client_tool`` events (the
+    session stream; not AG-UI or the messaging channels)."""
+    client_wait: bool = True
+    """Offer the custom client tools that wait (not in a JSON turn: it cannot answer them)."""
+    regenerate: bool = False
+    """Regenerate the last answer: the last question (its stored or sent text) runs again as a
+    rewrite (409 ``not_regenerable`` when it cannot)."""
 
 
 @dataclass
@@ -273,6 +286,8 @@ class TurnEngine:
         """The last model calls of this process (the console's health page)."""
         self.compactor = Compactor(self)
         """Context compaction of conversations stored by Evokai (``evokai.engine.compaction``)."""
+        self.client_calls = ClientCalls()
+        """Custom client tool calls waiting for the client (``evokai.engine.client_calls``)."""
         self.run_listeners: list[Any] = []
         """Called when a server run ends (``evokai.workflows`` event triggers):
         ``(app, agent, run_id, status, output, subject)``."""
@@ -432,13 +447,18 @@ class TurnEngine:
             Conflict: Nothing to rewrite, not the last question, the last turn changed data, or a
                 turn is running (409, ``rewrite_*`` codes, with the application's message).
         """
-        if inp.rewrite is None or inp.confirm is not None or not (inp.text or "").strip():
+        if inp.regenerate:
+            inp.rewrite, inp.confirm = inp.rewrite or {}, None
+        elif inp.rewrite is None or inp.confirm is not None or not (inp.text or "").strip():
             return None, None  # a decision is not a rewrite; an empty message is refused later
         rows: list[Any] = []
         index: int | None = None
         if storage == "external":
             sent = list(inp.history or [])
-            index, code = rewrite.check([h.model_dump() for h in sent], None)
+            dumped = [h.model_dump() for h in sent]
+            index, code = rewrite.check(dumped, None)
+            if index is not None and inp.regenerate:
+                index, inp.text = self._regenerated(dumped, index)
             if index is not None:
                 inp.history = sent[:index]
         elif session is None:
@@ -449,12 +469,26 @@ class TurnEngine:
             thread = await self.store.sessions.thread(session.id)
             rows = await self.store.messages.recent(who, thread.id, 400)
             index, code = rewrite.check(rows, inp.rewrite.get("messageId"))
+            if index is not None and inp.regenerate:
+                index, inp.text = self._regenerated(rows, index)
         if code is not None or index is None:
-            code = code or rewrite.NOTHING
+            code = rewrite.NOT_REGENERABLE if inp.regenerate else code or rewrite.NOTHING
             raise Conflict(message(app, rewrite.MESSAGE_KEYS[code], session=session), code=code)
         if storage == "external":
             return None, index
         return rewrite.plan_of(rows, index), None
+
+    @staticmethod
+    def _regenerated(messages: list[Any], index: int) -> tuple[int | None, str | None]:
+        """The question a regeneration runs again, when its answer may be regenerated.
+
+        Returns:
+            Its index and text, or ``(None, None)``.
+        """
+        if rewrite.regenerable_index(messages) != index:
+            return None, None
+        text = rewrite.question_text(messages[index])
+        return (index, text) if text else (None, None)
 
     async def _idle(self, session_id: str, wait: float = 2.0) -> bool:
         """Whether no turn of the conversation runs.
@@ -475,11 +509,13 @@ class TurnEngine:
             await asyncio.wait_for(running.finished.wait(), timeout=timeout)
         return self.turns.running(session_id) is None
 
-    async def _rewritable(self, run: TurnRun) -> bool:
-        """Whether the conversation's last question can still be rewritten (the ``done`` event).
+    async def _rewritable(self, run: TurnRun) -> tuple[bool, bool]:
+        """Whether the last question can be rewritten, and the last answer regenerated.
+
+        For the ``done`` event.
 
         Returns:
-            True when it can.
+            Both answers.
         """
         try:
             if isinstance(run.threads, ExternalThreads):
@@ -490,8 +526,11 @@ class TurnEngine:
             log.warning(
                 "rewritable_unknown", extra={"turnId": run.turn_id, "error": error_class(e)}
             )
-            return False
-        return rewrite.rewritable_index(msgs) is not None
+            return False, False
+        return (
+            rewrite.rewritable_index(msgs) is not None,
+            rewrite.regenerable_index(msgs) is not None,
+        )
 
     def new_trace(
         self,
@@ -710,7 +749,7 @@ class TurnEngine:
                 done["messages"] = [x.as_json() for x in run.threads.added]
                 if run.replaced_from is not None:
                     done["replacedFrom"] = run.replaced_from
-            done["rewritable"] = await self._rewritable(run)
+            done["rewritable"], done["regenerable"] = await self._rewritable(run)
             # Security events are stored before the end is announced: whoever reads them next
             # (the console, a test) finds them.
             await guard.flush()
@@ -1037,6 +1076,9 @@ class TurnEngine:
         )
         scope = self._scope(run, inp, credential)
         capabilities = await self.capabilities_for(agent, rs, scope)
+        waits = self._client_wait(run, rs)
+        if waits is not None:
+            capabilities.append(waits)
         compaction = next((c for c in capabilities if isinstance(c, EvokaiCompaction)), None)
         plan = (
             self.compactor.plan(run, candidates, compaction.policy(settings))
@@ -1216,6 +1258,11 @@ class TurnEngine:
         from evokai import capabilities as caps
         from evokai.capabilities.catalog import ENTRIES, HOST_WORKSPACE
 
+        builtin = builtin_tools.capabilities(
+            agent.builtin_tools, scope.grants, protection(scope.app), _egress_allow(rs.guard)
+        )
+        if builtin:
+            rs.trace.root.set(builtinTools=[d.kind for d in agent.builtin_tools])
         uses = {
             name: use
             for name, use in agent.capabilities.items()
@@ -1224,7 +1271,7 @@ class TurnEngine:
             and scope.grants.capability(name)
         }
         if not uses:
-            return []
+            return builtin
         enabled = set(uses)
 
         async def record(name: str, response: ModelResponse) -> None:
@@ -1312,7 +1359,7 @@ class TurnEngine:
         if any(caps.get(n).group != "evokai" for n in enabled):
             # The tools capabilities bring get Evokai's tool rules, and what they do is traced.
             out += [harness.CapabilityTools(), harness.CapabilityEvents()]
-        return out
+        return out + builtin
 
     async def _subagents(
         self, agent: AgentDef, rs: RunState, scope: Scope
@@ -1660,6 +1707,10 @@ class TurnEngine:
                                         ev.delta, TextPartDelta
                                     ):
                                         delta = ev.delta.content_delta
+                                    if isinstance(ev, PartStartEvent) and isinstance(
+                                        ev.part, NativeToolCallPart | NativeToolReturnPart
+                                    ):
+                                        self._native(run, rs, ev.part, emit)
                                     if delta:
                                         show(filt.push(delta))
                                         if filt.blocked:
@@ -1965,6 +2016,8 @@ class TurnEngine:
                     read_only=t["name"] == "skill_load",
                 )
             )
+        if inp.client_tools and inp.channel == "browser":
+            out += self._client_tools(run, rs, app_names, wait=inp.client_wait)
         if targets and guard.offered(HANDOFF) and HANDOFF not in app_names:
             handoff = handoff_tool([(n, t.title) for n, t in targets.items()])
 
@@ -2068,6 +2121,189 @@ class TurnEngine:
         # the person is left out, like a tool that changes data (``McpRegistry.toolbox``).
         asks = run.grants.client("confirm")
         return [t for t in out if guard.offered(t.name) and (asks or not guard.askable(t.name))]
+
+    @staticmethod
+    def _native(run: TurnRun, rs: RunState, part: Any, emit: Any) -> None:
+        """A provider built-in tool's call or result, as events.
+
+        A ``tool`` event, and a ``citation`` per web source (numbered with the turn's other
+        citations); traced as an event.
+        """
+        if isinstance(part, NativeToolCallPart):
+            emit({"type": "tool", "name": part.tool_name, "status": "start", "builtin": True})
+            return
+        failed = isinstance(part.content, dict) and part.content.get("error_code")
+        status = "error" if failed else "done"
+        emit({"type": "tool", "name": part.tool_name, "status": status, "builtin": True})
+        # A source shown as a link follows the link policy, like a link in the answer.
+        found = [x for x in builtin_tools.sources(part.content) if rs.guard.link_allowed(x["url"])]
+        for src in found:
+            n = run.citations.get(src["url"])
+            if n is None:
+                n = run.citations[src["url"]] = len(run.citations) + 1
+                rs.show({
+                    "type": "citation",
+                    "index": n,
+                    "title": src["title"],
+                    "url": src["url"],
+                    "source": part.tool_name,
+                })
+        rs.trace.event(
+            "tool",
+            f"builtin_tool {part.tool_name}",
+            tool=part.tool_name,
+            callId=part.tool_call_id,
+            type="builtin",
+            outcome="error" if failed else "ok",
+            sources=len(found),
+        )
+
+    def _client_tools(
+        self, run: TurnRun, rs: RunState, app_names: set[str], *, wait: bool = True
+    ) -> list[ToolSpec]:
+        """The custom client tools of a turn: the agent's, then the session token's.
+
+        Each sends a ``client_tool`` event; one that waits defers its call until the client
+        answers (``ClientToolWait``). An application tool with the same name wins.
+
+        Returns:
+            Their tool specs.
+        """
+        session_tools = [
+            t
+            for t in custom.merged([], run.session.client_tools)
+            if run.grants.client_tool(t.name, static=False)
+        ]
+        tools = custom.merged(run.agent.client_tools.custom, session_tools)
+        if not wait:
+            tools = [t for t in tools if not t.wait]
+        emit = rs.emit
+        assert emit is not None  # ruff: ignore[assert] (a turn always emits)
+        waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
+        names: dict[str, str] = rs.extra.setdefault("clientNames", {})
+        announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
+
+        def handler(tool: Any) -> Any:
+            async def handle(  # ruff: ignore[unused-async] (a handler is awaited)
+                args: dict[str, Any], cid: str, span: Any
+            ) -> ToolResult:
+                event = {
+                    "type": "client_tool",
+                    "callId": cid,
+                    "name": tool.name,
+                    "args": args,
+                    "wait": tool.wait,
+                }
+                if span is not None:
+                    span.set(type="client", wait=tool.wait)
+                if not tool.wait:
+                    emit(event)
+                    return ToolResult(True, custom.OK_TEXT)
+                # Sent when the wait opens: a step that ends on a confirmation never sends it.
+                announce[cid] = event
+                waits[cid] = time.perf_counter()
+                names[cid] = custom.model_name(tool.name)
+                if span is not None:
+                    span.set(outcome="waiting")
+                raise CallDeferred()
+
+            return handle
+
+        out = []
+        for t in tools:
+            name = custom.model_name(t.name)
+            if name in app_names:
+                log.warning("client_tool_shadowed", extra={"turnId": run.turn_id, "tool": name})
+                continue
+            out.append(
+                ToolSpec(
+                    name=name,
+                    description=t.description,
+                    schema=t.parameters,
+                    run=handler(t),
+                    kind="client",
+                    metadata={"evokai_client_wait": t.wait},
+                )
+            )
+        return out
+
+    def _client_wait(self, run: TurnRun, rs: RunState) -> ClientToolWait | None:
+        """The capability that waits for the client's results, when a client tool waits.
+
+        Returns:
+            It, or None.
+        """
+        names = frozenset(
+            n
+            for n, t in rs.tools.items()
+            if t.kind == "client" and t.metadata.get("evokai_client_wait")
+        )
+        if not names:
+            return None
+        guard, trace = rs.guard, rs.trace
+        waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
+        called: dict[str, str] = rs.extra.setdefault("clientNames", {})
+        limit = self.settings.tool_result_chars
+
+        def waited(cid: str) -> int:
+            started = waits.pop(cid, None)
+            return round((time.perf_counter() - started) * 1000) if started else 0
+
+        async def accept(cid: str, result: Any, error: str | None) -> str:
+            name = called.get(cid, "client")
+            ok = error is None
+            if ok:
+                text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+            else:
+                text = f"Error from the client application: {clip(str(error), 2_000)}"
+            # The result comes from the browser: data the person controls, never instructions.
+            text = clip(await guard.tool_result(name, text), limit)
+            rs.ok[cid] = ok
+            span = trace.event(
+                "tool",
+                f"client_tool_result {name}",
+                tool=name,
+                callId=cid,
+                type="client",
+                waitedMs=waited(cid),
+                outcome="ok" if ok else "error",
+                resultChars=len(text),
+            )
+            trace.put(span, result=text)
+            return text
+
+        announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
+
+        def announced(cids: list[str]) -> None:
+            for cid in cids:
+                event = announce.pop(cid, None)
+                if event is not None and rs.emit is not None:
+                    rs.emit(event)
+
+        def timed_out(cids: list[str]) -> None:
+            for cid in cids:
+                rs.ok[cid] = False
+                name = called.get(cid, "client")
+                trace.event(
+                    "tool",
+                    f"client_tool_result {name}",
+                    tool=name,
+                    callId=cid,
+                    type="client",
+                    waitedMs=waited(cid),
+                    outcome="timeout",
+                )
+
+        return ClientToolWait(
+            calls=self.client_calls,
+            session_id=run.session.id,
+            turn_id=run.turn_id,
+            names=names,
+            accept=accept,
+            announce=announced,
+            timed_out=timed_out,
+            timeout_seconds=self.settings.client_tool_timeout_seconds,
+        )
 
     @staticmethod
     def _spoken(
@@ -2761,6 +2997,18 @@ class TurnEngine:
             ok, text = await load_skill(skills, args, read, runnable=scripts_runnable)
             return ToolResult(ok, text)
         return ToolResult(False, f"Unknown tool: {name}")
+
+
+def _egress_allow(guard: TurnGuard) -> list[str] | None:
+    """The egress allow-list a built-in tool follows (only while ``tools.egress`` is enforced).
+
+    Returns:
+        Domains (an empty list allows none), or None when there is no check.
+    """
+    tools = guard.policy.settings.tools
+    if tools is None or tools.egress_allow is None or not guard.policy.enforced("tools.egress"):
+        return None
+    return list(tools.egress_allow)
 
 
 def _new_messages(history: list[Any]) -> list[dict[str, Any]]:

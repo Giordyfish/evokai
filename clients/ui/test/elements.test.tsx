@@ -178,6 +178,66 @@ describe('<evokai-chat>', () => {
     expect(paths).toEqual(['/orders', '/orders/1042'])
   })
 
+  test('toolRenderers draw a tool\'s card instead of the default line', async () => {
+    const { el, $, $$ } = await mounted([
+      [
+        { type: 'tool', name: 'orders_month', status: 'start' },
+        { type: 'tool', name: 'orders_month', status: 'done' },
+        { type: 'tool', name: 'stock_report', status: 'done' },
+        { type: 'text', delta: 'Done.' },
+      ],
+    ])
+    el.toolRenderers = {
+      orders_month: (part) => {
+        const d = document.createElement('div')
+        d.className = 'mine'
+        d.textContent = `${part.name}:${part.status}`
+        return d
+      },
+      stock_report: () => null,
+    }
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('orders')
+    await until(() => $('.mine'))
+    expect($('.mine')!.textContent).toBe('orders_month:done')
+    expect($$('[part~="tool"]').map((x) => x.textContent)).toEqual(['stock_report'])
+  })
+
+  test('a tool card is drawn again only when its part changes, not on every token', async () => {
+    const deltas = Array.from({ length: 12 }, (_, i) => ({ type: 'text' as const, delta: `w${i} ` }))
+    const { el, $ } = await mounted([[{ type: 'tool', name: 'orders_month', status: 'done' }, ...deltas]])
+    let drawn = 0
+    el.toolRenderers = {
+      orders_month: () => {
+        drawn++
+        return document.createElement('div')
+      },
+    }
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('orders')
+    await until(() => $('.panel')!.textContent!.includes('w11'))
+    expect(drawn).toBeLessThanOrEqual(2)
+  })
+
+  test('the tools property answers custom client tools', async () => {
+    const { el, evokai, $ } = await mounted([[{ type: 'client_tool', callId: 'c1', name: 'kiosk_light', args: { on: true }, wait: true }]])
+    const got: unknown[] = []
+    el.tools = {
+      kiosk_light: (args) => {
+        got.push(args)
+        return { lit: true }
+      },
+    }
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('light')
+    await until(() => evokai.calls.some((c) => c.url.endsWith('/v1/session/tool-results')))
+    expect(got).toEqual([{ on: true }])
+    expect(evokai.calls.find((c) => c.url.endsWith('/v1/session/tool-results'))?.body).toEqual({ callId: 'c1', result: { lit: true } })
+  })
+
   test('Ctrl+J toggles, Escape closes; the conversation is remembered', async () => {
     const { el, $ } = await mounted()
     dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }))

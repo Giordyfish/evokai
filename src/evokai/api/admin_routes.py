@@ -473,6 +473,24 @@ async def list_agents(svc: Svc, a: Admin) -> dict[str, Any]:
     }
 
 
+def _check_builtin_tools(app: Any, body: AgentDef) -> None:
+    """Built-in tools that keep data at the provider need the data protection's consent.
+
+    Raises:
+        AppError: 400 ``provider_storage``.
+    """
+    from evokai.engine.builtin_tools import STORING, storage_allowed
+
+    keeping = [t.kind for t in body.builtin_tools if t.kind in STORING]
+    if keeping and not storage_allowed(protection(app)):
+        raise AppError(
+            f"{', '.join(keeping)} would keep data at the model's provider: the application's "
+            "data protection does not allow it (provider_tool_storage).",
+            code="provider_storage",
+            status=400,
+        )
+
+
 @router.put("/agents/{name}")
 async def put_agent(
     name: str, body: AgentDef, svc: Svc, a: Admin, request: Request
@@ -506,6 +524,7 @@ async def put_agent(
     problems = (await grants_of(svc.store, app)).problems(body, explicit_client_tools(body))
     if problems:
         raise NotGrantedInAgent(problems)
+    _check_builtin_tools(app, body)
     outside = [
         x
         for x in dict.fromkeys((body.model, *body.fallbacks, *body.models))
