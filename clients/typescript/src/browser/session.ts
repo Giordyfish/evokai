@@ -35,10 +35,19 @@ import type {
   MemoryList,
   MemoryState,
   SessionInfo,
+  SpeechChoice,
   VoiceEngineKind,
 } from '../core/types'
 import { readSse } from './sse'
 import { localePack, type LocaleCode, type LocalePack } from '../locales'
+import {
+  speak as speakWith,
+  speechEvents as speechEventsWith,
+  transcribe as transcribeWith,
+  type SpeakInput,
+  type SpeechResult,
+  type SpeechStreamEvent,
+} from './speech-server'
 import { localId, seen, SessionStore, type SessionState } from './store'
 
 /** Runs a custom client tool: gets the call's arguments (and the event); its return value is the result. */
@@ -47,7 +56,15 @@ export type ClientToolHandler = (args: Record<string, unknown>, event: ClientToo
 /** A token, or the session-token response of your backend (its other fields are used when present). */
 export type TokenInfo =
   | string
-  | { token: string; conversationId?: string | null; voiceEngine?: VoiceEngineKind; expiresAt?: number; usage?: UsageShares }
+  | {
+      token: string
+      conversationId?: string | null
+      voiceEngine?: VoiceEngineKind
+      /** The server speech engines the token chose (`speech` at mint), null for the defaults. */
+      speech?: SpeechChoice | null
+      expiresAt?: number
+      usage?: UsageShares
+    }
 
 export interface TokenRequestContext {
   /** The conversation the token must open (null = a new one). */
@@ -109,6 +126,7 @@ export class EvokaiSession {
   private readonly opts: EvokaiSessionOptions
   private tok: { token: string; expiresAt?: number } | null = null
   private engine: VoiceEngineKind
+  private speech_: SpeechChoice | null = null
   private readonly listeners = new Map<string, Set<EventListener>>()
   private readonly tools = new Map<string, ClientToolHandler>()
   private readonly renderers = new Map<string, (part: ToolPart) => void>()
@@ -236,6 +254,7 @@ export class EvokaiSession {
       this.engine = info.voiceEngine
       this.store.dispatch({ type: 'voiceEngine', voiceEngine: info.voiceEngine })
     }
+    if (info.speech !== undefined) this.speech_ = info.speech
     if (info.conversationId && !this.state.conversationId) this.store.dispatch({ type: 'conversation', conversationId: info.conversationId })
     return info.token
   }
@@ -273,6 +292,7 @@ export class EvokaiSession {
   /** The session: conversation, agent, the subject's memories and usage shares (also updates the usage). */
   async info(): Promise<SessionInfo> {
     const info = await this.call<SessionInfo>('/v1/session')
+    if (info.speech !== undefined) this.speech_ = info.speech
     this.store.dispatch({ type: 'usage', usage: info.usage })
     if (!this.state.conversationId) this.store.dispatch({ type: 'conversation', conversationId: info.conversationId })
     return info
@@ -642,6 +662,34 @@ export class EvokaiSession {
   /** Absolute URL of a service path (used by transports). */
   url(path: string): string {
     return joinUrl(this.baseUrl, path)
+  }
+
+  /** The fetch this session uses (for transports that make their own requests). */
+  get fetchLike(): FetchLike {
+    return this.fetchFn
+  }
+
+  /**
+   * The server speech engines the token chose (`speech` at mint), or null: the browser voice engine then speaks and
+   * listens on the device. Read from the token or from `info()`.
+   */
+  get speech(): SpeechChoice | null {
+    return this.speech_
+  }
+
+  /** Server speech: a text or a `say` segment as audio and timings (`POST /v1/session/speech`). */
+  speak(input: SpeakInput): Promise<SpeechResult> {
+    return speakWith(this, input)
+  }
+
+  /** Server speech as a stream: audio first, timings as the engine reports them (for `TimedSpeechPlayer`). */
+  speechEvents(input: SpeakInput): AsyncGenerator<SpeechStreamEvent> {
+    return speechEventsWith(this, input)
+  }
+
+  /** Transcribe a recording with the session's recognition engine (`POST /v1/session/transcribe`). */
+  transcribe(audio: Blob | Uint8Array, opts?: { language?: string; contentType?: string; signal?: AbortSignal }) {
+    return transcribeWith(this, audio, opts)
   }
 }
 

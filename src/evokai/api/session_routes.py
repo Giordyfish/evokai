@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from evokai.agents.prompts import PageContext
 from evokai.api.deps import services, session
+from evokai.audio.choice import speech_view
 from evokai.audio.speech.markup import markup_of
 from evokai.core.errors import AppError, Conflict, Forbidden, NotFound
 from evokai.core.security import code_matches
@@ -58,6 +59,7 @@ async def info(svc: Svc, s: Sess) -> dict[str, Any]:
         "memory": (await svc.memory.state(app, s.who)).view() if app else None,
         "suggestions": await _suggestions(svc, c.application_id, agent),
         "markup": await _markup(svc, app, agent, conv),
+        "speech": speech_view(c.speech_tts, c.speech_stt),
     }
 
 

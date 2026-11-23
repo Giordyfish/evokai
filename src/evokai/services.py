@@ -45,6 +45,8 @@ class Services:
     ``EVOKAI_REDIS_URL`` is set, else this process's memory)."""
     voice: Any = None
     """The WebRTC voice server, created on the first voice offer when voice is enabled."""
+    speech_streams: set[tuple[str, str, str]] = field(default_factory=set)
+    """Sessions streaming speech recognition in this process (one socket per session)."""
     evals: Any = None
     """The eval runs (``evokai.evals.runner.EvalService``)."""
     knowledge: Any = None

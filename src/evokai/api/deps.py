@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import Request
+from starlette.requests import HTTPConnection
 
 from evokai.assistant import delegation
 from evokai.assistant.reset import own_write
@@ -246,7 +247,7 @@ async def operator(request: Request) -> None:
         raise Unauthorized("An operator login is required.", code="operator_key")
 
 
-def same_origin(request: Request, origin: str) -> bool:
+def same_origin(request: HTTPConnection, origin: str) -> bool:
     """Whether a browser origin is this service's own (the console's playground).
 
     Returns:

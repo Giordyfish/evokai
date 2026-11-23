@@ -512,10 +512,12 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
             )
         )
     if st.voice_enabled:
-        for kind, engine in (("stt", st.voice_stt), ("tts", st.voice_tts)):
-            out.append(
-                verdict_view(f"{kind}:{engine}", kind, processor_verdict(prof, f"{kind}:{engine}"))
-            )
+        from evokai.audio.choice import stt_engines, tts_engines
+
+        for kind, engines in (("stt", stt_engines(st)), ("tts", tts_engines(st))):
+            for engine in engines:
+                pid = f"{kind}:{engine}"
+                out.append(verdict_view(pid, kind, processor_verdict(prof, pid)))
     for provider, pid in CONNECTIONS.items():
         row = verdict_view(provider, "connection", processor_verdict(prof, pid))
         row["processor"] = pid

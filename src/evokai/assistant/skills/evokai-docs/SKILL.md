@@ -44,4 +44,5 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/security-assessment.md`: Security assessment of the browser session API
 - `references/security.md`: Security of agents
 - `references/templates.md`: Templates
+- `references/voice.md`: Server speech
 - `references/workflows.md`: Workflows

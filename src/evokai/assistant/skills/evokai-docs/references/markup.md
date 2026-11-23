@@ -71,7 +71,8 @@ Each spoken segment (`say`, voice mode) is cleaned and carries the markup apart:
   when that differs.
 
 A segment made only of cues hands them to the next segment (offset 0). Cues after the last sentence come in a final
-`say` with an empty `text`: clients skip speaking it and only fire its marks.
+`say` with an empty `text`: clients skip speaking it and only fire its marks. [Server speech](voice.md) turns
+the offsets into times (`mark` events).
 
 ## People cannot write cues
 

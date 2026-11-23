@@ -92,6 +92,7 @@ from evokai.models import (
 )
 from evokai.server import AsyncEvokaiServer, EvokaiServer
 from evokai.session import AsyncChatStream, AsyncEvokaiSession, ChatStream, EvokaiSession
+from evokai.speech import Speech, Transcript
 
 __all__ = [
     "AgentDef",
@@ -162,12 +163,14 @@ __all__ = [
     "SessionInfo",
     "SessionToken",
     "SkillBody",
+    "Speech",
     "SpeechEvent",
     "StoredMessage",
     "SubjectExport",
     "SubjectLimits",
     "TextEvent",
     "ToolEvent",
+    "Transcript",
     "UnknownEvent",
     "UsageEvent",
     "UsageReport",

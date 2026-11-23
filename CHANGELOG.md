@@ -61,6 +61,17 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   model sees it; the leak check reads the answer without it. `GET /v1/session` returns the delimiters (`markup`), the
   TypeScript client's `stripMarkup` hides them and `<evokai-chat>` uses it. Set in the application YAML (`markup:`),
   `PATCH /v1/admin/application` and the console's Limits page.
+- Server speech ([docs](docs/voice.md)), mounted with voice: `POST /v1/session/speech` speaks a text or a `say`
+  segment and streams audio (PCM or Ogg Opus) with word times, the segment's cues as times and visemes;
+  `POST /v1/session/transcribe` transcribes a recording; `WS /v1/session/transcribe/stream` transcribes the
+  microphone (session token in the subprotocol, one socket per session, Silero VAD parameters, a maximum
+  length). Engines are Pipecat services: ElevenLabs, OpenAI, Azure, Piper, Kokoro and faster-whisper, each in
+  the provider catalog with residency, retention and price, so data protection judges them and their usage
+  (characters, seconds) counts in the caps. A session token chooses them with `speech: {tts, stt}` within the
+  grants. The TypeScript client gets `session.speak`, `TimedSpeechPlayer`, `ServerTts` and `ServerStt`, which
+  the browser voice engine and `<evokai-chat>` use when the token chose server engines; the Python client gets
+  `speak` and `transcribe`. Real engines are tested from recorded cassettes (`scripts/record-cassettes.sh
+  speech`).
 
 ### Changed
 
@@ -89,6 +100,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The console assistant can never change an agent's security policy, whoever it acts for.
 - The README explains what Evokai brings into a product (the agent backend, the interface, the admin console,
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
+- The WebRTC voice pipeline uses the session's voice (token `voice`, else the agent's `voice.voice_id`): it was
+  never passed to the speech engine before. The fake recognition engine hears «hello» unless given phrases.
 
 ### Upgrading
 
