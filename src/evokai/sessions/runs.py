@@ -35,7 +35,11 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    PartDeltaEvent,
+    PartStartEvent,
     SystemPromptPart,
+    TextPart,
+    TextPartDelta,
     ToolCallPart,
     UserPromptPart,
 )
@@ -56,6 +60,8 @@ from evokai.engine.state import RunState, Scope
 from evokai.engine.tools import EvokaiToolset, GuardedToolset, ToolSpec
 from evokai.grants import NotGranted, grants_of
 from evokai.guard import TurnGuard
+from evokai.guard.output import SentenceGate
+from evokai.i18n import message
 from evokai.knowledge.tool import (
     CITE_NOTE,
     format_results,
@@ -97,6 +103,12 @@ class LimitReached(AppError):
     """The application's cap stops the run."""
 
     status, code = 429, "limit"
+
+
+class GuardStopped(AppError):
+    """The output guard stopped a streamed answer (it repeated the agent's instructions)."""
+
+    status, code = 400, "guard"
 
 
 class InvalidOutput(AppError):
@@ -171,6 +183,7 @@ class AgentRunner:
         usage_key: str | None = None,
         prompt_options: dict[str, Any] | None = None,
         client_tools: Sequence[ClientToolDef] = (),
+        on_text: Callable[[str], None] | None = None,
     ) -> RunResult:
         """Run the agent to its answer.
 
@@ -204,6 +217,9 @@ class AgentRunner:
                 ``evokai.agents.modules``); None renders the agent's defaults.
             client_tools: Custom client tools the caller declares for this run (already checked
                 and granted; none waits): their calls come back in ``client_calls``.
+            on_text: Streams the answer as it is written (an answer without ``output_schema``):
+                called with each piece once the output guard let it through, token by token when
+                no output control rewrites text, else sentence by sentence (``SentenceGate``).
 
         Returns:
             The result.
@@ -290,6 +306,7 @@ class AgentRunner:
                 usage_key=usage_key,
                 modules=modules,
                 client_tools=client_tools,
+                on_text=on_text,
             )
             return result
         except LimitReached:
@@ -368,6 +385,7 @@ class AgentRunner:
         usage_key: str | None = None,
         modules: list[Any] | None = None,
         client_tools: Sequence[ClientToolDef] = (),
+        on_text: Callable[[str], None] | None = None,
     ) -> RunResult:
         """The run itself, under its guard, on the same engine as the turns.
 
@@ -568,6 +586,25 @@ class AgentRunner:
                     raise ModelRetry(f"Invalid answer, fix it: {feedback}")
                 return output
 
+        gate = SentenceGate(guard.output_filter()) if on_text is not None and not schema else None
+        stopped = GuardStopped(message(app, "turn.guardStopped"))
+
+        async def stream(_ctx: Any, events: Any) -> None:
+            assert gate is not None and on_text is not None  # ruff: ignore[assert] (set together)
+            async for ev in events:
+                delta = None
+                if isinstance(ev, PartStartEvent) and isinstance(ev.part, TextPart):
+                    delta = ev.part.content
+                elif isinstance(ev, PartDeltaEvent) and isinstance(ev.delta, TextPartDelta):
+                    delta = ev.delta.content_delta
+                if not delta:
+                    continue
+                for piece in gate.push(delta):
+                    on_text(piece)
+                if gate.blocked:
+                    guard.after_output(gate.filter)
+                    raise stopped
+
         try:
             with ToolManager.parallel_execution_mode("sequential"):
                 answer = await runner.run(
@@ -578,6 +615,7 @@ class AgentRunner:
                     usage_limits=UsageLimits(
                         request_limit=agent.max_tool_calls_per_turn + MAX_SCHEMA_RETRIES + 1
                     ),
+                    event_stream_handler=stream if gate is not None else None,
                 )
         except UsageLimitExceeded as e:
             raise InvalidOutput("The agent did not finish within its step limit.") from e
@@ -585,7 +623,15 @@ class AgentRunner:
             if schema:
                 raise InvalidOutput("The answer did not match the output schema.") from e
             raise
-        if schema:
+        if gate is not None and on_text is not None:
+            # Streamed: every piece already passed the output filter on its way out.
+            for piece in gate.flush():
+                on_text(piece)
+            guard.after_output(gate.filter)
+            if gate.blocked:
+                raise stopped
+            result.text = result.output = gate.filter.shown
+        elif schema:
             result.output = guard.check_final(dict(answer.output))
         else:
             result.text = guard.check_final(str(answer.output))

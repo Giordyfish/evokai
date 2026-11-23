@@ -63,12 +63,22 @@ With `"stream": true` the answer is a stream of `chat.completion.chunk` events e
 
 1. a chunk with `delta: {role: "assistant", content: ""}`;
 2. one chunk per tool call step, with an empty `delta` and `evokai.tool: {name, status}` (`start`, `done`, `error`);
-3. the answer in **one content chunk**: the guard checks the whole answer (secrets, personal data, links, the system
-   prompt) before any of it leaves, so it is not streamed token by token;
+3. the answer as it is written, in content chunks:
+   - **sentence by sentence** when an output control of the application's security policy is enforced (secrets,
+     personal data and links towards the browser, the system prompt leak, tokens put back): each sentence passes the
+     output guard before it leaves, and the guard keeps the tail of what it already saw in its scan, so a secret split
+     across two sentences is still caught whole;
+   - **token by token** when every output control is `off` or `monitor` (monitor findings are recorded at the end);
+   - in **one chunk** for an agent with an `output_schema` (its JSON);
 4. a chunk with `finish_reason: "stop"` and the `evokai` extension;
 5. with `stream_options.include_usage`, a chunk with `choices: []` and `usage`.
 
-An error after the stream started (a cap reached between two steps, a model failure) is a chunk
+The streamed answer carries every text the agent writes, also a sentence it writes before calling a tool, as in a
+session. If a later sentence is refused (the answer repeats the agent's instructions), the stream ends with an error
+chunk carrying the guard's refusal text (`code: "guard"`) followed by `[DONE]`: what was already sent stays sent,
+nothing after it goes out.
+
+An error after the stream started (a cap reached between two steps, a model failure, the guard's refusal) is a chunk
 `{"error": {...}}` followed by `[DONE]`; openai-python raises it as an `APIError`. Comments (`: ping`) keep idle
 connections open while tools run.
 
