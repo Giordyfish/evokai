@@ -24,6 +24,7 @@ import {
   type TokenInfo,
   type TokenRequestContext,
   type VoiceEngine,
+  type MarkupView,
 } from '@evokai/evokai-client/browser'
 
 export interface ConversationItem {
@@ -62,6 +63,8 @@ export type Installing = 'no' | 'downloading' | 'done' | 'failed'
 export interface ControllerState {
   session: SessionState
   suggestions: string[]
+  /** The delimiters of the answers' inline markup, hidden in what the chat shows (null without). */
+  markup: MarkupView | null
   history: ConversationItem[] | null
   support: Support
   installing: Installing
@@ -168,6 +171,7 @@ export class Controller {
     this.st = {
       session: this.session.state,
       suggestions: [],
+      markup: null,
       history: null,
       support: 'checking',
       installing: 'no',
@@ -272,6 +276,7 @@ export class Controller {
     if (this.opened) return
     this.opened = true
     void this.checkSupport()
+    let read = false
     try {
       const saved = this.saved()
       if (saved && !this.session.state.conversationId && (this.opts.getToken || this.opts.tokenUrl)) {
@@ -284,11 +289,20 @@ export class Controller {
       } else if (!this.opts.session) {
         const info = await this.session.info()
         if (info.suggestions?.length) this.patch({ suggestions: info.suggestions })
+        this.patch({ markup: info.markup ?? null })
         this.noteMemory(info.memory)
+        read = true
       }
       this.patch({ error: null })
       // A resumed conversation (or a session of your own) has not read the session yet: its memory state comes apart.
-      if (!this.st.memory) void this.session.info().then((i) => this.noteMemory(i.memory), () => undefined)
+      if (!read)
+        void this.session.info().then(
+          (i) => {
+            this.noteMemory(i.memory)
+            this.patch({ markup: i.markup ?? null })
+          },
+          () => undefined,
+        )
       // Whether there is anything to connect: the menu offers the connections view only then.
       void this.readConnections()
     } catch (e) {

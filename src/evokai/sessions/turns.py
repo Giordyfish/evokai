@@ -62,6 +62,7 @@ from evokai.agents.prompts import (
 from evokai.agents.registry import AgentRegistry
 from evokai.agents.skills import Skill, SkillFile
 from evokai.agents.skills import load as load_skill
+from evokai.audio.speech.markup import Markup, markup_of
 from evokai.audio.speech.numbers import spell_numbers
 from evokai.audio.speech.replies import spoken_decision, spoken_option
 from evokai.audio.speech.speakable import SentenceSplitter, speakable
@@ -207,6 +208,8 @@ class TurnRun:
     """Where this conversation lives: ``evokai`` or ``external``."""
     rules: SpeechRules = field(default_factory=speech_rules)
     """Speech rules of the application's language."""
+    markup: Markup | None = None
+    """The inline markup of the answer (cues, speech tags), when the application or agent has it."""
     guard: TurnGuard | None = None
     """The security layer of this turn."""
     status: str = "done"
@@ -410,6 +413,7 @@ class TurnEngine:
             guard=guard,
             trace=guard.trace,
             rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
+            markup=markup_of((app.defaults or {}).get("markup"), agent.markup, session),
             threads=threads,
             grants=grants,
             storage=storage,
@@ -659,18 +663,35 @@ class TurnEngine:
             run.timings["endOfSpeechAt"] = inp.end_of_speech_at
         voice = inp.mode == "voice"
         splitter = SentenceSplitter(
-            run.agent.voice.first_clause_min_chars if voice else 0, run.rules
+            run.agent.voice.first_clause_min_chars if voice else 0, run.rules, markup=run.markup
         )
-        said = {"n": 0}
+        said = {"n": 0, "dropped": 0}
+        carried: list[dict[str, Any]] = []
         trace = self._trace(run, inp)
         voice_span: dict[str, Span | None] = {"span": None}
 
         def emit(event: dict[str, Any]) -> dict[str, Any]:
             return run.channel.publish(event, run.turn_id)
 
-        def say(text: str, *, filler: bool = False) -> None:
-            if not voice or not text:
+        def say(text: str, *, filler: bool = False, last: bool = False) -> None:
+            if not voice or not (text or last):
                 return
+            shown, spoken = text, None
+            extra: dict[str, Any] = {}
+            if run.markup is not None:
+                # Cues become marks; a segment of cues alone hands them to the next one.
+                f = run.markup.forms(text, run.rules)
+                said["dropped"] += f.dropped
+                marks = [{**x, "at": 0, **({"spokenAt": 0} if "spokenAt" in x else {})}
+                         for x in carried] + f.marks  # fmt: skip
+                carried.clear()
+                if not f.text and not last:
+                    carried.extend(marks)
+                    return
+                shown, spoken = f.text, f.spoken
+                extra = {"marks": marks} if marks else {}
+                if f.tagged:
+                    extra["tagged"] = f.tagged
             if said["n"] == 0:
                 run.timings["firstSayMs"] = round((time.perf_counter() - t0) * 1000)
                 voice_span["span"] = trace.event(
@@ -681,12 +702,14 @@ class TurnEngine:
                     firstSayMs=run.timings["firstSayMs"],
                 )
             # What is shown keeps its digits; the speech engine gets the numbers in words.
-            spoken = spell_numbers(text, run.rules.locale)
+            if spoken is None:
+                spoken = spell_numbers(shown, run.rules.locale)
             emit({
                 "type": "say",
                 "index": said["n"],
-                "text": text,
-                **({"spoken": spoken} if spoken != text else {}),
+                "text": shown,
+                **({"spoken": spoken} if spoken != shown else {}),
+                **extra,
                 **({"filler": True} if filler else {}),
             })
             said["n"] += 1
@@ -697,6 +720,8 @@ class TurnEngine:
         emit({"type": "conversation", "id": run.session.id, "turnStarted": True})
         try:
             await self._run(run, inp, emit, say, splitter, t0)
+            if carried:
+                say("", last=True)  # the answer ended on cues
         except _Cancelled:
             run.status, run.reason = "interrupted", run.handle.reason or "cancelled"
         except Exception as e:
@@ -730,6 +755,8 @@ class TurnEngine:
             await guard.flush()
             if voice_span["span"] is not None:
                 voice_span["span"].set(segments=said["n"])
+                if said["dropped"]:
+                    voice_span["span"].set(markupDropped=said["dropped"])
             # The trace too, so the console can open it as soon as the turn is over.
             await self.store_trace(self._finish_trace(run, inp))
             # From here the turn has answered: its messages are stored, what is left is persisting
@@ -888,6 +915,9 @@ class TurnEngine:
                 run.status, run.reason = "blocked", "guard"
                 return
             text = user_text = decision.text
+            if run.markup is not None:
+                # A person cannot write cues for the agent: their markup reaches it inert.
+                text = user_text = run.markup.neutralise(text)
             if pending:
                 content += [
                     _result(
@@ -1659,7 +1689,9 @@ class TurnEngine:
                 ) as ar:
                     async for node in ar:
                         if Agent.is_model_request_node(node):
-                            filt = guard.output_filter()
+                            filt = guard.output_filter(
+                                clean=run.markup.clean if run.markup else None
+                            )
                             started = time.perf_counter()
                             rs.extra["streaming"] = True
                             async with node.stream(ar.ctx) as stream:

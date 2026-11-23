@@ -172,7 +172,7 @@ class EvokaiAgentProcessor(FrameProcessor):
 
     async def _deliver(self, run: TurnRun, event: dict[str, Any]) -> None:
         kind = event["type"]
-        if kind == "say" and self.speech and self._muted_turn != run.turn_id:
+        if kind == "say" and event["text"] and self.speech and self._muted_turn != run.turn_id:
             # Numbers in words for the engine; the microphone may hear either form back.
             spoken = event.get("spoken") or event["text"]
             self._last_said = f"{event['text']} {spoken}" if spoken != event["text"] else spoken

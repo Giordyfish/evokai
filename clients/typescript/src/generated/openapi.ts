@@ -4484,6 +4484,7 @@ export interface components {
              */
             instructions?: string;
             knowledge?: components["schemas"]["KnowledgeDef"] | null;
+            markup?: components["schemas"]["MarkupDef"] | null;
             /**
              * Max Tool Calls Per Turn
              * @default 6
@@ -4680,6 +4681,7 @@ export interface components {
             exchange_rate?: number | null;
             /** Locale */
             locale?: string | null;
+            markup?: components["schemas"]["MarkupDef"] | null;
             /** Memory Mode */
             memory_mode?: ("off" | "ask" | "on") | null;
             /** Memory Ttl Days */
@@ -5242,6 +5244,30 @@ export interface components {
             };
         };
         /**
+         * CueDef
+         * @description Cues: ``{name}`` or ``{name:arg}`` with the default delimiters.
+         */
+        CueDef: {
+            /**
+             * Close
+             * @default }
+             */
+            close?: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Names */
+            names?: string[] | null;
+            names_from?: components["schemas"]["ModuleParam"] | null;
+            /**
+             * Open
+             * @default {
+             */
+            open?: string;
+        };
+        /**
          * DataProtection
          * @description An application's data protection profile.
          */
@@ -5550,6 +5576,14 @@ export interface components {
             key?: string | null;
         };
         /**
+         * MarkupDef
+         * @description The markup an application or an agent declares (``markup:`` in YAML).
+         */
+        MarkupDef: {
+            cue?: components["schemas"]["CueDef"] | null;
+            speech?: components["schemas"]["SpeechTagDef"] | null;
+        };
+        /**
          * McpProbe
          * @description An MCP server to try before it is registered.
          */
@@ -5660,6 +5694,16 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ModuleParam
+         * @description A parameter of a session's prompt module (a list of strings, or one string).
+         */
+        ModuleParam: {
+            /** Module */
+            module: string;
+            /** Param */
+            param: string;
         };
         /**
          * ModuleRef
@@ -6358,6 +6402,29 @@ export interface components {
             title?: string | null;
             /** Url */
             url?: string | null;
+        };
+        /**
+         * SpeechTagDef
+         * @description Speech tags: ``[laughs]`` with the default delimiters.
+         */
+        SpeechTagDef: {
+            /**
+             * Close
+             * @default ]
+             */
+            close?: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Names */
+            names?: string[] | null;
+            /**
+             * Open
+             * @default [
+             */
+            open?: string;
         };
         /**
          * SsoConfigBody

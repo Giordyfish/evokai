@@ -1080,6 +1080,7 @@ async def export(svc: Svc, a: Admin) -> dict[str, str]:
         ("locale", d.get("locale")),
         ("timezone", d.get("timezone")),
         ("messages", d.get("messages") or None),
+        ("markup", d.get("markup") or None),
         ("tracing", {"content": d["tracing_content"]} if d.get("tracing_content") else None),
     )
     # An old *_usd field whose cap ``caps`` sets does not apply: left out, or the file would set

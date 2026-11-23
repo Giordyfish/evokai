@@ -13,9 +13,13 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from functools import cache
+from typing import TYPE_CHECKING
 
 from evokai.guard import pii
 from evokai.i18n import SpeechRules, speech_rules
+
+if TYPE_CHECKING:
+    from evokai.audio.speech.markup import Markup
 
 REDACTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b", re.I), "taxCode"),
@@ -155,14 +159,24 @@ class SentenceSplitter:
     so speech can start before the sentence ends.
     """
 
-    def __init__(self, first_clause_min_chars: int = 0, rules: SpeechRules | None = None) -> None:
+    def __init__(
+        self,
+        first_clause_min_chars: int = 0,
+        rules: SpeechRules | None = None,
+        *,
+        markup: Markup | None = None,
+    ) -> None:
         """Create a splitter.
 
         Args:
             first_clause_min_chars: Release the first clause early when this long (0 = off).
             rules: The language's speech rules (English by default).
+            markup: The answer's inline markup: segments come out as written (markup and
+                Markdown kept, for :meth:`Markup.forms`), a cut never falls inside a token, and a
+                segment of markup alone is kept.
         """
         self.rules = rules or speech_rules()
+        self.markup = markup
         self._sources = _sources(self.rules)
         self._abbr = _abbreviations(self.rules)
         self.buf = ""
@@ -193,6 +207,20 @@ class SentenceSplitter:
         self.buf = ""
         self.emitted = 0
 
+    def _segment(self, piece: str, out: list[str]) -> None:
+        if self._sources.match(piece.strip()):
+            self.muted = True
+        if self.muted:
+            return
+        if self.markup is None:
+            text = speakable(piece, self.rules)
+            if _HAS_WORD.search(text):
+                out.append(text)
+            return
+        words = _HAS_WORD.search(speakable(self.markup.clean(piece), self.rules))
+        if words or self.markup.has_markup(piece):
+            out.append(piece.strip())
+
     def _take(self, final: bool) -> list[str]:
         out: list[str] = []
         start = 0
@@ -216,19 +244,13 @@ class SentenceSplitter:
             piece = buf[start : i + 1]
             if end and ch == "." and self._abbr.search(piece):
                 continue
-            text = speakable(piece, self.rules)
-            if self._sources.match(piece.strip()):
-                self.muted = True
-            if _HAS_WORD.search(text) and not self.muted:
-                out.append(text)
+            if self.markup is not None and self.markup.inside(piece):
+                continue
+            self._segment(piece, out)
             start = i + 1
         self.buf = buf[start:]
         if final:
-            text = speakable(self.buf, self.rules)
-            if self._sources.match(self.buf.strip()):
-                self.muted = True
-            if _HAS_WORD.search(text) and not self.muted:
-                out.append(text)
+            self._segment(self.buf, out)
             self.buf = ""
         self.emitted += len(out)
         return out

@@ -485,6 +485,8 @@ export class BrowserVoiceEngine implements VoiceEngine {
       const t = this.waiting.get(this.nextIndex) as Line
       this.waiting.delete(this.nextIndex)
       this.nextIndex++
+      // A segment of cues alone (the answer ended on them) has nothing to say.
+      if (!t.spoken.trim()) continue
       // While holding, new sentences wait with the rest.
       if (this.stash) this.stash.push(t)
       else this.say(t)
