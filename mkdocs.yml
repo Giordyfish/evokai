@@ -103,6 +103,7 @@ nav:
       - Open standards:
           - AG-UI: ag-ui.md
           - OpenAI-compatible API: openai-compatible.md
+          - AI SDK: ai-sdk.md
           - A2A: a2a.md
   - Security & compliance:
       - Security of agents: security.md
