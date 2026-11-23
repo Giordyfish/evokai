@@ -216,6 +216,31 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
     ]
 
     client = [_item(grants, g.CLIENT, n, grants.client(n)) for n in g.CLIENT_TOOLS]
+    # Custom client tools: session-declared ones as a whole, each one an agent declares, and the
+    # names or patterns an override sets.
+    declared: dict[str, list[str]] = {}
+    for a in agents:
+        for t in (a.definition.get("client_tools") or {}).get("custom") or []:
+            declared.setdefault(str(t.get("name")), []).append(a.name)
+    custom_names = sorted(
+        set(declared)
+        | {r.name for r in rows if r.kind == g.CLIENT and r.name not in g.CLIENT_TOOLS}
+        - {g.CLIENT_SESSION}
+    )
+    client_custom = [
+        _item(grants, g.CLIENT, g.CLIENT_SESSION, _flag(grants, g.CLIENT, g.CLIENT_SESSION)),
+        *(
+            _item(
+                grants,
+                g.CLIENT,
+                n,
+                grants.client_tool(n, static=n in declared),
+                usedBy=sorted(declared.get(n, [])),
+                pattern=any(c in n for c in "*?"),
+            )
+            for n in custom_names
+        ),
+    ]
 
     # Voice: browser speech with its on-device voices, server speech with its engines and voices.
     def voice_children(engine: str) -> list[dict[str, Any]]:
@@ -382,6 +407,7 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         {"id": "mcp", "items": mcp},
         {"id": "skills", "items": skill_items},
         {"id": "client", "items": client},
+        {"id": "clientCustom", "items": client_custom},
         {"id": "voice", "items": voice},
         {"id": "storage", "items": storage},
         {"id": "channels", "items": channels},

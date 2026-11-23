@@ -23,6 +23,7 @@ Enforced in four places:
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -80,6 +81,11 @@ CODE_ITEMS = ("*",)
 """Isolated code execution (``code_run``) as a whole, off until granted."""
 
 CLIENT_TOOLS = ("navigate", "chart", "diagram", "ask", "confirm", "memory")
+CLIENT_SESSION = "session"
+"""The client grant of custom client tools declared by a session token or a server run (off until
+granted); a custom tool's own name (or a pattern) is a client grant too."""
+CUSTOM_CLIENT = re.compile(r"^[a-z][a-z0-9_*?]{0,47}$")
+"""A client grant naming custom client tools: a name, or a pattern with ``*`` and ``?``."""
 VOICE_ENGINES = ("browser", "server")
 STORAGE_MODES = ("evokai", "external")
 CHANNELS = ("browser", "server", "a2a", "email", "teams", "slack")
@@ -103,6 +109,7 @@ OFF_BY_DEFAULT = frozenset(
     | {(CHANNEL, c) for c in MESSAGING_CHANNELS}
     | {(CONNECTION, p) for p in CONNECTION_PROVIDERS}
     | {(CODE, "*")}
+    | {(CLIENT, CLIENT_SESSION)}
 )
 """Items an application does not have until it is granted them: A2A publishes agents to anyone
 holding the server key, autonomous workflows change data without a person deciding, channels
@@ -172,8 +179,11 @@ def check_value(kind: str, name: str, value: Any) -> Any:
         raise BadRequest(f"Unknown grant kind: {kind}", code="grant")
     if not name or len(name) > 300:
         raise BadRequest("A grant needs a name (up to 300 characters).", code="grant")
+    if kind == CLIENT and not (
+        name in CLIENT_TOOLS or name == CLIENT_SESSION or CUSTOM_CLIENT.match(name)
+    ):
+        raise BadRequest(f"Unknown {kind}: {name}", code="grant")
     fixed = {
-        CLIENT: CLIENT_TOOLS,
         VOICE: VOICE_ENGINES,
         STORAGE: STORAGE_MODES,
         CHANNEL: CHANNELS,
@@ -307,6 +317,33 @@ class Grants:
         """
         return self._flag(CLIENT, name)
 
+    def client_tool(self, name: str, *, static: bool) -> bool:
+        """Whether a custom client tool may be offered.
+
+        An exact override wins, else the longest matching pattern. Without one, a tool the agent
+        declares itself is on; a tool a session token or a server run declares needs
+        ``client:session`` (and then is on). A session tool always needs ``client:session``.
+
+        Args:
+            name: The tool's declared name (without the model-facing prefix).
+            static: Declared in the agent definition.
+
+        Returns:
+            True if it may be offered.
+        """
+        if not static and not self._flag(CLIENT, CLIENT_SESSION):
+            return False
+        exact = self.override(CLIENT, name)
+        if exact is not None:
+            return bool(exact)
+        patterns = sorted(
+            (n for k, n in self.overrides if k == CLIENT and _is_pattern(n)), key=len, reverse=True
+        )
+        for p in patterns:
+            if fnmatch.fnmatchcase(name, p):
+                return bool(self.overrides[CLIENT, p])
+        return True
+
     def voice(self, engine: str) -> bool:
         """Whether a voice engine may be used (browser or server speech).
 
@@ -428,6 +465,7 @@ class Grants:
                 "diagram": ct.diagram and self.client("diagram"),
                 "ask": ct.ask and self.client("ask"),
                 "memory": ct.memory and self.client("memory"),
+                "custom": [t for t in ct.custom if self.client_tool(t.name, static=True)],
             }
         )
         knowledge = agent.knowledge
@@ -500,6 +538,11 @@ class Grants:
                 continue
             if explicit_client_tools is None or name in explicit_client_tools:
                 out.append(f"client tool {name} is not granted")
+        out += [
+            f"client tool {t.name} is not granted"
+            for t in ct.custom
+            if not self.client_tool(t.name, static=True)
+        ]
         bases = agent.knowledge.bases if agent.knowledge else []
         out += [f"knowledge base {b} is not granted" for b in bases if not self.knowledge(b)]
         if "server" in agent.channels and not self.channel("server"):

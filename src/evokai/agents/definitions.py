@@ -28,6 +28,54 @@ class NavigateDef(BaseModel):
     """Only paths that match are sent to the client; anything else is refused."""
 
 
+CLIENT_TOOL_NAME = r"^[a-z][a-z0-9_]{1,47}$"
+"""The name of a custom client tool (the model sees it as ``client_<name>``)."""
+RESERVED_CLIENT_TOOLS = frozenset({"navigate", "chart", "diagram", "ask", "confirm", "memory"})
+"""Names of the built-in client tools and grant items, refused for a custom tool (``session``
+too: it is the grant of session-declared tools)."""
+MAX_CLIENT_TOOL_SCHEMA = 16_384
+"""Bytes of a custom client tool's parameters schema (as compact JSON)."""
+
+
+class ClientToolDef(BaseModel):
+    """A custom client tool: the client application runs it (``client_tool`` event)."""
+
+    name: str = Field(pattern=CLIENT_TOOL_NAME)
+    description: str = Field(min_length=1, max_length=1_000)
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    """The JSON Schema of the arguments (checked as a schema, at most 16 KB)."""
+    wait: bool = False
+    """False: Evokai sends the event and answers ``ok`` to the model at once. True: the turn waits
+    for the client's result (``POST /v1/session/tool-results``), up to the timeout."""
+
+    @field_validator("name")
+    @classmethod
+    def _not_reserved(cls, v: str) -> str:
+        if v in RESERVED_CLIENT_TOOLS or v == "session":
+            raise ValueError(f"{v} is reserved for a built-in client tool or grant")
+        return v
+
+    @field_validator("parameters")
+    @classmethod
+    def _schema(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if len(json.dumps(v, separators=(",", ":"))) > MAX_CLIENT_TOOL_SCHEMA:
+            raise ValueError("parameters: the schema is larger than 16 KB")
+        try:
+            Draft202012Validator.check_schema(v)
+        except Exception as e:  # jsonschema's SchemaError
+            raise ValueError(f"parameters: not a valid JSON Schema ({clip_message(e)})") from e
+        return v
+
+
+def clip_message(e: Exception) -> str:
+    """The first line of an error, short.
+
+    Returns:
+        At most 200 characters.
+    """
+    return str(getattr(e, "message", e)).splitlines()[0][:200]
+
+
 class ClientToolsDef(BaseModel):
     """Which client tools the agent has."""
 
@@ -36,6 +84,16 @@ class ClientToolsDef(BaseModel):
     diagram: bool = True
     ask: bool = True
     memory: bool = True
+    custom: list[ClientToolDef] = Field(default_factory=list, max_length=32)
+    """Client tools of the application's own (``docs/client-tools.md``)."""
+
+    @field_validator("custom")
+    @classmethod
+    def _unique(cls, v: list[ClientToolDef]) -> list[ClientToolDef]:
+        names = [t.name for t in v]
+        if len(names) != len(set(names)):
+            raise ValueError("a custom client tool is declared twice")
+        return v
 
 
 class VoiceDef(BaseModel):

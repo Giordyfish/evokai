@@ -720,6 +720,7 @@ class SessionRepository(_Repo):
         voice_engine: str = "browser",
         storage_mode: str | None = None,
         prompt_options: dict[str, Any] | None = None,
+        client_tools: list[dict[str, Any]] | None = None,
     ) -> tuple[m.Session, m.Thread]:
         """Create a conversation and its thread.
 
@@ -740,6 +741,7 @@ class SessionRepository(_Repo):
                 voice_engine=voice_engine,
                 storage_mode=storage_mode,
                 prompt_options=prompt_options,
+                client_tools=client_tools,
             )
             thread = m.Thread(id=new_id(), session_id=sess.id)
             s.add_all([sess, thread])
@@ -753,6 +755,13 @@ class SessionRepository(_Repo):
                 .update(m.Session)
                 .where(m.Session.id == session_id)
                 .values(prompt_options=options)
+            )
+
+    async def set_client_tools(self, session_id: str, tools: list[dict[str, Any]] | None) -> None:
+        """Replace the custom client tools the session token declared."""
+        async with self.db.session() as s:
+            await s.execute(
+                sa.update(m.Session).where(m.Session.id == session_id).values(client_tools=tools)
             )
 
     async def set_voice_engine(self, session_id: str, engine: str) -> None:
