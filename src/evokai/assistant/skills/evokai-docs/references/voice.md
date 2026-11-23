@@ -112,8 +112,11 @@ requests with this token, or a cap reached), 4500 (the engine is not available).
    `{"type": "final", "text"}`;
 4. the client sends `{"type": "stop"}`; the server sends what is left, `{"type": "end", "durationMs"}`, and closes.
 
-A stream longer than `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` (300) ends with `{"type": "error", "code": "too_long"}` and
-close code 4408, and so does one that receives nothing for `EVOKAI_TRANSCRIBE_STREAM_IDLE_SECONDS` (30, code `idle`).
+A stream carrying more audio than `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` (300), or open longer than that plus 10
+seconds of wall-clock time whatever it is sent, ends with `{"type": "error", "code": "too_long"}` and close code 4408
+(reason `too_long`). One that receives no audio for `EVOKAI_TRANSCRIBE_STREAM_IDLE_SECONDS` (30) ends the same way
+with code `idle`: text messages other than `stop` do not keep it open. A socket never outlives its session token: at
+the token's expiry it ends with code `expired` and close code 4401.
 A synthesis that takes longer than `EVOKAI_SPEECH_TIMEOUT_SECONDS` (60) ends with an `error` event (`tts_failed`).
 A recording is decoded only up to its maximum length. Engines that transcribe whole utterances (`elevenlabs`, `openai`) stream through their realtime
 variants.

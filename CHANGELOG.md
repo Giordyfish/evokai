@@ -127,6 +127,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - `POST /v1/session/transcribe` takes recordings up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB): the session API's 2 MB
   body limit refused anything longer than about a minute of 16 kHz WAV with 413. `POST /v1/session/speech` and
   `POST /v1/session/tool-results` now take at most 256 KB, which their own maxima fit in.
+- The streaming recognition socket (`WS /v1/session/transcribe/stream`) has a wall-clock deadline: its maximum
+  length plus 10 seconds, or its session token's expiry when sooner (`expired`, close code 4401). Only audio resets
+  its idle timer. Before, a client sending a text message every 29 seconds kept the socket, its pipeline and the
+  engine's connection open forever. Every early close carries its code as the close reason.
 
 ### Upgrading
 
