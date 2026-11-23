@@ -146,6 +146,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   refuses the turn), and on its way to the model its identifiers are protected (`pii.model`) and its markup is made
   inert. Before, it reached the model as raw text outside the data markers. Markup in a document's text and in a
   client tool's result is made inert too, so nobody can write cues for the agent through them.
+- A streamed Chat Completion and a whole one say the same: the text of every step, each set apart from the one before
+  by a blank line, in both and in the stored conversation. Before, `"stream": true` glued the steps' texts together
+  ("Let me check.October has 24 orders.") while `"stream": false` returned only the last step's. Server runs follow
+  the same rule.
 
 ### Upgrading
 

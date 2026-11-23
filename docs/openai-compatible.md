@@ -100,8 +100,11 @@ With `"stream": true` the answer is a stream of `chat.completion.chunk` events e
 4. a chunk with `finish_reason: "stop"` and the `evokai` extension;
 5. with `stream_options.include_usage`, a chunk with `choices: []` and `usage`.
 
-The streamed answer carries every text the agent writes, also a sentence it writes before calling a tool, as in a
-session. If a later sentence is refused (the answer repeats the agent's instructions), the stream ends with an error
+The answer carries every text the agent writes, also a sentence it writes before calling a tool, as in a session,
+streamed or not: the text of each step is set apart from the one before by a blank line (`"Let me check.\n\nOctober has
+24 orders."`), and the whole answer of `"stream": false`, the streamed one and the stored conversation say the same.
+The stream cannot hold a step back until it knows whether a tool call follows without holding the whole answer back.
+If a later sentence is refused (the answer repeats the agent's instructions), the stream ends with an error
 chunk carrying the guard's refusal text (`code: "guard"`) followed by `[DONE]`: what was already sent stays sent,
 nothing after it goes out.
 
