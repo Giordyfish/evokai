@@ -25,7 +25,13 @@ from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisc
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from evokai.api.deps import origin_allowed, same_origin, services, session
+from evokai.api.deps import (
+    SESSION_REQUESTS_PER_MINUTE,
+    origin_allowed,
+    same_origin,
+    services,
+    session,
+)
 from evokai.audio.choice import check_speech, speech_usd
 from evokai.audio.speech.markup import markup_of
 from evokai.audio.speech.numbers import spell_numbers
@@ -186,6 +192,7 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
         aligner = Aligner(spoken, marks)
         samples = 0
         failed = False
+        asked = False
         if said.strip():
             try:
                 service = make_tts(engine, voice=voice, sample_rate=body.sampleRate)
@@ -199,8 +206,11 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
                 )
                 return
             encoder = OpusEncoder(body.sampleRate) if body.format == "opus" else None
+            asked = True
             try:
-                async for p in synthesize(service, said, sample_rate=body.sampleRate):
+                async for p in synthesize(
+                    service, said, sample_rate=body.sampleRate, timeout=st.speech_timeout_seconds
+                ):
                     if p.kind == "audio":
                         ms = round(samples / body.sampleRate * 1000)
                         samples += len(p.audio) // 2
@@ -214,17 +224,23 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
                         yield _sse("viseme", {"id": p.viseme, "time": round(p.ms)})
                     elif p.kind == "error":
                         failed = True
+                        break
                 if encoder:
                     tail = encoder.close()
                     if tail:
                         yield _sse("audio", {"data": base64.b64encode(tail).decode(), "ms": None})
             finally:
-                if samples:
+                # Once the engine was asked, the characters count, even if the client went away
+                # (an aborted request must not get speech for free); an engine that failed
+                # without audio is not charged.
+                if asked and (samples or not failed):
                     usd = speech_usd(f"tts:{engine}", characters=len(said))
-                    await _record(svc, s, sess, agent, "tts", engine, characters=len(said),
-                                  cost_micro_usd=round(usd * 1e6))  # fmt: skip
+                    await asyncio.shield(
+                        _record(svc, s, sess, agent, "tts", engine, characters=len(said),
+                                cost_micro_usd=round(usd * 1e6))
+                    )  # fmt: skip
         duration = round(samples / body.sampleRate * 1000)
-        if failed and not samples:
+        if failed:
             yield _sse("error", {"code": "tts_failed", "message": "The speech engine failed."})
             return
         if not caps.words:
@@ -288,8 +304,13 @@ async def transcribe(
     from evokai.audio.voice.providers import make_stt, stt_caps
 
     try:
-        pcm = await asyncio.to_thread(decode_audio, bytes(data), 16_000)
+        pcm = await asyncio.to_thread(decode_audio, bytes(data), 16_000, st.transcribe_max_seconds)
     except ValueError as e:
+        if str(e) == "too long":
+            raise BadRequest(
+                f"An audio file lasts at most {st.transcribe_max_seconds} seconds.",
+                code="audio_too_long",
+            ) from e
         raise BadRequest(
             "The body is not an audio file this server can read.", code="audio_invalid"
         ) from e
@@ -348,10 +369,25 @@ async def _ws_principal(svc: Services, ws: WebSocket) -> SessionPrincipal:
         principal = await svc.auth.session(token)
     except AppError as e:
         raise _Refused(4401, "unauthorized") from e
+    if not await svc.auth.count(
+        f"token:{principal.claims.token_id}", SESSION_REQUESTS_PER_MINUTE, 60
+    ):
+        raise _Refused(4429, "rate_limited")
     origin = ws.headers.get("origin")
     if not (origin and same_origin(ws, origin)) and not origin_allowed(origin, principal.origins):
         raise _Refused(4403, "origin")
     return principal
+
+
+async def _refuse(ws: WebSocket, code: int, reason: str) -> None:
+    """Accept, then close with a code.
+
+    A socket closed before it is accepted reaches a browser as a failed handshake (1006), without
+    the code or the reason.
+    """
+    offered = [p.strip() for p in (ws.headers.get("sec-websocket-protocol") or "").split(",")]
+    await ws.accept(subprotocol=PROTOCOL if PROTOCOL in offered else None)
+    await ws.close(code=code, reason=reason)
 
 
 @router.websocket("/transcribe/stream")
@@ -373,14 +409,14 @@ async def transcribe_stream(ws: WebSocket) -> None:
         engine = s.claims.speech_stt or st.voice_stt
         check_speech(st, app, grants, stt=engine)
     except _Refused as r:
-        await ws.close(code=r.code, reason=r.reason)
+        await _refuse(ws, r.code, r.reason)
         return
     except AppError as e:
-        await ws.close(code=4403, reason=e.code)
+        await _refuse(ws, 4403, e.code)
         return
     key = (s.claims.application_id, s.claims.subject, s.claims.conversation_id)
     if key in svc.speech_streams:
-        await ws.close(code=4409, reason="already streaming")
+        await _refuse(ws, 4409, "already streaming")
         return
     svc.speech_streams.add(key)
     try:
@@ -434,9 +470,23 @@ async def _stream(
         return
     usd_per_ms = speech_usd(f"stt:{engine}", audio_ms=1000) / 1000
     cap_ms = st.transcribe_stream_max_seconds * 1000
-    await _cap(svc, app, s, sess, usd_per_ms * cap_ms)
     caps = stt_caps(engine)
-    service = make_stt(caps.realtime or engine, language=language, sample_rate=rate)
+    try:
+        await _cap(svc, app, s, sess, usd_per_ms * cap_ms)
+        service = make_stt(caps.realtime or engine, language=language, sample_rate=rate)
+    except AppError as e:
+        await ws.send_json({"type": "error", "code": e.code, "message": e.message})
+        await ws.close(code=4429 if e.code == "limit" else 4500)
+        return
+    except Exception as e:
+        log.warning("speech_engine_failed", extra={"engine": engine, "error": type(e).__name__})
+        await ws.send_json({
+            "type": "error",
+            "code": "stt_unavailable",
+            "message": "The speech-to-text engine is not available.",
+        })
+        await ws.close(code=4500)
+        return
     out: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
     def put(frame: Frame, direction: FrameDirection) -> None:
@@ -456,11 +506,15 @@ async def _stream(
     worker, task = await run_pipeline([vad_processor, service, Catch(put)], rate)
     sender = asyncio.create_task(send())
     received = 0
-    over = False
+    over = idle = False
     await ws.send_json({"type": "ready", "engine": engine})
     try:
         while True:
-            msg = await ws.receive()
+            try:
+                msg = await asyncio.wait_for(ws.receive(), st.transcribe_stream_idle_seconds)
+            except TimeoutError:
+                idle = True
+                break
             if msg.get("type") == "websocket.disconnect":
                 break
             if msg.get("bytes"):
@@ -486,9 +540,19 @@ async def _stream(
             await sender
         ms = round(received / 2 / rate * 1000)
         if ms:
-            await _record(svc, s, sess, agent, "stt", engine, audio_ms=ms,
-                          cost_micro_usd=round(usd_per_ms * ms * 1e6))  # fmt: skip
+            await asyncio.shield(
+                _record(svc, s, sess, agent, "stt", engine, audio_ms=ms,
+                        cost_micro_usd=round(usd_per_ms * ms * 1e6))
+            )  # fmt: skip
     with contextlib.suppress(Exception):
+        if idle:
+            await ws.send_json({
+                "type": "error",
+                "code": "idle",
+                "message": "Nothing was received for a while: the stream is closed.",
+            })
+            await ws.close(code=4408)
+            return
         if over:
             await ws.send_json({
                 "type": "error",

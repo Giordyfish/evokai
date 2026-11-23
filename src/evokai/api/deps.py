@@ -253,7 +253,8 @@ def same_origin(request: HTTPConnection, origin: str) -> bool:
     Returns:
         True for the service's own scheme and host.
     """
-    own = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+    scheme = {"ws": "http", "wss": "https"}.get(request.url.scheme, request.url.scheme)
+    own = f"{scheme}://{request.headers.get('host', request.url.netloc)}"
     return origin.rstrip("/") == own
 
 

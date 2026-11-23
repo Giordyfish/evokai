@@ -27,7 +27,11 @@ MARKUP_YAML = AGENTS_YAML.replace(
 
 
 @pytest.fixture
-async def senv(tmp_path: Path) -> AsyncIterator[Env]:
+async def senv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Env]:
+    from evokai.audio.voice import providers
+
+    # The fake recognition engine hears nothing unless scripted: these tests script «hello».
+    monkeypatch.setitem(providers.STT, "fake", lambda **kw: providers.FakeSTT(["hello"], **kw))
     async with make_env(tmp_path, agents_yaml=MARKUP_YAML) as e:
         yield e
 
@@ -270,6 +274,16 @@ class Socket:
         await self.inbox.put({"type": "websocket.connect"})
         return await asyncio.wait_for(self.outbox.get(), 10)
 
+    async def refused(self) -> int:
+        """Open, expecting the server to accept and close at once (so browsers see the code).
+
+        Returns:
+            The close code.
+        """
+        assert (await self.open())["type"] == "websocket.accept"
+        _, closed = await self.until_close()
+        return closed["code"]
+
     async def send_json(self, data: dict[str, Any]) -> None:
         await self.inbox.put({"type": "websocket.receive", "text": json.dumps(data)})
 
@@ -321,15 +335,15 @@ async def test_the_stream_refuses_tokens_in_the_url_foreign_origins_and_a_second
     path = "/agent/v1/session/transcribe/stream"
     protocols = ["evokai.v1", f"evokai.token.{tok}"]
     in_url = Socket(app, path, ["evokai.v1"], {"origin": ORIGIN}, query=f"token={tok}")
-    assert (await in_url.open())["code"] == 4400
+    assert await in_url.refused() == 4400
     foreign = Socket(app, path, protocols, {"origin": "http://evil.test"})
-    assert (await foreign.open())["code"] == 4403
+    assert await foreign.refused() == 4403
     nobody = Socket(app, path, ["evokai.v1"], {"origin": ORIGIN})
-    assert (await nobody.open())["code"] == 4401
+    assert await nobody.refused() == 4401
     first = Socket(app, path, protocols, {"origin": ORIGIN})
     assert (await first.open())["type"] == "websocket.accept"
     second = Socket(app, path, protocols, {"origin": ORIGIN})
-    assert (await second.open())["code"] == 4409
+    assert await second.refused() == 4409
     await first.send_json({"type": "start", "sampleRate": 16_000})
     await first.receive()
     await first.send_bytes(b"\x00\x10" * 40_000)  # 1.25 s: over the cap
@@ -374,3 +388,52 @@ async def test_engines_that_perform_speech_tags_get_the_tagged_form(senv: Env) -
             run, {**say, "index": 1, "text": "", "marks": [{"name": "x", "at": 0}]}
         )
         assert sent.pop() == expected and not sent
+
+
+async def test_the_stream_from_the_service_own_origin_is_accepted(senv: Env) -> None:
+    app = _app(senv)
+    tok = (await senv.token())["token"]
+    own = Socket(
+        app, "/agent/v1/session/transcribe/stream", ["evokai.v1", f"evokai.token.{tok}"],
+        {"origin": "http://evokai"},
+    )  # fmt: skip
+    assert (await own.open())["type"] == "websocket.accept"
+    await own.send_json({"type": "start", "sampleRate": 16_000})
+    assert json.loads((await own.receive())["text"])["type"] == "ready"
+    await own.send_json({"type": "stop"})
+    await own.until_close()
+
+
+async def test_the_stream_says_why_it_stops_a_reached_cap_or_silence(senv: Env) -> None:
+    app = _app(senv, transcribe_stream_idle_seconds=0.3)
+    path = "/agent/v1/session/transcribe/stream"
+    tok = (await senv.token(limits={"subject_daily_usd": 0.01}))["token"]
+    who = (await senv.svc.auth.session(tok)).who
+    await senv.svc.store.usage.record(who, [], kind="llm", model="x", cost_micro_usd=50_000)
+    capped = Socket(app, path, ["evokai.v1", f"evokai.token.{tok}"], {"origin": ORIGIN})
+    await capped.open()
+    await capped.send_json({"type": "start", "sampleRate": 16_000})
+    got, closed = await capped.until_close()
+    assert got[-1]["type"] == "error" and got[-1]["code"] == "limit" and closed["code"] == 4429
+    other = (await senv.token("u2"))["token"]
+    idle = Socket(app, path, ["evokai.v1", f"evokai.token.{other}"], {"origin": ORIGIN})
+    await idle.open()
+    await idle.send_json({"type": "start", "sampleRate": 16_000})
+    got, closed = await idle.until_close()
+    assert got[-1]["code"] == "idle" and closed["code"] == 4408
+
+
+async def test_a_long_recording_is_refused_before_it_is_all_decoded(senv: Env) -> None:
+    from evokai.audio.voice.oneshot import OpusEncoder
+
+    app = _app(senv, transcribe_max_seconds=1)
+    enc = OpusEncoder(16_000)
+    opus = enc.push(b"\x00\x10" * 16_000 * 3) + enc.close()
+    tok = (await senv.token())["token"]
+    async with _client(app) as c:
+        r = await c.post(
+            "/agent/v1/session/transcribe",
+            content=opus,
+            headers={**_h(tok), "Content-Type": "audio/ogg"},
+        )
+    assert (r.status_code, r.json()["error"]) == (400, "audio_too_long")

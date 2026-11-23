@@ -69,7 +69,7 @@ class FakeSTT(STTService):
         """
         kwargs.pop("language", None)
         super().__init__(**kwargs)
-        self.phrases = list(phrases if phrases is not None else ["hello"])
+        self.phrases = list(phrases or [])
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None]:
         """Transcribe a chunk.
@@ -187,7 +187,7 @@ def elevenlabs_model() -> str:
 
 
 def elevenlabs_tts(*, voice: str | None = None, sample_rate: int | None = None, **_: Any) -> Any:
-    """ElevenLabs over HTTP with timestamps (word times; text before it is sent as context).
+    """ElevenLabs over HTTP with timestamps (word times).
 
     Returns:
         The service.

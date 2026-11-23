@@ -107,13 +107,16 @@ async def run_pipeline(
     return worker, asyncio.create_task(runner.run())
 
 
-async def synthesize(service: Any, text: str, *, sample_rate: int) -> AsyncIterator[Piece]:
+async def synthesize(
+    service: Any, text: str, *, sample_rate: int, timeout: float = 60.0
+) -> AsyncIterator[Piece]:
     """Speak a text with a TTS service.
 
     Args:
         service: The Pipecat TTS service (closed afterwards).
         text: What to say.
         sample_rate: PCM sample rate of the audio.
+        timeout: The longest the whole synthesis may take (then an ``error`` piece, ``timeout``).
 
     Yields:
         Audio, word timestamps and visemes as the engine gives them; an ``error`` piece when it
@@ -145,8 +148,17 @@ async def synthesize(service: Any, text: str, *, sample_rate: int) -> AsyncItera
         [Catch(put), service, Catch(put)], sample_rate, [TTSSpeakFrame(text), EndFrame()]
     )
     task.add_done_callback(lambda _t: queue.put_nowait(None))
+    deadline = asyncio.get_running_loop().time() + timeout
     try:
-        while (piece := await queue.get()) is not None:
+        while True:
+            left = deadline - asyncio.get_running_loop().time()
+            try:
+                piece = await asyncio.wait_for(queue.get(), max(0.0, left))
+            except TimeoutError:
+                yield Piece("error", error="timeout")
+                break
+            if piece is None:
+                break
             yield piece
     finally:
         if not task.done():
@@ -368,15 +380,19 @@ class OpusEncoder:
         return self._drain()
 
 
-def decode_audio(data: bytes, sample_rate: int = 16_000) -> bytes:
+def decode_audio(data: bytes, sample_rate: int = 16_000, max_seconds: float | None = None) -> bytes:
     """Any audio file PyAV reads (WAV, WebM, Ogg, MP3, M4A), as 16-bit mono PCM.
+
+    Decoding stops as soon as the audio is longer than ``max_seconds`` (a small compressed file
+    can hold hours of audio).
 
     Returns:
         The PCM.
 
     Raises:
-        ValueError: Not an audio file PyAV can read.
+        ValueError: Not an audio file PyAV can read, or ``too long``.
     """
+    limit = None if max_seconds is None else int(max_seconds * sample_rate * 2)
     import av
 
     out = bytearray()
@@ -388,6 +404,8 @@ def decode_audio(data: bytes, sample_rate: int = 16_000) -> bytes:
             for frame in container.decode(audio=0):
                 for f in resampler.resample(frame):
                     out += bytes(f.planes[0])[: f.samples * 2]
+                if limit is not None and len(out) > limit:
+                    raise ValueError("too long")
             for f in resampler.resample(None):
                 out += bytes(f.planes[0])[: f.samples * 2]
     except av.error.FFmpegError as e:

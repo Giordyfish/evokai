@@ -62,7 +62,8 @@ class Speech:
     """What is shown (the subtitle)."""
     spoken: str = ""
     """What the voice says (numbers in words)."""
-    audio: bytes = b""
+    chunks: list[bytes] = field(default_factory=list, repr=False)
+    """The audio as it arrived (``audio`` joins it)."""
     words: list[dict[str, Any]] = field(default_factory=list)
     """``{text, at, length, start}``: offset and length in ``spoken``, start in ms."""
     marks: list[dict[str, Any]] = field(default_factory=list)
@@ -72,6 +73,17 @@ class Speech:
     duration_ms: int = 0
     estimated: bool = False
     """The engine gave no word times: they are spread by the length of the text."""
+    complete: bool = False
+    """The stream reached its ``done`` event."""
+
+    @property
+    def audio(self) -> bytes:
+        """The whole audio, in ``format``.
+
+        Returns:
+            The bytes.
+        """
+        return b"".join(self.chunks)
 
 
 def collect(messages: Iterable[SseMessage], speech: Speech | None = None) -> Speech:
@@ -84,7 +96,6 @@ def collect(messages: Iterable[SseMessage], speech: Speech | None = None) -> Spe
         EvokaiError: The engine failed (``error`` event).
     """
     out = speech or Speech()
-    chunks = bytearray(out.audio)
     for msg in messages:
         data = json.loads(msg.data)
         if msg.event == "start":
@@ -92,7 +103,7 @@ def collect(messages: Iterable[SseMessage], speech: Speech | None = None) -> Spe
             out.format, out.sample_rate = data["format"], data["sampleRate"]
             out.text, out.spoken = data["text"], data["spoken"]
         elif msg.event == "audio":
-            chunks += base64.b64decode(data["data"])
+            out.chunks.append(base64.b64decode(data["data"]))
         elif msg.event == "word":
             out.words.append(data)
         elif msg.event == "mark":
@@ -101,12 +112,26 @@ def collect(messages: Iterable[SseMessage], speech: Speech | None = None) -> Spe
             out.visemes.append(data)
         elif msg.event == "done":
             out.duration_ms, out.estimated = data["durationMs"], bool(data.get("estimated"))
+            out.complete = True
         elif msg.event == "error":
             raise EvokaiError(
                 502, data.get("code", "tts_failed"), data.get("message", "Speech failed")
             )
-    out.audio = bytes(chunks)
     return out
+
+
+def finished(speech: Speech) -> Speech:
+    """The speech, once its stream is over.
+
+    Returns:
+        It.
+
+    Raises:
+        EvokaiError: The stream ended before its ``done`` event.
+    """
+    if not speech.complete:
+        raise EvokaiError(502, "tts_failed", "The speech stream ended early")
+    return speech
 
 
 class Transcript(BaseModel):

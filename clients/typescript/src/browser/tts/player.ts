@@ -16,6 +16,8 @@ export interface PlaybackContext {
     connect(node: unknown): unknown
     start(when?: number): void
     stop(when?: number): void
+    /** Called when the source has played (the player ends with the last one). */
+    onended?: (() => void) | null
   }
   resume?(): Promise<void>
 }
@@ -68,9 +70,18 @@ export class TimedSpeechPlayer {
     this.stop()
     const ctx = this.context()
     await ctx.resume?.()
-    let t0 = 0
+    // The clock starts with the first audio (an engine takes a while for its first byte); a chunk
+    // that arrives after it was due plays at once and shifts everything after it by the same delay.
+    let t0: number | null = null
+    let shift = 0
     let rate = 24000
     let samples = 0
+    let last: { onended?: (() => void) | null } | null = null
+    const waiting: Array<() => void> = []
+    const at = (ms: number, fn: () => void) => {
+      if (t0 === null) waiting.push(() => this.at(t0! + shift, ms, fn))
+      else this.at(t0 + shift, ms, fn)
+    }
     const ended = new Promise<boolean>((resolve) => (this.finish = resolve))
     let done = false
     try {
@@ -79,33 +90,51 @@ export class TimedSpeechPlayer {
         if (e.type === 'start') {
           if (e.format !== 'pcm') throw new Error('TimedSpeechPlayer plays PCM: ask for format "pcm"')
           rate = e.sampleRate
-          t0 = ctx.currentTime + this.leadMs / 1000
           const { type: _t, ...start } = e
-          this.at(t0, 0, () => this.events.emit('start', start))
+          at(0, () => this.events.emit('start', start))
         } else if (e.type === 'audio') {
           const pcm = new Int16Array(e.data.buffer, e.data.byteOffset, Math.floor(e.data.byteLength / 2))
           if (!pcm.length) continue
+          if (t0 === null) {
+            t0 = ctx.currentTime + this.leadMs / 1000
+            for (const fn of waiting.splice(0)) fn()
+          }
+          let when = t0 + shift + samples / rate
+          if (when < ctx.currentTime) {
+            shift += ctx.currentTime - when
+            when = ctx.currentTime
+          }
           const buffer = ctx.createBuffer(1, pcm.length, rate)
           const channel = buffer.getChannelData(0)
           for (let i = 0; i < pcm.length; i++) channel[i] = (pcm[i] ?? 0) / 32768
           const source = ctx.createBufferSource()
           source.buffer = buffer
           source.connect(ctx.destination)
-          source.start(t0 + samples / rate)
+          source.start(when)
           this.sources.push(source)
+          last = source
           samples += pcm.length
         } else if (e.type === 'word') {
           const { type: _t, ...w } = e
-          this.at(t0, w.start, () => this.events.emit('word', w))
+          at(w.start, () => this.events.emit('word', w))
         } else if (e.type === 'mark') {
           const { type: _t, ...m } = e
-          this.at(t0, m.time, () => this.events.emit('mark', m))
+          at(m.time, () => this.events.emit('mark', m))
         } else if (e.type === 'viseme') {
           const { type: _t, ...v } = e
-          this.at(t0, v.time, () => this.events.emit('viseme', v))
+          at(v.time, () => this.events.emit('viseme', v))
         } else if (e.type === 'done') {
           done = true
-          this.at(t0, Math.max(e.durationMs, (samples / rate) * 1000), () => this.end(false))
+          if (t0 === null) {
+            // Nothing to play (a segment of cues alone): its timings fire now.
+            t0 = ctx.currentTime
+            for (const fn of waiting.splice(0)) fn()
+            this.at(t0, 0, () => this.end(false))
+          } else if (last && 'onended' in last) {
+            last.onended = () => this.end(false)
+          } else {
+            this.at(t0 + shift, Math.max(e.durationMs, (samples / rate) * 1000), () => this.end(false))
+          }
         }
       }
       if (!done) this.end(true)

@@ -47,7 +47,13 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from evokai.audio.voice.agent import EvokaiAgentProcessor
-from evokai.audio.voice.providers import make_stt, make_tts, stt_caps, tts_caps
+from evokai.audio.voice.providers import (
+    close_service,
+    make_stt,
+    make_tts,
+    stt_caps,
+    tts_caps,
+)
 from evokai.core.errors import AppError, Forbidden, NotFound
 from evokai.i18n import locale_of
 from evokai.identity.models import SessionPrincipal
@@ -227,11 +233,13 @@ class VoiceServer:
         stt_name = c.speech_stt or settings.voice_stt
         tts_name = c.speech_tts or settings.voice_tts
         language = locale_of(app, sess)
+        stt = make_stt(stt_caps(stt_name).realtime or stt_name, language=language)
+        tts = make_tts(tts_name, voice=await self._voice(principal, sess), language=language)
         chain = agent_chain(
             self.svc,
             principal,
-            stt=make_stt(stt_caps(stt_name).realtime or stt_name, language=language),
-            tts=make_tts(tts_name, voice=await self._voice(principal, sess), language=language),
+            stt=stt,
+            tts=tts,
             external=external,
             history=history,
             app=app,
@@ -260,6 +268,8 @@ class VoiceServer:
             await runner.run()
         finally:
             self._owners.pop(connection.pc_id, None)
+            await close_service(tts)
+            await close_service(stt)
 
     async def _voice(self, principal: SessionPrincipal, sess: Any) -> str | None:
         """The session's voice: the token's, else its agent's ``voice.voice_id``, else the engine's.

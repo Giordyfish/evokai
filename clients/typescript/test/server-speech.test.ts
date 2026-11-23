@@ -205,3 +205,65 @@ describe('ServerStt', () => {
     expect([...out]).toEqual([0, 32767, -32768, 32767])
   })
 })
+
+describe('TimedSpeechPlayer under a slow engine', () => {
+  afterEach(() => vi.useRealTimers())
+
+  test('the clock starts with the first audio, and a late chunk shifts what follows', async () => {
+    vi.useFakeTimers()
+    const ctx = new FakeContext()
+    const p = new TimedSpeechPlayer({ context: ctx, leadMs: 0 })
+    const got: string[] = []
+    p.on('word', (w) => got.push(`word:${w.text}@${ctx.currentTime}`))
+    let release: (() => void) | null = null
+    let release2: (() => void) | null = null
+    const gate = new Promise<void>((r) => (release = r))
+    const gate2 = new Promise<void>((r) => (release2 = r))
+    async function* slow() {
+      yield { type: 'start' as const, engine: 'x', voice: null, format: 'pcm' as const, sampleRate: 1000, channels: 1, text: 'a b', spoken: 'a b' }
+      await gate
+      yield { type: 'audio' as const, data: new Uint8Array([0, 16, 0, 16]), ms: 0 }
+      yield { type: 'word' as const, text: 'a', at: 0, length: 1, start: 0 }
+      await gate2
+      yield { type: 'audio' as const, data: new Uint8Array([0, 16, 0, 16]), ms: 2 }
+      yield { type: 'word' as const, text: 'b', at: 2, length: 1, start: 2 }
+      yield { type: 'done' as const, durationMs: 4, characters: 3, estimated: false }
+    }
+    const done = p.play(slow())
+    await vi.advanceTimersByTimeAsync(0)
+    ctx.currentTime = 0.5 // the engine took 500 ms for its first byte
+    release!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ctx.started).toEqual([0.5])
+    expect(got).toEqual(['word:a@0.5'])
+    ctx.currentTime = 0.6 // the second chunk is 98 ms late (it was due at 0.502)
+    release2!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ctx.started).toEqual([0.5, 0.6])
+    await vi.advanceTimersByTimeAsync(10)
+    expect(got.map((g) => g.split('@')[0])).toEqual(['word:a', 'word:b'])
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await done).toEqual({ cancelled: false })
+  })
+})
+
+describe('ServerStt when the microphone fails', () => {
+  test('the socket is closed and a retry can start again', async () => {
+    const sockets: FakeSocket[] = []
+    const errors: string[] = []
+    const stt = new ServerStt({
+      session: session([]),
+      socket: (url, protocols) => {
+        const s = new FakeSocket(url, protocols)
+        sockets.push(s)
+        return s
+      },
+      source: { start: async () => Promise.reject(new Error('not-allowed')), stop: () => undefined },
+    })
+    stt.on('error', (e) => errors.push(e.code))
+    await expect(stt.start({ continuous: true })).rejects.toThrow('not-allowed')
+    expect(sockets[0]?.readyState).toBe(3)
+    expect(stt.running).toBe(false)
+    expect(errors).toEqual(['not-allowed'])
+  })
+})

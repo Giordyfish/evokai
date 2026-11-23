@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 pytest.importorskip("pipecat")
@@ -159,3 +161,29 @@ def test_opus_round_trip() -> None:
     assert abs(len(pcm) / 2 - 16_000) < 2_000
     with pytest.raises(ValueError):
         decode_audio(b"not audio")
+
+
+def test_decoding_stops_past_the_longest_recording() -> None:
+    enc = OpusEncoder(16_000)
+    data = enc.push(b"\x00\x10" * 16_000 * 3) + enc.close()
+    with pytest.raises(ValueError, match="too long"):
+        decode_audio(data, 16_000, max_seconds=1)
+    assert len(decode_audio(data, 16_000, max_seconds=5)) > 16_000 * 2
+
+
+def test_the_fake_recognition_hears_nothing_unless_scripted() -> None:
+    assert FakeSTT().phrases == []
+
+
+async def test_a_stuck_engine_ends_with_an_error() -> None:
+    class Stuck(FakeTTS):
+        async def run_tts(self, text: str, context_id: str):  # type: ignore[override]
+            del text, context_id
+            await asyncio.sleep(10)
+            yield None
+
+    pieces = [
+        p
+        async for p in synthesize(Stuck(sample_rate=16_000), "Hi", sample_rate=16_000, timeout=0.5)
+    ]
+    assert [p.kind for p in pieces] == ["error"] and pieces[0].error == "timeout"

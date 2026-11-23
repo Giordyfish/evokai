@@ -57,6 +57,7 @@ from evokai.speech import (
     SpeechFormat,
     Transcript,
     collect,
+    finished,
     speech_body,
 )
 from evokai.sse import SseMessage, SseParser
@@ -823,7 +824,7 @@ class EvokaiSession(_SessionBase):
         with self._transport.stream(SPEECH_PATH, body, self.token) as response:
             for chunk in response.iter_bytes():
                 collect(parser.feed(chunk), out)
-        return out
+        return finished(out)
 
     def transcribe(
         self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
@@ -1218,7 +1219,7 @@ class AsyncEvokaiSession(_SessionBase):
         async with self._transport.stream(SPEECH_PATH, body, self.token) as response:
             async for chunk in response.aiter_bytes():
                 collect(parser.feed(chunk), out)
-        return out
+        return finished(out)
 
     async def transcribe(
         self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None

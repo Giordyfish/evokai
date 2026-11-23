@@ -64,7 +64,8 @@ export class MicrophonePcm implements PcmSource {
 
   async start(onChunk: (pcm: Int16Array) => void, track?: MediaStreamTrack | null): Promise<void> {
     this.stream = track ? new MediaStream([track]) : await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
-    const ctx = (this.ctx = new AudioContext())
+    // At 16 kHz the browser resamples the microphone itself: no samples are dropped between chunks.
+    const ctx = (this.ctx = new AudioContext({ sampleRate: STREAM_RATE }))
     const url = URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }))
     try {
       await ctx.audioWorklet.addModule(url)
@@ -138,9 +139,17 @@ export class ServerStt implements SttEngine {
     ws.onerror = () => this.events.emit('error', { code: 'connect', message: 'The recognition connection failed' })
     ws.send(JSON.stringify({ type: 'start', sampleRate: STREAM_RATE, ...(this.lang ? { language: this.lang } : {}), ...(this.opts.vad ? { vad: this.opts.vad } : {}) }))
     const source = (this.source = this.opts.source ?? new MicrophonePcm())
-    await source.start((pcm) => {
-      if (this.ws && this.ws.readyState === 1) this.ws.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength))
-    }, opts.track)
+    try {
+      await source.start((pcm) => {
+        if (this.ws && this.ws.readyState === 1) this.ws.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength))
+      }, opts.track)
+    } catch (e) {
+      // No microphone (refused, missing): free the server's socket, or every retry would find it taken.
+      const message = e instanceof Error ? e.message : String(e)
+      this.events.emit('error', { code: message === 'not-allowed' || /denied|allowed/i.test(message) ? 'not-allowed' : 'no-device', message })
+      this.abort()
+      throw e
+    }
   }
 
   private onMessage(data: unknown): void {

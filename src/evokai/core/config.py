@@ -160,6 +160,10 @@ class Settings(BaseSettings):
     transcribe_max_seconds: int = 120
     """The longest audio file ``POST /v1/session/transcribe`` takes."""
     transcribe_stream_max_seconds: int = 300
+    transcribe_stream_idle_seconds: float = 30
+    """A streaming recognition socket that receives nothing for this long is closed."""
+    speech_timeout_seconds: float = 60
+    """The longest one synthesis may take before it ends with an error."""
     """The longest streaming recognition (``WS /v1/session/transcribe/stream``)."""
     voice_smart_turn: bool = True
     """End of turn decided by Smart Turn v3 on top of Silero VAD (else VAD silence only)."""

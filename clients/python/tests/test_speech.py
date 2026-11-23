@@ -87,3 +87,11 @@ async def test_async_transcribe_refused(router: respx.MockRouter) -> None:
         with pytest.raises(EvokaiError) as err:
             await s.transcribe(b"x")
     assert err.value.status == 413
+
+
+def test_a_stream_without_its_end_is_an_error(router: respx.MockRouter) -> None:
+    response, _ = sse_response(SPEECH[:3])
+    router.post("/v1/session/speech").mock(return_value=response)
+    with EvokaiSession(BASE, TOKEN) as s, pytest.raises(EvokaiError) as err:
+        s.speak("Hi there.")
+    assert err.value.code == "tts_failed"
