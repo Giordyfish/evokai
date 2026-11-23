@@ -83,6 +83,7 @@ export function fakeEvokai(
       return new Response(text, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
     }
     if (url.includes('/feedback')) return json({ ok: true })
+    if (url.endsWith('/v1/session/tool-results')) return json({ ok: true })
     if (url.endsWith('/conversations')) return json({ items: [{ id: 'c0', title: 'Order 1042' }, { id: 'c9', title: 'Conversation' }] })
     return json({ error: 'not_found' }, 404)
   }

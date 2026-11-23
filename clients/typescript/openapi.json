@@ -1651,6 +1651,38 @@
         "title": "ChunkSettings",
         "type": "object"
       },
+      "ClientToolDef": {
+        "description": "A custom client tool: the client application runs it (``client_tool`` event).",
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{1,47}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "wait": {
+            "default": false,
+            "title": "Wait",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ClientToolDef",
+        "type": "object"
+      },
       "ClientToolsDef": {
         "description": "Which client tools the agent has.",
         "properties": {
@@ -1663,6 +1695,14 @@
             "default": true,
             "title": "Chart",
             "type": "boolean"
+          },
+          "custom": {
+            "items": {
+              "$ref": "#/components/schemas/ClientToolDef"
+            },
+            "maxItems": 32,
+            "title": "Custom",
+            "type": "array"
           },
           "diagram": {
             "default": true,
@@ -4083,6 +4123,14 @@
             "title": "Attachments",
             "type": "array"
           },
+          "clientTools": {
+            "items": {
+              "$ref": "#/components/schemas/ClientToolDef"
+            },
+            "maxItems": 33,
+            "title": "Clienttools",
+            "type": "array"
+          },
           "groups": {
             "items": {
               "maxLength": 100,
@@ -4175,6 +4223,14 @@
               "type": "object"
             },
             "title": "Citations",
+            "type": "array"
+          },
+          "clientToolCalls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Clienttoolcalls",
             "type": "array"
           },
           "conversationId": {
@@ -4972,6 +5028,21 @@
             "title": "Agent",
             "type": "string"
           },
+          "clientTools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClientToolDef"
+                },
+                "maxItems": 33,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clienttools"
+          },
           "consent": {
             "anyOf": [
               {
@@ -5217,6 +5288,37 @@
           "toolResult"
         ],
         "title": "ToolResultBlock",
+        "type": "object"
+      },
+      "ToolResultBody": {
+        "description": "The client's answer to a ``client_tool`` call that waits.",
+        "properties": {
+          "callId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Callid",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "result": {
+            "title": "Result"
+          }
+        },
+        "required": [
+          "callId"
+        ],
+        "title": "ToolResultBody",
         "type": "object"
       },
       "ToolSettings": {
@@ -14419,6 +14521,58 @@
           }
         },
         "summary": "Feedback",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/tool-results": {
+      "post": {
+        "description": "Answer a custom client tool call the running turn waits for (once).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: No call of this session waits under that id here (answered, timed out, or the\n        turn runs on another task) (``unknown_call``).\n    AppError: The result is larger than 32 KB (413 ``too_large``).",
+        "operationId": "tool_result_agent_v1_session_tool_results_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolResultBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Tool Result Agent V1 Session Tool Results Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "413": {
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tool Result",
         "tags": [
           "session"
         ]

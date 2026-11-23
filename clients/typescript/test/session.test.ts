@@ -137,6 +137,40 @@ describe('EvokaiSession', () => {
     expect(s.state.messages.find((x) => x.role === 'user')?.answer).toBe(true)
   })
 
+  test('handleTool runs a client tool and posts the result of one that waits', async () => {
+    const call = (callId: string, name: string, wait: boolean, seq: number) =>
+      frame({ type: 'client_tool', callId, name, args: { on: true }, wait, turnId: 't', seq })
+    const m = mockFetch({
+      'POST /agent/v1/session/chat': () =>
+        sse([
+          call('c1', 'kiosk_light', true, 1),
+          call('c2', 'kiosk_light', false, 2),
+          call('c3', 'kiosk_print', true, 3),
+          call('c4', 'nobody', true, 4),
+          frame({ type: 'done', conversationId: 'c', reason: 'end_turn', turnId: 't', seq: 5 }),
+        ]),
+      'POST /agent/v1/session/tool-results': () => json({ ok: true }),
+    })
+    const s = new EvokaiSession({ baseUrl: BASE, token: 'tok', fetch: m.fetch })
+    const lit: unknown[] = []
+    s.handleTool('kiosk_light', (args) => {
+      lit.push(args)
+      return { lit: true }
+    })
+    s.handleTool('kiosk_print', () => {
+      throw new Error('No paper')
+    })
+    await s.chat({ text: 'go' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(lit).toEqual([{ on: true }, { on: true }])
+    const posted = m.calls.filter((c) => c.url.endsWith('/tool-results')).map((c) => c.body)
+    expect(posted).toEqual([
+      { callId: 'c1', result: { lit: true } },
+      { callId: 'c3', error: 'No paper' },
+      { callId: 'c4', error: 'No handler for nobody in this client.' },
+    ])
+  })
+
   test('external storage: the turn’s new messages reach onMessages', async () => {
     const msgs = [{ role: 'user' as const, text: 'hi', content: [] }]
     const m = mockFetch({

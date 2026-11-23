@@ -23,6 +23,7 @@ const GROUPS: Record<string, { title: TextKey; note: TextKey }> = {
   mcp: { title: 'perms.g.mcp', note: 'perms.g.mcpNote' },
   skills: { title: 'perms.g.skills', note: 'perms.g.skillsNote' },
   client: { title: 'perms.g.client', note: 'perms.g.clientNote' },
+  clientCustom: { title: 'perms.g.clientCustom', note: 'perms.g.clientCustomNote' },
   voice: { title: 'perms.g.voice', note: 'perms.g.voiceNote' },
   storage: { title: 'perms.g.storage', note: 'perms.g.storageNote' },
   channels: { title: 'perms.g.channels', note: 'perms.g.channelsNote' },
@@ -96,7 +97,10 @@ function sub(x: GrantItem, appName: string): string {
     case 'skill':
       return x.missing ? t('perms.missing') : (x.description ?? '')
     case 'client':
-      return CLIENT[x.name] ? t(CLIENT[x.name]!) : ''
+      if (CLIENT[x.name]) return t(CLIENT[x.name]!)
+      if (x.name === 'session') return t('perms.c.session')
+      if (x.pattern) return t('perms.pattern')
+      return x.usedBy?.length ? t('perms.usedBy', { agents: x.usedBy.join(', ') }) : ''
     case 'voice':
       return x.name === 'browser' ? t('perms.browserVoiceSub') : `${t('perms.serverVoiceSub')}${x.enabled === false ? t('perms.voiceNotEnabled') : ''}`
     case 'stt':

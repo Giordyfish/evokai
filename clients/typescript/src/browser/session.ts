@@ -15,6 +15,7 @@ import {
 } from '../core/http'
 import type {
   ChatMode,
+  ClientToolEvent,
   Connection,
   ConnectionProvider,
   ConnectionStarted,
@@ -38,6 +39,9 @@ import type {
 import { readSse } from './sse'
 import { localePack, type LocaleCode, type LocalePack } from '../locales'
 import { localId, seen, SessionStore, type SessionState } from './store'
+
+/** Runs a custom client tool: gets the call's arguments (and the event); its return value is the result. */
+export type ClientToolHandler = (args: Record<string, unknown>, event: ClientToolEvent) => unknown
 
 /** A token, or the session-token response of your backend (its other fields are used when present). */
 export type TokenInfo =
@@ -103,6 +107,7 @@ export class EvokaiSession {
   private tok: { token: string; expiresAt?: number } | null = null
   private engine: VoiceEngineKind
   private readonly listeners = new Map<string, Set<EventListener>>()
+  private readonly tools = new Map<string, ClientToolHandler>()
   private readonly controllers = new Set<AbortController>()
   private replaying: Promise<void> | null = null
 
@@ -170,6 +175,7 @@ export class EvokaiSession {
     if (typeof event.seq === 'number' && seen(this.state, event.seq)) return
     this.store.dispatch({ type: 'event', event })
     this.emit(event)
+    if (event.type === 'client_tool') void this.runTool(event)
     if (event.type === 'done' && event.messages?.length) this.opts.onMessages?.(event.messages, event)
   }
 
@@ -447,6 +453,46 @@ export class EvokaiSession {
   answer(askId: string, labels: string[], opts: Omit<ChatInput, 'confirm' | 'text'> = {}): Promise<DoneEvent | null> {
     this.store.dispatch({ type: 'answered', askId, labels })
     return this.chat({ ...opts, text: labels.join(', '), answer: true })
+  }
+
+  // ── client tools ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Run a custom client tool when the agent calls it (`docs/client-tools.md`). For a tool that waits, what `fn`
+   * returns (or throws) is posted as its result; for one that does not, `fn` just runs. Returns an unregister
+   * function. A tool without a handler that waits gets an error result, so the turn does not wait for nothing.
+   */
+  handleTool(name: string, fn: ClientToolHandler): () => void {
+    this.tools.set(name, fn)
+    return () => {
+      if (this.tools.get(name) === fn) this.tools.delete(name)
+    }
+  }
+
+  /** Answer a waiting client tool call yourself (when you listen to `client_tool` events instead of `handleTool`). */
+  async toolResult(callId: string, answer: { result: unknown } | { error: string }): Promise<void> {
+    await this.call('/v1/session/tool-results', { method: 'POST', body: { callId, ...answer } })
+  }
+
+  private async runTool(event: ClientToolEvent): Promise<void> {
+    const fn = this.tools.get(event.name)
+    if (!fn) {
+      if (event.wait && this.listenerCount('client_tool') === 0) {
+        await this.toolResult(event.callId, { error: `No handler for ${event.name} in this client.` }).catch(() => undefined)
+      }
+      return
+    }
+    let answer: { result: unknown } | { error: string }
+    try {
+      answer = { result: (await fn(event.args, event)) ?? null }
+    } catch (e) {
+      answer = { error: e instanceof Error ? e.message : String(e) }
+    }
+    if (event.wait) await this.toolResult(event.callId, answer).catch(() => undefined)
+  }
+
+  private listenerCount(type: string): number {
+    return this.listeners.get(type)?.size ?? 0
   }
 
   /** Thumbs up (1), down (-1) or none (null) on a stored assistant message. */

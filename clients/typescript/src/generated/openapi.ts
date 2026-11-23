@@ -4044,6 +4044,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/session/tool-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tool Result
+         * @description Answer a custom client tool call the running turn waits for (once).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: No call of this session waits under that id here (answered, timed out, or the
+         *             turn runs on another task) (``unknown_call``).
+         *         AppError: The result is larger than 32 KB (413 ``too_large``).
+         */
+        post: operations["tool_result_agent_v1_session_tool_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/session/turns/{turn_id}/cancel": {
         parameters: {
             query?: never;
@@ -4934,6 +4962,25 @@ export interface components {
             table_max_chars?: number;
         };
         /**
+         * ClientToolDef
+         * @description A custom client tool: the client application runs it (``client_tool`` event).
+         */
+        ClientToolDef: {
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Wait
+             * @default false
+             */
+            wait?: boolean;
+        };
+        /**
          * ClientToolsDef
          * @description Which client tools the agent has.
          */
@@ -4948,6 +4995,8 @@ export interface components {
              * @default true
              */
             chart?: boolean;
+            /** Custom */
+            custom?: components["schemas"]["ClientToolDef"][];
             /**
              * Diagram
              * @default true
@@ -6020,6 +6069,8 @@ export interface components {
         RunRequest: {
             /** Attachments */
             attachments?: components["schemas"]["RunAttachment"][];
+            /** Clienttools */
+            clientTools?: components["schemas"]["ClientToolDef"][];
             /** Groups */
             groups?: string[];
             /** Input */
@@ -6047,6 +6098,10 @@ export interface components {
         RunResponse: {
             /** Citations */
             citations?: {
+                [key: string]: unknown;
+            }[];
+            /** Clienttoolcalls */
+            clientToolCalls?: {
                 [key: string]: unknown;
             }[];
             /** Conversationid */
@@ -6341,6 +6396,8 @@ export interface components {
             actor?: "agent";
             /** Agent */
             agent: string;
+            /** Clienttools */
+            clientTools?: components["schemas"]["ClientToolDef"][] | null;
             consent?: components["schemas"]["Consent"] | null;
             /** Conversationid */
             conversationId?: string | null;
@@ -6402,6 +6459,18 @@ export interface components {
          */
         ToolResultBlock: {
             toolResult: components["schemas"]["ToolResult"];
+        };
+        /**
+         * ToolResultBody
+         * @description The client's answer to a ``client_tool`` call that waits.
+         */
+        ToolResultBody: {
+            /** Callid */
+            callId: string;
+            /** Error */
+            error?: string | null;
+            /** Result */
+            result?: unknown;
         };
         /**
          * ToolSettings
@@ -12271,6 +12340,55 @@ export interface operations {
                         [key: string]: boolean;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_result_agent_v1_session_tool_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolResultBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

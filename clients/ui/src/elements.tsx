@@ -5,7 +5,7 @@
  */
 import { render, type VNode } from 'preact'
 
-import type { CreateVoiceOptions, EvokaiSession, FetchLike, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
+import type { ClientToolHandler, CreateVoiceOptions, EvokaiSession, FetchLike, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
 import { type ChatState, chatState, fromEvent } from './chatstate'
 import { Ui, defaultFormat, type UiContext, type ValueFormatter } from './context'
 import { Controller, type ConversationItem } from './controller'
@@ -57,7 +57,28 @@ abstract class EvokaiBase extends HTMLBase {
   private configKey = ''
   private theme_: Theme | string | null = null
   private strings_: Partial<Strings> | null = null
+  private tools_: Record<string, ClientToolHandler> | null = null
+  private unhandle: Array<() => void> = []
   private scheduled = false
+
+  /**
+   * Your custom client tools, by name (`docs/client-tools.md`): each function gets the call's arguments, and what it
+   * returns is the result of a tool that waits.
+   */
+  get tools(): Record<string, ClientToolHandler> | null {
+    return this.tools_
+  }
+
+  set tools(v: Record<string, ClientToolHandler> | null) {
+    this.tools_ = v
+    const c = this.controller_
+    if (c) this.handleTools(c.session)
+  }
+
+  private handleTools(session: EvokaiSession): void {
+    for (const off of this.unhandle) off()
+    this.unhandle = Object.entries(this.tools_ ?? {}).map(([name, fn]) => session.handleTool(name, fn))
+  }
 
   /** The theme: a preset name (`evokai`) or a `Theme` object. */
   get theme(): Theme | string | null {
@@ -134,12 +155,14 @@ abstract class EvokaiBase extends HTMLBase {
       this.dispatchEvent(new CustomEvent('evokai-event', { detail: e, bubbles: true, composed: true }))
       if (e.type === 'navigate') this.navigate(e.path)
     })
+    this.handleTools(c.session)
     this.controller_ = c
     return c
   }
 
   set controller(c: Controller | null) {
     this.controller_ = c
+    if (c) this.handleTools(c.session)
     this.configKey = JSON.stringify([...CONFIG.map((a) => this.getAttribute(a)), !!this.getToken, !!this.session])
     this.update()
   }

@@ -120,6 +120,20 @@ class NavigateEvent(BaseEvent):
     path: str
 
 
+class ClientToolEvent(BaseEvent):
+    """A custom client tool the agent called (``docs/client-tools.md``).
+
+    With ``wait``, the turn waits until the client answers (``on_tool`` handlers do it, or call
+    ``tool_result``); without, the model was already told ``ok``.
+    """
+
+    type: Literal["client_tool"] = "client_tool"
+    call_id: str
+    name: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    wait: bool = False
+
+
 class ConnectEvent(BaseEvent):
     """A tool needs the person to connect a provider first (a card that starts the connection)."""
 
@@ -258,7 +272,8 @@ KnownEvent = Annotated[
     | ErrorEvent
     | DoneEvent
     | SpeechEvent
-    | RewrittenEvent,
+    | RewrittenEvent
+    | ClientToolEvent,
     Field(discriminator="type"),
 ]
 """Every event type the client knows, discriminated on ``type``."""
@@ -280,6 +295,7 @@ Event = (
     | DoneEvent
     | SpeechEvent
     | RewrittenEvent
+    | ClientToolEvent
     | UnknownEvent
 )
 """What a stream, a replay or a stored message yields."""
@@ -302,6 +318,7 @@ _TYPES = frozenset({
     "done",
     "speech",
     "rewritten",
+    "client_tool",
 })
 
 

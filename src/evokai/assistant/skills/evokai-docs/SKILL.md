@@ -12,6 +12,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/assistant.md`: The console assistant
 - `references/capabilities.md`: Capabilities
 - `references/channels-readme.md`: Channels beyond the web panel: e-mail, Microsoft Teams, Slack
+- `references/client-tools.md`: Client tools
 - `references/code.md`: Isolated code execution
 - `references/compliance.md`: Compliance packs
 - `references/configuration.md`: Configuration

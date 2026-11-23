@@ -178,6 +178,23 @@ describe('<evokai-chat>', () => {
     expect(paths).toEqual(['/orders', '/orders/1042'])
   })
 
+  test('the tools property answers custom client tools', async () => {
+    const { el, evokai, $ } = await mounted([[{ type: 'client_tool', callId: 'c1', name: 'kiosk_light', args: { on: true }, wait: true }]])
+    const got: unknown[] = []
+    el.tools = {
+      kiosk_light: (args) => {
+        got.push(args)
+        return { lit: true }
+      },
+    }
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('light')
+    await until(() => evokai.calls.some((c) => c.url.endsWith('/v1/session/tool-results')))
+    expect(got).toEqual([{ on: true }])
+    expect(evokai.calls.find((c) => c.url.endsWith('/v1/session/tool-results'))?.body).toEqual({ callId: 'c1', result: { lit: true } })
+  })
+
   test('Ctrl+J toggles, Escape closes; the conversation is remembered', async () => {
     const { el, $ } = await mounted()
     dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }))

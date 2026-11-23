@@ -9,9 +9,18 @@ and the service cancels that turn.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Generator,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from types import TracebackType
 from typing import Any, Literal, NoReturn
 
@@ -23,6 +32,7 @@ from evokai._http import AsyncTransport, SyncTransport
 from evokai.errors import EvokaiConnectionError, EvokaiError
 from evokai.events import (
     ChatResult,
+    ClientToolEvent,
     DoneEvent,
     Event,
     SessionConversation,
@@ -241,6 +251,8 @@ class ChatStream:
                         if event is None or not state.accept(event, replay=False):
                             continue
                         s._seen(event)
+                        if isinstance(event, ClientToolEvent):
+                            s._run_tool(event)
                         yield event
                         if state.done is not None:
                             return
@@ -361,6 +373,8 @@ class AsyncChatStream:
                         if event is None or not state.accept(event, replay=False):
                             continue
                         s._seen(event)
+                        if isinstance(event, ClientToolEvent):
+                            await s._run_tool(event)
                         yield event
                         if state.done is not None:
                             return
@@ -409,6 +423,16 @@ class _SessionBase:
         self.last_seq = 0
         self.replay_attempts = replay_attempts
         self.replay_delay = replay_delay
+        self._tools: dict[str, Callable[[dict[str, Any]], Any]] = {}
+
+    def on_tool(self, name: str, fn: Callable[[dict[str, Any]], Any]) -> None:
+        """Run a custom client tool when the agent calls it (``docs/client-tools.md``).
+
+        ``fn`` gets the call's arguments; for a tool that waits, what it returns (or the message
+        of what it raises) is posted as the result while the stream goes on. With the async
+        session ``fn`` may be a coroutine function.
+        """
+        self._tools[name] = fn
 
     def use_token(self, token: str | SessionToken) -> None:
         """Replace the session token (a refreshed one, for the same conversation)."""
@@ -640,6 +664,21 @@ class EvokaiSession(_SessionBase):
     def feedback(self, message_id: str, value: Literal[1, -1] | None) -> None:
         """Thumbs up (1), down (-1) or none (None) on a stored assistant message."""
         self._transport.send(calls.session_feedback(message_id, value), self.token)
+
+    def tool_result(self, call_id: str, result: Any = None, *, error: str | None = None) -> None:
+        """Answer a waiting custom client tool call (once): a JSON result, or an error."""
+        self._transport.send(calls.session_tool_result(call_id, result, error), self.token)
+
+    def _run_tool(self, event: ClientToolEvent) -> None:
+        fn = self._tools.get(event.name)
+        if fn is None:
+            return
+        try:
+            result, error = fn(event.args), None
+        except Exception as e:
+            result, error = None, str(e) or type(e).__name__
+        if event.wait:
+            self.tool_result(event.call_id, result, error=error)
 
     def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""
@@ -932,6 +971,25 @@ class AsyncEvokaiSession(_SessionBase):
     async def feedback(self, message_id: str, value: Literal[1, -1] | None) -> None:
         """Thumbs up (1), down (-1) or none (None) on a stored assistant message."""
         await self._transport.send(calls.session_feedback(message_id, value), self.token)
+
+    async def tool_result(
+        self, call_id: str, result: Any = None, *, error: str | None = None
+    ) -> None:
+        """Answer a waiting custom client tool call (once): a JSON result, or an error."""
+        await self._transport.send(calls.session_tool_result(call_id, result, error), self.token)
+
+    async def _run_tool(self, event: ClientToolEvent) -> None:
+        fn = self._tools.get(event.name)
+        if fn is None:
+            return
+        try:
+            result, error = fn(event.args), None
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as e:
+            result, error = None, str(e) or type(e).__name__
+        if event.wait:
+            await self.tool_result(event.call_id, result, error=error)
 
     async def exit(self, code: str) -> None:
         """Kiosk sessions: close the session with its exit code."""

@@ -282,6 +282,8 @@ await session.confirm(actionId, true) // an open confirmation
 await session.rewrite('Show last week instead') // replace the last question while `ChatMessage.rewritable`
 await session.answer(askId, ['By agent']) // an open question
 await session.cancel() // stop the running turn (barge-in, a stop button)
+// Your own client tools (docs/client-tools.md): the result of one that waits is posted for you.
+session.handleTool('open_cart', async () => ({ opened: await cart.open() }))
 await session.newConversation() // asks getToken for a token without conversationId
 
 // Voice: the engine the token chose (`browser` = on-device only, `server` = Pipecat over WebRTC).

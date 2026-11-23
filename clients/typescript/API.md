@@ -153,6 +153,8 @@ class EvokaiSession {
   confirm(actionId: string, approve: boolean, opts?): Promise<DoneEvent | null>
   answer(askId: string, labels: string[], opts?): Promise<DoneEvent | null>
   rewrite(text: string, opts?): Promise<DoneEvent | null>  // replace the last question; 409 rewrite_* in state.error
+  handleTool(name: string, fn: ClientToolHandler): () => void   // run a custom client tool; posts the result of one that waits
+  toolResult(callId: string, answer: { result } | { error }): Promise<void>  // POST /v1/session/tool-results
   cancel(turnId?: string | null): Promise<boolean>     // POST /v1/session/turns/{id}/cancel
   abort(): void                                        // close open streams
   resume(turnId?: string | null): Promise<DoneEvent | null>

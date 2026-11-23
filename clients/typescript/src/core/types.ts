@@ -129,6 +129,17 @@ export interface AskEvent extends EventMeta {
   other: boolean
 }
 export interface NavigateEvent extends EventMeta { type: 'navigate'; path: string }
+/**
+ * A custom client tool the agent called (`docs/client-tools.md`). With `wait`, the turn waits until the client posts
+ * the result (`EvokaiSession.handleTool` does it for you); without, the model was already told `ok`.
+ */
+export interface ClientToolEvent extends EventMeta {
+  type: 'client_tool'
+  callId: string
+  name: string
+  args: Record<string, unknown>
+  wait: boolean
+}
 /** The i18n key of why a call waits for the person (`confirmReasonText` turns it into a sentence). */
 export type ConfirmReasonKey = 'confirm.why.writes' | 'confirm.why.rule' | 'confirm.why.policy'
 /**
@@ -239,7 +250,7 @@ export interface ConnectEvent extends EventMeta { type: 'connect'; provider: Con
 export type EvokaiEvent =
   | ConversationEvent | TextEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
   | ConfirmEvent | ConfirmedEvent | UsageEvent | ErrorEvent | DoneEvent | SpeechEvent | CitationEvent | HandoffEvent
-  | ConnectEvent | RewrittenEvent
+  | ConnectEvent | RewrittenEvent | ClientToolEvent
 
 export type EventType = EvokaiEvent['type']
 

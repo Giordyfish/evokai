@@ -55,6 +55,7 @@ REQUESTS: dict[type[BaseModel], str] = {
     models.VoiceDef: "VoiceDef",
     models.NavigateDef: "NavigateDef",
     models.ClientToolsDef: "ClientToolsDef",
+    models.ClientToolDef: "ClientToolDef",
     models.McpServerBody: "McpServerBody",
     models.SkillBody: "SkillBody",
     models.SkillFileBody: "SkillFileBody",

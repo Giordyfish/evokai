@@ -14,6 +14,7 @@ import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeG
 import { done, Fx, HAT, sparkle, toast } from '../magic'
 import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { rulesOf, toRow, type RuleRow } from '../askRules'
+import { blankTool, type ClientTool, type ClientToolRow, fromRow, MAX_TOOLS, toolProblems, toRow as toolRow } from '../clientTools'
 import { Btn, Field, Hero, KV, Panel, StatusTag, Switch, Tag } from '../ui'
 import { Loads } from './common'
 import { RulesEditor } from './AskRules'
@@ -143,6 +144,8 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
   const [schemaText, setSchemaText] = useState(draft.output_schema ? JSON.stringify(draft.output_schema, null, 2) : '')
   const [settingsText, setSettingsText] = useState(JSON.stringify(draft.model_settings ?? {}, null, 2))
   const [askRows, setAskRows] = useState<RuleRow[]>((draft.ask_rules ?? []).map(toRow))
+  const [toolRows, setToolRows] = useState<ClientToolRow[]>(((draft.client_tools?.custom ?? []) as ClientTool[]).map(toolRow))
+  const toolIssues = toolProblems(toolRows)
   /** The tools rules can name (as last listed), and whether each changes data. */
   const ruleTools = data.servers.flatMap((s) =>
     (s.tools ?? []).map((x) => ({ name: `${s.tool_prefix ?? ''}${x.name}`, mutating: !!x.destructive || x.readOnly === false })),
@@ -203,6 +206,12 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
       setProblems(t('ag.badJson'))
       return
     }
+    if (toolIssues.some((x) => x !== null) || toolRows.length > MAX_TOOLS) {
+      setProblems(t('ag.customFix'))
+      setSec('tools')
+      return
+    }
+    body = { ...body, client_tools: { ...(body.client_tools ?? {}), custom: toolRows.map(fromRow) } }
     if (!body.name || !/^[A-Za-z0-9_-]+$/.test(body.name)) {
       setProblems(t('ag.badName'))
       setSec('ins')
@@ -651,6 +660,33 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
               !clientGranted(g, 'confirm'),
             )}
             <p class="hint">{t('ag.confirmCardHint')}</p>
+            <h4>{t('ag.customTools')}</h4>
+            <p class="hint">{t('ag.customToolsHint')}</p>
+            {toolRows.map((r, i) => {
+              const edit = (patch: Partial<ClientToolRow>) => setToolRows(toolRows.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+              const issue = toolIssues[i]
+              return (
+                <div key={i} class="opt" style="display:block">
+                  <Field label={t('ag.customNameLabel')}>
+                    <input class="in mono" value={r.name} onInput={(e) => edit({ name: e.currentTarget.value })} />
+                  </Field>
+                  <Field label={t('ag.customDescriptionLabel')}>
+                    <textarea class="in" value={r.description} onInput={(e) => edit({ description: e.currentTarget.value })} />
+                  </Field>
+                  <Field label={t('ag.customParameters')}>
+                    <textarea class="in mono" spellcheck={false} style="min-height:120px" value={r.parameters} onInput={(e) => edit({ parameters: e.currentTarget.value })} />
+                  </Field>
+                  {row(t('ag.customWait'), t('ag.customWaitHint'), <Switch on={r.wait} aria={t('ag.customWait')} onChange={(v) => edit({ wait: v })} />)}
+                  {issue ? <p class="hint bad">{t(issue)}</p> : null}
+                  <Btn onClick={() => setToolRows(toolRows.filter((_, j) => j !== i))}>{t('ag.customRemove')}</Btn>
+                </div>
+              )
+            })}
+            {toolRows.length >= MAX_TOOLS ? (
+              <p class="hint">{t('ag.customTooMany')}</p>
+            ) : (
+              <Btn onClick={() => setToolRows([...toolRows, blankTool()])}>{t('ag.customAdd')}</Btn>
+            )}
           </Panel>
         ) : (
           <Panel title={t('ag.clientTools')}>
