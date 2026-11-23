@@ -11,9 +11,12 @@ One pure ASGI middleware (it never buffers a streamed answer):
   allows, never with cookies (no ``Access-Control-Allow-Credentials``: session tokens travel in
   ``Authorization``); each application's own origin list is still checked on every request
   (``api.deps.session``);
-- **body size**: requests larger than the limit get 413 before the route reads them (the session
-  API takes less than the server API, whose runs carry attachments, except a chat message, which
-  may carry the files a person attaches: ``EVOKAI_ATTACHMENTS_REQUEST_MB``).
+- **body size**: requests larger than the limit get 413 before the route reads them, from
+  ``Content-Length`` and while a chunked body is read (the session API takes less than the server
+  API, whose runs carry attachments). A chat message may carry the files a person attaches
+  (``EVOKAI_ATTACHMENTS_REQUEST_MB``) only when its session token says so (the application is
+  granted ``attachments`` and the agent has them on): that is resolved before the body is read, so
+  any other session never gets more than the session limit parsed or decoded.
 """
 
 from __future__ import annotations
@@ -42,13 +45,21 @@ CORS_EXPOSE = "x-turn-id, x-correlation-id"
 CORS_METHODS = "GET, POST, PATCH, DELETE, OPTIONS"
 
 OriginsFn = Callable[[], Awaitable[set[str]]]
+TakesFilesFn = Callable[[str | None], Awaitable[bool]]
+"""Whether a chat request may carry attachments, from its ``Authorization`` header."""
 
 
 class Hardening:
     """Security headers, CORS for the session API and body limits."""
 
     def __init__(
-        self, app: ASGIApp, *, base_path: str, origins: OriginsFn, attachments_mb: int = 0
+        self,
+        app: ASGIApp,
+        *,
+        base_path: str,
+        origins: OriginsFn,
+        attachments_mb: int = 0,
+        takes_files: TakesFilesFn | None = None,
     ) -> None:
         """Wrap the application.
 
@@ -58,12 +69,16 @@ class Hardening:
             origins: The browser origins every application allows (cached by the caller).
             attachments_mb: The files one chat message may carry
                 (``EVOKAI_ATTACHMENTS_REQUEST_MB``): the body limit of ``POST /v1/session/chat``
-                grows by them, base64 included.
+                grows by them, base64 included, when ``takes_files`` says the request may carry
+                files.
+            takes_files: Whether a chat request may carry attachments
+                (``session_routes.takes_attachments``); without it a chat keeps the session limit.
         """
         self.app = app
         self.chat_limit = max(SESSION_BODY_LIMIT, attachments_mb * 1_000_000 * 4 // 3 + CHAT_EXTRA)
         self.base = base_path.rstrip("/")
         self.origins = origins
+        self.takes_files = takes_files
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Handle a request."""
@@ -85,11 +100,13 @@ class Hardening:
             return
 
         limit = SESSION_BODY_LIMIT if session_api else BODY_LIMIT
-        if path == f"{self.base}/v1/session/chat":
-            limit = self.chat_limit
+        length = headers.get("content-length")
+        if path == f"{self.base}/v1/session/chat" and not (
+            length and length.isdigit() and int(length) <= limit
+        ):
+            limit = await self._chat_limit(headers.get("authorization"))
         if path.startswith(f"{self.base}/v1/admin/knowledge/") and path.endswith("/documents"):
             limit = UPLOAD_LIMIT
-        length = headers.get("content-length")
         if length and length.isdigit() and int(length) > limit:
             await _too_large(send, https)
             return
@@ -125,6 +142,21 @@ class Hardening:
             await send(message)
 
         await self.app(scope, counted, send_hardened)
+
+    async def _chat_limit(self, authorization: str | None) -> int:
+        """The body limit of a chat message larger than the session limit, or of unknown length.
+
+        Returns:
+            The attachments limit when the request may carry files, else the session limit (also
+            when the check itself fails).
+        """
+        if self.takes_files is None or self.chat_limit <= SESSION_BODY_LIMIT:
+            return SESSION_BODY_LIMIT
+        try:
+            ok = await self.takes_files(authorization)
+        except Exception:  # fail closed: the session limit
+            ok = False
+        return self.chat_limit if ok else SESSION_BODY_LIMIT
 
     async def _preflight(self, send: Send, origin: str | None, https: bool) -> None:
         headers = list(_security_headers(False, https, None))

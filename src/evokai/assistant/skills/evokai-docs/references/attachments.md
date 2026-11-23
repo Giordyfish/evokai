@@ -63,8 +63,10 @@ Files travel inline, in the body of `POST /v1/session/chat`, as base64:
 This is the shape of a server run's attachments (`name`, `mediaType`) with the bytes instead of the text. Inline
 files keep one request one turn: nothing is uploaded before the turn decides, there are no upload ids to steal or
 orphaned uploads to clean up, and external storage needs nothing more. The body limit of `POST /v1/session/chat`
-follows `EVOKAI_ATTACHMENTS_REQUEST_MB` (50 MB of files by default, plus a third for base64); every other session
-route keeps its 2 MB.
+follows `EVOKAI_ATTACHMENTS_REQUEST_MB` (50 MB of files by default, plus a third for base64) only when the session
+token's application is granted `attachments` and its agent has them on: this is checked from the token before the
+body is read. Any other chat message, and every other session route, keeps the 2 MB limit (413 `too_large`, from
+`Content-Length` or while a chunked body is read).
 
 A message with attachments still needs its text (the question about them). A decision (`confirm`) carries none.
 

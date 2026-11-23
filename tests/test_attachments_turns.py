@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+from collections.abc import AsyncIterator
 from typing import Any
 
+import pytest
 import sqlalchemy as sa
 from pydantic_ai.messages import BinaryContent, ModelRequest, TextContent, UserPromptPart
 
@@ -329,3 +332,80 @@ async def test_a_refused_rewrite_takes_the_questions_files_with_it(env: Env) -> 
     async with env.svc.db.session() as s:
         n = (await s.execute(sa.select(sa.func.count()).select_from(m.Attachment))).scalar_one()
     assert n == 0
+
+
+def _decodings(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count the base64 decodings of a large attachment (tokens are decoded too, and are small)."""
+    from evokai.api import session_routes
+
+    calls: list[int] = []
+    real = session_routes.base64.b64decode
+
+    def counted(s: Any, *a: Any, **k: Any) -> bytes:
+        if len(s) > 100_000:
+            calls.append(len(s))
+        return real(s, *a, **k)
+
+    monkeypatch.setattr(session_routes.base64, "b64decode", counted)
+    return calls
+
+
+def _big_body(mb: int) -> str:
+    """A chat body of about ``mb`` megabytes: one attachment's base64."""
+    data = base64.b64encode(b"a" * (mb * 1_000_000 * 3 // 4)).decode()
+    return f'{{"text": "Read it.", "attachments": [{{"name": "a.txt", "data": "{data}"}}]}}'
+
+
+def _chunks(body: str) -> AsyncIterator[bytes]:
+    """The body sent chunked, without a Content-Length."""
+
+    async def gen() -> AsyncIterator[bytes]:
+        await asyncio.sleep(0)
+        for i in range(0, len(body), 500_000):
+            yield body[i : i + 500_000].encode()
+
+    return gen()
+
+
+async def test_without_the_grant_a_chat_body_keeps_the_session_limit(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The body limit is chosen from the session token before the body is read: an application
+    # without the grant, or an agent that takes no files, never gets the larger one.
+    calls = _decodings(monkeypatch)
+    body = _big_body(3)
+    json_ = {"Content-Type": "application/json"}
+    tok = (await env.token())["token"]
+    r = await env.client.post(CHAT, content=body, headers={**_h(tok), **json_})
+    assert r.status_code == 413 and r.json()["error"] == "too_large"
+    r = await env.client.post(CHAT, content=_chunks(body), headers={**_h(tok), **json_})
+    assert r.status_code == 413
+    # Granted, but the agent takes none: still the session limit.
+    tok = await _setup(env, {**READER, "attachments": {"enabled": False}})
+    r = await env.client.post(CHAT, content=body, headers={**_h(tok), **json_})
+    assert r.status_code == 413
+    r = await env.client.post(CHAT, content=_chunks(body), headers={**_h(tok), **json_})
+    assert r.status_code == 413
+    # No token, or a forged one: the session limit.
+    r = await env.client.post(CHAT, content=body, headers={"Origin": ORIGIN, **json_})
+    assert r.status_code == 413
+    r = await env.client.post(CHAT, content=_chunks(body), headers={**_h("forged"), **json_})
+    assert r.status_code == 413
+    assert calls == []
+
+
+async def test_with_the_grant_and_an_agent_that_takes_files_a_large_body_is_read(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _decodings(monkeypatch)
+    tok = await _setup(env)
+    json_ = {"Content-Type": "application/json"}
+    # 20 MB: read by the route, which refuses the file as larger than the agent takes (10 MB).
+    for content in (_big_body(20), _chunks(_big_body(20))):
+        r = await env.client.post(CHAT, content=content, headers={**_h(tok), **json_})
+        assert r.status_code == 413 and r.json()["error"] == "attachment_too_large", r.text
+    assert len(calls) == 2
+    # Beyond EVOKAI_ATTACHMENTS_REQUEST_MB (50 MB of files, base64, 2 MB beside): at the door.
+    over = "x" * (50_000_000 * 4 // 3 + 2_100_000)
+    r = await env.client.post(CHAT, content=f'{{"text": "{over}"}}', headers={**_h(tok), **json_})
+    assert r.status_code == 413 and r.json()["error"] == "too_large"

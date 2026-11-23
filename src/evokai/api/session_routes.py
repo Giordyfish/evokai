@@ -26,6 +26,7 @@ from evokai.core.security import code_matches
 from evokai.core.util import utcnow
 from evokai.grants import grants_of
 from evokai.guard.ask import REASON_WRITES
+from evokai.identity.auth import bearer
 from evokai.identity.models import SessionPrincipal
 from evokai.memory.store import memory_view as view
 from evokai.services import Services
@@ -105,6 +106,43 @@ async def _attachments_offer(
     return files_.offer(
         restricted.attachments, svc.engine.models_for(definition, app, requested, grants)
     )
+
+
+async def takes_attachments(svc: Services, authorization: str | None) -> bool:
+    """Whether a chat request may carry attachments, read before its body (``api.hardening``).
+
+    Only then does ``POST /v1/session/chat`` get the larger body limit
+    (``EVOKAI_ATTACHMENTS_REQUEST_MB``): the session token is valid, its application is granted
+    ``attachments`` and the conversation's agent has them on. The route still authenticates the
+    request in full (origin, rate) and the turn checks the files themselves.
+
+    Returns:
+        True when all three hold; False otherwise, never raising for a bad token.
+    """
+    token = bearer(authorization)
+    if not token:
+        return False
+    try:
+        s = await svc.auth.session(token)
+        app = await svc.store.applications.get(s.claims.application_id)
+        if app is None:
+            return False
+        grants = await grants_of(svc.store, app)
+        if not grants.attachments():
+            return False
+        # After a handoff the conversation goes on with another agent than the token's.
+        conv = await svc.store.sessions.get(s.who, s.claims.conversation_id)
+        if conv is None:
+            definition = await svc.agents.active(app.id, s.claims.agent)
+        else:
+            try:
+                definition = await svc.agents.active(app.id, conv.agent_name)
+            except NotFound:
+                definition = await svc.agents.pinned(app.id, conv.agent_name, conv.agent_version)
+    except AppError:
+        return False
+    config = grants.restrict(definition).attachments
+    return config is not None and config.enabled
 
 
 async def _suggestions(svc: Services, application_id: str, agent: str) -> list[str]:

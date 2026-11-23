@@ -20,7 +20,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   files and serves its images through `GET /v1/session/attachments/{id}`; traces keep only name, type, size and hash.
   The TypeScript client (`chat({ text, files })`, `attachment(id)`), the Python client (`chat(..., attachments=[...])`),
   `<evokai-chat>` (paper clip, drop, paste, previews; UI size budget +1.5 KB) and the console (agent editor,
-  Permissions) follow. `EVOKAI_ATTACHMENTS_REQUEST_MB` (default 50) sets the chat body limit. See `docs/attachments.md`.
+  Permissions) follow. `EVOKAI_ATTACHMENTS_REQUEST_MB` (default 50) sets the chat body limit of a session that may
+  attach files, read from its token before the body; every other session keeps 2 MB. See `docs/attachments.md`.
 - Prompt modules: versioned application prompts with a restricted JSON Schema of parameters and an optional data table,
   rendered as Handlebars templates (pydantic-handlebars, no HTML escaping) after an agent's instructions. Agents list
   the modules they use with defaults and whether a session may change them; the application backend switches and

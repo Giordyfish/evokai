@@ -210,6 +210,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         base_path=base,
         origins=origin_cache(svc.store),
         attachments_mb=settings.attachments_request_mb,
+        takes_files=lambda authorization: session_routes.takes_attachments(svc, authorization),
     )
     app.add_middleware(CorrelationMiddleware)
 

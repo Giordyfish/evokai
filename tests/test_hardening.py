@@ -77,16 +77,18 @@ async def test_cors_answers_allowed_origins_only_and_never_with_credentials(env:
     assert r.status_code == 403 and "access-control-allow-origin" not in r.headers
 
 
-async def test_a_chat_message_may_carry_attachments_but_not_more(env: Env) -> None:
+async def test_a_chat_message_without_attachments_keeps_the_session_limit(env: Env) -> None:
+    # The larger limit needs the attachments grant and an agent that takes files
+    # (tests/test_attachments_turns.py).
     tok = await env.token()
-    big = "x" * 3_000_000
+    big = "x" * 1_900_000
     r = await env.client.post(
         "/agent/v1/session/chat",
         content=f'{{"text": "{big}"}}',
         headers={**_sess(tok), "Content-Type": "application/json"},
     )
     assert r.status_code == 400  # read by the route (the text is too long), not refused at the door
-    over = "x" * (50_000_000 * 4 // 3 + 2_100_000)
+    over = "x" * 2_100_000
     r = await env.client.post(
         "/agent/v1/session/chat",
         content=f'{{"text": "{over}"}}',
