@@ -36,8 +36,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_VOICE_STT_ENGINES` / `_TTS_ENGINES` | `[]` | More engines a session token may choose (`speech` at mint) |
 | `EVOKAI_SPEECH_MAX_CHARS` | `2000` | The longest text `POST /v1/session/speech` speaks |
 | `EVOKAI_TRANSCRIBE_MAX_BYTES` / `_MAX_SECONDS` | `10000000` / `120` | The largest and longest recording `POST /v1/session/transcribe` takes |
-| `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` | `300` | The longest streaming recognition: its audio, and its wall-clock time plus 10 seconds (never past the session token's expiry) |
-| `EVOKAI_TRANSCRIBE_STREAM_IDLE_SECONDS` | `30` | A streaming recognition that receives no audio for this long is closed |
+| `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` / `_IDLE_SECONDS` | `300` / `30` | The longest streaming recognition (audio, and wall-clock time plus 10 s), and how long it may receive no audio |
 | `EVOKAI_VOICE_SMART_TURN` | `true` | End of turn by Smart Turn v3 (else VAD silence) |
 | `EVOKAI_VOICE_ICE_SERVERS` | `[]` | STUN/TURN URLs for WebRTC |
 | `EVOKAI_OTEL_ENABLED` | `false` | OpenTelemetry: request spans, metrics and every turn's trace with the GenAI conventions (exporters read `OTEL_*`; [traces](#traces-and-opentelemetry)) |

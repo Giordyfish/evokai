@@ -100,7 +100,7 @@ service.
   policy, egress, loop and rate controls, before the event leaves. A blocked call never reaches the client.
 - **Results** come from the browser, so the person controls them. They are capped at 32 KB (413 `too_large`),
   scanned for instructions (`untrusted.injection`) and marked as data for the model, like a tool's output: they never
-  become instructions. Their [markup](markup.md) is made inert, so a client cannot write cues for the agent.
+  become instructions, and their [markup](markup.md) is made inert.
 - Every call and every answer is in the turn's trace (`execute_tool client_<name>`, then
   `client_tool_result client_<name>` with how long the client took and the outcome).
 - A step that also asks for a confirmation does not wait for its client calls: the model reads that they did not

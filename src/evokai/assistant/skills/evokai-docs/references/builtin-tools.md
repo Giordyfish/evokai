@@ -41,43 +41,23 @@ whether each may run.
 
 ## Security policy
 
-The provider runs these tools, so Evokai cannot hold one of their calls for the person's confirmation. The tool
-policy and the ask rules therefore decide whether a tool is offered at all, under two names, `builtin:<kind>` and
-`<kind>` (`builtin:web_search` and `web_search`):
+The provider runs these tools, so no call can wait for a confirmation. The tool policy and the ask rules apply under
+the names `builtin:<kind>` and `<kind>`: a tool denied, outside `tools.allow`, confirmed (`tools.confirm`) or matched by
+an [ask rule](security.md#ask-rules) is not offered, never run unconfirmed.
 
-- a tool denied under either name (`tools.deny`), or with an allow-list (`tools.allow`) that names neither, is not
-  offered (while `tools.policy` is enforced);
-- a tool the policy confirms (`tools.confirm`) or an [ask rule](security.md#ask-rules) may ask for is **refused**, never run
-  without its confirmation: `tools.confirm: ["builtin:*"]` turns every built-in tool off;
-- the same applies to each tool an `mcp_server` lists, under its own name.
-
-### MCP servers the provider calls
-
-An `mcp_server` must list the tools the provider may call on it, in `allowed_tools` (an agent without it cannot be
-saved, and one stored before is left out of its turns):
-
-```yaml
-builtin_tools:
-  - kind: mcp_server
-    config:
-      id: crm
-      url: https://mcp.example.com/mcp
-      allowed_tools: [crm_find_customer, crm_order_status]
-```
-
-**Every listed tool runs without a confirmation**, in browser turns, server runs and the OpenAI-compatible API alike,
-because the provider calls it, not Evokai. List only tools you would let the model call on its own. A listed tool the
-policy denies or confirms, or an ask rule may ask for, is taken off the list, and a server left with none is not
-offered. For tools that change data and must wait for the person, connect the server to Evokai instead
-(`mcp_servers`, see [configuration](configuration.md#bootstrap-from-a-mounted-config-file)): Evokai then asks before each change.
+An `mcp_server` must list the tools the provider may call, in `allowed_tools` (`[crm_find_customer]`); one without
+it cannot be saved, and one stored before is left out. **Every listed tool runs without a confirmation**, in every
+channel: list only tools the model may call on its own. A listed tool the policy denies or confirms, or an ask rule
+matches, is taken off the list. Tools that must wait for the person belong in Evokai's own `mcp_servers`.
 
 ## Guard, events and traces
 
 - **Egress:** while `tools.egress` is enforced with an allow-list, `web_search` and `web_fetch` are limited to it: an
   agent's own `allowed_domains` can narrow it, never widen it (a tool left with no domain is not offered, and an empty
-  allow-list allows none). An `mcp_server` whose address is outside an allow-list is left out whenever one is set and
-  `tools.egress` is not off (in monitor too: its calls cannot be checked one by one). Without an allow-list, as for
-  every other tool, they may reach any address: the Protection page says so for each one.
+  allow-list allows none). An `mcp_server` outside an allow-list is left out, in monitor too. Without an allow-list
+  they reach any address, like every other tool: the Protection page says so.
+- **Regenerating:** an answer that called `mcp_server`, `memory` or `code_execution` (they can change data) is not
+  regenerable.
 - **Output:** what the tools return reaches the person only through the model's answer, which the output guard
   filters as always.
 - **Events:** each call is a `tool` event (`start`, then `done` or `error`, with `builtin: true`), and each web page a
@@ -86,9 +66,3 @@ offered. For tools that change data and must wait for the person, connect the se
   lists the agent's built-in tools.
 
 Server runs and the OpenAI-compatible API offer the granted tools too; their results show in the answer only.
-
-## Regenerating
-
-An answer that called a tool that can change data (`mcp_server`, `memory`, and `code_execution`, whose sandbox can
-keep files between requests) cannot be [regenerated](architecture.md#regenerating-the-last-answer): its `done` event
-and the conversation say `regenerable: false`, as after a custom client tool.

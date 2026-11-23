@@ -252,11 +252,9 @@ and the traces are a turn's, and the replaced answer stays only in its turn's tr
 - **Refused** with 409 `not_regenerable` (`turn.notRegenerable` in the language packs) when there is no question yet,
   the last turn changed data (a `wrote` result or an approved change), it ran a custom
   [client tool](client-tools.md) (the client acted on it, and running it again could act twice), it called a
-  [provider built-in tool](builtin-tools.md#regenerating) that can change data, or a turn is running. It is refused
-  too when the question could not be asked again as the person asked it: with `pii.history` enforced, a question
-  whose identifiers were masked when it was stored (the original is kept nowhere, so it cannot be recovered), and,
-  with external storage, a question that carried an image or a PDF the model read as a file (its bytes lived only
-  during its turn; a document read as text is in the history and can be regenerated).
+  [built-in tool](builtin-tools.md) that can change data, or a turn is running; and when the question cannot be asked
+  again as it was: stored with identifiers masked (`pii.history`: the original is kept nowhere), or, with external
+  storage, carrying an image or PDF read as a file (its bytes are gone after the turn).
 - **The flag.** Every `done` event carries `regenerable`, and in `GET /v1/session/conversation` the last assistant
   message has `regenerable: true` while it can be regenerated and no turn runs. The TypeScript client's
   `session.regenerate()` and `ChatMessage.regenerable`, `<evokai-chat>`'s regenerate button on the last answer, and

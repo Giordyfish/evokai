@@ -79,9 +79,8 @@ the offsets into times (`mark` events).
 Markup in a person's message is made inert before the model sees it (and before it is stored): the first character of
 each token becomes its fullwidth form (`{wave}` becomes `｛wave}`), so the model never takes it for one of its own cues.
 Text that only looks like markup by accident, such as JSON, is left alone. The conversation an application keeps
-itself (external storage) is sent by the application and not rewritten. The same applies, on their way to the model,
-to everything else the person controls: the names of their [attachments](attachments.md) and the text read from them,
-and the results of [client tools](client-tools.md), which the browser writes.
+itself (external storage) is sent by the application and not rewritten. Attachment names and text and client tool
+results are made inert too.
 
 ## Guard
 
