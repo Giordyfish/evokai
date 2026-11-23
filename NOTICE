@@ -5,3 +5,10 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 The name "Evokai™", its logo and its mascot are (unregistered) trademarks of Giordano Pescetelli and are not licensed under the
 Apache License (see its section 6): forks and derived works must use a different name and branding, and must keep
 this NOTICE and the copyright notices.
+
+Third-party components
+----------------------
+Evokai depends on third-party packages under their own licences; every release lists them, with their licences, in
+its SBOM. Some are under the GNU Lesser General Public License (num2words, LGPL-2.1; psycopg, LGPL-3.0, when
+installed). They are used unmodified, as separately installed packages that can be replaced with another version of
+the same library; their source code is available from the Python Package Index and their own repositories.
