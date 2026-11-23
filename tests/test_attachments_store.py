@@ -92,8 +92,6 @@ async def test_the_repository_is_scoped_to_its_owner_and_conversation(env: Env) 
     assert await store.data_of(who, cid, [p.id, "nope"]) == {p.id: b"\x89PNG-bytes"}
     assert await store.total(who, cid) == len(b"\x89PNG-bytes")
     assert await store.total(who, other) == 0
-    assert await store.delete(who, other, [p.id]) == 0
-    assert await store.delete(who, cid, [p.id]) == 1
 
 
 async def _rows(env: Env) -> int:

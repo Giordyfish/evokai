@@ -6,19 +6,23 @@ Event names and payloads are the clients' contract.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from evokai import attachments as files_
 from evokai.agents.prompts import PageContext
 from evokai.api.deps import services, session
-from evokai.core.errors import AppError, Conflict, Forbidden, NotFound
+from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.security import code_matches
 from evokai.core.util import utcnow
+from evokai.grants import grants_of
 from evokai.guard.ask import REASON_WRITES
 from evokai.identity.models import SessionPrincipal
 from evokai.memory.store import memory_view as view
@@ -56,7 +60,31 @@ async def info(svc: Svc, s: Sess) -> dict[str, Any]:
         "memories": await svc.store.memories.facts(s.who),
         "memory": (await svc.memory.state(app, s.who)).view() if app else None,
         "suggestions": await _suggestions(svc, c.application_id, agent),
+        "attachments": await _attachments_offer(svc, app, agent, c.model),
     }
+
+
+async def _attachments_offer(
+    svc: Services, app: Any, agent: str, requested: str | None
+) -> dict[str, Any] | None:
+    """What the person may attach to a message (``evokai.attachments.offer``), or None.
+
+    Returns:
+        ``kinds``, ``mediaTypes``, ``maxFileBytes`` and ``maxFiles``.
+    """
+    if app is None:
+        return None
+    try:
+        definition = await svc.agents.active(app.id, agent)
+    except AppError:
+        return None
+    grants = await grants_of(svc.store, app)
+    if not grants.attachments():
+        return None
+    restricted = grants.restrict(definition)
+    return files_.offer(
+        restricted.attachments, svc.engine.models_for(definition, app, requested, grants)
+    )
 
 
 async def _suggestions(svc: Services, application_id: str, agent: str) -> list[str]:
@@ -102,6 +130,7 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
                 "feedback": x.feedback,
                 "interrupted": x.interrupted,
                 **({"rewritable": i == editable} if x.role == "user" else {}),
+                **({"attachments": _shown_files(x.content)} if x.role == "user" else {}),
                 **(
                     {"regenerable": True}
                     if again is not None and i == last_answer and i > again
@@ -121,6 +150,53 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
         "lastSeq": sess.last_seq,
         "runningTurnId": running.turn_id if running else None,
     }
+
+
+def _shown_files(content: Any) -> list[dict[str, Any]]:
+    """The attachments of a question as the person sees them (never their text).
+
+    Returns:
+        id, name, mediaType, size of each.
+    """
+    return [
+        {k: b["file"].get(k) for k in ("id", "name", "mediaType", "size")}
+        for b in content or []
+        if isinstance(b, dict) and isinstance(b.get("file"), dict)
+    ]
+
+
+@router.get(
+    "/attachments/{attachment_id}",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/*": {}}, "description": "The image"},
+        404: {"description": "Not Found"},
+    },
+)
+async def attachment(attachment_id: str, svc: Svc, s: Sess) -> Response:
+    """An image the person attached to this conversation, to show it in the history.
+
+    Only images, only of the session's own conversation, as they are kept (without their
+    metadata). Documents are never served back.
+
+    Returns:
+        The image.
+
+    Raises:
+        NotFound: Not an image of this conversation (another conversation's id included).
+    """
+    row = await svc.store.attachments.get(s.who, s.claims.conversation_id, attachment_id)
+    if row is None or not row.media_type.startswith("image/"):
+        raise NotFound("Unknown attachment.", code="unknown_attachment")
+    return Response(
+        content=row.data,
+        media_type=row.media_type,
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
 
 
 @router.get("/events")
@@ -228,6 +304,31 @@ class Rewrite(BaseModel):
     Left out: the last question. External storage has no ids: the last question of ``history``."""
 
 
+class ChatAttachment(BaseModel):
+    """A file attached to a message: the attachment of a server run, with its bytes."""
+
+    name: str = Field(min_length=1, max_length=200)
+    mediaType: str | None = Field(default=None, max_length=100)
+    """What the browser says it is: never trusted, the kind is read from the bytes."""
+    data: str = Field(min_length=1)
+    """The bytes, base64 (a ``data:`` URL is accepted too)."""
+
+    def decoded(self) -> files_.Upload:
+        """The upload.
+
+        Returns:
+            Its name and bytes.
+
+        Raises:
+            BadRequest: Not base64 (``attachment_invalid``).
+        """
+        raw = self.data.split(",", 1)[1] if self.data.startswith("data:") else self.data
+        try:
+            return files_.Upload(self.name, base64.b64decode(raw, validate=True))
+        except (binascii.Error, ValueError) as e:
+            raise BadRequest("An attachment is not base64.", code="attachment_invalid") from e
+
+
 class ChatBody(BaseModel):
     """A user input."""
 
@@ -241,6 +342,9 @@ class ChatBody(BaseModel):
     history: list[HistoryMessage] | None = Field(default=None, max_length=MAX_HISTORY_MESSAGES)
     """External storage only: the conversation so far (oldest first)."""
     endOfSpeechAt: float | None = None
+    attachments: list[ChatAttachment] = Field(default_factory=list, max_length=10)
+    """Files for the model (``docs/attachments.md``): the ``attachments`` grant and the agent's
+    ``attachments`` say which and how many; the text is still required."""
 
 
 class ChatResult(BaseModel):
@@ -299,6 +403,7 @@ async def chat(
         history=body.history,
         end_of_speech_at=body.endOfSpeechAt,
         rewrite=body.rewrite.model_dump() if body.rewrite else None,
+        files=[a.decoded() for a in body.attachments],
     )
     return await _run_turn(svc, inp, request)
 

@@ -22,6 +22,7 @@ import re
 import struct
 import zipfile
 from dataclasses import dataclass, field
+from typing import Any
 
 from evokai.core.errors import AppError
 from evokai.core.util import new_id
@@ -67,6 +68,8 @@ class Prepared:
     unreadable: str | None = None
     """Why a document has no text (a scan, a damaged file)."""
     truncated: bool = False
+    native: bool = False
+    """Sent to the model as it is (an image, a PDF the models read); else its text is."""
     id: str = field(default_factory=new_id)
 
     @property
@@ -403,3 +406,179 @@ def prepare(name: str, data: bytes, *, kinds: set[str], max_bytes: int) -> Prepa
     return Prepared(
         name=name, kind=kind, data=data, text=text, unreadable=unreadable, truncated=truncated
     )
+
+
+# ── a chat message's attachments ────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class Upload:
+    """An attachment as it arrived (the bytes decoded, nothing checked yet)."""
+
+    name: str
+    data: bytes
+
+
+def _profile(model: Any) -> dict[str, Any]:
+    return dict(getattr(model, "profile", None) or {})
+
+
+def readable(models: list[Any]) -> tuple[bool, bool]:
+    """Whether every model of a chain reads images, and PDF files, natively.
+
+    pydantic-ai's profiles say ``True`` unless something says otherwise; Evokai follows them (a
+    fallback model that cannot read an image would fail the turn, so the whole chain counts).
+
+    Returns:
+        ``(images, pdf)``.
+    """
+    profiles = [_profile(m) for m in models]
+    images = bool(profiles) and all(p.get("supports_image_input", True) for p in profiles)
+    pdf = bool(profiles) and all(
+        p.get("supports_document_input", True)
+        and "application/pdf" in p.get("supported_document_media_types", {"application/pdf"})
+        for p in profiles
+    )
+    return images, pdf
+
+
+def check(
+    uploads: list[Upload],
+    *,
+    granted: bool,
+    config: Any,
+    models: list[Any],
+    carried: int = 0,
+    used_bytes: int | None = None,
+) -> list[Prepared]:
+    """Check a message's attachments against the grant, the agent and its models.
+
+    Args:
+        uploads: What the person sent.
+        granted: The application's ``attachments`` grant.
+        config: The agent's ``attachments`` (``AttachmentsDef``), as granted.
+        models: The models that may answer (the turn's chain).
+        carried: Attachments a rewritten question keeps (they count towards ``max_files``).
+        used_bytes: What the conversation keeps already (Evokai storage; None: nothing is kept).
+
+    Returns:
+        The prepared files, each marked ``native`` when the models read it as it is.
+
+    Raises:
+        NotGranted: The grant is off (403 ``attachments_not_granted``).
+        AttachmentError: The agent takes none, too many, too large, a refused kind, a full
+            conversation, an image the models cannot read, or a document without text that the
+            models cannot read either.
+    """
+    if not uploads:
+        return []
+    from evokai.grants import NotGranted
+
+    if not granted:
+        raise NotGranted("attachments", "Attachments are not granted to this application.")
+    if config is None or not config.enabled:
+        raise AttachmentError("This agent does not accept attachments.", code="attachments_off")
+    if len(uploads) + carried > config.max_files:
+        raise AttachmentError(
+            f"At most {config.max_files} attachments per message.", code="too_many_attachments"
+        )
+    kinds = set(config.types)
+    out = [
+        prepare(u.name, u.data, kinds=kinds, max_bytes=config.max_file_mb * 1_000_000)
+        for u in uploads
+    ]
+    if used_bytes is not None:
+        limit = config.max_conversation_mb * 1_000_000
+        if used_bytes + sum(p.size for p in out) > limit:
+            raise AttachmentError(
+                "This conversation holds as many attachments as it may.",
+                code="attachments_full",
+                status=413,
+            )
+    images, pdf = readable(models)
+    for p in out:
+        if p.image and not images:
+            raise AttachmentError(
+                "The models of this agent do not read images.", code="attachment_unsupported"
+            )
+        p.native = p.image or (p.kind == "pdf" and pdf)
+        if not p.native and p.text is None:
+            raise AttachmentError(
+                f"{p.name} cannot be read: {p.unreadable or 'it has no text'}.",
+                code="attachment_unreadable",
+            )
+    return out
+
+
+MAX_NATIVE_FILES = 20
+"""Files read as they are (images, PDFs) sent with one model request, the latest first; older
+ones become a note that they are no longer available."""
+
+
+def native_files(messages: list[Any], *, images: bool, pdf: bool) -> list[dict[str, Any]]:
+    """The attachments of a history the model reads as they are, the latest first.
+
+    Args:
+        messages: Stored messages (``role``, ``content`` blocks).
+        images: The models read images.
+        pdf: The models read PDF files.
+
+    Returns:
+        Their ``file`` metadata, at most ``MAX_NATIVE_FILES``.
+    """
+    out: list[dict[str, Any]] = []
+    for msg in reversed(messages):
+        for b in reversed(msg.content):
+            f = b.get("file") if isinstance(b, dict) and not b.get("text") else None
+            if not isinstance(f, dict) or not f.get("id"):
+                continue
+            kind = str(f.get("mediaType") or "")
+            if (kind.startswith("image/") and images) or (kind == MEDIA_TYPES["pdf"] and pdf):
+                out.append(f)
+    return out[:MAX_NATIVE_FILES]
+
+
+def binaries(wanted: list[dict[str, Any]], data: dict[str, bytes]) -> dict[str, Any]:
+    """The model's view of files read as they are.
+
+    Returns:
+        id to ``BinaryContent`` (files without bytes are left out: the model gets a note).
+    """
+    from pydantic_ai.messages import BinaryContent
+
+    return {
+        str(f["id"]): BinaryContent(
+            data[str(f["id"])], media_type=str(f["mediaType"]), identifier=str(f["id"])
+        )
+        for f in wanted
+        if str(f["id"]) in data
+    }
+
+
+def traced(block: dict[str, Any]) -> dict[str, Any]:
+    """A content block as a trace may keep it: an attachment's metadata, never its text.
+
+    Returns:
+        The block.
+    """
+    return {"file": block["file"]} if isinstance(block, dict) and "file" in block else block
+
+
+def offer(config: Any, models: list[Any]) -> dict[str, Any] | None:
+    """What a client may attach in a session (``GET /v1/session``), or None when nothing.
+
+    Returns:
+        ``kinds``, ``mediaTypes``, ``maxFileBytes`` and ``maxFiles``.
+    """
+    if config is None or not config.enabled:
+        return None
+    images, _pdf = readable(models)
+    kinds = [k for k in config.types if images or k not in IMAGES]
+    if not kinds:
+        return None
+    return {
+        "kinds": kinds,
+        "mediaTypes": [MEDIA_TYPES[k] for k in kinds],
+        "maxFileBytes": config.max_file_mb * 1_000_000,
+        "maxFiles": config.max_files,
+    }

@@ -613,6 +613,10 @@ class TurnGuard:
                         tu.get("input") or {}, lambda t: protect(t, found)
                     )
                     blocks.append({"toolUse": tu})
+                elif "file" in b and b.get("text"):
+                    # A document the person attached: read from a file, so it is data.
+                    source = f"attachment:{(b.get('file') or {}).get('name', '')}"
+                    blocks.append({**b, "text": self.mark(protect(b["text"], found), source)})
                 elif b.get("text") and b.get("summary"):
                     # The summary of older messages (compaction): written by a model from the
                     # conversation and its tool results, so it is data, never the person's words.

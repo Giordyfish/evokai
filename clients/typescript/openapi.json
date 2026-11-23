@@ -95,6 +95,16 @@
             "title": "Ask Rules",
             "type": "array"
           },
+          "attachments": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentsDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "builtin_tools": {
             "items": {
               "$ref": "#/components/schemas/BuiltinToolDef"
@@ -1087,6 +1097,58 @@
         "title": "AskRulesBody",
         "type": "object"
       },
+      "AttachmentsDef": {
+        "description": "Files people attach to their chat messages (``evokai.attachments``).",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_conversation_mb": {
+            "default": 50,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Conversation Mb",
+            "type": "integer"
+          },
+          "max_file_mb": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Max File Mb",
+            "type": "integer"
+          },
+          "max_files": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "types": {
+            "items": {
+              "enum": [
+                "png",
+                "jpeg",
+                "webp",
+                "gif",
+                "pdf",
+                "docx",
+                "pptx",
+                "txt",
+                "md",
+                "csv"
+              ],
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "title": "AttachmentsDef",
+        "type": "object"
+      },
       "BrowserDeclaration": {
         "additionalProperties": false,
         "description": "What the application lets the browser send to its vendor's online services (reported).",
@@ -1366,9 +1428,51 @@
         "title": "ChannelBody",
         "type": "object"
       },
+      "ChatAttachment": {
+        "description": "A file attached to a message: the attachment of a server run, with its bytes.",
+        "properties": {
+          "data": {
+            "minLength": 1,
+            "title": "Data",
+            "type": "string"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediatype"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "data"
+        ],
+        "title": "ChatAttachment",
+        "type": "object"
+      },
       "ChatBody": {
         "description": "A user input.",
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachment"
+            },
+            "maxItems": 10,
+            "title": "Attachments",
+            "type": "array"
+          },
           "confirm": {
             "anyOf": [
               {
@@ -2366,6 +2470,70 @@
         "title": "Feedback",
         "type": "object"
       },
+      "FileBlock": {
+        "description": "User block: an attachment, with the text the model read of it (a document).\n\nWithout text the model read the file itself; with external storage that file is not kept, and\na later turn tells the model it is no longer available.",
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/FileRef"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "FileBlock",
+        "type": "object"
+      },
+      "FileRef": {
+        "description": "An attachment as a message keeps it (``evokai.attachments``): never its bytes.",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "mediaType": {
+            "maxLength": 100,
+            "title": "Mediatype",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mediaType"
+        ],
+        "title": "FileRef",
+        "type": "object"
+      },
       "GdprAnswers": {
         "additionalProperties": false,
         "description": "GDPR statements and overrides of what the configuration suggests.",
@@ -2542,6 +2710,9 @@
           "content": {
             "items": {
               "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FileBlock"
+                },
                 {
                   "$ref": "#/components/schemas/TextBlock"
                 },
@@ -14083,6 +14254,48 @@
           }
         },
         "summary": "Agui",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/agent/v1/session/attachments/{attachment_id}": {
+      "get": {
+        "description": "An image the person attached to this conversation, to show it in the history.\n\nOnly images, only of the session's own conversation, as they are kept (without their\nmetadata). Documents are never served back.\n\nReturns:\n    The image.\n\nRaises:\n    NotFound: Not an image of this conversation (another conversation's id included).",
+        "operationId": "attachment_agent_v1_session_attachments__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/*": {}
+            },
+            "description": "The image"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attachment",
         "tags": [
           "session"
         ]

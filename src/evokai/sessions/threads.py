@@ -61,7 +61,30 @@ class ToolResultBlock(BaseModel):
     toolResult: ToolResult
 
 
-Block = Annotated[TextBlock | ToolUseBlock | ToolResultBlock, Field(union_mode="left_to_right")]
+class FileRef(BaseModel):
+    """An attachment as a message keeps it (``evokai.attachments``): never its bytes."""
+
+    id: str = Field(max_length=64)
+    name: str = Field(max_length=200)
+    mediaType: str = Field(max_length=100)
+    size: int = Field(default=0, ge=0)
+    sha256: str = Field(default="", max_length=64)
+
+
+class FileBlock(BaseModel):
+    """User block: an attachment, with the text the model read of it (a document).
+
+    Without text the model read the file itself; with external storage that file is not kept, and
+    a later turn tells the model it is no longer available.
+    """
+
+    file: FileRef
+    text: str | None = Field(default=None, max_length=60_000)
+
+
+Block = Annotated[
+    FileBlock | TextBlock | ToolUseBlock | ToolResultBlock, Field(union_mode="left_to_right")
+]
 
 
 class HistoryMessage(BaseModel):

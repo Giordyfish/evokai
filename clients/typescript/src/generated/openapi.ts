@@ -3723,6 +3723,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/session/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Attachment
+         * @description An image the person attached to this conversation, to show it in the history.
+         *
+         *     Only images, only of the session's own conversation, as they are kept (without their
+         *     metadata). Documents are never served back.
+         *
+         *     Returns:
+         *         The image.
+         *
+         *     Raises:
+         *         NotFound: Not an image of this conversation (another conversation's id included).
+         */
+        get: operations["attachment_agent_v1_session_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/session/bug-reports": {
         parameters: {
             query?: never;
@@ -4454,6 +4483,7 @@ export interface components {
             a2a?: boolean;
             /** Ask Rules */
             ask_rules?: components["schemas"]["AskRule"][];
+            attachments?: components["schemas"]["AttachmentsDef"] | null;
             /** Builtin Tools */
             builtin_tools?: components["schemas"]["BuiltinToolDef"][];
             /** Capabilities */
@@ -4760,6 +4790,34 @@ export interface components {
             }[];
         };
         /**
+         * AttachmentsDef
+         * @description Files people attach to their chat messages (``evokai.attachments``).
+         */
+        AttachmentsDef: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled?: boolean;
+            /**
+             * Max Conversation Mb
+             * @default 50
+             */
+            max_conversation_mb?: number;
+            /**
+             * Max File Mb
+             * @default 10
+             */
+            max_file_mb?: number;
+            /**
+             * Max Files
+             * @default 5
+             */
+            max_files?: number;
+            /** Types */
+            types?: ("png" | "jpeg" | "webp" | "gif" | "pdf" | "docx" | "pptx" | "txt" | "md" | "csv")[];
+        };
+        /**
          * BrowserDeclaration
          * @description What the application lets the browser send to its vendor's online services (reported).
          */
@@ -4902,10 +4960,24 @@ export interface components {
             enabled?: boolean;
         };
         /**
+         * ChatAttachment
+         * @description A file attached to a message: the attachment of a server run, with its bytes.
+         */
+        ChatAttachment: {
+            /** Data */
+            data: string;
+            /** Mediatype */
+            mediaType?: string | null;
+            /** Name */
+            name: string;
+        };
+        /**
          * ChatBody
          * @description A user input.
          */
         ChatBody: {
+            /** Attachments */
+            attachments?: components["schemas"]["ChatAttachment"][];
             confirm?: components["schemas"]["Confirm"] | null;
             /** Endofspeechat */
             endOfSpeechAt?: number | null;
@@ -5320,6 +5392,40 @@ export interface components {
             value?: number | null;
         };
         /**
+         * FileBlock
+         * @description User block: an attachment, with the text the model read of it (a document).
+         *
+         *     Without text the model read the file itself; with external storage that file is not kept, and
+         *     a later turn tells the model it is no longer available.
+         */
+        FileBlock: {
+            file: components["schemas"]["FileRef"];
+            /** Text */
+            text?: string | null;
+        };
+        /**
+         * FileRef
+         * @description An attachment as a message keeps it (``evokai.attachments``): never its bytes.
+         */
+        FileRef: {
+            /** Id */
+            id: string;
+            /** Mediatype */
+            mediaType: string;
+            /** Name */
+            name: string;
+            /**
+             * Sha256
+             * @default
+             */
+            sha256?: string;
+            /**
+             * Size
+             * @default 0
+             */
+            size?: number;
+        };
+        /**
          * GdprAnswers
          * @description GDPR statements and overrides of what the configuration suggests.
          */
@@ -5410,7 +5516,7 @@ export interface components {
          */
         HistoryMessage: {
             /** Content */
-            content?: (components["schemas"]["TextBlock"] | components["schemas"]["ToolUseBlock"] | components["schemas"]["ToolResultBlock"])[];
+            content?: (components["schemas"]["FileBlock"] | components["schemas"]["TextBlock"] | components["schemas"]["ToolUseBlock"] | components["schemas"]["ToolResultBlock"])[];
             /** Events */
             events?: {
                 [key: string]: unknown;
@@ -11969,6 +12075,44 @@ export interface operations {
                     "application/json": unknown;
                     "text/event-stream": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attachment_agent_v1_session_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
