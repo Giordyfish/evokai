@@ -31,6 +31,7 @@ const GROUPS: Record<string, { title: TextKey; note: TextKey }> = {
   workflows: { title: 'perms.g.workflows', note: 'perms.g.workflowsNote' },
   code: { title: 'perms.g.code', note: 'perms.g.codeNote' },
   openai: { title: 'perms.g.openai', note: 'perms.g.openaiNote' },
+  builtin: { title: 'perms.g.builtin', note: 'perms.g.builtinNote' },
   connections: { title: 'perms.g.connections', note: 'perms.g.connectionsNote' },
   capabilities: { title: 'perms.g.capabilities', note: 'perms.g.capabilitiesNote' },
   modules: { title: 'perms.g.modules', note: 'perms.g.modulesNote' },
@@ -85,6 +86,7 @@ function label(x: GrantItem): string {
   if (x.kind === 'workflow') return t(x.name === '*' ? 'perms.workflowsAll' : 'perms.workflowsAutonomous')
   if (x.kind === 'code') return t('perms.code')
   if (x.kind === 'openai') return t('perms.openaiConfirm')
+  if (x.kind === 'builtin') return t(`ag.builtin.${x.name}` as TextKey)
   return x.label ?? x.name
 }
 

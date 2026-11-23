@@ -27,6 +27,11 @@ test('the profile keeps only the rules that are set', () => {
   })
 })
 
+test('built-in tools may keep data at the provider only when said, never with zero retention', () => {
+  expect(profileFrom({ ...empty, storage: true })).toEqual({ provider_tool_storage: true })
+  expect(profileFrom({ ...empty, storage: true, retention: 'zero_retention' })).toEqual({ retention: 'zero_retention' })
+})
+
 test('what the browser may send is declared with its vendors', () => {
   expect(profileFrom({ ...empty, voices: true, vendors: 'Google, Apple' })).toEqual({
     browser: { online_voices: true, online_recognition: false, vendors: ['Google', 'Apple'] },

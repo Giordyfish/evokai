@@ -90,6 +90,7 @@ nav:
       - Templates: templates.md
       - Prompt modules: prompt-modules.md
       - Client tools: client-tools.md
+      - Provider built-in tools: builtin-tools.md
       - Knowledge bases: knowledge.md
       - Long-term memory: memory.md
       - Workflows: workflows.md

@@ -28,7 +28,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from evokai.agents.definitions import AgentDef
+from evokai.agents.definitions import BUILTIN_KINDS, AgentDef
 from evokai.core.errors import AppError, BadRequest
 from evokai.llm.catalog import bare, normalize
 
@@ -53,6 +53,7 @@ CONNECTION = "connection"
 CAPABILITY = "capability"
 MODULE = "module"
 OPENAI = "openai"
+BUILTIN = "builtin"
 KINDS = (
     MODEL,
     MCP,
@@ -71,6 +72,7 @@ KINDS = (
     CAPABILITY,
     MODULE,
     OPENAI,
+    BUILTIN,
 )
 KNOWLEDGE_ALL = "*"
 """The knowledge grant of the whole capability (each base is also an item of its own)."""
@@ -116,6 +118,7 @@ OFF_BY_DEFAULT = frozenset(
     | {(CODE, "*")}
     | {(CLIENT, CLIENT_SESSION)}
     | {(OPENAI, "confirm")}
+    | {(BUILTIN, k) for k in BUILTIN_KINDS}
 )
 """Items an application does not have until it is granted them: A2A publishes agents to anyone
 holding the server key, autonomous workflows change data without a person deciding, channels
@@ -142,6 +145,7 @@ YAML_SECTIONS = {
     "capabilities": CAPABILITY,
     "modules": MODULE,
     "openai": OPENAI,
+    "builtin_tools": BUILTIN,
 }
 """Sections of ``grants:`` in an application YAML (and ``EVOKAI_BOOTSTRAP_APPS``) → kinds."""
 
@@ -198,6 +202,7 @@ def check_value(kind: str, name: str, value: Any) -> Any:
         CODE: CODE_ITEMS,
         CONNECTION: CONNECTION_ITEMS,
         OPENAI: OPENAI_ITEMS,
+        BUILTIN: BUILTIN_KINDS,
     }
     if kind in fixed and name not in fixed[kind]:
         raise BadRequest(f"Unknown {kind}: {name}", code="grant")
@@ -420,6 +425,14 @@ class Grants:
         """
         return self._flag(OPENAI, name)
 
+    def builtin(self, kind: str) -> bool:
+        """Whether agents may use a provider built-in tool (``web_search``...).
+
+        Returns:
+            True if granted (each one is off by default).
+        """
+        return self._flag(BUILTIN, kind)
+
     def capability(self, name: str) -> bool:
         """Whether agents may use a capability of the catalog (``evokai.capabilities``).
 
@@ -569,6 +582,11 @@ class Grants:
             out.append("A2A is not granted")
         if agent.code is not None and agent.code.enabled and not self.code():
             out.append("code execution is not granted")
+        out += [
+            f"built-in tool {t.kind} is not granted"
+            for t in agent.builtin_tools
+            if not self.builtin(t.kind)
+        ]
         if agent.openai_confirm and not self.openai("confirm"):
             out.append("confirmations over the OpenAI-compatible API are not granted")
         out += [

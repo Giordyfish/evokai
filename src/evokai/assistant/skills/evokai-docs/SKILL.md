@@ -10,6 +10,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/ag-ui.md`: AG-UI
 - `references/architecture.md`: Evokai architecture
 - `references/assistant.md`: The console assistant
+- `references/builtin-tools.md`: Provider built-in tools
 - `references/capabilities.md`: Capabilities
 - `references/channels-readme.md`: Channels beyond the web panel: e-mail, Microsoft Teams, Slack
 - `references/client-tools.md`: Client tools

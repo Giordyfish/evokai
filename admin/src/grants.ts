@@ -66,6 +66,8 @@ export function codeGranted(view: GrantView): { granted: boolean; enabled: boole
   const item = group(view, 'code').find((x) => x.name === '*')
   return { granted: flag(item), enabled: item?.enabled === true }
 }
+/** A provider built-in tool (`builtin:web_search`...). */
+export const builtinGranted = (view: GrantView, kind: string): boolean => flag(group(view, 'builtin').find((x) => x.name === kind))
 /** Confirmations over the OpenAI-compatible API (`openai:confirm`). */
 export const openaiConfirmGranted = (view: GrantView): boolean => flag(group(view, 'openai').find((x) => x.name === 'confirm'))
 /** Capabilities of the catalog an agent may turn on: granted, offered by the deployment, installed and

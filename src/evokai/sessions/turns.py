@@ -34,6 +34,8 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
@@ -68,6 +70,7 @@ from evokai.core.errors import ConfigError, Conflict, Forbidden, NotFound, Unaut
 from evokai.core.util import clip, new_id, utcnow
 from evokai.db import models as m
 from evokai.db.repositories import DEFAULT_TITLE, Store, Who
+from evokai.engine import builtin_tools
 from evokai.engine.agent import build_agent
 from evokai.engine.capability import finish_attempt
 from evokai.engine.client_calls import ClientCalls, ClientToolWait
@@ -1193,6 +1196,11 @@ class TurnEngine:
         from evokai import capabilities as caps
         from evokai.capabilities.catalog import ENTRIES, HOST_WORKSPACE
 
+        builtin = builtin_tools.capabilities(
+            agent.builtin_tools, scope.grants, protection(scope.app), _egress_allow(rs.guard)
+        )
+        if builtin:
+            rs.trace.root.set(builtinTools=[d.kind for d in agent.builtin_tools])
         uses = {
             name: use
             for name, use in agent.capabilities.items()
@@ -1201,7 +1209,7 @@ class TurnEngine:
             and scope.grants.capability(name)
         }
         if not uses:
-            return []
+            return builtin
         enabled = set(uses)
 
         async def record(name: str, response: ModelResponse) -> None:
@@ -1289,7 +1297,7 @@ class TurnEngine:
         if any(caps.get(n).group != "evokai" for n in enabled):
             # The tools capabilities bring get Evokai's tool rules, and what they do is traced.
             out += [harness.CapabilityTools(), harness.CapabilityEvents()]
-        return out
+        return out + builtin
 
     async def _subagents(
         self, agent: AgentDef, rs: RunState, scope: Scope
@@ -1635,6 +1643,10 @@ class TurnEngine:
                                         ev.delta, TextPartDelta
                                     ):
                                         delta = ev.delta.content_delta
+                                    if isinstance(ev, PartStartEvent) and isinstance(
+                                        ev.part, NativeToolCallPart | NativeToolReturnPart
+                                    ):
+                                        self._native(run, rs, ev.part, emit)
                                     if delta:
                                         show(filt.push(delta))
                                         if filt.blocked:
@@ -2044,6 +2056,41 @@ class TurnEngine:
         # the person is left out, like a tool that changes data (``McpRegistry.toolbox``).
         asks = run.grants.client("confirm")
         return [t for t in out if guard.offered(t.name) and (asks or not guard.askable(t.name))]
+
+    @staticmethod
+    def _native(run: TurnRun, rs: RunState, part: Any, emit: Any) -> None:
+        """A provider built-in tool's call or result, as events.
+
+        A ``tool`` event, and a ``citation`` per web source (numbered with the turn's other
+        citations); traced as an event.
+        """
+        if isinstance(part, NativeToolCallPart):
+            emit({"type": "tool", "name": part.tool_name, "status": "start", "builtin": True})
+            return
+        failed = isinstance(part.content, dict) and part.content.get("error_code")
+        status = "error" if failed else "done"
+        emit({"type": "tool", "name": part.tool_name, "status": status, "builtin": True})
+        found = builtin_tools.sources(part.content)
+        for src in found:
+            n = run.citations.get(src["url"])
+            if n is None:
+                n = run.citations[src["url"]] = len(run.citations) + 1
+                rs.show({
+                    "type": "citation",
+                    "index": n,
+                    "title": src["title"],
+                    "url": src["url"],
+                    "source": part.tool_name,
+                })
+        rs.trace.event(
+            "tool",
+            f"builtin_tool {part.tool_name}",
+            tool=part.tool_name,
+            callId=part.tool_call_id,
+            type="builtin",
+            outcome="error" if failed else "ok",
+            sources=len(found),
+        )
 
     def _client_tools(self, run: TurnRun, rs: RunState, app_names: set[str]) -> list[ToolSpec]:
         """The custom client tools of a turn: the agent's, then the session token's.
@@ -2867,6 +2914,18 @@ class TurnEngine:
             ok, text = await load_skill(skills, args, read, runnable=scripts_runnable)
             return ToolResult(ok, text)
         return ToolResult(False, f"Unknown tool: {name}")
+
+
+def _egress_allow(guard: TurnGuard) -> list[str] | None:
+    """The egress allow-list a built-in tool follows (only while ``tools.egress`` is enforced).
+
+    Returns:
+        Domains, or None.
+    """
+    tools = guard.policy.settings.tools
+    if tools is None or not guard.policy.enforced("tools.egress"):
+        return None
+    return list(tools.egress_allow) if tools.egress_allow else None
 
 
 def _new_messages(history: list[Any]) -> list[dict[str, Any]]:

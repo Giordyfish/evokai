@@ -362,6 +362,20 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
             ),
         )
     ]
+    builtin = [
+        _item(
+            grants,
+            g.BUILTIN,
+            kind,
+            grants.builtin(kind),
+            usedBy=sorted(
+                a.name
+                for a in agents
+                if any(t.get("kind") == kind for t in a.definition.get("builtin_tools") or [])
+            ),
+        )
+        for kind in g.BUILTIN_KINDS
+    ]
     openai = [
         _item(
             grants,
@@ -424,6 +438,7 @@ async def grant_view(svc: Services, app: m.Application) -> dict[str, Any]:
         {"id": "workflows", "items": workflows},
         {"id": "code", "items": code},
         {"id": "openai", "items": openai},
+        {"id": "builtin", "items": builtin},
         {"id": "connections", "items": connections},
         {"id": "capabilities", "items": capabilities},
         {"id": "modules", "items": modules},

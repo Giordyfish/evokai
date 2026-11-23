@@ -10,7 +10,7 @@ import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBa
 import { adminJson, describe, forApp } from '../api'
 import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
-import { capabilityItems, capabilityUsable, channelGranted, clientGranted, codeGranted, grantedModels, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
+import { capabilityItems, capabilityUsable, channelGranted, builtinGranted, clientGranted, codeGranted, grantedModels, openaiConfirmGranted, knowledgeGranted, modelLevel, normalizeModel, serverGranted, skillGranted, toolGranted } from '../grants'
 import { done, Fx, HAT, sparkle, toast } from '../magic'
 import { appHref, go, setTitle, useConsole, useLoad } from '../state'
 import { rulesOf, toRow, type RuleRow } from '../askRules'
@@ -22,6 +22,9 @@ import { ParamsForm } from './ModuleParams'
 import { capDescription } from '../capabilityText'
 import { hasLegacyLabels, isLegacy, withSyntax } from '../templates'
 import { t, tn, type TextKey } from '../i18n'
+
+const BUILTIN_KINDS = ['web_search', 'web_fetch', 'code_execution', 'image_generation', 'file_search', 'mcp_server', 'memory']
+const STORING_KINDS = ['file_search', 'memory']
 
 type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out' | 'ver'
 const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
@@ -828,6 +831,49 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             !ok,
           )
         })()}
+        <h4>{t('ag.builtinTools')}</h4>
+        <p class="hint">{t('ag.builtinToolsHint')}</p>
+        {BUILTIN_KINDS.map((kind) => {
+          const ok = builtinGranted(g, kind)
+          const list = (draft.builtin_tools ?? []) as Array<{ kind: string; config?: Record<string, unknown> }>
+          const cur = list.find((x) => x.kind === kind)
+          const others = list.filter((x) => x.kind !== kind)
+          return (
+            <div key={kind}>
+              {row(
+                t(`ag.builtin.${kind}` as TextKey),
+                ok ? (STORING_KINDS.includes(kind) ? t('ag.builtinKeeps') : kind) : t('ag.builtinNotGranted'),
+                ok ? (
+                  <Switch
+                    on={!!cur}
+                    aria={kind}
+                    onChange={(v) => set({ builtin_tools: (v ? [...others, { kind, config: {} }] : others) as AgentDef['builtin_tools'] })}
+                  />
+                ) : (
+                  locked
+                ),
+                !ok,
+              )}
+              {cur && ok ? (
+                <Field label={t('ag.builtinConfig')} hint={t('ag.builtinConfigHint')}>
+                  <textarea
+                    class="in mono"
+                    spellcheck={false}
+                    value={JSON.stringify(cur.config ?? {}, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const config = JSON.parse(e.currentTarget.value) as Record<string, unknown>
+                        set({ builtin_tools: [...others, { kind, config }] as AgentDef['builtin_tools'] })
+                      } catch {
+                        toast(t('ag.builtinBadJson'), '')
+                      }
+                    }}
+                  />
+                </Field>
+              ) : null}
+            </div>
+          )
+        })}
         {(() => {
           const ok = openaiConfirmGranted(g)
           return row(

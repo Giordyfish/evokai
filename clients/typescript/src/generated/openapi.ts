@@ -4426,6 +4426,8 @@ export interface components {
             a2a?: boolean;
             /** Ask Rules */
             ask_rules?: components["schemas"]["AskRule"][];
+            /** Builtin Tools */
+            builtin_tools?: components["schemas"]["BuiltinToolDef"][];
             /** Capabilities */
             capabilities?: {
                 [key: string]: components["schemas"]["CapabilityUse"];
@@ -4758,6 +4760,21 @@ export interface components {
             };
             /** Description */
             description: string;
+        };
+        /**
+         * BuiltinToolDef
+         * @description A provider built-in tool (``evokai.engine.builtin_tools``).
+         */
+        BuiltinToolDef: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "web_search" | "web_fetch" | "code_execution" | "image_generation" | "file_search" | "mcp_server" | "memory";
         };
         /**
          * Candidate
@@ -5202,6 +5219,8 @@ export interface components {
             browser?: components["schemas"]["BrowserDeclaration"] | null;
             /** Jurisdiction */
             jurisdiction?: string[] | null;
+            /** Provider Tool Storage */
+            provider_tool_storage?: boolean | null;
             residency?: components["schemas"]["ResidencyRule"] | null;
             /** Retention */
             retention?: ("any" | "no_training" | "zero_retention") | null;

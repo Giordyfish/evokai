@@ -951,7 +951,7 @@ export interface BugReport {
 
 export type GrantKind =
   | 'model' | 'mcp' | 'tool' | 'skill' | 'client' | 'voice' | 'stt' | 'tts' | 'storage' | 'channel' | 'knowledge'
-  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai'
+  | 'workflow' | 'code' | 'connection' | 'capability' | 'module' | 'openai' | 'builtin'
 export type ModelGrant = 'any' | 'fallback' | 'off'
 export type GrantValue = boolean | ModelGrant
 export type ClientToolName = 'navigate' | 'chart' | 'diagram' | 'ask' | 'confirm' | 'memory'
@@ -1297,6 +1297,8 @@ export interface DataProtectionReport {
   empty: boolean
   processors: ProcessorVerdict[]
   browser: { online_voices: boolean; online_recognition: boolean; vendors?: string[] | null } | null
+  /** The agents' provider built-in tools, and whether the profile lets the ones that keep data at the provider run. */
+  builtinTools?: Array<{ agent: string; kind: string; keepsData: boolean; allowed: boolean }>
 }
 export interface ProviderEndpointView {
   id: string

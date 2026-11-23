@@ -95,6 +95,14 @@
             "title": "Ask Rules",
             "type": "array"
           },
+          "builtin_tools": {
+            "items": {
+              "$ref": "#/components/schemas/BuiltinToolDef"
+            },
+            "maxItems": 7,
+            "title": "Builtin Tools",
+            "type": "array"
+          },
           "capabilities": {
             "additionalProperties": {
               "$ref": "#/components/schemas/CapabilityUse"
@@ -1133,6 +1141,34 @@
         "title": "BugReportBody",
         "type": "object"
       },
+      "BuiltinToolDef": {
+        "description": "A provider built-in tool (``evokai.engine.builtin_tools``).",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "web_search",
+              "web_fetch",
+              "code_execution",
+              "image_generation",
+              "file_search",
+              "mcp_server",
+              "memory"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "BuiltinToolDef",
+        "type": "object"
+      },
       "Candidate": {
         "description": "A trickled ICE candidate.",
         "properties": {
@@ -2107,6 +2143,17 @@
               }
             ],
             "title": "Jurisdiction"
+          },
+          "provider_tool_storage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Tool Storage"
           },
           "residency": {
             "anyOf": [

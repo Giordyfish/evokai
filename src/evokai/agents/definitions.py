@@ -76,6 +76,40 @@ def clip_message(e: Exception) -> str:
     return str(getattr(e, "message", e)).splitlines()[0][:200]
 
 
+BUILTIN_KINDS = (
+    "web_search",
+    "web_fetch",
+    "code_execution",
+    "image_generation",
+    "file_search",
+    "mcp_server",
+    "memory",
+)
+
+
+class BuiltinToolDef(BaseModel):
+    """A provider built-in tool (``evokai.engine.builtin_tools``)."""
+
+    kind: Literal[
+        "web_search",
+        "web_fetch",
+        "code_execution",
+        "image_generation",
+        "file_search",
+        "mcp_server",
+        "memory",
+    ]
+    config: dict[str, Any] = Field(default_factory=dict)
+    """pydantic-ai's settings of the tool (``max_uses``, ``file_store_ids``...); never a secret."""
+
+    @model_validator(mode="after")
+    def _valid(self) -> BuiltinToolDef:
+        from evokai.engine.builtin_tools import build
+
+        build(self.kind, self.config)
+        return self
+
+
 class ClientToolsDef(BaseModel):
     """Which client tools the agent has."""
 
@@ -268,6 +302,17 @@ class AgentDef(BaseModel):
     """Agents of the same application this agent may hand the conversation to: it gets the
     ``handoff`` tool, and the conversation goes on with the other agent from the next turn."""
     code: CodeDef | None = None
+    builtin_tools: list[BuiltinToolDef] = Field(default_factory=list, max_length=len(BUILTIN_KINDS))
+    """Provider built-in tools (web search, code execution...), each granted (``builtin``)."""
+
+    @field_validator("builtin_tools")
+    @classmethod
+    def _one_of_each(cls, v: list[BuiltinToolDef]) -> list[BuiltinToolDef]:
+        kinds = [t.kind for t in v]
+        if len(kinds) != len(set(kinds)):
+            raise ValueError("a built-in tool is listed twice")
+        return v
+
     openai_confirm: bool = False
     """Over the OpenAI-compatible API, offer the tools that change data: a call waits for the
     person's yes in the next request (needs the grant ``openai:confirm``)."""
