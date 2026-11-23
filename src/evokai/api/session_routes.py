@@ -27,6 +27,7 @@ from evokai.sessions.limits import cap_state
 from evokai.sessions.rewrite import rewritable_index
 from evokai.sessions.threads import MAX_HISTORY_MESSAGES, HistoryMessage
 from evokai.sessions.turns import TurnInput
+from evokai.tools.custom import MAX_RESULT_CHARS
 
 router = APIRouter(prefix="/v1/session", tags=["session"])
 Svc = Annotated[Services, Depends(services)]
@@ -142,6 +143,39 @@ async def cancel_turn(turn_id: str, svc: Svc, s: Sess) -> dict[str, bool]:
         turn_id, s.claims.subject, "cancelled", session_id=s.claims.conversation_id
     )
     return {"ok": True, "cancelled": cancelled}
+
+
+class ToolResultBody(BaseModel):
+    """The client's answer to a ``client_tool`` call that waits."""
+
+    callId: str = Field(min_length=1, max_length=200)
+    result: Any = None
+    """Any JSON value (at most 32 KB as JSON). It is data the browser controls: scanned like a
+    tool's output and marked as data for the model, never an instruction."""
+    error: str | None = Field(default=None, max_length=2_000)
+    """Instead of a result: why the client could not do it (the model reads it)."""
+
+
+@router.post("/tool-results", responses={404: {}, 413: {}})
+async def tool_result(body: ToolResultBody, svc: Svc, s: Sess) -> dict[str, bool]:
+    """Answer a custom client tool call the running turn waits for (once).
+
+    Returns:
+        ok.
+
+    Raises:
+        NotFound: No call of this session waits under that id here (answered, timed out, or the
+            turn runs on another task) (``unknown_call``).
+        AppError: The result is larger than 32 KB (413 ``too_large``).
+    """
+    if body.error is None and len(json.dumps(body.result, default=str)) > MAX_RESULT_CHARS:
+        raise AppError("The result is larger than 32 KB.", code="too_large", status=413)
+    answered = await svc.engine.client_calls.answer(
+        s.claims.conversation_id, body.callId, body.result, body.error
+    )
+    if not answered:
+        raise NotFound("No client call waits under this id.", code="unknown_call")
+    return {"ok": True}
 
 
 class Feedback(BaseModel):

@@ -28,6 +28,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PRICE_EUR_USD` | `1.2` | Dollars per euro for the catalog's prices in euros, so every cost is recorded in USD; an assumption that errs high, set your own ([costs](costs.md#prices)) |
 | `EVOKAI_HISTORY_MESSAGES` / `_CHARS` | `30` / `60000` | History window sent to the model |
 | `EVOKAI_MAX_OUTPUT_TOKENS` | `1200` | Output cap per model call |
+| `EVOKAI_CLIENT_TOOL_TIMEOUT_SECONDS` | `120` | How long a turn waits for the result of a custom client tool that waits ([client tools](client-tools.md)) |
 | `EVOKAI_FILLER_AFTER_MS` | `700` | Spoken filler when a tool is slow (voice) |
 | `EVOKAI_VOICE_ENABLED` | `false` | Server voice (Pipecat over WebRTC); needs the `voice` extra |
 | `EVOKAI_ASK_RULES` | `[]` | JSON list: the deployment's default [ask rules](security.md#ask-rules), read before every application's and agent's; checked at start |

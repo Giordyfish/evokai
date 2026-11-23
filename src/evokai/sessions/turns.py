@@ -29,6 +29,7 @@ from typing import Any, Literal, cast
 from urllib.parse import unquote_plus
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelRequest,
@@ -69,6 +70,7 @@ from evokai.db import models as m
 from evokai.db.repositories import DEFAULT_TITLE, Store, Who
 from evokai.engine.agent import build_agent
 from evokai.engine.capability import finish_attempt
+from evokai.engine.client_calls import ClientCalls, ClientToolWait
 from evokai.engine.code_mode import EvokaiCodeMode
 from evokai.engine.compaction import Compactor, EvokaiCompaction, estimate_tokens, over
 from evokai.engine.messages import response_blocks, result_blocks, to_stored
@@ -129,7 +131,7 @@ from evokai.sessions.threads import (
     ThreadMessage,
     ThreadStore,
 )
-from evokai.tools import visuals
+from evokai.tools import custom, visuals
 from evokai.tools.client_tools import HANDOFF, handoff_tool, local_tools
 from evokai.tools.labels import confirm_label
 
@@ -270,6 +272,8 @@ class TurnEngine:
         """The last model calls of this process (the console's health page)."""
         self.compactor = Compactor(self)
         """Context compaction of conversations stored by Evokai (``evokai.engine.compaction``)."""
+        self.client_calls = ClientCalls()
+        """Custom client tool calls waiting for the client (``evokai.engine.client_calls``)."""
         self.run_listeners: list[Any] = []
         """Called when a server run ends (``evokai.workflows`` event triggers):
         ``(app, agent, run_id, status, output, subject)``."""
@@ -1007,6 +1011,9 @@ class TurnEngine:
         )
         scope = self._scope(run, inp, credential)
         capabilities = await self.capabilities_for(agent, rs, scope)
+        waits = self._client_wait(run, rs)
+        if waits is not None:
+            capabilities.append(waits)
         compaction = next((c for c in capabilities if isinstance(c, EvokaiCompaction)), None)
         plan = (
             self.compactor.plan(run, candidates, compaction.policy(settings))
@@ -1933,6 +1940,7 @@ class TurnEngine:
                     read_only=t["name"] == "skill_load",
                 )
             )
+        out += self._client_tools(run, rs, app_names)
         if targets and guard.offered(HANDOFF) and HANDOFF not in app_names:
             handoff = handoff_tool([(n, t.title) for n, t in targets.items()])
 
@@ -2036,6 +2044,136 @@ class TurnEngine:
         # the person is left out, like a tool that changes data (``McpRegistry.toolbox``).
         asks = run.grants.client("confirm")
         return [t for t in out if guard.offered(t.name) and (asks or not guard.askable(t.name))]
+
+    def _client_tools(self, run: TurnRun, rs: RunState, app_names: set[str]) -> list[ToolSpec]:
+        """The custom client tools of a turn: the agent's, then the session token's.
+
+        Each sends a ``client_tool`` event; one that waits defers its call until the client
+        answers (``ClientToolWait``). An application tool with the same name wins.
+
+        Returns:
+            Their tool specs.
+        """
+        session_tools = [
+            t
+            for t in custom.merged([], run.session.client_tools)
+            if run.grants.client_tool(t.name, static=False)
+        ]
+        tools = custom.merged(run.agent.client_tools.custom, session_tools)
+        emit = rs.emit
+        assert emit is not None  # ruff: ignore[assert] (a turn always emits)
+        waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
+        names: dict[str, str] = rs.extra.setdefault("clientNames", {})
+
+        def handler(tool: Any) -> Any:
+            async def handle(  # ruff: ignore[unused-async] (a handler is awaited)
+                args: dict[str, Any], cid: str, span: Any
+            ) -> ToolResult:
+                emit({
+                    "type": "client_tool",
+                    "callId": cid,
+                    "name": tool.name,
+                    "args": args,
+                    "wait": tool.wait,
+                })
+                if span is not None:
+                    span.set(type="client", wait=tool.wait)
+                if not tool.wait:
+                    return ToolResult(True, custom.OK_TEXT)
+                waits[cid] = time.perf_counter()
+                names[cid] = custom.model_name(tool.name)
+                if span is not None:
+                    span.set(outcome="waiting")
+                raise CallDeferred()
+
+            return handle
+
+        out = []
+        for t in tools:
+            name = custom.model_name(t.name)
+            if name in app_names:
+                log.warning("client_tool_shadowed", extra={"turnId": run.turn_id, "tool": name})
+                continue
+            out.append(
+                ToolSpec(
+                    name=name,
+                    description=t.description,
+                    schema=t.parameters,
+                    run=handler(t),
+                    kind="client",
+                    metadata={"evokai_client_wait": t.wait},
+                )
+            )
+        return out
+
+    def _client_wait(self, run: TurnRun, rs: RunState) -> ClientToolWait | None:
+        """The capability that waits for the client's results, when a client tool waits.
+
+        Returns:
+            It, or None.
+        """
+        names = frozenset(
+            n
+            for n, t in rs.tools.items()
+            if t.kind == "client" and t.metadata.get("evokai_client_wait")
+        )
+        if not names:
+            return None
+        guard, trace = rs.guard, rs.trace
+        waits: dict[str, float] = rs.extra.setdefault("clientWaits", {})
+        called: dict[str, str] = rs.extra.setdefault("clientNames", {})
+        limit = self.settings.tool_result_chars
+
+        def waited(cid: str) -> int:
+            started = waits.pop(cid, None)
+            return round((time.perf_counter() - started) * 1000) if started else 0
+
+        async def accept(cid: str, result: Any, error: str | None) -> str:
+            name = called.get(cid, "client")
+            ok = error is None
+            if ok:
+                text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+            else:
+                text = f"Error from the client application: {clip(str(error), 2_000)}"
+            # The result comes from the browser: data the person controls, never instructions.
+            text = clip(await guard.tool_result(name, text), limit)
+            rs.ok[cid] = ok
+            span = trace.event(
+                "tool",
+                f"client_tool_result {name}",
+                tool=name,
+                callId=cid,
+                type="client",
+                waitedMs=waited(cid),
+                outcome="ok" if ok else "error",
+                resultChars=len(text),
+            )
+            trace.put(span, result=text)
+            return text
+
+        def timed_out(cids: list[str]) -> None:
+            for cid in cids:
+                rs.ok[cid] = False
+                name = called.get(cid, "client")
+                trace.event(
+                    "tool",
+                    f"client_tool_result {name}",
+                    tool=name,
+                    callId=cid,
+                    type="client",
+                    waitedMs=waited(cid),
+                    outcome="timeout",
+                )
+
+        return ClientToolWait(
+            calls=self.client_calls,
+            session_id=run.session.id,
+            turn_id=run.turn_id,
+            names=names,
+            accept=accept,
+            timed_out=timed_out,
+            timeout_seconds=self.settings.client_tool_timeout_seconds,
+        )
 
     @staticmethod
     def _spoken(

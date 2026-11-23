@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai import RunContext
-from pydantic_ai.exceptions import ApprovalRequired
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, WrapperToolset
 from pydantic_ai.toolsets.abstract import ToolsetTool
@@ -210,6 +210,7 @@ class GuardedToolset(WrapperToolset[RunState]):
 
         Raises:
             ApprovalRequired: The tool changes data and the user has not confirmed it yet.
+            CallDeferred: A client tool waits for the client application's result.
         """
         st = ctx.deps
         guard, tr = st.guard, st.trace
@@ -282,7 +283,8 @@ class GuardedToolset(WrapperToolset[RunState]):
                 if "outcome" not in ts.attrs:
                     ts.set(outcome="ok" if r.ok else "error")
             tr.put(ts, result=r.text)
-        except ApprovalRequired:
+        except (ApprovalRequired, CallDeferred):
+            # Waits for the person (a confirmation) or the client application (a client tool).
             raise
         except BaseException:
             ts.status = "cancelled"

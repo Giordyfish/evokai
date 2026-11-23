@@ -43,7 +43,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.usage import UsageLimits
 
-from evokai.agents.definitions import AgentDef
+from evokai.agents.definitions import AgentDef, ClientToolDef
 from evokai.agents.modules import protected, resolve_modules
 from evokai.agents.prompts import Instructions, split_skills, system_prompt
 from evokai.agents.skills import load as load_skill
@@ -75,6 +75,7 @@ from evokai.sandbox.tool import NOTE as CODE_NOTE
 from evokai.sandbox.tool import TOOL_NAME as CODE_TOOL
 from evokai.sandbox.tool import tool_def as code_tool
 from evokai.sessions.limits import cap_state, limit_message
+from evokai.tools import custom
 from evokai.tools.client_tools import SKILL_LOAD
 
 log = logging.getLogger("evokai.runs")
@@ -132,6 +133,8 @@ class RunResult:
     timings: dict[str, Any] = field(default_factory=dict)
     citations: list[dict[str, Any]] = field(default_factory=list)
     """The knowledge passages found, as ``citation`` events (numbered as the answer cites them)."""
+    client_calls: list[dict[str, Any]] = field(default_factory=list)
+    """Custom client tool calls (``callId``, ``name``, ``args``), for the caller to carry out."""
 
 
 class AgentRunner:
@@ -167,6 +170,7 @@ class AgentRunner:
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
         prompt_options: dict[str, Any] | None = None,
+        client_tools: Sequence[ClientToolDef] = (),
     ) -> RunResult:
         """Run the agent to its answer.
 
@@ -198,6 +202,8 @@ class AgentRunner:
                 by it and the call's number (a durable step: its pgtask task).
             prompt_options: The prompt modules and locale the caller chose (already checked,
                 ``evokai.agents.modules``); None renders the agent's defaults.
+            client_tools: Custom client tools the caller declares for this run (already checked
+                and granted; none waits): their calls come back in ``client_calls``.
 
         Returns:
             The result.
@@ -283,6 +289,7 @@ class AgentRunner:
                 extra_capabilities=extra_capabilities,
                 usage_key=usage_key,
                 modules=modules,
+                client_tools=client_tools,
             )
             return result
         except LimitReached:
@@ -360,6 +367,7 @@ class AgentRunner:
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
         modules: list[Any] | None = None,
+        client_tools: Sequence[ClientToolDef] = (),
     ) -> RunResult:
         """The run itself, under its guard, on the same engine as the turns.
 
@@ -441,6 +449,12 @@ class AgentRunner:
             result,
             loadable=bool(on_demand) or any(s.files for s in preloaded),
         )
+        names = {s.name for s in specs}
+        specs += [
+            s
+            for s in self._client_tools(agent, client_tools, result)
+            if s.name not in names and guard.offered(s.name)
+        ]
         specs = [s for s in specs if not guard.askable(s.name)]
         rs.tools = {s.name: s for s in specs}
         if on_event is not None:
@@ -748,6 +762,42 @@ class AgentRunner:
                 )
             )
         return specs
+
+    @staticmethod
+    def _client_tools(
+        agent: AgentDef, extra: Sequence[ClientToolDef], result: RunResult
+    ) -> list[ToolSpec]:
+        """Custom client tools of a run: the agent's that do not wait, then the caller's.
+
+        Nobody can answer in the middle of a run: a call is recorded for the caller (the
+        response's ``clientToolCalls``) and the model reads ``ok``.
+
+        Returns:
+            Their tool specs.
+        """
+
+        def handler(name: str) -> Any:
+            async def handle(  # ruff: ignore[unused-async] (a handler is awaited)
+                args: dict[str, Any], cid: str, span: Any
+            ) -> ToolResult:
+                result.client_calls.append({"callId": cid, "name": name, "args": args})
+                if span is not None:
+                    span.set(outcome="ok", type="client")
+                return ToolResult(True, custom.OK_TEXT)
+
+            return handle
+
+        own = [t for t in agent.client_tools.custom if not t.wait]
+        return [
+            ToolSpec(
+                name=custom.model_name(t.name),
+                description=t.description,
+                schema=t.parameters,
+                run=handler(t.name),
+                kind="client",
+            )
+            for t in custom.merged(own, list(extra))
+        ]
 
     async def _knowledge(
         self,
