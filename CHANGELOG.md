@@ -163,9 +163,6 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   `GET /v1/session/conversation`, 409 `not_regenerable`) when its question was stored with identifiers masked
   (`pii.history` enforced: the original is kept nowhere), or, with external storage, when it carried an image or a PDF
   the model read as a file (its bytes are gone after the turn).
-
-### Fixed
-
 - Browser voice on Safari and iOS: the microphone no longer goes deaf after the agent's first answer, and a phrase is
   no longer lost. A device recogniser that was open while the agent spoke is replaced when it finishes; a session that
   ends with its last phrase still interim delivers it; results that repeat earlier phrases send only the new words, and
