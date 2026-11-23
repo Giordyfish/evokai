@@ -377,6 +377,8 @@ class StoredMessage(WireModel):
     rewritable: bool | None = None
     regenerable: bool | None = None
     """User messages: the last question, which can still be rewritten (``session.rewrite``)."""
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    """User messages: the files attached (id, name, mediaType, size)."""
 
 
 class ConversationDetail(WireModel):

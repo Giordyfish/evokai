@@ -356,6 +356,25 @@ export interface SessionInfo {
   memory?: MemoryState | null
   /** The agent's starter questions, to show before the first message. */
   suggestions?: string[]
+  /** What the person may attach to a message (`docs/attachments.md`); null when nothing. */
+  attachments?: AttachmentOffer | null
+}
+
+/** The files a session accepts: kinds read from the bytes, sizes in bytes. */
+export interface AttachmentOffer {
+  kinds: string[]
+  mediaTypes: string[]
+  maxFileBytes: number
+  maxFiles: number
+}
+
+/** A file attached to a question: `id` once the service keeps it, `url` a local preview of an image just sent. */
+export interface AttachmentRef {
+  id?: string
+  name: string
+  mediaType: string
+  size: number
+  url?: string
 }
 
 export interface StoredMessage {
@@ -369,6 +388,8 @@ export interface StoredMessage {
   rewritable?: boolean
   /** The last assistant message, when it can still be regenerated (`EvokaiSession.regenerate`). */
   regenerable?: boolean
+  /** User messages: the files attached to them (images are shown with `EvokaiSession.attachment`). */
+  attachments?: AttachmentRef[]
 }
 
 export interface PendingConfirmation { actionId: string; items: string[]; why?: ConfirmReason[] }
