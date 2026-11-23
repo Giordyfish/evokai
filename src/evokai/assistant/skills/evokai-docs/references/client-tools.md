@@ -84,6 +84,16 @@ session.handleTool('open_cart', async () => {
 `<evokai-chat>` takes the same handlers as a property: `chat.tools = { open_cart: () => cart.open() }`. With the
 Python client: `session.on_tool("open_cart", fn)`, or `session.tool_result(call_id, result)` yourself.
 
+## Drawing tools with your own UI
+
+A page can draw any tool's activity itself, not only its client tools: `session.renderTool(name, render)` in the
+TypeScript client calls `render({name, status, callId?, args?, result?, error?})` when the tool starts and ends, and
+`<evokai-chat>` takes `toolRenderers` (`{name: (part) => HTMLElement | null}`) to show that element in the chat instead
+of the default line (`null` keeps it; `ui_chart` and `ui_diagram` replace the built-in visuals). A part carries only
+what the session's events already carry: a server or MCP tool's name and status (never its arguments or output), a
+client tool's arguments and the result your own handler returned, a chart or a diagram. Nothing more leaves the
+service.
+
 ## Security
 
 - **Arguments** come from the model: the guard checks them against the tool's schema (`tools.args`), with the tool

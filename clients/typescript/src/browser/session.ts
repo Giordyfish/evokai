@@ -16,6 +16,7 @@ import {
 import type {
   ChatMode,
   ClientToolEvent,
+  ToolPart,
   Connection,
   ConnectionProvider,
   ConnectionStarted,
@@ -110,6 +111,7 @@ export class EvokaiSession {
   private engine: VoiceEngineKind
   private readonly listeners = new Map<string, Set<EventListener>>()
   private readonly tools = new Map<string, ClientToolHandler>()
+  private readonly renderers = new Map<string, (part: ToolPart) => void>()
   private readonly controllers = new Set<AbortController>()
   private replaying: Promise<void> | null = null
 
@@ -177,6 +179,7 @@ export class EvokaiSession {
     if (typeof event.seq === 'number' && seen(this.state, event.seq)) return
     this.store.dispatch({ type: 'event', event })
     this.emit(event)
+    this.renderEvent(event)
     if (event.type === 'client_tool') void this.runTool(event)
     if (event.type === 'done' && event.messages?.length) this.opts.onMessages?.(event.messages, event)
   }
@@ -485,6 +488,35 @@ export class EvokaiSession {
     }
   }
 
+  /**
+   * Draw a tool's activity with your own UI code: `render` gets a `ToolPart` each time the tool starts and ends (and
+   * a client tool's result once your handler answered). Server and MCP tools give their name and status only; use
+   * `ui_chart` and `ui_diagram` for the visuals. Returns an unregister function.
+   */
+  renderTool(name: string, render: (part: ToolPart) => void): () => void {
+    this.renderers.set(name, render)
+    return () => {
+      if (this.renderers.get(name) === render) this.renderers.delete(name)
+    }
+  }
+
+  private render(part: ToolPart): void {
+    const fn = this.renderers.get(part.name)
+    if (!fn) return
+    try {
+      fn(part)
+    } catch {
+      // The page's own drawing code: its failure never stops the session.
+    }
+  }
+
+  private renderEvent(e: EvokaiEvent): void {
+    if (e.type === 'tool') this.render({ name: e.name, status: e.status })
+    else if (e.type === 'client_tool') this.render({ name: e.name, status: e.wait ? 'start' : 'done', callId: e.callId, args: e.args })
+    else if (e.type === 'chart') this.render({ name: 'ui_chart', status: 'done', result: e.chart })
+    else if (e.type === 'diagram') this.render({ name: 'ui_diagram', status: 'done', result: e.diagram })
+  }
+
   /** Answer a waiting client tool call yourself (when you listen to `client_tool` events instead of `handleTool`). */
   async toolResult(callId: string, answer: { result: unknown } | { error: string }): Promise<void> {
     await this.call('/v1/session/tool-results', { method: 'POST', body: { callId, ...answer } })
@@ -504,7 +536,12 @@ export class EvokaiSession {
     } catch (e) {
       answer = { error: e instanceof Error ? e.message : String(e) }
     }
-    if (event.wait) await this.toolResult(event.callId, answer).catch(() => undefined)
+    if (event.wait) {
+      const status = 'result' in answer ? 'done' : 'error'
+      this.store.dispatch({ type: 'toolResult', callId: event.callId, status, ...answer })
+      this.render({ name: event.name, status, callId: event.callId, args: event.args, ...answer })
+      await this.toolResult(event.callId, answer).catch(() => undefined)
+    }
   }
 
   private listenerCount(type: string): number {

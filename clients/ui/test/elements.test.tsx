@@ -178,6 +178,32 @@ describe('<evokai-chat>', () => {
     expect(paths).toEqual(['/orders', '/orders/1042'])
   })
 
+  test('toolRenderers draw a tool\'s card instead of the default line', async () => {
+    const { el, $, $$ } = await mounted([
+      [
+        { type: 'tool', name: 'orders_month', status: 'start' },
+        { type: 'tool', name: 'orders_month', status: 'done' },
+        { type: 'tool', name: 'stock_report', status: 'done' },
+        { type: 'text', delta: 'Done.' },
+      ],
+    ])
+    el.toolRenderers = {
+      orders_month: (part) => {
+        const d = document.createElement('div')
+        d.className = 'mine'
+        d.textContent = `${part.name}:${part.status}`
+        return d
+      },
+      stock_report: () => null,
+    }
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('orders')
+    await until(() => $('.mine'))
+    expect($('.mine')!.textContent).toBe('orders_month:done')
+    expect($$('[part~="tool"]').map((x) => x.textContent)).toEqual(['stock_report'])
+  })
+
   test('the tools property answers custom client tools', async () => {
     const { el, evokai, $ } = await mounted([[{ type: 'client_tool', callId: 'c1', name: 'kiosk_light', args: { on: true }, wait: true }]])
     const got: unknown[] = []

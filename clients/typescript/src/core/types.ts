@@ -133,6 +133,19 @@ export interface NavigateEvent extends EventMeta { type: 'navigate'; path: strin
  * A custom client tool the agent called (`docs/client-tools.md`). With `wait`, the turn waits until the client posts
  * the result (`EvokaiSession.handleTool` does it for you); without, the model was already told `ok`.
  */
+/**
+ * One tool's activity as a page draws it (`EvokaiSession.renderTool`, `<evokai-chat>` `toolRenderers`): only what the
+ * events already carry. A server or MCP tool has its name and status (never its arguments or output); a client tool
+ * also has its arguments and the result your own handler returned; `ui_chart` and `ui_diagram` have the visual.
+ */
+export interface ToolPart {
+  name: string
+  status: 'start' | 'done' | 'error'
+  callId?: string
+  args?: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
 export interface ClientToolEvent extends EventMeta {
   type: 'client_tool'
   callId: string

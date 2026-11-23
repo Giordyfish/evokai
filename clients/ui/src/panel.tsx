@@ -7,12 +7,12 @@
  * travel in its place.
  */
 import type { TargetedKeyboardEvent, TargetedMouseEvent, VNode } from 'preact'
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 
-import type { ChatMessage, Citation, Part } from '@evokai/evokai-client/browser'
+import type { ChatMessage, Citation, Part, ToolPart } from '@evokai/evokai-client/browser'
 import type { ChatState } from './chatstate'
 import type { Controller, ControllerState } from './controller'
-import { useUi } from './context'
+import { type ToolRenderer, useUi } from './context'
 import { citedIndexes, Markdown } from './markdown'
 import { Flow, settled, viewOf, type Look, type Rest, type View } from './flow'
 import { reducedMotion } from './orb'
@@ -126,8 +126,39 @@ function Sources({ cites }: { cites: Citation[] }) {
   )
 }
 
+/** A page's own element in the chat (`toolRenderers`), kept until its part changes. */
+function Own({ el }: { el: HTMLElement }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    box.current?.replaceChildren(el)
+  }, [el])
+  return <div ref={box} part="tool-card" />
+}
+
+function OwnPart({ render, part, children }: { render: ToolRenderer; part: ToolPart; children: VNode }) {
+  const el = useMemo(() => {
+    try {
+      return render(part)
+    } catch {
+      return null
+    }
+  }, [render, part])
+  return el ? <Own el={el} /> : children
+}
+
 function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string | null; c: Controller; st: ControllerState; keyTarget: EventTarget | null } }) {
-  const { s, toolLabel } = useUi()
+  const { s, toolLabel, toolRenderer } = useUi()
+  // A page's own card for this tool (`toolRenderers`), else the default view.
+  const mine = (i: number, part: ToolPart, view: VNode) => {
+    const render = toolRenderer?.(part.name)
+    return render ? (
+      <OwnPart key={i} render={render} part={part}>
+        {view}
+      </OwnPart>
+    ) : (
+      view
+    )
+  }
   const cites = new Map((m.citations ?? []).map((c) => [c.index, c]))
   const label = (name: string) => {
     const l = toolLabel(name)
@@ -139,18 +170,22 @@ function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string |
         switch (part.kind) {
           case 'text':
             return <Markdown key={i} text={part.text} cites={cites} cite={(c, k) => <Cite key={k} c={c} />} />
-          case 'tool':
-            return (
+          case 'tool': {
+            const { kind: _k, client: _c, ...shown } = part
+            return mine(
+              i,
+              shown,
               <div key={i} class={`tool ${part.status}`} part="tool" data-status={part.status}>
                 <i aria-hidden="true" />
                 {label(part.name)}
                 {part.status === 'start' ? s.toolRunning : part.status === 'error' ? `, ${s.toolFailed}` : ''}
-              </div>
+              </div>,
             )
+          }
           case 'chart':
-            return <ChartView key={i} chart={part.chart} />
+            return mine(i, { name: 'ui_chart', status: 'done', result: part.chart }, <ChartView key={i} chart={part.chart} />)
           case 'diagram':
-            return <DiagramView key={i} diagram={part.diagram} />
+            return mine(i, { name: 'ui_diagram', status: 'done', result: part.diagram }, <DiagramView key={i} diagram={part.diagram} />)
           case 'ask':
             return (
               <AskCard

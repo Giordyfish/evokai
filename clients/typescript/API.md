@@ -156,6 +156,7 @@ class EvokaiSession {
   regenerate(opts?): Promise<DoneEvent | null>        // regenerate the last answer while ChatMessage.regenerable; 409 not_regenerable
   handleTool(name: string, fn: ClientToolHandler): () => void   // run a custom client tool; posts the result of one that waits
   toolResult(callId: string, answer: { result } | { error }): Promise<void>  // POST /v1/session/tool-results
+  renderTool(name: string, render: (part: ToolPart) => void): () => void  // draw a tool's activity: {name, status, callId?, args?, result?, error?}
   cancel(turnId?: string | null): Promise<boolean>     // POST /v1/session/turns/{id}/cancel
   abort(): void                                        // close open streams
   resume(turnId?: string | null): Promise<DoneEvent | null>

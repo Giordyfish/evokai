@@ -171,6 +171,35 @@ describe('EvokaiSession', () => {
     ])
   })
 
+  test('renderTool gets each tool part from the events, and a client tool’s own result', async () => {
+    const m = mockFetch({
+      'POST /agent/v1/session/chat': () =>
+        sse([
+          frame({ type: 'tool', name: 'orders_month', status: 'start', turnId: 't', seq: 1 }),
+          frame({ type: 'tool', name: 'orders_month', status: 'done', turnId: 't', seq: 2 }),
+          frame({ type: 'client_tool', callId: 'c1', name: 'kiosk_light', args: { on: true }, wait: true, turnId: 't', seq: 3 }),
+          frame({ type: 'chart', chart: { type: 'kpi', title: 'Orders', items: [] }, turnId: 't', seq: 4 }),
+          frame({ type: 'done', conversationId: 'c', reason: 'end_turn', turnId: 't', seq: 5 }),
+        ]),
+      'POST /agent/v1/session/tool-results': () => json({ ok: true }),
+    })
+    const s = new EvokaiSession({ baseUrl: BASE, token: 'tok', fetch: m.fetch })
+    const seen: unknown[] = []
+    for (const name of ['orders_month', 'kiosk_light', 'ui_chart']) s.renderTool(name, (part) => seen.push(part))
+    s.handleTool('kiosk_light', () => ({ lit: true }))
+    await s.chat({ text: 'go' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(seen).toEqual([
+      { name: 'orders_month', status: 'start' },
+      { name: 'orders_month', status: 'done' },
+      { name: 'kiosk_light', status: 'start', callId: 'c1', args: { on: true } },
+      { name: 'kiosk_light', status: 'done', callId: 'c1', args: { on: true }, result: { lit: true } },
+      { name: 'ui_chart', status: 'done', result: { type: 'kpi', title: 'Orders', items: [] } },
+    ])
+    const part = s.state.messages.at(-1)!.parts.find((p) => p.kind === 'tool' && p.name === 'kiosk_light')
+    expect(part).toMatchObject({ status: 'done', args: { on: true }, result: { lit: true }, client: true })
+  })
+
   test('external storage: the turn’s new messages reach onMessages', async () => {
     const msgs = [{ role: 'user' as const, text: 'hi', content: [] }]
     const m = mockFetch({

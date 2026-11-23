@@ -7,7 +7,7 @@ import { render, type VNode } from 'preact'
 
 import type { ClientToolHandler, CreateVoiceOptions, EvokaiSession, FetchLike, PageContext, SessionEvent, TokenInfo, TokenRequestContext } from '@evokai/evokai-client/browser'
 import { type ChatState, chatState, fromEvent } from './chatstate'
-import { Ui, defaultFormat, type UiContext, type ValueFormatter } from './context'
+import { Ui, defaultFormat, type ToolRenderer, type UiContext, type ValueFormatter } from './context'
 import { Controller, type ConversationItem } from './controller'
 import { Panel, useController } from './panel'
 import { VoiceStage } from './stage'
@@ -40,6 +40,13 @@ abstract class EvokaiBase extends HTMLBase {
   voiceOptions?: CreateVoiceOptions
   /** Labels for tool activity, by tool name (or a function). */
   toolLabels?: Record<string, string> | ((name: string) => string | null | undefined)
+  /**
+   * Your own cards for tools, by tool name: `(part) => HTMLElement | null` draws that tool's activity or result in the
+   * chat instead of the default line (server, MCP and client tools alike; `ui_chart` and `ui_diagram` replace the
+   * built-in visuals). A part carries only what the events carry: a client tool's arguments and result, a server
+   * tool's name and status. Return null to keep the default.
+   */
+  toolRenderers?: Record<string, ToolRenderer>
   /** How chart values are written (default: plain numbers, `pct` with %). */
   formatValue?: ValueFormatter
   /** The fetch used for Evokai and your token and conversation endpoints (default: the global one). */
@@ -264,6 +271,7 @@ abstract class EvokaiBase extends HTMLBase {
       toolLabel: (name) => (typeof labels === 'function' ? labels(name) : labels?.[name]) ?? name,
       names: { title: this.getAttribute('title') ?? 'Assistant', app: this.getAttribute('app-name') ?? '' },
       icons: this.icons_ ?? undefined,
+      toolRenderer: (name) => this.toolRenderers?.[name],
     }
     render(<Ui.Provider value={ctx}>{this.view(theme)}</Ui.Provider>, this.mount as HTMLDivElement)
   }
