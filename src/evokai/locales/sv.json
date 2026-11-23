@@ -1,0 +1,87 @@
+{
+  "messages": {
+    "limit.app": "Assistentens månadsgräns för {appName} är nådd: den återställs {resets}.",
+    "limit.appWeek": "Assistentens veckogräns för {appName} är nådd: den återställs {resets}.",
+    "limit.appDay": "Assistentens dagsgräns för {appName} är nådd: den återställs {resets}.",
+    "limit.subjectMonth": "Du har nått din månadsgräns för assistenten: den återställs {resets}.",
+    "limit.subjectWeek": "Du har nått din veckogräns för assistenten: den återställs {resets}.",
+    "limit.subjectDay": "Du har nått dagens gräns för assistenten: den återställs {resets}.",
+    "limit.agentBudget": "Den här agenten har nått den budget den har fått för tillfället: försök igen senare.",
+    "limit.resetsDay": "i morgon kl. 00:00",
+    "limit.resetsWeek": "på {weekday} kl. 00:00",
+    "limit.resetsMonth": "den {day} {month} kl. 00:00",
+    "turn.failed": "Något gick fel.",
+    "turn.modelUnavailable": "Assistenten svarar inte. Försök igen om en liten stund.",
+    "turn.confirmExpired": "Den här bekräftelsen gäller inte längre.",
+    "turn.empty": "Skriv något.",
+    "turn.refusal": "Okej, jag har inte ändrat något.",
+    "turn.confirmPrompt": "Innan jag fortsätter, bekräfta: {items}.",
+    "turn.maxSteps": "Jag har nått det högsta antalet steg för den här begäran. Säg hur jag ska fortsätta.",
+    "turn.guard": "Jag kan inte hjälpa till med den här begäran.",
+    "turn.guardStopped": "Jag har stoppat det här svaret: det skulle ha visat något det inte får visa.",
+    "turn.rewriteNothing": "Det finns inget meddelande att redigera än.",
+    "turn.rewriteNotLast": "Bara ditt senaste meddelande kan redigeras.",
+    "turn.rewriteAfterWrite": "Det här meddelandet kan inte längre redigeras: svaret har redan ändrat data.",
+    "turn.rewriteRunning": "Vänta på svaret, eller stoppa det, innan du redigerar ditt meddelande.",
+    "openai.confirmPrompt": "Innan jag fortsätter, bekräfta: {items}. Svara ja eller nej.",
+    "turn.notRegenerable": "Det här svaret kan inte längre genereras om.",
+    "voice.speechOff": "Rösten är inte tillgänglig: jag fortsätter att svara i text.",
+    "confirm.default": "Kör {tool}",
+    "chart.other": "Övrigt",
+    "channel.confirmTitle": "Innan jag fortsätter, bekräfta:",
+    "channel.approve": "Bekräfta",
+    "channel.cancel": "Avbryt",
+    "channel.whyRule": "begärs av en regel för assistenten",
+    "channel.whyPolicy": "begärs av säkerhetspolicyn",
+    "channel.approved": "Bekräftat.",
+    "channel.cancelled": "Avbrutet.",
+    "channel.connect": "Anslut {provider}",
+    "channel.connectText": "För att göra det behöver jag åtkomst till ditt {provider}-konto. Anslut det och fråga mig sedan igen.",
+    "channel.unknownUser": "Jag kan inte svara dig här: ditt konto är inte aktiverat för den här assistenten.",
+    "channel.tooMany": "För många meddelanden på kort tid. Försök igen senare.",
+    "channel.notAvailable": "Assistenten är inte tillgänglig i den här kanalen."
+  },
+  "speech": {
+    "redactions": {
+      "taxCode": "personnumret",
+      "iban": "IBAN-numret",
+      "vat": "momsnumret",
+      "email": "e-postadressen",
+      "phone": "telefonnumret"
+    },
+    "sourcesHeadings": ["källor", "källa", "referenser", "sources", "source"],
+    "abbreviations": ["t.ex", "bl.a", "osv", "m.m", "ca", "dvs", "nr", "s", "tel", "vs", "kl", "jfr"],
+    "yes": ["ja", "visst", "absolut", "bekräftar", "bekräftat", "bekräfta", "ok", "okej", "kör", "fortsätt", "gör det", "precis", "stämmer"],
+    "no": ["nej", "avbryt", "avbrutet", "strunta i det", "glöm det", "stopp", "stop", "gör det inte", "ingenting"],
+    "ordinals": {
+      "ett": 1, "en": 1, "första": 1, "forsta": 1,
+      "två": 2, "tva": 2, "andra": 2,
+      "tre": 3, "tredje": 3,
+      "fyra": 4, "fjärde": 4, "fjarde": 4,
+      "fem": 5, "femte": 5
+    },
+    "numbers": {
+      "group": ["\u00a0", "\u202f", " "],
+      "decimal": ",",
+      "decimalWord": "komma",
+      "percent": "procent",
+      "degrees": "grader",
+      "plus": "plus",
+      "minus": "minus",
+      "currency": {
+        "one": "en euro",
+        "many": "euro",
+        "centOne": "en cent",
+        "centMany": "cent",
+        "and": "och"
+      },
+      "date": {"sep": "/", "format": "{day} {month} {year}"},
+      "time": {"format": "{h} och {m}", "hour": "{h}"}
+    }
+  },
+  "calendar": {
+    "weekdays": ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"],
+    "months": ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"],
+    "firstDay": "1"
+  }
+}

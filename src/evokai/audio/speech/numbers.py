@@ -4,32 +4,128 @@ A speech engine reads «1.000» as «uno punto zero zero zero»: it does not kno
 separators. In voice mode the text handed to the engine has its numbers written out in words
 («mille»), while what is shown (the chat, the subtitles) keeps the readable digits.
 
-One speller per language; a language without one is spoken as written. Italian covers integers
-(with or without thousand dots), decimals, percentages, euros, dates (dd/mm/yyyy), times (hh:mm),
-signs and ordinals (1°, 1ª). Digits that touch letters (identifiers, «COVID-19», «v2») and strings
-that fit no format (versions like «2.0.1», codes with a leading zero, runs longer than twelve
-digits) are left as they are.
+The words come from `num2words <https://pypi.org/project/num2words/>`_; the pack of each language
+(``speech.numbers`` in ``evokai/locales/<code>.json``) says how its numbers are written (group and
+decimal separators, the date separator) and the words around them (decimal comma, per cent,
+degrees, signs, the currency, the shape of a date and a time). A language whose pack has no
+``numbers`` block (English) is spoken as written. Italian cardinals and ordinals keep their own
+speller: num2words 0.5.14 writes 118 as «centodicotto» and drops the accent of «ventitré».
+
+Every language covers integers (with or without group separators), decimals, percentages, euros,
+dates, times (hh:mm), signs and, where the pack says so, ordinals (1°, 1ª). Digits that touch
+letters (identifiers, «COVID-19», «v2») and strings that fit no format (versions like «2.0.1»,
+codes with a leading zero, runs longer than twelve digits) are left as they are.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from dataclasses import dataclass
+from functools import cache
+from typing import Any
+
+from num2words import num2words
+
+from evokai.i18n import known_locales, pack
 
 # A number with its sign, currency and suffix. The guards keep digits inside words and identifiers
 # untouched: no letter, digit or underscore before, no separator before (the tail of a longer
 # string), no letter-hyphen before («COVID-19»); no digit or separator-digit after the number, no
-# letter after the whole match.
-_TOKEN = re.compile(
-    r"(?<!\w)(?<![.,/:])(?<![^\W\d]-)"
+# letter after the whole match. Groups may be split by a no-break space (French, Swedish) and, in
+# a language that groups with spaces, by a plain space followed by exactly three digits («1 000»).
+_SEP = r"(?:[.,:/\u00a0\u202f]{space})"
+_NUMBER = (
+    r"(?<!\w)(?<![.,/:\u00a0\u202f])(?<![^\W\d]-)"
     r"(?:(?<![^\s(\[«\"'])(?P<sign>[-−+]))?"
     r"(?P<pre>(?:€|\bEUR)\s?)?"
-    r"(?P<num>\d+(?:[.,:/]\d+)*)(?!\d)(?![.,:/]\d)"
+    r"(?P<num>\d+(?:{sep}\d+)*)(?!\d)(?!{sep}\d)"
     r"(?P<suf>\s?%|\s?€|\s(?:euro|EUR)\b|\s?°\s?[CF]\b|[°ºª])?"
     r"(?!\w)"
 )
 
-Speller = Callable[[str], str]
+
+@cache
+def _token_re(spaces: bool) -> re.Pattern[str]:
+    sep = _SEP.format(space=r"| (?=\d{3}(?!\d))" if spaces else "")
+    return re.compile(_NUMBER.replace("{sep}", sep))
+
+
+_MAX = 999_999_999_999
+_PLAIN = re.compile(r"0|[1-9]\d{0,11}")
+_TIME = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+@dataclass(frozen=True)
+class NumberWords:
+    """How one language writes and says its numbers (the pack's ``speech.numbers``)."""
+
+    lang: str
+    """The num2words language."""
+    group: tuple[str, ...]
+    decimal: str
+    decimal_word: str
+    percent: str
+    degrees: str
+    plus: str
+    minus: str
+    euro_one: str
+    euro_many: str
+    euro_millions: str
+    cent_one: str
+    cent_many: str
+    and_: str
+    date_sep: str
+    date_format: str
+    first_day: str | None
+    day_ordinal: bool
+    months: tuple[str, ...]
+    time_format: str
+    hour_format: str
+    ordinals: bool
+    feminine: tuple[str, str] | None
+
+
+@cache
+def number_words(locale: str) -> NumberWords | None:
+    """The number words of a language, or None when its pack has none.
+
+    Returns:
+        The words.
+    """
+    language = locale.split("-")[0].lower()
+    if language not in known_locales():
+        return None
+    p = pack(language)
+    n: dict[str, Any] | None = p["speech"].get("numbers")
+    if not n:
+        return None
+    cur, date, time = n["currency"], n["date"], n["time"]
+    fem = n.get("feminine")
+    return NumberWords(
+        lang=n.get("lang", language),
+        group=tuple(n["group"]),
+        decimal=n["decimal"],
+        decimal_word=n["decimalWord"],
+        percent=n["percent"],
+        degrees=n["degrees"],
+        plus=n["plus"],
+        minus=n["minus"],
+        euro_one=cur["one"],
+        euro_many=cur["many"],
+        euro_millions=cur.get("millions") or cur["many"],
+        cent_one=cur["centOne"],
+        cent_many=cur["centMany"],
+        and_=cur["and"],
+        date_sep=date["sep"],
+        date_format=date["format"],
+        first_day=date.get("first"),
+        day_ordinal=bool(date.get("ordinal")),
+        months=tuple(p["calendar"]["months"]),
+        time_format=time["format"],
+        hour_format=time["hour"],
+        ordinals=bool(n.get("ordinals")),
+        feminine=(str(fem[0]), str(fem[1])) if fem else None,
+    )
 
 
 def spell_numbers(text: str, locale: str) -> str:
@@ -37,34 +133,48 @@ def spell_numbers(text: str, locale: str) -> str:
 
     Args:
         text: Speakable text (already plain, identifiers already redacted).
-        locale: The language, ``it`` or ``it-IT``; a language without a speller is unchanged.
+        locale: The language, ``it`` or ``it-IT``; a language without number words is unchanged.
 
     Returns:
         The text for the speech engine.
     """
-    speller = _SPELLERS.get(locale.split("-")[0].lower())
-    if speller is None or not any(ch.isdigit() for ch in text):
+    if not any(ch.isdigit() for ch in text):
         return text
-    return speller(text)
+    words = number_words(locale)
+    if words is None:
+        return text
+    return _token_re(" " in words.group).sub(lambda m: _token(m, words), text)
 
 
-# ── Italian ─────────────────────────────────────────────────────────────────────────────────────
+def cardinal(n: int, w: NumberWords) -> str:
+    """A cardinal number in words.
+
+    Returns:
+        The words.
+    """
+    return it_cardinal(n) if w.lang == "it" else str(num2words(n, lang=w.lang))
+
+
+def ordinal(n: int, w: NumberWords, *, feminine: bool = False) -> str:
+    """An ordinal number in words (masculine unless asked; feminine by the pack's rule).
+
+    Returns:
+        The words.
+    """
+    word = _it_ordinal(n) if w.lang == "it" else str(num2words(n, lang=w.lang, to="ordinal"))
+    if feminine and w.feminine and word.endswith(w.feminine[0]):
+        word = word[: -len(w.feminine[0])] + w.feminine[1]
+    return word
+
+
+# ── Italian cardinals and ordinals ──────────────────────────────────────────────────────────────
 
 _IT_UNITS = (
     "zero uno due tre quattro cinque sei sette otto nove dieci undici dodici tredici quattordici "
     "quindici sedici diciassette diciotto diciannove"
 ).split()
 _IT_TENS = "_ _ venti trenta quaranta cinquanta sessanta settanta ottanta novanta".split()
-_IT_MONTHS = (
-    "gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre"
-).split()
 _IT_ORDINALS = "primo secondo terzo quarto quinto sesto settimo ottavo nono decimo".split()
-
-_IT_MAX = 999_999_999_999
-_GROUPED = re.compile(r"[1-9]\d{0,2}(?:\.\d{3})+")
-_PLAIN = re.compile(r"0|[1-9]\d{0,11}")
-_TIME = re.compile(r"(\d{1,2}):(\d{2})")
-_DATE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4}|\d{2})")
 
 
 def _it_below_hundred(n: int) -> str:
@@ -126,76 +236,83 @@ def it_cardinal(n: int) -> str:
     return " ".join(parts)
 
 
-def _it_ordinal(n: int, feminine: bool) -> str:
+def _it_ordinal(n: int) -> str:
     if n <= 10:
-        word = _IT_ORDINALS[n - 1]
-    else:
-        word = it_cardinal(n).replace("tré", "tre")
-        if word.endswith(("tre", "sei")):  # ventitreesimo, ventiseiesimo
-            word += "esimo"
-        else:
-            word = word[:-1] + "esimo"
-    return word[:-1] + "a" if feminine else word
+        return _IT_ORDINALS[n - 1]
+    word = it_cardinal(n).replace("tré", "tre")
+    if word.endswith(("tre", "sei")):  # ventitreesimo, ventiseiesimo
+        return word + "esimo"
+    return word[:-1] + "esimo"
 
 
-def _it_digits(digits: str) -> str:
-    return " ".join(_IT_UNITS[int(d)] for d in digits)
+# ── the shapes every language shares ────────────────────────────────────────────────────────────
 
 
-def _it_integer(digits: str) -> int | None:
-    # The value of an integer part written «1.234.567» or «1234567», else None (a code).
-    if _GROUPED.fullmatch(digits) or _PLAIN.fullmatch(digits):
-        n = int(digits.replace(".", ""))
-        return n if n <= _IT_MAX else None
+def _digits(digits: str, w: NumberWords) -> str:
+    return " ".join(cardinal(int(d), w) for d in digits)
+
+
+def _integer(digits: str, w: NumberWords) -> int | None:
+    # The value of an integer part written with the language's groups or plain, else None (a code).
+    for g in w.group:
+        if re.fullmatch(rf"[1-9]\d{{0,2}}(?:{re.escape(g)}\d{{3}})+", digits):
+            n = int(digits.replace(g, ""))
+            return n if n <= _MAX else None
+    if _PLAIN.fullmatch(digits):
+        return int(digits)
     return None
 
 
-def _it_fraction(digits: str) -> str:
+def _fraction(digits: str, w: NumberWords) -> str:
     # Decimals: «5», «quattordici»; with a leading zero or longer than three, digit by digit.
     if digits.startswith("0") or len(digits) > 3:
-        return _it_digits(digits)
-    return it_cardinal(int(digits))
+        return _digits(digits, w)
+    return cardinal(int(digits), w)
 
 
-def _it_number(num: str) -> tuple[int, str | None] | None:
-    whole, _, fraction = num.partition(",")
-    if "," in fraction:
+def _number(num: str, w: NumberWords) -> tuple[int, str | None] | None:
+    whole, _, fraction = num.partition(w.decimal)
+    if w.decimal in fraction:
         return None
-    n = _it_integer(whole)
+    n = _integer(whole, w)
     if n is None or (fraction and not fraction.isdigit()):
         return None
     return n, fraction or None
 
 
-def _it_euro(n: int, fraction: str | None) -> str:
+def _euro(n: int, fraction: str | None, w: NumberWords) -> str:
     cents = 0
     if fraction is not None:
         if len(fraction) > 2:
-            return f"{it_cardinal(n)} virgola {_it_fraction(fraction)} euro"
+            return f"{cardinal(n, w)} {w.decimal_word} {_fraction(fraction, w)} {w.euro_many}"
         cents = int(fraction.ljust(2, "0"))
     if n == 0 and cents:
-        return "un centesimo" if cents == 1 else f"{it_cardinal(cents)} centesimi"
+        return w.cent_one if cents == 1 else f"{cardinal(cents, w)} {w.cent_many}"
     if n == 1:
-        amount = "un euro"
+        amount = w.euro_one
     elif n and n % 1_000_000 == 0:
-        amount = f"{it_cardinal(n)} di euro"  # un milione di euro
+        amount = f"{cardinal(n, w)} {w.euro_millions}"  # un milione di euro
     else:
-        amount = f"{it_cardinal(n)} euro"
-    return f"{amount} e {it_cardinal(cents)}" if cents else amount
+        amount = f"{cardinal(n, w)} {w.euro_many}"
+    return f"{amount} {w.and_} {cardinal(cents, w)}" if cents else amount
 
 
-def _it_time(num: str) -> str | None:
+def _time(num: str, w: NumberWords) -> str | None:
     m = _TIME.fullmatch(num)
     if not m:
         return None
     hours, minutes = int(m.group(1)), int(m.group(2))
     if hours > 23 or minutes > 59:
         return None
-    return it_cardinal(hours) + (f" e {it_cardinal(minutes)}" if minutes else "")
+    h = cardinal(hours, w)
+    if not minutes:
+        return w.hour_format.format(h=h)
+    return w.time_format.format(h=h, m=cardinal(minutes, w))
 
 
-def _it_date(num: str) -> str | None:
-    m = _DATE.fullmatch(num)
+def _date(num: str, w: NumberWords) -> str | None:
+    sep = re.escape(w.date_sep)
+    m = re.fullmatch(rf"(\d{{1,2}}){sep}(\d{{1,2}}){sep}(\d{{4}}|\d{{2}})", num)
     if not m:
         return None
     day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -203,45 +320,42 @@ def _it_date(num: str) -> str | None:
         return None
     if len(m.group(3)) == 2:
         year += 2000 if year < 50 else 1900
-    first = "primo" if day == 1 else it_cardinal(day)
-    return f"{first} {_IT_MONTHS[month - 1]} {it_cardinal(year)}"
+    if day == 1 and w.first_day:
+        said_day = w.first_day
+    elif w.day_ordinal:
+        said_day = ordinal(day, w)
+    else:
+        said_day = cardinal(day, w)
+    return w.date_format.format(day=said_day, month=w.months[month - 1], year=cardinal(year, w))
 
 
-def _it_token(m: re.Match[str]) -> str:
+def _token(m: re.Match[str], w: NumberWords) -> str:
     sign, pre, num = m.group("sign"), m.group("pre"), m.group("num")
     suffix = (m.group("suf") or "").strip()
     euro = bool(pre) or suffix in ("€", "euro", "EUR")
     if not (sign or euro or suffix):
-        said = _it_time(num) or _it_date(num)
+        said = _time(num, w) or _date(num, w)
         if said:
             return said
-    parsed = _it_number(num)
+    parsed = _number(num, w)
     if parsed is None:
         return m.group(0)
     n, fraction = parsed
     if suffix in ("°", "º", "ª"):
         whole = n > 0 and fraction is None and not (sign or euro)
         # 1° posto, 2ª classe; past ten a «°» is degrees (25°), an «º» or «ª» still an ordinal.
-        if whole and (suffix != "°" or n <= 10):
-            return _it_ordinal(n, feminine=suffix == "ª")
+        if w.ordinals and whole and (suffix != "°" or n <= 10):
+            return ordinal(n, w, feminine=suffix == "ª")
         if suffix != "°":
             return m.group(0)
     if euro:
-        said = _it_euro(n, fraction)
+        said = _euro(n, fraction, w)
     else:
-        said = it_cardinal(n) + (f" virgola {_it_fraction(fraction)}" if fraction else "")
+        said = cardinal(n, w) + (f" {w.decimal_word} {_fraction(fraction, w)}" if fraction else "")
         if suffix == "%":
-            said += " per cento"
+            said += f" {w.percent}"
         elif suffix.startswith("°"):
-            said += " gradi"
+            said += f" {w.degrees}"
     if sign:
-        said = ("più " if sign == "+" else "meno ") + said
+        said = f"{w.plus if sign == '+' else w.minus} {said}"
     return said
-
-
-def _spell_it(text: str) -> str:
-    return _TOKEN.sub(_it_token, text)
-
-
-_SPELLERS: dict[str, Speller] = {"it": _spell_it}
-"""The languages whose numbers are spelled out, by language code."""
