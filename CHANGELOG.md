@@ -53,9 +53,16 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   reduced motion, optional one-shot images per change of state). It rests and flies exactly as the orb does, and the
   host says where it is as `data-orb`. With `position="bottom-left"` the minimized bubble and its actions mirror
   around a launcher of any size.
+- Language packs for Spanish, French, German, Romanian and Swedish (`es`, `fr`, `de`, `ro`, `sv`): messages, speech
+  rules (spoken yes and no, ordinals, abbreviations, redaction words) and calendar, on the server and in the TypeScript
+  client. A session `locale` and an application `locale` accept every shipped pack; the playground offers them.
 
 ### Changed
 
+- Numbers read aloud (`say.spoken`) come from num2words, driven by each pack's new `speech.numbers` block (separators,
+  decimal word, per cent, currency, date and time shapes), in every language but English, which is spoken as written.
+  Italian keeps its own cardinal speller. Spoken ordinals («la deuxième») are matched without accents on the server
+  too.
 - The console assistant has no button: the mascot is its launcher at the bottom left and travels like the chat's orb
   (to the header, to the middle in voice mode, back to the launcher while voice is minimized). There is no launcher
   while the assistant is not active; it is activated from the Assistant page.

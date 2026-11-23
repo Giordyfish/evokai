@@ -149,6 +149,6 @@ async def test_server_run_accepts_modules(env: Env) -> None:
     r = await env.client.post("/agent/v1/agents/clerk/run", json=bad, headers=srv)
     assert r.status_code == 400 and r.json()["error"] == "module_params", r.text
     r = await env.client.post(
-        "/agent/v1/agents/clerk/run", json={"input": "x", "locale": "fr"}, headers=srv
+        "/agent/v1/agents/clerk/run", json={"input": "x", "locale": "ja"}, headers=srv
     )
     assert r.status_code == 400 and r.json()["error"] == "unknown_locale", r.text

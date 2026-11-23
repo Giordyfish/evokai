@@ -29,6 +29,7 @@ dependencies = [
     "redis>=8.1",
     "sqlalchemy[asyncio]>=2.1.9",
     "uvicorn[standard]>=0.54.0",
+    "num2words>=0.5.14",
 ]
 
 [project.optional-dependencies]
