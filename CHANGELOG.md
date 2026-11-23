@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-23
+
 ### Added
 
 - Attachments in the browser chat: a person attaches images (PNG, JPEG, WebP, GIF) and documents (PDF, Word,
@@ -121,6 +123,46 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   governance, monitoring and integrations) and its governance in detail; the demo GIF is no longer in it.
 - The WebRTC voice pipeline uses the session's voice (token `voice`, else the agent's `voice.voice_id`): it was
   never passed to the speech engine before. The fake recognition engine hears «hello» unless given phrases.
+- **Breaking:** a built-in `mcp_server` must list its `allowed_tools`, each of which runs without a confirmation (in
+  browser turns, server runs and the OpenAI-compatible API); a listed tool the policy denies or confirms, or an ask
+  rule may ask for, is taken off the list. Its address must be on the egress allow-list whenever one is set and
+  `tools.egress` is not off, in monitor too. The Protection page says which built-in tools may reach any address
+  because no egress allow-list holds them (`egress` in `GET /v1/admin/data-protection`).
+
+### Fixed
+
+- Postgres sessions speak UTC whatever the server's or the role's time zone (#66). The daily usage series groups
+  timestamps by their text and reads them as UTC, so on a server outside UTC the usage of the late evening (or early
+  morning) was counted on the wrong day. Daily usage on such servers now groups by the UTC day: figures near midnight
+  can move to the neighbouring day compared with 0.1.3.
+- `POST /v1/session/transcribe` takes recordings up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB): the session API's 2 MB
+  body limit refused anything longer than about a minute of 16 kHz WAV with 413. `POST /v1/session/speech` and
+  `POST /v1/session/tool-results` now take at most 256 KB, which their own maxima fit in.
+- The streaming recognition socket (`WS /v1/session/transcribe/stream`) has a wall-clock deadline: its maximum
+  length plus 10 seconds, or its session token's expiry when sooner (`expired`, close code 4401). Only audio resets
+  its idle timer. Before, a client sending a text message every 29 seconds kept the socket, its pipeline and the
+  engine's connection open forever. Every early close carries its code as the close reason.
+- Provider built-in tools follow the security policy: the tool policy and the ask rules apply to each under the names
+  `builtin:<kind>` and `<kind>`. A denied tool, or one outside an allow-list, is not offered; since the provider runs
+  them and nothing can wait for a confirmation, a tool the policy confirms or an ask rule may ask for is refused
+  instead of running unconfirmed. Before, they bypassed the policy entirely.
+- An answer that called a provider built-in tool that can change data (`mcp_server`, `memory`, `code_execution`)
+  cannot be regenerated, as after a custom client tool: running it again could act twice. The answer keeps a
+  `builtinTool` block (also in an external history, and in the Python and TypeScript clients' types), and so does an
+  answer the guard stopped or that was interrupted.
+- An attachment's name is the person's input: it passes the same input checks as their message (a name they refuse
+  refuses the turn), and on its way to the model its identifiers are protected (`pii.model`) and its markup is made
+  inert. Before, it reached the model as raw text outside the data markers. Markup in a document's text and in a
+  client tool's result is made inert too, so nobody can write cues for the agent through them.
+- A streamed Chat Completion and a whole one say the same: the text of every step, each set apart from the one before
+  by a blank line (and so are two texts of one step around a built-in tool's call), in both and in the stored
+  conversation. Before, `"stream": true` glued the steps' texts together
+  ("Let me check.October has 24 orders.") while `"stream": false` returned only the last step's. Server runs follow
+  the same rule.
+- Regenerating no longer asks a different question than the person did: an answer is not regenerable (`done`,
+  `GET /v1/session/conversation`, 409 `not_regenerable`) when its question was stored with identifiers masked
+  (`pii.history` enforced: the original is kept nowhere), or, with external storage, when it carried an image or a PDF
+  the model read as a file (its bytes are gone after the turn).
 
 ### Upgrading
 
@@ -135,6 +177,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   labels, so convert them through the API or the YAML file first. Migration `0032` adds `template_syntax` to prompt
   versions (existing rows are `legacy`).
 - Workflow approval labels keep the older grammar: leave them as they are.
+- Migrations `0030` to `0034` are additive: new columns and the attachments table, nothing dropped or rewritten.
+- An agent whose `builtin_tools` has an `mcp_server` without `allowed_tools` cannot be saved any more, and its turns
+  leave that tool out until you list the tools the provider may call on it.
 - Going back to 0.1.3 after saving Handlebars versions is not supported: 0.1.3 does not know `template_syntax`, so a
   `{{date}}` saved by this version reaches the model as `{date}`. To go back, restore the database backup taken before
   the upgrade, or start 0.1.3 with the YAML file you used before converting it, so its agents get versions in the old

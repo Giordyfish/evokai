@@ -211,6 +211,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         origins=origin_cache(svc.store),
         attachments_mb=settings.attachments_request_mb,
         takes_files=lambda authorization: session_routes.takes_attachments(svc, authorization),
+        transcribe_bytes=settings.transcribe_max_bytes,
     )
     app.add_middleware(CorrelationMiddleware)
 

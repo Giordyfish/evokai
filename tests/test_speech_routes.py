@@ -197,6 +197,49 @@ async def test_a_recording_is_transcribed(senv: Env) -> None:
     assert row.audio_ms == 500 and row.model == "stt:fake"
 
 
+async def test_a_recording_over_the_session_body_limit_is_transcribed(senv: Env) -> None:
+    # 70 s of 16 kHz mono WAV is 2.24 MB: over the session API's 2 MB, under
+    # EVOKAI_TRANSCRIBE_MAX_BYTES (10 MB). The door applies the setting, not the session limit.
+    app = _app(senv)
+    tok = (await senv.token())["token"]
+    body = _wav(70)
+    limit = senv.svc.settings.transcribe_max_bytes
+    assert 2_000_000 < len(body) < limit
+    async with _client(app) as c:
+        r = await c.post(
+            "/agent/v1/session/transcribe",
+            content=body,
+            headers={**_h(tok), "Content-Type": "audio/wav"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["durationMs"] == 70_000
+        over = await c.post(
+            "/agent/v1/session/transcribe",
+            content=b"\x00" * (limit + 1),
+            headers={**_h(tok), "Content-Type": "audio/wav"},
+        )
+        assert over.status_code == 413
+
+
+async def test_speech_and_tool_results_take_small_bodies(senv: Env) -> None:
+    # Both carry a bounded JSON body (a text of at most 20,000 characters, a result of 32 KB):
+    # anything far larger is refused at the door, before it is parsed.
+    from evokai.api.hardening import SMALL_BODY_LIMIT
+
+    app = _app(senv)
+    tok = (await senv.token())["token"]
+    h = {**_h(tok), "Content-Type": "application/json"}
+    big = "x" * (SMALL_BODY_LIMIT + 1)
+    async with _client(app) as c:
+        for path in ("/agent/v1/session/speech", "/agent/v1/session/tool-results"):
+            r = await c.post(path, content=f'{{"text": "{big}"}}', headers=h)
+            assert (r.status_code, r.json()["error"]) == (413, "too_large"), path
+        # A text at the route's own maximum, every character escaped (6 bytes), still reaches it.
+        text = "\\u00e8" * 20_000
+        r = await c.post("/agent/v1/session/speech", content=f'{{"text": "{text}"}}', headers=h)
+        assert r.status_code != 413, r.text
+
+
 async def test_transcription_refusals(senv: Env) -> None:
     app = _app(senv, transcribe_max_bytes=40_000, transcribe_max_seconds=1)
     tok = (await senv.token())["token"]
@@ -421,6 +464,94 @@ async def test_the_stream_says_why_it_stops_a_reached_cap_or_silence(senv: Env) 
     await idle.send_json({"type": "start", "sampleRate": 16_000})
     got, closed = await idle.until_close()
     assert got[-1]["code"] == "idle" and closed["code"] == 4408
+
+
+async def _ping_until_closed(sock: Socket, every: float, within: float) -> tuple[list, dict]:
+    """Send text pings (never audio) until the server closes the socket.
+
+    Returns:
+        The messages received and the close message.
+    """
+    got: list[dict[str, Any]] = []
+    loop = asyncio.get_running_loop()
+    end = loop.time() + within
+    while loop.time() < end:
+        await sock.send_json({"type": "ping"})
+        try:
+            m = await asyncio.wait_for(sock.outbox.get(), every)
+        except TimeoutError:
+            continue
+        if m["type"] == "websocket.close":
+            return got, m
+        if m.get("text"):
+            got.append(json.loads(m["text"]))
+    raise AssertionError("the socket stayed open")
+
+
+async def test_text_pings_do_not_keep_the_stream_open_past_its_deadline(
+    senv: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evokai.api import speech_routes
+
+    monkeypatch.setattr(speech_routes, "STREAM_MARGIN_SECONDS", 0.0)
+    app = _app(senv, transcribe_stream_max_seconds=1, transcribe_stream_idle_seconds=30)
+    tok = (await senv.token())["token"]
+    path = "/agent/v1/session/transcribe/stream"
+    ws = Socket(app, path, ["evokai.v1", f"evokai.token.{tok}"], {"origin": ORIGIN})
+    await ws.open()
+    await ws.send_json({"type": "start", "sampleRate": 16_000})
+    assert json.loads((await ws.receive())["text"])["type"] == "ready"
+    started = asyncio.get_running_loop().time()
+    got, closed = await _ping_until_closed(ws, 0.1, 5)
+    assert asyncio.get_running_loop().time() - started < 3
+    assert got[-1]["code"] == "too_long"
+    assert closed["code"] == 4408 and closed["reason"] == "too_long"
+
+
+async def test_a_text_frame_that_is_not_an_object_is_ignored(senv: Env) -> None:
+    app = _app(senv)
+    tok = (await senv.token())["token"]
+    path = "/agent/v1/session/transcribe/stream"
+    ws = Socket(app, path, ["evokai.v1", f"evokai.token.{tok}"], {"origin": ORIGIN})
+    await ws.open()
+    await ws.send_json({"type": "start", "sampleRate": 16_000})
+    await ws.receive()
+    await ws.inbox.put({"type": "websocket.receive", "text": "[1, 2]"})
+    await ws.send_json({"type": "stop"})
+    got, closed = await ws.until_close()
+    assert got[-1]["type"] == "end" and closed["code"] == 1000
+
+
+async def test_only_audio_keeps_the_stream_from_going_idle(senv: Env) -> None:
+    app = _app(senv, transcribe_stream_idle_seconds=0.4)
+    tok = (await senv.token())["token"]
+    path = "/agent/v1/session/transcribe/stream"
+    ws = Socket(app, path, ["evokai.v1", f"evokai.token.{tok}"], {"origin": ORIGIN})
+    await ws.open()
+    await ws.send_json({"type": "start", "sampleRate": 16_000})
+    await ws.receive()
+    got, closed = await _ping_until_closed(ws, 0.1, 5)
+    assert got[-1]["code"] == "idle" and closed == {**closed, "code": 4408, "reason": "idle"}
+
+
+async def test_the_stream_closes_when_its_session_token_expires(
+    senv: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evokai.api import speech_routes
+
+    tok = (await senv.token())["token"]
+    expires = (await senv.svc.auth.session(tok)).claims.expires_at
+    # The clock reads half a second before the token's expiry once the socket is open.
+    monkeypatch.setattr(speech_routes, "_wall", lambda: expires - 0.5)
+    app = _app(senv)
+    path = "/agent/v1/session/transcribe/stream"
+    ws = Socket(app, path, ["evokai.v1", f"evokai.token.{tok}"], {"origin": ORIGIN})
+    await ws.open()
+    await ws.send_json({"type": "start", "sampleRate": 16_000})
+    await ws.receive()
+    got, closed = await _ping_until_closed(ws, 0.1, 5)
+    assert got[-1]["code"] == "expired"
+    assert closed["code"] == 4401 and closed["reason"] == "expired"
 
 
 async def test_a_long_recording_is_refused_before_it_is_all_decoded(senv: Env) -> None:

@@ -23,7 +23,7 @@ from evokai import (
     parse_event,
 )
 from evokai.events import ChatResult, SessionConversation, parse_events
-from evokai.models import TextBlock, ToolResultBlock, ToolUseBlock
+from evokai.models import BuiltinToolBlock, TextBlock, ToolResultBlock, ToolUseBlock
 
 META = {"turnId": "t1", "seq": 4}
 
@@ -166,6 +166,7 @@ def test_done_carries_external_history_messages() -> None:
                     {"text": "hi"},
                     {"toolUse": {"id": "u1", "name": "crm", "input": {"q": 1}}},
                     {"toolResult": {"id": "u1", "name": "crm", "ok": False, "text": "no"}},
+                    {"builtinTool": {"id": "b1", "name": "mcp_server:crm", "changes": True}},
                 ],
                 "text": "hi",
             }
@@ -174,7 +175,7 @@ def test_done_carries_external_history_messages() -> None:
     assert isinstance(event, DoneEvent)
     assert event.messages is not None
     blocks = event.messages[0].content
-    assert [type(b) for b in blocks] == [TextBlock, ToolUseBlock, ToolResultBlock]
+    assert [type(b) for b in blocks] == [TextBlock, ToolUseBlock, ToolResultBlock, BuiltinToolBlock]
     assert isinstance(blocks[1], ToolUseBlock)
     assert blocks[1].tool_use.input == {"q": 1}
     assert event.messages[0].model_dump(exclude_unset=True)["content"][1] == {

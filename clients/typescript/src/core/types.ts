@@ -1375,8 +1375,18 @@ export interface DataProtectionReport {
   empty: boolean
   processors: ProcessorVerdict[]
   browser: { online_voices: boolean; online_recognition: boolean; vendors?: string[] | null } | null
-  /** The agents' provider built-in tools, and whether the profile lets the ones that keep data at the provider run. */
-  builtinTools?: Array<{ agent: string; kind: string; keepsData: boolean; allowed: boolean }>
+  /**
+   * The agents' provider built-in tools, and whether the profile lets the ones that keep data at the provider run.
+   * `egress` (tools that reach the network): `allow_list` when the security policy holds them to its egress
+   * allow-list, `unrestricted` when they may reach any address; null for the others.
+   */
+  builtinTools?: Array<{
+    agent: string
+    kind: string
+    keepsData: boolean
+    allowed: boolean
+    egress?: 'allow_list' | 'unrestricted' | null
+  }>
 }
 export interface ProviderEndpointView {
   id: string

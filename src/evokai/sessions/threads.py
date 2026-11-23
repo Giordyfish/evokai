@@ -90,8 +90,26 @@ class FileBlock(BaseModel):
     text: str | None = Field(default=None, max_length=60_000)
 
 
+class BuiltinTool(BaseModel):
+    """A call of a provider built-in tool that can change data (``engine.messages``)."""
+
+    id: str = Field(max_length=128)
+    name: str = Field(max_length=128)
+    changes: bool = True
+
+
+class BuiltinToolBlock(BaseModel):
+    """Assistant block: a provider built-in tool that can change data ran (never sent to a model).
+
+    It keeps the answer from being regenerated: keep it as Evokai returns it.
+    """
+
+    builtinTool: BuiltinTool
+
+
 Block = Annotated[
-    FileBlock | TextBlock | ToolUseBlock | ToolResultBlock, Field(union_mode="left_to_right")
+    FileBlock | TextBlock | ToolUseBlock | ToolResultBlock | BuiltinToolBlock,
+    Field(union_mode="left_to_right"),
 ]
 
 

@@ -90,3 +90,63 @@ async def test_external_storage_regenerates_from_the_sent_history(env: Env) -> N
     done = ev[-1]
     assert done["replacedFrom"] == 0 and _text(ev) == "Again."
     assert [m["role"] for m in done["messages"]] == ["user", "assistant"]
+
+
+async def test_external_storage_cannot_regenerate_a_question_whose_files_are_gone(
+    env: Env,
+) -> None:
+    # Nothing is kept with external storage: the bytes of an image or a PDF the model read as a
+    # file live only during its turn. A document read as text is in the history and stays fine.
+    from tests.test_attachments_files import jpeg
+    from tests.test_attachments_store import grant
+    from tests.test_attachments_turns import READER, files
+
+    r = await env.client.patch(
+        "/agent/v1/admin/grants",
+        json={"changes": [{"kind": "storage", "name": "external", "value": True}]},
+        headers={"Authorization": f"Bearer {env.admin_key}"},
+    )
+    assert r.status_code == 200, r.text
+    await grant(env)
+    r = await env.client.put(
+        "/agent/v1/admin/agents/reader",
+        json=READER,
+        headers={"Authorization": f"Bearer {env.admin_key}"},
+    )
+    assert r.status_code == 200, r.text
+    tok = await env.token(agent="reader", storageMode="external")
+    chat = "/agent/v1/session/chat"
+    for attached, regenerable in ((("me.jpg", jpeg()),), False), ((("n.txt", b"A note"),), True):
+        env.script.add("function:primary", ["Seen."])
+        r = await env.client.post(
+            chat,
+            json={"text": "Look", "attachments": files(*attached), "history": []},
+            headers={**_h(tok), "Accept": "application/json"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["regenerable"] is regenerable
+        env.script.add("function:primary", ["Again."])
+        history = r.json()["messages"]
+        r = await env.client.post(URL, json={"history": history}, headers=_h(tok))
+        assert (r.status_code == 409) is not regenerable, r.text
+
+
+async def test_a_question_stored_masked_is_not_regenerated(env: Env) -> None:
+    # pii.history keeps the question with its identifiers masked: running it again would ask a
+    # different question, so the answer is not regenerable. A question without any keeps it.
+    r = await env.client.put(
+        "/agent/v1/admin/security",
+        json={"modes": {"pii.history": "enforce"}},
+        headers={"Authorization": f"Bearer {env.admin_key}"},
+    )
+    assert r.status_code == 200, r.text
+    for text, regenerable in (("Write to mario.rossi@example.com", False), ("Hello", True)):
+        env.script.add("function:primary", ["Sure."])
+        tok = await env.token()
+        ev = await env.chat(tok["token"], text=text)
+        assert ev[-1]["regenerable"] is regenerable
+        conv = (await env.client.get("/agent/v1/session/conversation", headers=_h(tok))).json()
+        assert conv["messages"][-1].get("regenerable") is (True if regenerable else None)
+        env.script.add("function:primary", ["Again."])
+        r = await env.client.post(URL, json={}, headers=_h(tok))
+        assert (r.status_code == 409) is not regenerable, r.text

@@ -18,6 +18,7 @@ import base64
 import contextlib
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, Literal
 
@@ -348,6 +349,18 @@ def pack_tag(locale: str) -> str:
 _TOKEN_PROTOCOL = "evokai.token."  # ruff: ignore[hardcoded-password-string] (a subprotocol prefix)
 PROTOCOL = "evokai.v1"
 """The subprotocol the server accepts; the client also offers ``evokai.token.<session token>``."""
+STREAM_MARGIN_SECONDS = 10.0
+"""How long a streaming socket may stay open beyond its maximum length of audio (start-up, the
+engine's last words): its wall-clock deadline is this plus ``EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS``,
+or the session token's expiry when that comes first."""
+_wall = time.time
+"""The wall clock the token's expiry is read against (replaced in tests)."""
+_ENDS = {
+    "idle": (4408, "No audio was received for a while: the stream is closed."),
+    "too_long": (4408, "The stream reached its maximum length."),
+    "expired": (4401, "The session token expired: the stream is closed."),
+}
+"""Why a stream ended early: its close code and the message of its last ``error``."""
 
 
 class _Refused(Exception):
@@ -506,27 +519,43 @@ async def _stream(
     worker, task = await run_pipeline([vad_processor, service, Catch(put)], rate)
     sender = asyncio.create_task(send())
     received = 0
-    over = idle = False
+    ended: str | None = None
+    # A wall-clock deadline (counting audio bytes alone never ends a socket sent only text) and an
+    # idle timer that only audio resets.
+    loop = asyncio.get_running_loop()
+    for_token = s.claims.expires_at - _wall()
+    allowed = st.transcribe_stream_max_seconds + STREAM_MARGIN_SECONDS
+    deadline = loop.time() + min(allowed, for_token)
+    late = "expired" if for_token < allowed else "too_long"
+    idle_at = loop.time() + st.transcribe_stream_idle_seconds
     await ws.send_json({"type": "ready", "engine": engine})
     try:
         while True:
-            try:
-                msg = await asyncio.wait_for(ws.receive(), st.transcribe_stream_idle_seconds)
-            except TimeoutError:
-                idle = True
+            now = loop.time()
+            if now >= deadline:
+                ended = late
                 break
+            if now >= idle_at:
+                ended = "idle"
+                break
+            try:
+                msg = await asyncio.wait_for(ws.receive(), min(deadline, idle_at) - now)
+            except TimeoutError:
+                continue
             if msg.get("type") == "websocket.disconnect":
                 break
             if msg.get("bytes"):
                 chunk = msg["bytes"]
                 received += len(chunk)
                 if received / 2 / rate * 1000 > cap_ms:
-                    over = True
+                    ended = "too_long"
                     break
+                idle_at = loop.time() + st.transcribe_stream_idle_seconds
                 await worker.queue_frame(InputAudioRawFrame(chunk, rate, 1))
             elif msg.get("text"):
                 with contextlib.suppress(ValueError):
-                    if json.loads(msg["text"]).get("type") == "stop":
+                    sent = json.loads(msg["text"])
+                    if isinstance(sent, dict) and sent.get("type") == "stop":
                         break
     finally:
         await worker.queue_frame(EndFrame())
@@ -545,21 +574,10 @@ async def _stream(
                         cost_micro_usd=round(usd_per_ms * ms * 1e6))
             )  # fmt: skip
     with contextlib.suppress(Exception):
-        if idle:
-            await ws.send_json({
-                "type": "error",
-                "code": "idle",
-                "message": "Nothing was received for a while: the stream is closed.",
-            })
-            await ws.close(code=4408)
-            return
-        if over:
-            await ws.send_json({
-                "type": "error",
-                "code": "too_long",
-                "message": "The stream reached its maximum length.",
-            })
-            await ws.close(code=4408)
+        if ended is not None:
+            code, message = _ENDS[ended]
+            await ws.send_json({"type": "error", "code": ended, "message": message})
+            await ws.close(code=code, reason=ended)
             return
         await ws.send_json({"type": "end", "durationMs": round(received / 2 / rate * 1000)})
         await ws.close()

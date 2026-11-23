@@ -92,7 +92,7 @@ Content-Type: audio/webm
 <the recording>
 ```
 
-WAV, WebM, Ogg, MP3 or M4A, up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB, else 413 `audio_too_large`) and
+WAV, WebM, Ogg, MP3 or M4A, up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB, else 413 `too_large` or `audio_too_large`) and
 `EVOKAI_TRANSCRIBE_MAX_SECONDS` (120, else 400 `audio_too_long`); anything else is 400 `audio_invalid`. The answer is
 `{text, durationMs, engine}`. `language` defaults to the session's.
 
@@ -111,8 +111,10 @@ requests with this token, or a cap reached), 4500 (the engine is not available).
    `{"type": "final", "text"}`;
 4. the client sends `{"type": "stop"}`; the server sends what is left, `{"type": "end", "durationMs"}`, and closes.
 
-A stream longer than `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` (300) ends with `{"type": "error", "code": "too_long"}` and
-close code 4408, and so does one that receives nothing for `EVOKAI_TRANSCRIBE_STREAM_IDLE_SECONDS` (30, code `idle`).
+A stream with more audio than `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` (300), or open 10 seconds longer, ends with
+`{"type": "error", "code": "too_long"}` and close code 4408; one with no audio for
+`EVOKAI_TRANSCRIBE_STREAM_IDLE_SECONDS` (30) with code `idle` (text messages do not count); at the session token's
+expiry with `expired` and 4401. The close reason is the code.
 A synthesis that takes longer than `EVOKAI_SPEECH_TIMEOUT_SECONDS` (60) ends with an `error` event (`tts_failed`).
 A recording is decoded only up to its maximum length. Engines that transcribe whole utterances (`elevenlabs`, `openai`) stream through their realtime
 variants.

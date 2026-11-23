@@ -65,7 +65,8 @@ files keep one request one turn: nothing is uploaded before the turn decides, th
 orphaned uploads to clean up, and external storage needs nothing more. The body limit of `POST /v1/session/chat`
 follows `EVOKAI_ATTACHMENTS_REQUEST_MB` (50 MB of files by default, plus a third for base64) only when the session
 token's application is granted `attachments` and its agent has them on: this is checked from the token before the
-body is read. Any other chat message, and every other session route, keeps the 2 MB limit (413 `too_large`, from
+body is read. Any other chat message, and the other session routes but transcription, keep the 2 MB limit or less
+(413 `too_large`, from
 `Content-Length` or while a chunked body is read).
 
 A message with attachments still needs its text (the question about them). A decision (`confirm`) carries none.
@@ -107,9 +108,12 @@ Whether a model reads images or PDF comes from its pydantic-ai profile (`support
 
 Anything read from a file is untrusted data, like the output of an MCP tool:
 
+- a file's name passes the input checks of the message (a name they refuse refuses the turn); towards the model its
+  identifiers are protected (`pii.model`) and its markup made inert;
+
 - a document's text is scanned for hidden instructions (`untrusted.injection`: in enforce mode the lines that read as
   instructions are removed) and reaches the model marked as data (`untrusted.spotlight`, source
-  `attachment:<name>`);
+  `attachment:<name>`), with its markup made inert;
 - a PDF the models would read as a file is scanned the same way through its text; when the scan removes anything,
   or when `pii.model` is enforced and the text holds identifiers, the model gets the cleaned and protected text
   instead of the file;

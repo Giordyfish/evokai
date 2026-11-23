@@ -156,6 +156,8 @@ function BuiltinTools({ r }: { r: DataProtectionReport }) {
                 <td>
                   <code>{x.kind}</code>
                   {x.keepsData ? <div class="s">{t('dp.builtinKeeps')}</div> : null}
+                  {x.egress === 'unrestricted' ? <div class="s">{t('dp.builtinAnyAddress')}</div> : null}
+                  {x.egress === 'allow_list' ? <div class="s">{t('dp.builtinAllowList')}</div> : null}
                 </td>
                 <td>{x.agent}</td>
                 <td>

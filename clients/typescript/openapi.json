@@ -1223,6 +1223,45 @@
         "title": "BugReportBody",
         "type": "object"
       },
+      "BuiltinTool": {
+        "description": "A call of a provider built-in tool that can change data (``engine.messages``).",
+        "properties": {
+          "changes": {
+            "default": true,
+            "title": "Changes",
+            "type": "boolean"
+          },
+          "id": {
+            "maxLength": 128,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "BuiltinTool",
+        "type": "object"
+      },
+      "BuiltinToolBlock": {
+        "description": "Assistant block: a provider built-in tool that can change data ran (never sent to a model).\n\nIt keeps the answer from being regenerated: keep it as Evokai returns it.",
+        "properties": {
+          "builtinTool": {
+            "$ref": "#/components/schemas/BuiltinTool"
+          }
+        },
+        "required": [
+          "builtinTool"
+        ],
+        "title": "BuiltinToolBlock",
+        "type": "object"
+      },
       "BuiltinToolDef": {
         "description": "A provider built-in tool (``evokai.engine.builtin_tools``).",
         "properties": {
@@ -2789,6 +2828,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ToolResultBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/BuiltinToolBlock"
                 }
               ]
             },
@@ -6412,7 +6454,7 @@
   "info": {
     "summary": "Agents runtime: any model provider, MCP tools, skills and voice sessions.",
     "title": "Evokai",
-    "version": "0.1.3"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {

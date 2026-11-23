@@ -425,6 +425,8 @@ class TurnEngine:
         await self.store.turns.start(who, session.id, inp.mode, turn_id)
         threads = self._threads(storage, who, session.id, thread_id, inp)
         await self.guard.started(guard)
+        markup = markup_of((app.defaults or {}).get("markup"), agent.markup, session)
+        guard.neutralise = markup.neutralise if markup is not None else None
         return TurnRun(
             rewrite=plan,
             replaced_from=replaced_from,
@@ -432,7 +434,7 @@ class TurnEngine:
             guard=guard,
             trace=guard.trace,
             rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
-            markup=markup_of((app.defaults or {}).get("markup"), agent.markup, session),
+            markup=markup,
             threads=threads,
             grants=grants,
             storage=storage,
@@ -477,7 +479,7 @@ class TurnEngine:
             dumped = [h.model_dump() for h in sent]
             index, code = rewrite.check(dumped, None)
             if index is not None and inp.regenerate:
-                index, inp.text = self._regenerated(dumped, index)
+                index, inp.text = self._regenerated(dumped, index, files_kept=False)
             if index is not None:
                 inp.kept_files = _attached_blocks(dumped[index].get("content"))
                 inp.history = sent[:index]
@@ -624,13 +626,15 @@ class TurnEngine:
         return files_.binaries(wanted, data)
 
     @staticmethod
-    def _regenerated(messages: list[Any], index: int) -> tuple[int | None, str | None]:
+    def _regenerated(
+        messages: list[Any], index: int, *, files_kept: bool = True
+    ) -> tuple[int | None, str | None]:
         """The question a regeneration runs again, when its answer may be regenerated.
 
         Returns:
             Its index and text, or ``(None, None)``.
         """
-        if rewrite.regenerable_index(messages) != index:
+        if rewrite.regenerable_index(messages, files_kept=files_kept) != index:
             return None, None
         text = rewrite.question_text(messages[index])
         return (index, text) if text else (None, None)
@@ -662,6 +666,7 @@ class TurnEngine:
         Returns:
             Both answers.
         """
+        external = isinstance(run.threads, ExternalThreads)
         try:
             if isinstance(run.threads, ExternalThreads):
                 msgs: list[Any] = [*run.threads.history, *run.threads.added]
@@ -674,7 +679,7 @@ class TurnEngine:
             return False, False
         return (
             rewrite.rewritable_index(msgs) is not None,
-            rewrite.regenerable_index(msgs) is not None,
+            rewrite.regenerable_index(msgs, files_kept=not external) is not None,
         )
 
     def new_trace(
@@ -1050,6 +1055,13 @@ class TurnEngine:
             tr = self._trace(run, inp)
             with tr.span("guard", "guard input", control="input") as gs:
                 decision = await guard.check_input(text)
+                # A file's name is the person's input too: the same checks, before the model.
+                for p in run.files:
+                    if decision.blocked:
+                        break
+                    named = await guard.check_input(p.name)
+                    if named.blocked:
+                        decision = named
                 gs.set(decision="blocked" if decision.blocked else "allowed")
             if decision.blocked:
                 if decision.refusal:
@@ -1412,7 +1424,12 @@ class TurnEngine:
         from evokai.capabilities.catalog import ENTRIES, HOST_WORKSPACE
 
         builtin = builtin_tools.capabilities(
-            agent.builtin_tools, scope.grants, protection(scope.app), _egress_allow(rs.guard)
+            agent.builtin_tools,
+            scope.grants,
+            protection(scope.app),
+            _egress_allow(rs.guard),
+            gate=rs.guard.provider_tool_refusal,
+            mcp_allow=_egress_allow(rs.guard, strict=True),
         )
         if builtin:
             rs.trace.root.set(builtinTools=[d.kind for d in agent.builtin_tools])
@@ -1886,7 +1903,7 @@ class TurnEngine:
                                 await self._add(
                                     run,
                                     role="assistant",
-                                    content=[{"text": answer}],
+                                    content=[{"text": answer}, *_acted(rs)],
                                     text=answer,
                                     events=rs.events or None,
                                 )
@@ -1999,7 +2016,7 @@ class TurnEngine:
             if rs.attempt is not None and rs.attempt.span is not None:
                 rs.trace.end(rs.attempt.span, status="cancelled", outputTokens=None)
             if rs.extra.get("streaming"):
-                await self._keep_partial(run, rs.text, splitter)
+                await self._keep_partial(run, rs.text, splitter, _acted(rs))
             raise
         except Exception as e:
             if rs.extra.get("model_error") is None and not rs.extra.get("streaming"):
@@ -2012,8 +2029,8 @@ class TurnEngine:
                 "code": "model",
                 "message": message(run.app, "turn.modelUnavailable", session=run.session),
             })
-            if rs.text:
-                await self._keep_partial(run, rs.text, splitter)
+            if rs.text or _acted(rs):
+                await self._keep_partial(run, rs.text, splitter, _acted(rs))
             run.status, run.reason = "failed", "model"
         finally:
             if rs.fallback:
@@ -2284,6 +2301,15 @@ class TurnEngine:
         """
         if isinstance(part, NativeToolCallPart):
             emit({"type": "tool", "name": part.tool_name, "status": "start", "builtin": True})
+            if builtin_tools.kind_of(part.tool_name) in builtin_tools.CHANGING:
+                # Kept with an answer that ends before its response is stored (``_acted``).
+                rs.extra.setdefault("acted", []).append({
+                    "builtinTool": {
+                        "id": part.tool_call_id,
+                        "name": part.tool_name,
+                        "changes": True,
+                    }
+                })
             return
         failed = isinstance(part.content, dict) and part.content.get("error_code")
         status = "error" if failed else "done"
@@ -2996,7 +3022,11 @@ class TurnEngine:
         """
         assert run.threads is not None  # ruff: ignore[assert] (set by open())
         if run.storage == "evokai":
-            content, text = self._guard(run).for_storage(content, text)
+            stored, kept = self._guard(run).for_storage(content, text)
+            if role == "user" and (stored != content or kept != text):
+                # Identifiers were masked: the question cannot be asked again as it was.
+                stored = [*stored, {rewrite.MASKED: True}]
+            content, text = stored, kept
         msg = ThreadMessage(role, content, text, events, interrupted=interrupted)
         return await run.threads.add(msg, run.turn_id)
 
@@ -3012,17 +3042,24 @@ class TurnEngine:
             return ExternalThreads.from_request(inp.history)
         return EvokaiThreads(self.store.messages, who, session_id, thread_id)
 
-    async def _keep_partial(self, run: TurnRun, text: str, splitter: SentenceSplitter) -> None:
+    async def _keep_partial(
+        self,
+        run: TurnRun,
+        text: str,
+        splitter: SentenceSplitter,
+        acted: list[dict[str, Any]] | None = None,
+    ) -> None:
         """Keep an interrupted answer in the conversation, marked as such.
 
-        Tool calls it had started are dropped.
+        Tool calls it had started are dropped; the provider's built-in tools that can change data
+        and were called stay marked (``acted``), so the answer is not regenerated.
         """
         splitter.reset()
-        if text:
+        if text or acted:
             await self._add(
                 run,
                 role="assistant",
-                content=[{"text": text}],
+                content=[*([{"text": text}] if text else []), *(acted or [])],
                 text=text,
                 interrupted=True,
             )
@@ -3152,14 +3189,32 @@ class TurnEngine:
         return ToolResult(False, f"Unknown tool: {name}")
 
 
-def _egress_allow(guard: TurnGuard) -> list[str] | None:
+def _acted(rs: RunState) -> list[dict[str, Any]]:
+    """The marks of the built-in tools that can change data the turn's model called.
+
+    A response stored whole carries them already (``response_blocks``); an answer stopped by the
+    guard, cancelled or cut by a model failure is stored from its text, so it takes them from here.
+
+    Returns:
+        ``builtinTool`` blocks.
+    """
+    return list(rs.extra.get("acted") or [])
+
+
+def _egress_allow(guard: TurnGuard, *, strict: bool = False) -> list[str] | None:
     """The egress allow-list a built-in tool follows (only while ``tools.egress`` is enforced).
+
+    Args:
+        guard: The turn's guard.
+        strict: Any allow-list while ``tools.egress`` is not off, also in monitor (an MCP server
+            the provider calls: its calls cannot be checked one by one).
 
     Returns:
         Domains (an empty list allows none), or None when there is no check.
     """
     tools = guard.policy.settings.tools
-    if tools is None or tools.egress_allow is None or not guard.policy.enforced("tools.egress"):
+    on = guard.policy.on if strict else guard.policy.enforced
+    if tools is None or tools.egress_allow is None or not on("tools.egress"):
         return None
     return list(tools.egress_allow)
 

@@ -239,5 +239,6 @@ Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY
 frame-ancestors 'none'` and `Cache-Control: no-store` (the console has its own strict CSP).
 `Strict-Transport-Security` is added when the request arrived over HTTPS, directly or through a proxy that sets
 `X-Forwarded-Proto: https`. The browser session API (`/v1/session/*`) answers CORS for the origins the applications
-allow (never with credentials); bodies over 2 MB there, or 8 MB elsewhere, get 413. See
+allow (never with credentials); bodies over 2 MB there (a recording to transcribe: `EVOKAI_TRANSCRIBE_MAX_BYTES`;
+speech and tool results: 256 KB), or 8 MB elsewhere, get 413. See
 [security assessment](security-assessment.md).

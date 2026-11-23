@@ -92,6 +92,9 @@ log = logging.getLogger("evokai.runs")
 OUTPUT_TOOL = "final_result"
 NO_CHARTS = "describe the results in words."
 MAX_SCHEMA_RETRIES = 1
+STEP_SEPARATOR = "\n\n"
+"""Between the texts of two steps of a run (text, a tool call, more text): the same in a streamed
+and a whole answer, and in the stored conversation."""
 
 RunChannel = Literal["server", "a2a", "browser", "email"]
 """How a run was reached: a server run, an A2A call, an OpenAI-compatible call with a session
@@ -638,14 +641,14 @@ class AgentRunner:
             history.extend(self._resumed(resume, rs))
             deferred = DeferredToolResults(approvals={c["toolUseId"]: True for c in resume.calls})
 
+        steps = StepText()
+
         async def stream(_ctx: Any, events: Any) -> None:
+            # Called once per step (each model request's events).
             assert gate is not None and on_text is not None  # ruff: ignore[assert] (set together)
+            steps.step()
             async for ev in events:
-                delta = None
-                if isinstance(ev, PartStartEvent) and isinstance(ev.part, TextPart):
-                    delta = ev.part.content
-                elif isinstance(ev, PartDeltaEvent) and isinstance(ev.delta, TextPartDelta):
-                    delta = ev.delta.content_delta
+                delta = steps.text(ev)
                 if not delta:
                     continue
                 for piece in gate.push(delta):
@@ -692,7 +695,7 @@ class AgentRunner:
         elif schema:
             result.output = guard.check_final(dict(answer.output))
         else:
-            result.text = guard.check_final(str(answer.output))
+            result.text = guard.check_final(_answer_text(answer.new_messages(), str(answer.output)))
             result.output = result.text
 
         result.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -1164,6 +1167,72 @@ class AgentRunner:
                 interrupted=False,
             )
         return sess.id
+
+
+class StepText:
+    """The text a run streams, set apart as the whole answer is (``_answer_text``).
+
+    Each step's text follows the one before it after ``STEP_SEPARATOR``; within a step, a text
+    part that starts after another kind of part (a built-in tool's call) is set apart the same
+    way, as ``ModelResponse.text`` joins them.
+    """
+
+    def __init__(self) -> None:
+        """Before the first step."""
+        self.said = False
+        """Some text was streamed already."""
+        self.first = True
+        """No text yet in this step."""
+        self.gap = False
+        """Another kind of part started after this step's text."""
+        self.pending = False
+        """The next text starts a new part after a gap."""
+
+    def step(self) -> None:
+        """A new step (model request) begins."""
+        self.first, self.gap, self.pending = True, False, False
+
+    def text(self, ev: Any) -> str | None:
+        """The text an event adds, with its separator.
+
+        Returns:
+            The text, or None for an event without any.
+        """
+        if isinstance(ev, PartStartEvent):
+            if not isinstance(ev.part, TextPart):
+                self.gap = self.gap or not self.first
+                return None
+            self.pending, self.gap = self.pending or self.gap, False
+            delta = ev.part.content
+        elif isinstance(ev, PartDeltaEvent) and isinstance(ev.delta, TextPartDelta):
+            delta = ev.delta.content_delta
+        else:
+            return None
+        if not delta:
+            return None
+        if (self.first and self.said) or self.pending:
+            delta = STEP_SEPARATOR + delta
+        self.first, self.pending, self.said = False, False, True
+        return delta
+
+
+def _answer_text(messages: list[ModelMessage], output: str) -> str:
+    """A run's whole answer: what each step said before its tool calls, then its output.
+
+    A stream sends the text of each step as it is written (``STEP_SEPARATOR`` between steps), so
+    a whole answer says the same, not only the last step's text. A response without tool calls
+    that the run did not end on (a draft a capability refined) is not part of it.
+
+    Returns:
+        The text.
+    """
+    steps = [
+        m.text or ""
+        for m in messages
+        if isinstance(m, ModelResponse)
+        and any(isinstance(p, ToolCallPart) and p.tool_name != OUTPUT_TOOL for p in m.parts)
+    ]
+    return STEP_SEPARATOR.join([t for t in (*steps, output) if t])
 
 
 def _ready(messages: list[ModelMessage], ok: dict[str, bool]) -> list[dict[str, Any]]:

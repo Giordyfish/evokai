@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from tests.conftest import Env
+import pytest
+
+from tests.conftest import Env, Tool
 from tests.test_openai_compat import BOT, URL, _chunks, _put, _srv
 
 SECRET = "AKIA" + "ABCDEFGHIJKLMNOP"
@@ -85,7 +87,69 @@ async def test_a_structured_answer_still_comes_in_one_chunk(env: Env) -> None:
     schema = {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"]}
     await _put(env, {**BOT, "output_schema": schema})
     await _policy(env, {"output.secrets": "enforce"})
-    from tests.conftest import Tool
-
     env.script.add("function:primary", [Tool("final_result", {"n": 3})])
     assert _contents(await _stream(env)) == ['{"n": 3}']
+
+
+@pytest.mark.parametrize(
+    "modes",
+    [
+        {"output.secrets": "monitor", "output.system_prompt": "off"},  # token by token
+        {"output.secrets": "enforce"},  # sentence by sentence
+    ],
+)
+async def test_streamed_and_whole_answers_say_the_same_across_tool_steps(
+    env: Env, modes: dict[str, str]
+) -> None:
+    await _put(env, BOT)
+    await _policy(env, modes)
+    steps = (
+        ["Let me check.", Tool("orders_month", {"period": "2026-10"})],
+        ["October has 24 orders."],
+    )
+    env.script.add("function:primary", *steps)
+    streamed = "".join(_contents(await _stream(env)))
+    env.script.add("function:primary", *steps)
+    r = await env.client.post(
+        URL,
+        json={"model": "bot", "messages": [{"role": "user", "content": "Hi"}]},
+        headers=_srv(env),
+    )
+    assert r.status_code == 200, r.text
+    whole = r.json()["choices"][0]["message"]["content"]
+    assert streamed == whole == "Let me check.\n\nOctober has 24 orders."
+
+
+def test_a_builtin_tool_inside_a_step_sets_its_texts_apart_as_the_whole_answer() -> None:
+    # A provider writes text, runs a built-in tool and writes on in a new text part of the same
+    # response (the scripted model cannot: its text always goes to one part). The stream sets
+    # them apart exactly as ModelResponse.text does for the whole answer.
+    from pydantic_ai.messages import (
+        ModelResponse,
+        NativeToolCallPart,
+        NativeToolReturnPart,
+        PartDeltaEvent,
+        PartStartEvent,
+        TextPart,
+        TextPartDelta,
+    )
+
+    from evokai.sessions.runs import StepText
+
+    call = NativeToolCallPart(tool_name="web_search", args={}, tool_call_id="w1")
+    ret = NativeToolReturnPart(tool_name="web_search", content=[], tool_call_id="w1")
+    steps = StepText()
+    events = (
+        PartStartEvent(index=0, part=TextPart("Looking")),
+        PartDeltaEvent(index=0, delta=TextPartDelta(".")),
+        PartStartEvent(index=1, part=call),
+        PartStartEvent(index=2, part=ret),
+        PartStartEvent(index=3, part=TextPart("")),
+        PartDeltaEvent(index=3, delta=TextPartDelta("Found it.")),
+    )
+    steps.step()
+    out = [steps.text(ev) for ev in events]
+    whole = ModelResponse(parts=[TextPart("Looking."), call, ret, TextPart("Found it.")]).text
+    assert "".join(x for x in out if x) == whole == "Looking.\n\nFound it."
+    steps.step()  # the next step, after a tool call
+    assert steps.text(PartStartEvent(index=0, part=TextPart("Done."))) == "\n\nDone."

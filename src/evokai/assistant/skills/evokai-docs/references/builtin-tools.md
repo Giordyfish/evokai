@@ -23,7 +23,7 @@ builtin_tools:
 | `code_execution` | runs code in its own sandbox | no |
 | `image_generation` | draws an image | no |
 | `file_search` | searches the files of its vector stores (`file_store_ids`) | **yes** |
-| `mcp_server` | calls an MCP server (`id`, `url`) | no |
+| `mcp_server` | calls an MCP server (`id`, `url`, `allowed_tools`, required) | no |
 | `memory` | keeps notes across requests | **yes** |
 
 Each tool is the grant `builtin:<kind>`, off by default: the console's Permissions page ("Provider built-in tools") or
@@ -39,11 +39,25 @@ data at the provider, so they are refused unless the application's [data protect
 `retention: zero_retention` cannot set it). The console's Protection page lists every agent's built-in tools and
 whether each may run.
 
+## Security policy
+
+The provider runs these tools, so no call can wait for a confirmation. The tool policy and the ask rules apply under
+the names `builtin:<kind>` and `<kind>`: a tool denied, outside `tools.allow`, confirmed (`tools.confirm`) or matched by
+an [ask rule](security.md#ask-rules) is not offered, never run unconfirmed.
+
+An `mcp_server` must list the tools the provider may call, in `allowed_tools` (`[crm_find_customer]`); one without
+it cannot be saved, and one stored before is left out. **Every listed tool runs without a confirmation**, in every
+channel: list only tools the model may call on its own. A listed tool the policy denies or confirms, or an ask rule
+matches, is taken off the list. Tools that must wait for the person belong in Evokai's own `mcp_servers`.
+
 ## Guard, events and traces
 
 - **Egress:** while `tools.egress` is enforced with an allow-list, `web_search` and `web_fetch` are limited to it: an
   agent's own `allowed_domains` can narrow it, never widen it (a tool left with no domain is not offered, and an empty
-  allow-list allows none), and an `mcp_server` outside it is left out.
+  allow-list allows none). An `mcp_server` outside an allow-list is left out, in monitor too. Without an allow-list
+  they reach any address, like every other tool: the Protection page says so.
+- **Regenerating:** an answer that called `mcp_server`, `memory` or `code_execution` (they can change data) is not
+  regenerable.
 - **Output:** what the tools return reaches the person only through the model's answer, which the output guard
   filters as always.
 - **Events:** each call is a `tool` event (`start`, then `done` or `error`, with `builtin: true`), and each web page a

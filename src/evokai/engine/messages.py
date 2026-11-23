@@ -15,6 +15,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
     TextContent,
     TextPart,
     ToolCallPart,
@@ -22,6 +23,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from evokai.engine.builtin_tools import CHANGING, kind_of
 from evokai.sessions.history import Stored
 
 SUMMARY_HEADER = (
@@ -99,7 +101,11 @@ def response_blocks(
     args: dict[str, dict[str, Any]] | None = None,
     renamed: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """An answer as blocks: its text, then its tool calls.
+    """An answer as blocks: its text, its tool calls, then its calls of built-in tools that act.
+
+    A call of a provider built-in tool that can change data is kept as a mark
+    (``{"builtinTool": {"id", "name", "changes": true}}``): the model never sees it again, and the
+    answer cannot be regenerated.
 
     Args:
         response: The model's answer.
@@ -123,6 +129,11 @@ def response_blocks(
         }
         for p in response.parts
         if isinstance(p, ToolCallPart)
+    ]
+    blocks += [
+        {"builtinTool": {"id": p.tool_call_id, "name": p.tool_name, "changes": True}}
+        for p in response.parts
+        if isinstance(p, NativeToolCallPart) and kind_of(p.tool_name) in CHANGING
     ]
     return blocks
 

@@ -34,6 +34,9 @@ from evokai.guard.text import normalize, strip_invisible
 from evokai.knowledge.tool import TOOL_NAME as KNOWLEDGE_TOOL
 from evokai.knowledge.tool import mark_sources
 
+CLIENT_TOOL_PREFIX = "client_"
+"""The model-facing prefix of custom client tools (``evokai.tools.custom.PREFIX``)."""
+
 log = logging.getLogger("evokai.security")
 
 SEVERITY = {
@@ -146,6 +149,10 @@ class TurnGuard:
     checked: list[str] = field(default_factory=list)
     """Every input this guard checked, as it was given and as it went on (an input guardrail
     capability does not check them twice)."""
+    neutralise: Callable[[str], str] | None = None
+    """The application's inline markup made inert (``Markup.neutralise``): applied to what the
+    person controls besides their typed text (attachment names and text, client tool results)
+    on its way to the model, so nobody can write cues for the agent through them."""
 
     # events
 
@@ -592,6 +599,7 @@ class TurnGuard:
         from evokai.sessions.history import Stored
 
         protect = self._model_pii()
+        inert = self.neutralise or (lambda t: t)
         found: dict[str, int] = {}
         out = []
         for msg in messages:
@@ -603,9 +611,10 @@ class TurnGuard:
                         # Every passage is spotlighted under its own document.
                         tr["text"] = mark_sources(protect(tr.get("text") or "", found), self.mark)
                     else:
-                        tr["text"] = self.mark(
-                            protect(tr.get("text") or "", found), f"tool:{tr.get('name', '')}"
-                        )
+                        text = tr.get("text") or ""
+                        if str(tr.get("name") or "").startswith(CLIENT_TOOL_PREFIX):
+                            text = inert(text)  # a client's result: the browser wrote it
+                        tr["text"] = self.mark(protect(text, found), f"tool:{tr.get('name', '')}")
                     blocks.append({"toolResult": tr})
                 elif "toolUse" in b:
                     tu = dict(b["toolUse"])
@@ -613,10 +622,17 @@ class TurnGuard:
                         tu.get("input") or {}, lambda t: protect(t, found)
                     )
                     blocks.append({"toolUse": tu})
-                elif "file" in b and b.get("text"):
-                    # A document the person attached: read from a file, so it is data.
-                    source = f"attachment:{(b.get('file') or {}).get('name', '')}"
-                    blocks.append({**b, "text": self.mark(protect(b["text"], found), source)})
+                elif "file" in b:
+                    # An attachment: its name is the person's input like their text (checked when
+                    # it was sent, identifiers protected, markup inert), and a document's text is
+                    # data read from a file.
+                    meta = dict(b.get("file") or {})
+                    meta["name"] = protect(inert(str(meta.get("name") or "file")), found)
+                    block = {**b, "file": meta}
+                    if b.get("text"):
+                        source = f"attachment:{meta['name']}"
+                        block["text"] = self.mark(protect(inert(b["text"]), found), source)
+                    blocks.append(block)
                 elif b.get("text") and b.get("summary"):
                     # The summary of older messages (compaction): written by a model from the
                     # conversation and its tool results, so it is data, never the person's words.
@@ -925,6 +941,29 @@ class TurnGuard:
             and self.policy.enforced("tools.policy")
             and tp.needs_confirmation(name, tools)
         )
+
+    def provider_tool_refusal(self, names: tuple[str, ...]) -> str | None:
+        """Why the policy refuses a tool the model's provider runs (a built-in tool), if it does.
+
+        The provider runs it, so no call can wait for the person's confirmation: a tool the policy
+        confirms, or an ask rule may ask for, is refused like a denied one. A tool known by several
+        names (``builtin:web_search`` and ``web_search``) is refused when any of them is denied,
+        confirmed or asked for, and offered under an allow-list when one of them is on it.
+
+        Returns:
+            ``denied``, ``not_allowed``, ``confirm`` or ``ask_rule``; None when it may run.
+        """
+        tools = self.policy.settings.tools
+        if tools is not None and self.policy.enforced("tools.policy"):
+            if any(tp.matches(n, tools.deny) for n in names):
+                return "denied"
+            if tools.allow is not None and not any(tp.matches(n, tools.allow) for n in names):
+                return "not_allowed"
+            if any(tp.needs_confirmation(n, tools) for n in names):
+                return "confirm"
+        if any(self.ask.askable(n) for n in names):
+            return "ask_rule"
+        return None
 
     def asks(self, name: str, args: dict[str, Any]) -> AskMatch | None:
         """The ask rule that makes this call wait for the person's confirmation, if any.
