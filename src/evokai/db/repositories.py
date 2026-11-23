@@ -658,9 +658,9 @@ class SessionRepository(_Repo):
         The time to live counts from the last message, and for a system application from the
         conversation's start.
 
-        Messages, summaries, events, turns, pending actions, threads and the conversation go; usage
-        records stay (budgets keep counting) without their link to the conversation or turn; bug
-        reports lose the link too.
+        Messages, attachments, summaries, events, turns, pending actions, threads and the
+        conversation go; usage records stay (budgets keep counting) without their link to the
+        conversation or turn; bug reports lose the link too.
 
         Returns:
             How many conversations were deleted.
@@ -992,6 +992,7 @@ class SessionRepository(_Repo):
                 m.Event,
                 m.PendingAction,
                 m.Message,
+                m.Attachment,
                 m.ConversationSummary,
                 m.CapabilityRecord,
                 m.Turn,
@@ -1023,6 +1024,89 @@ class SessionRepository(_Repo):
         async with self.db.session() as s:
             q = sa.update(m.Session).where(m.Session.id == session_id)
             await s.execute(q.values(last_seq=seq, updated_at=utcnow()))
+
+
+class AttachmentRepository(_Repo):
+    """Files attached to chat messages (``evokai.attachments``), by owner and conversation."""
+
+    async def add(self, w: Who, session_id: str, message_id: str | None, items: list[Any]) -> None:
+        """Keep prepared attachments (``evokai.attachments.Prepared``) with their message."""
+        if not items:
+            return
+        async with self.db.session() as s:
+            for p in items:
+                s.add(
+                    m.Attachment(
+                        id=p.id,
+                        application_id=w.application_id,
+                        subject=w.subject,
+                        session_id=session_id,
+                        message_id=message_id,
+                        name=p.name,
+                        media_type=p.media_type,
+                        size=p.size,
+                        sha256=p.sha256,
+                        data=p.data,
+                    )
+                )
+
+    def _owned(self, w: Who, session_id: str) -> list[Any]:
+        a = m.Attachment
+        return [
+            a.application_id == w.application_id,
+            a.subject == w.subject,
+            a.session_id == session_id,
+        ]
+
+    async def get(self, w: Who, session_id: str, attachment_id: str) -> m.Attachment | None:
+        """One attachment of this owner's conversation.
+
+        Returns:
+            The row, or None (another conversation's id included).
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.Attachment).where(
+                m.Attachment.id == attachment_id, *self._owned(w, session_id)
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def data_of(self, w: Who, session_id: str, ids: list[str]) -> dict[str, bytes]:
+        """The bytes of some attachments of this owner's conversation.
+
+        Returns:
+            id to bytes (unknown ids are left out).
+        """
+        if not ids:
+            return {}
+        async with self.db.session() as s:
+            q = sa.select(m.Attachment.id, m.Attachment.data).where(
+                m.Attachment.id.in_(ids), *self._owned(w, session_id)
+            )
+            return {i: bytes(d) for i, d in (await s.execute(q)).all()}
+
+    async def total(self, w: Who, session_id: str) -> int:
+        """Bytes kept for a conversation.
+
+        Returns:
+            The sum of the sizes.
+        """
+        async with self.db.session() as s:
+            q = sa.select(sa.func.coalesce(sa.func.sum(m.Attachment.size), 0)).where(
+                *self._owned(w, session_id)
+            )
+            return int((await s.execute(q)).scalar_one())
+
+    async def delete(self, w: Who, session_id: str, ids: list[str]) -> int:
+        """Delete attachments of a conversation (a rewritten question's).
+
+        Returns:
+            How many were deleted.
+        """
+        if not ids:
+            return 0
+        async with self.db.session() as s:
+            q = sa.delete(m.Attachment).where(m.Attachment.id.in_(ids), *self._owned(w, session_id))
+            return _rowcount(await s.execute(q))
 
 
 class MessageRepository(_Repo):
@@ -2735,6 +2819,7 @@ class Store:
         self.credentials = CredentialRepository(db)
         self.sessions = SessionRepository(db)
         self.messages = MessageRepository(db)
+        self.attachments = AttachmentRepository(db)
         self.summaries = SummaryRepository(db)
         self.turns = TurnRepository(db)
         self.events = EventRepository(db)
@@ -2840,6 +2925,7 @@ async def _forget_sessions(s: Any, ids: list[str]) -> None:
     for model in (
         m.Event,
         m.Message,
+        m.Attachment,
         m.ConversationSummary,
         m.CapabilityRecord,
         m.PendingAction,

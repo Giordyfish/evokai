@@ -77,11 +77,29 @@ async def test_cors_answers_allowed_origins_only_and_never_with_credentials(env:
     assert r.status_code == 403 and "access-control-allow-origin" not in r.headers
 
 
+async def test_a_chat_message_may_carry_attachments_but_not_more(env: Env) -> None:
+    tok = await env.token()
+    big = "x" * 3_000_000
+    r = await env.client.post(
+        "/agent/v1/session/chat",
+        content=f'{{"text": "{big}"}}',
+        headers={**_sess(tok), "Content-Type": "application/json"},
+    )
+    assert r.status_code == 400  # read by the route (the text is too long), not refused at the door
+    over = "x" * (50_000_000 * 4 // 3 + 2_100_000)
+    r = await env.client.post(
+        "/agent/v1/session/chat",
+        content=f'{{"text": "{over}"}}',
+        headers={**_sess(tok), "Content-Type": "application/json"},
+    )
+    assert r.status_code == 413 and r.json()["error"] == "too_large"
+
+
 async def test_oversized_bodies_are_refused(env: Env) -> None:
     tok = await env.token()
     big = "x" * 2_100_000
     r = await env.client.post(
-        "/agent/v1/session/chat",
+        "/agent/v1/session/bug-reports",
         content=f'{{"text": "{big}"}}',
         headers={**_sess(tok), "Content-Type": "application/json"},
     )
@@ -95,7 +113,7 @@ async def test_oversized_bodies_are_refused(env: Env) -> None:
         yield b'"}'
 
     r = await env.client.post(
-        "/agent/v1/session/chat",
+        "/agent/v1/session/bug-reports",
         content=chunks(),
         headers={**_sess(tok), "Content-Type": "application/json"},
     )

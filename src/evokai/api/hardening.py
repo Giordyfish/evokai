@@ -12,7 +12,8 @@ One pure ASGI middleware (it never buffers a streamed answer):
   ``Authorization``); each application's own origin list is still checked on every request
   (``api.deps.session``);
 - **body size**: requests larger than the limit get 413 before the route reads them (the session
-  API takes less than the server API, whose runs carry attachments).
+  API takes less than the server API, whose runs carry attachments, except a chat message, which
+  may carry the files a person attaches: ``EVOKAI_ATTACHMENTS_REQUEST_MB``).
 """
 
 from __future__ import annotations
@@ -32,6 +33,8 @@ SESSION_BODY_LIMIT = 2_000_000
 are kept of it)."""
 BODY_LIMIT = 8_000_000
 """Bytes: a server run with its attachments, an agent definition, a skill."""
+CHAT_EXTRA = 2_000_000
+"""Bytes a chat message may carry beside its attachments (text, page context, external history)."""
 UPLOAD_LIMIT = 200_000_000
 """Bytes: a knowledge document upload (the service applies ``EVOKAI_KNOWLEDGE_MAX_FILE_MB``)."""
 CORS_HEADERS = "authorization, content-type, accept, last-event-id, x-correlation-id"
@@ -44,15 +47,21 @@ OriginsFn = Callable[[], Awaitable[set[str]]]
 class Hardening:
     """Security headers, CORS for the session API and body limits."""
 
-    def __init__(self, app: ASGIApp, *, base_path: str, origins: OriginsFn) -> None:
+    def __init__(
+        self, app: ASGIApp, *, base_path: str, origins: OriginsFn, attachments_mb: int = 0
+    ) -> None:
         """Wrap the application.
 
         Args:
             app: The wrapped ASGI app.
             base_path: Where the API is mounted (``/agent``).
             origins: The browser origins every application allows (cached by the caller).
+            attachments_mb: The files one chat message may carry
+                (``EVOKAI_ATTACHMENTS_REQUEST_MB``): the body limit of ``POST /v1/session/chat``
+                grows by them, base64 included.
         """
         self.app = app
+        self.chat_limit = max(SESSION_BODY_LIMIT, attachments_mb * 1_000_000 * 4 // 3 + CHAT_EXTRA)
         self.base = base_path.rstrip("/")
         self.origins = origins
 
@@ -76,6 +85,8 @@ class Hardening:
             return
 
         limit = SESSION_BODY_LIMIT if session_api else BODY_LIMIT
+        if path == f"{self.base}/v1/session/chat":
+            limit = self.chat_limit
         if path.startswith(f"{self.base}/v1/admin/knowledge/") and path.endswith("/documents"):
             limit = UPLOAD_LIMIT
         length = headers.get("content-length")

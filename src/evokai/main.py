@@ -205,7 +205,12 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         openapi_url=f"{base}/openapi.json",
     )
     app.state.services = svc
-    app.add_middleware(Hardening, base_path=base, origins=origin_cache(svc.store))
+    app.add_middleware(
+        Hardening,
+        base_path=base,
+        origins=origin_cache(svc.store),
+        attachments_mb=settings.attachments_request_mb,
+    )
     app.add_middleware(CorrelationMiddleware)
 
     openai_prefix = f"{settings.base_path.rstrip('/')}/v1/openai/"

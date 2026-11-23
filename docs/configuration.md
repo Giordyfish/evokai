@@ -64,6 +64,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PROMPT_GUARD_TIMEOUT_MS` | `3000` | After this no further 512-token window of a text starts; the windows scored count |
 | `EVOKAI_EMBEDDING_ALLOW` | `["bedrock:amazon.titan-embed-text-v2:0","test:*"]` | Embedding models knowledge bases may use (the data residency applies on top) ([knowledge](knowledge.md)) |
 | `EVOKAI_EMBEDDING_MODEL` | `bedrock:amazon.titan-embed-text-v2:0` | The embedding model of a new knowledge base |
+| `EVOKAI_ATTACHMENTS_REQUEST_MB` | `50` | Largest total of the files attached to one chat message; the body limit of `POST /v1/session/chat` follows it ([attachments](attachments.md)) |
 | `EVOKAI_KNOWLEDGE_MAX_FILE_MB` | `20` | Largest knowledge document (upload, address or connector file) |
 | `EVOKAI_KNOWLEDGE_FETCH_ALLOW` | `[]` | Domains documents may be fetched from by address (with their subdomains); empty: off |
 | `EVOKAI_KNOWLEDGE_LINK_TTL` | `600` | Seconds a citation's signed link to a file stays valid |
