@@ -166,3 +166,60 @@ async def test_web_search_results_are_tool_and_citation_events(env: Env) -> None
     assert cite["index"] == 1
     text = "".join(e["delta"] for e in ev if e["type"] == "text")
     assert text == "Looking. Found it [1]."
+
+
+@pytest.mark.parametrize(
+    ("allow", "config", "expected"),
+    [
+        (["docs.example"], {"allowed_domains": ["evil.example"]}, None),
+        (
+            ["docs.example"],
+            {"allowed_domains": ["evil.example", "api.docs.example"]},
+            ["api.docs.example"],
+        ),
+        ([], {}, None),
+    ],
+)
+async def test_configured_domains_never_escape_the_egress_allow_list(
+    env: Env, allow: list[str], config: dict[str, Any], expected: list[str] | None
+) -> None:
+    await _grant(env, "web_fetch")
+    r = await env.client.put(
+        "/agent/v1/admin/security",
+        json={"modes": {"tools.egress": "enforce"}, "tools": {"egress_allow": allow}},
+        headers=_adm(env),
+    )
+    assert r.status_code == 200, r.text
+    assert (await _put(env, [{"kind": "web_fetch", "config": config}])).status_code == 200
+    seen = _spy(env)
+    env.script.add("function:primary", ["Hi."])
+    tok = await env.token()
+    await env.chat(tok["token"], text="Hi")
+    if expected is None:
+        assert seen == [[]]
+    else:
+        ((tool,),) = seen
+        assert tool.allowed_domains == expected
+
+
+async def test_web_sources_follow_the_link_policy(env: Env) -> None:
+    await _grant(env, "web_search")
+    r = await env.client.put(
+        "/agent/v1/admin/security",
+        json={"modes": {"output.links": "enforce"}, "links": {"allow": ["docs.example"]}},
+        headers=_adm(env),
+    )
+    assert r.status_code == 200, r.text
+    assert (await _put(env, [{"kind": "web_search"}])).status_code == 200
+    ret = NativeToolReturnPart(
+        tool_name="web_search",
+        content=[
+            {"url": "https://evil.example/x", "title": "Elsewhere"},
+            {"url": "https://docs.example/a", "title": "Page A"},
+        ],
+        tool_call_id="w1",
+    )
+    env.script.add("function:primary", [{1: ret}, "Found."])
+    tok = await env.token()
+    ev = await env.chat(tok["token"], text="Search")
+    assert [e["url"] for e in ev if e["type"] == "citation"] == ["https://docs.example/a"]

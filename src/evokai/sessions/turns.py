@@ -2103,7 +2103,8 @@ class TurnEngine:
         failed = isinstance(part.content, dict) and part.content.get("error_code")
         status = "error" if failed else "done"
         emit({"type": "tool", "name": part.tool_name, "status": status, "builtin": True})
-        found = builtin_tools.sources(part.content)
+        # A source shown as a link follows the link policy, like a link in the answer.
+        found = [x for x in builtin_tools.sources(part.content) if rs.guard.link_allowed(x["url"])]
         for src in found:
             n = run.citations.get(src["url"])
             if n is None:
@@ -2970,12 +2971,12 @@ def _egress_allow(guard: TurnGuard) -> list[str] | None:
     """The egress allow-list a built-in tool follows (only while ``tools.egress`` is enforced).
 
     Returns:
-        Domains, or None.
+        Domains (an empty list allows none), or None when there is no check.
     """
     tools = guard.policy.settings.tools
-    if tools is None or not guard.policy.enforced("tools.egress"):
+    if tools is None or tools.egress_allow is None or not guard.policy.enforced("tools.egress"):
         return None
-    return list(tools.egress_allow) if tools.egress_allow else None
+    return list(tools.egress_allow)
 
 
 def _new_messages(history: list[Any]) -> list[dict[str, Any]]:

@@ -19,13 +19,14 @@ definition's settings are checked when the agent is saved.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urlparse
 
 from pydantic_ai.capabilities import NativeTool
+
+from evokai.guard.content import host_allowed
 
 log = logging.getLogger("evokai.builtin_tools")
 
@@ -67,14 +68,22 @@ def build(kind: str, config: dict[str, Any], egress_allow: list[str] | None = No
     cfg = dict(config or {})
     if secrets := SECRET_FIELDS & set(cfg):
         raise ValueError(f"{kind}: {', '.join(sorted(secrets))} would put a secret in the agent")
-    if egress_allow and kind in ("web_search", "web_fetch") and "allowed_domains" not in cfg:
-        cfg["allowed_domains"] = list(egress_allow)
-    if egress_allow and kind == "mcp_server":
+    if egress_allow is not None and kind in ("web_search", "web_fetch"):
+        # Within the egress allow-list: the agent may narrow it, never widen it.
+        asked = cfg.get("allowed_domains")
+        domains = (
+            [d for d in asked if host_allowed(str(d), egress_allow)]
+            if isinstance(asked, list)
+            else list(egress_allow)
+        )
+        if not domains:
+            raise ValueError(f"{kind}: no domain is inside the egress allow-list")
+        cfg["allowed_domains"] = domains
+    if egress_allow is not None and kind == "mcp_server":
         host = urlparse(str(cfg.get("url") or "")).hostname or ""
-        if not any(fnmatch.fnmatchcase(host, p) for p in egress_allow):
-            raise ValueError(
-                f"mcp_server: {host or 'the address'} is outside the egress allow-list"
-            )
+        if not host_allowed(host, egress_allow):
+            where = host or "the address"
+            raise ValueError(f"mcp_server: {where} is outside the egress allow-list")
     try:
         return NativeTool.from_spec(kind=kind, **cfg)
     except Exception as e:

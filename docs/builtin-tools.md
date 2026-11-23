@@ -41,12 +41,13 @@ whether each may run.
 
 ## Guard, events and traces
 
-- **Egress:** while `tools.egress` is enforced, its allow-list becomes the allowed domains of `web_search` and
-  `web_fetch` (unless the agent sets `allowed_domains` itself), and an `mcp_server` outside it is left out.
+- **Egress:** while `tools.egress` is enforced with an allow-list, `web_search` and `web_fetch` are limited to it: an
+  agent's own `allowed_domains` can narrow it, never widen it (a tool left with no domain is not offered, and an empty
+  allow-list allows none), and an `mcp_server` outside it is left out.
 - **Output:** what the tools return reaches the person only through the model's answer, which the output guard
   filters as always.
 - **Events:** each call is a `tool` event (`start`, then `done` or `error`, with `builtin: true`), and each web page a
-  result names is a `citation` event (`index`, `title`, `url`, `source`), numbered with the turn's other citations.
+  result names, when the link policy (`output.links`) lets its address reach the browser, is a `citation` event (`index`, `title`, `url`, `source`), numbered with the turn's other citations.
 - **Traces:** a `builtin_tool <kind>` event per result, with its outcome and how many sources it named; the turn's root
   lists the agent's built-in tools.
 
