@@ -47,8 +47,15 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from evokai.audio.voice.agent import EvokaiAgentProcessor
-from evokai.audio.voice.providers import make_stt, make_tts
-from evokai.core.errors import Forbidden, NotFound
+from evokai.audio.voice.providers import (
+    close_service,
+    make_stt,
+    make_tts,
+    stt_caps,
+    tts_caps,
+)
+from evokai.core.errors import AppError, Forbidden, NotFound
+from evokai.i18n import locale_of
 from evokai.identity.models import SessionPrincipal
 from evokai.sessions.threads import HistoryMessage
 
@@ -67,6 +74,7 @@ def agent_chain(
     external: bool,
     history: list[HistoryMessage] | None = None,
     app: Any = None,
+    speech_tags: bool = False,
 ) -> list[FrameProcessor]:
     """STT → agent → TTS: the part of a voice pipeline that does not depend on the transport.
 
@@ -78,6 +86,7 @@ def agent_chain(
         external: The application keeps the conversation.
         history: External storage: the conversation so far.
         app: The application (locale and messages).
+        speech_tags: The TTS performs speech tags: segments go to it in their ``tagged`` form.
 
     Returns:
         The processors, in order.
@@ -93,6 +102,7 @@ def agent_chain(
         external=external,
         is_speech_error=from_tts,
         app=app,
+        speech_tags=speech_tags,
     )
     return [stt, agent, tts]
 
@@ -219,14 +229,21 @@ class VoiceServer:
         transport = SmallWebRTCTransport(
             connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
         )
+        c = principal.claims
+        stt_name = c.speech_stt or settings.voice_stt
+        tts_name = c.speech_tts or settings.voice_tts
+        language = locale_of(app, sess)
+        stt = make_stt(stt_caps(stt_name).realtime or stt_name, language=language)
+        tts = make_tts(tts_name, voice=await self._voice(principal, sess), language=language)
         chain = agent_chain(
             self.svc,
             principal,
-            stt=make_stt(settings.voice_stt),
-            tts=make_tts(settings.voice_tts),
+            stt=stt,
+            tts=tts,
             external=external,
             history=history,
             app=app,
+            speech_tags=tts_caps(tts_name).speech_tags,
         )
         worker = PipelineWorker(
             Pipeline([
@@ -251,6 +268,25 @@ class VoiceServer:
             await runner.run()
         finally:
             self._owners.pop(connection.pc_id, None)
+            await close_service(tts)
+            await close_service(stt)
+
+    async def _voice(self, principal: SessionPrincipal, sess: Any) -> str | None:
+        """The session's voice: the token's, else its agent's ``voice.voice_id``, else the engine's.
+
+        Returns:
+            The voice, or None for the engine's default.
+        """
+        c = principal.claims
+        if c.voice:
+            return c.voice
+        try:
+            agent = await self.svc.agents.active(
+                c.application_id, sess.agent_name if sess else c.agent
+            )
+        except AppError:
+            return None
+        return agent.voice.voice_id or None
 
     async def close(self) -> None:
         """Close every connection."""

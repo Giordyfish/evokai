@@ -383,6 +383,14 @@ export interface SessionInfo {
   suggestions?: string[]
   /** The inline markup the agent may write (null without): `stripMarkup` hides it. */
   markup?: MarkupView | null
+  /** The server speech engines the token chose, null for the deployment's defaults. */
+  speech?: SpeechChoice | null
+}
+
+/** The server speech engines of a session (`speech` at token mint). */
+export interface SpeechChoice {
+  tts: string | null
+  stt: string | null
 }
 
 export interface StoredMessage {

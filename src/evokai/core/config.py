@@ -148,6 +148,23 @@ class Settings(BaseSettings):
     """Speech-to-text provider: a registered name or ``module:factory``."""
     voice_tts: str = "fake"
     """Text-to-speech provider: a registered name or ``module:factory``."""
+    voice_tts_engines: list[str] = Field(default_factory=list)
+    """More speech engines a session token may choose (``speech.tts``) besides ``voice_tts``."""
+    voice_stt_engines: list[str] = Field(default_factory=list)
+    """More recognition engines a session token may choose (``speech.stt``), besides
+    ``voice_stt``."""
+    speech_max_chars: int = 2_000
+    """The longest text ``POST /v1/session/speech`` speaks."""
+    transcribe_max_bytes: int = 10_000_000
+    """The largest audio file ``POST /v1/session/transcribe`` takes."""
+    transcribe_max_seconds: int = 120
+    """The longest audio file ``POST /v1/session/transcribe`` takes."""
+    transcribe_stream_max_seconds: int = 300
+    transcribe_stream_idle_seconds: float = 30
+    """A streaming recognition socket that receives nothing for this long is closed."""
+    speech_timeout_seconds: float = 60
+    """The longest one synthesis may take before it ends with an error."""
+    """The longest streaming recognition (``WS /v1/session/transcribe/stream``)."""
     voice_smart_turn: bool = True
     """End of turn decided by Smart Turn v3 on top of Silero VAD (else VAD silence only)."""
     voice_ice_servers: list[str] = Field(default_factory=list)

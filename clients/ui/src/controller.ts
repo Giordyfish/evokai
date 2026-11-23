@@ -528,7 +528,8 @@ export class Controller {
     // Before any await: still inside the gesture, or the assistant hears but is never heard (Safari, iOS, and Chrome
     // when the page had no click yet).
     unlockAudio()
-    if (this.session.voiceEngine === 'browser' && !(await this.ensureRecognition())) return
+    // On-device recognition is needed unless the token chose a server recognition engine.
+    if (this.session.voiceEngine === 'browser' && !this.session.speech?.stt && !(await this.ensureRecognition())) return
     this.dictation?.stop()
     const v = createVoiceEngine(this.session, { locale: this.opts.locale ?? 'en', ...this.opts.voice, talkOver: this.st.talkOver } as CreateVoiceOptions)
     this.voice_ = v

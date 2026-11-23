@@ -90,6 +90,7 @@ nav:
       - Templates: templates.md
       - Prompt modules: prompt-modules.md
       - Inline markup: markup.md
+      - Server speech: voice.md
       - Client tools: client-tools.md
       - Provider built-in tools: builtin-tools.md
       - Knowledge bases: knowledge.md

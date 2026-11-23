@@ -286,6 +286,8 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | POST | `/v1/session/messages/{id}/feedback` | session | thumbs |
 | POST | `/v1/session/exit`, `/v1/session/bug-reports` | session | kiosk exit, bug report |
 | POST/PATCH | `/v1/session/voice/offer` | session | server voice: WebRTC offer / ICE candidates (only when enabled) |
+| POST | `/v1/session/speech`, `/v1/session/transcribe` | session | [server speech](voice.md): a text or a `say` segment as audio and timings (SSE); a recording transcribed (only when enabled) |
+| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled) |
 | POST | `/v1/session/agui` | session | a turn as an [AG-UI](ag-ui.md) run: `RunAgentInput` in, AG-UI events out (SSE); confirmations and questions are interrupts |
 | POST | `/v1/openai/chat/completions` | server key or session | [OpenAI-compatible](openai-compatible.md) Chat Completions: model = agent, server-run semantics, streaming |
 | GET | `/v1/openai/models` | server key or session | the agents the caller can use, as OpenAI models |
@@ -394,7 +396,9 @@ A session declares its **voice engine** (token claim, else the application defau
   as an RTVI server message `{"evokai": event}`. Pipecat handles interruptions; the agent cancels
   its turn on barge-in (`barge_in`). A failing TTS (quota, outage) turns the session to text and
   says so. STT and TTS are pluggable (registered names or `module:factory`); EU-hosted providers
-  plug in without touching the pipeline. Connections stay bound to their session.
+  plug in without touching the pipeline. Connections stay bound to their session. The engines are
+  the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
+  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming).
 
 ## Module map (`src/evokai`)
 

@@ -2210,6 +2210,15 @@ providers:
     api: openai-compatible
     how_to_select: base_url of the server's OpenAI-compatible API
     declared_by: operator
+- id: speech-self-hosted
+  title: Speech engines of the operator's own (Piper, Kokoro, faster-whisper)
+  self_hosted: true
+  entity: {}
+  terms: {}
+  caching: {}
+  checked: '2026-11-23'
+  notes: 'Run on the operator''s own machines or in Evokai''s process: residency, jurisdiction and terms are what the
+    deployment declares. No per-character or per-minute charge.'
 processors:
 - id: bedrock-guardrails
   kind: classifier
@@ -2622,3 +2631,202 @@ processors:
   place:
     geography: in_process
   checked: '2026-11-19'
+- id: tts:elevenlabs
+  kind: tts
+  title: ElevenLabs text to speech (HTTP with timestamps)
+  api: 'POST /v1/text-to-speech/{voice_id}/with-timestamps through Pipecat''s ElevenLabsHttpTTSService (audio and
+    character alignment; word times). EU data residency uses api.eu.residency.elevenlabs.io (EVOKAI_ELEVENLABS_URL).'
+  place:
+    geography: us
+    countries:
+    - US
+  terms:
+    training: true
+    zero_retention: on_request
+    notes: 'Data residency (an Enterprise feature): stored in the US by default; regional hosts for the EU, India and
+      Singapore, each a separate account with its own key. Zero Retention Mode (enable_logging=false) is for
+      Enterprise customers and covers /v1/text-to-speech and /v1/speech-to-text. ElevenLabs uses data it is given to
+      improve its models; Enterprise customers are not trained on by default, and anyone can opt out in the Data use
+      setting.'
+    sources:
+    - https://elevenlabs.io/docs/overview/administration/data-residency
+    - https://elevenlabs.io/docs/developers/resources/zero-retention-mode
+    - https://elevenlabs.io/docs/help-center/legal/is-my-data-used-to-improve-eleven-labs-ai-models
+  prices:
+  - currency: USD
+    unit: per_1000_characters
+    input: 0.04
+    notes: 'Flash and Turbo models 0.04 USD per 1,000 characters; Multilingual v2 and v3 0.08 USD (the same on every
+      plan listed). The price of eleven_flash_v2_5, the default model; set EVOKAI_PROVIDERS_FILE for another.'
+    sources:
+    - https://elevenlabs.io/pricing/api
+    checked: '2026-11-23'
+  sources:
+  - https://elevenlabs.io/pricing/api
+  checked: '2026-11-23'
+  unknowns:
+  - 'entity: the contracting company and where it is controlled from were not researched'
+  - 'retention: how long API inputs are kept outside Zero Retention Mode was not found (the data retention page refused
+    automated reading)'
+- id: stt:elevenlabs
+  kind: stt
+  title: ElevenLabs Scribe speech to text (batch and realtime)
+  api: 'POST /v1/speech-to-text (ElevenLabsSTTService) and the realtime WebSocket (ElevenLabsRealtimeSTTService) of
+    Pipecat.'
+  place:
+    geography: us
+    countries:
+    - US
+  terms:
+    training: true
+    zero_retention: on_request
+    notes: As for ElevenLabs text to speech (residency and Zero Retention Mode are Enterprise features).
+    sources:
+    - https://elevenlabs.io/docs/overview/administration/data-residency
+    - https://elevenlabs.io/docs/developers/resources/zero-retention-mode
+  prices:
+  - currency: USD
+    unit: per_hour
+    input: 0.2
+    notes: 'Scribe batch 0.20 USD per audio hour; realtime 0.22 USD per hour.'
+    sources:
+    - https://elevenlabs.io/pricing/api
+    checked: '2026-11-23'
+  sources:
+  - https://elevenlabs.io/pricing/api
+  checked: '2026-11-23'
+  unknowns:
+  - 'entity: not researched'
+- id: tts:openai
+  kind: tts
+  title: OpenAI text to speech (/v1/audio/speech)
+  provider: openai
+  api: 'POST /v1/audio/speech through Pipecat''s OpenAITTSService (gpt-4o-mini-tts by default, EVOKAI_OPENAI_TTS_MODEL).
+    No word times: Evokai estimates them.'
+  terms:
+    training: false
+    retention: abuse_monitoring
+    retention_days: 30
+    zero_retention: on_request
+    notes: 'API data is not used for training unless the customer opts in; abuse monitoring logs are kept up to 30
+      days; /v1/audio/speech is eligible for zero data retention. EU data residency (eu.api.openai.com, through sales)
+      covers /v1/audio/speech for tts-1 and gpt-4o-tts; gpt-4o-mini-tts is not named on that page.'
+    sources:
+    - https://developers.openai.com/api/docs/guides/your-data
+    - https://developers.openai.com/api/docs/guides/data-residency
+  prices:
+  - currency: USD
+    unit: per_million_characters
+    input: 15.0
+    notes: 'tts-1 15 USD per million characters (tts-1-hd 30). gpt-4o-mini-tts is priced by tokens (0.60 USD per million
+      text input tokens, 12 USD per million audio output tokens) with no per-character figure: the tts-1 price is used
+      for usage and caps.'
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-23'
+  sources:
+  - https://developers.openai.com/api/docs/pricing
+  checked: '2026-11-23'
+- id: stt:openai
+  kind: stt
+  title: OpenAI transcription (/v1/audio/transcriptions, realtime transcription)
+  provider: openai
+  api: 'POST /v1/audio/transcriptions (OpenAISTTService) and /v1/realtime transcription (OpenAIRealtimeSTTService);
+    gpt-4o-mini-transcribe by default (EVOKAI_OPENAI_STT_MODEL).'
+  terms:
+    training: false
+    retention: abuse_monitoring
+    retention_days: 30
+    zero_retention: on_request
+    notes: 'Not used for training unless the customer opts in; abuse monitoring logs up to 30 days;
+      /v1/audio/transcriptions and /v1/realtime are eligible for zero data retention. EU data residency covers them
+      for whisper-1 and gpt-4o-transcribe; gpt-4o-mini-transcribe is not named on that page.'
+    sources:
+    - https://developers.openai.com/api/docs/guides/your-data
+    - https://developers.openai.com/api/docs/guides/data-residency
+  prices:
+  - currency: USD
+    unit: per_minute
+    input: 0.003
+    notes: 'gpt-4o-mini-transcribe about 0.003 USD per minute (estimated by OpenAI); gpt-4o-transcribe and whisper-1
+      0.006 USD per minute.'
+    sources:
+    - https://developers.openai.com/api/docs/pricing
+    checked: '2026-11-23'
+  sources:
+  - https://developers.openai.com/api/docs/pricing
+  checked: '2026-11-23'
+- id: tts:azure
+  kind: tts
+  title: Azure AI Speech text to speech (prebuilt neural voices)
+  provider: azure
+  api: 'Speech SDK synthesis through Pipecat''s AzureTTSService (pipecat-ai[azure]): word boundaries and visemes.
+    AZURE_SPEECH_KEY and AZURE_SPEECH_REGION.'
+  terms:
+    retention: none
+    notes: 'Prebuilt voices: neither input text nor output audio is stored in Microsoft logs; real-time synthesis is
+      not retained. Long Audio (batch) is not used by Evokai.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/speech-service/text-to-speech/data-privacy-security
+  prices:
+  - currency: USD
+    unit: per_million_characters
+    input: 15.0
+    notes: 'Neural text to speech, standard voices (meter "S1 Neural Text To Speech Characters"); the same in eastus,
+      westeurope and swedencentral. Neural HD 22 USD.'
+    sources:
+    - https://prices.azure.com/api/retail/prices
+    checked: '2026-11-23'
+  sources:
+  - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/speech-service/text-to-speech/data-privacy-security
+  checked: '2026-11-23'
+  unknowns:
+  - 'place: whether real-time synthesis stays in the Speech resource''s region was not found'
+  - 'terms.training: not stated for prebuilt voices'
+- id: stt:azure
+  kind: stt
+  title: Azure AI Speech speech to text (real time)
+  provider: azure
+  api: 'Speech SDK continuous recognition through Pipecat''s AzureSTTService (pipecat-ai[azure]).'
+  terms:
+    retention: none
+    notes: 'Real time: Microsoft does not retain or store the data; audio is processed in server memory only, nothing
+      is stored at rest.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/speech-service/speech-to-text/data-privacy-security
+  prices:
+  - currency: USD
+    unit: per_hour
+    input: 1.0
+    notes: 'Standard real-time speech to text ("S1 Speech To Text"); batch 0.18 USD per hour.'
+    sources:
+    - https://prices.azure.com/api/retail/prices
+    checked: '2026-11-23'
+  sources:
+  - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/speech-service/speech-to-text/data-privacy-security
+  checked: '2026-11-23'
+  unknowns:
+  - 'place: stated only for fast transcription (the resource''s region or data zone), not for real time'
+  - 'terms.training: not stated'
+- id: tts:piper
+  kind: tts
+  title: Piper (a server of the operator's own)
+  provider: speech-self-hosted
+  api: 'Pipecat''s PiperHttpTTSService against EVOKAI_PIPER_URL (piper-tts[http]). No word times: estimated.'
+  checked: '2026-11-23'
+- id: tts:kokoro
+  kind: tts
+  title: Kokoro (in process)
+  provider: speech-self-hosted
+  api: 'Pipecat''s KokoroTTSService (pipecat-ai[kokoro], kokoro-onnx). No word times: estimated.'
+  place:
+    geography: in_process
+  checked: '2026-11-23'
+- id: stt:whisper
+  kind: stt
+  title: faster-whisper (in process)
+  provider: speech-self-hosted
+  api: 'Pipecat''s WhisperSTTService (pipecat-ai[whisper], faster-whisper); EVOKAI_WHISPER_MODEL.'
+  place:
+    geography: in_process
+  checked: '2026-11-23'

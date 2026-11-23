@@ -50,6 +50,16 @@ from evokai.models import (
     SessionInfo,
     SessionToken,
 )
+from evokai.speech import (
+    SPEECH_PATH,
+    TRANSCRIBE_PATH,
+    Speech,
+    SpeechFormat,
+    Transcript,
+    collect,
+    finished,
+    speech_body,
+)
 from evokai.sse import SseMessage, SseParser
 
 __all__ = ["AsyncChatStream", "AsyncEvokaiSession", "ChatMode", "ChatStream", "EvokaiSession"]
@@ -786,6 +796,54 @@ class EvokaiSession(_SessionBase):
         """Disconnect a provider: the person's tokens are deleted."""
         self._transport.send(calls.session_disconnect(provider), self.token)
 
+    def speak(
+        self,
+        text: str | None = None,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+        format: SpeechFormat = "pcm",
+        sample_rate: int = 24_000,
+    ) -> Speech:
+        """Speak a text, or one ``say`` segment of this conversation, with the session's engine.
+
+        Server speech: ``POST /v1/session/speech`` (needs server voice on the service).
+
+        Args:
+            text: A text (made speakable and redacted on the server).
+            turn_id: Or a ``say`` segment: its turn...
+            index: ...and its index.
+            format: ``pcm`` (16-bit mono at ``sample_rate``) or ``opus`` (Ogg Opus, 48 kHz).
+            sample_rate: The PCM sample rate.
+
+        Returns:
+            The audio and its timings (words, marks, visemes).
+        """
+        body = speech_body(text, turn_id, index, format, sample_rate)
+        out, parser = Speech(), SseParser()
+        with self._transport.stream(SPEECH_PATH, body, self.token) as response:
+            for chunk in response.iter_bytes():
+                collect(parser.feed(chunk), out)
+        return finished(out)
+
+    def transcribe(
+        self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
+    ) -> Transcript:
+        """Transcribe a recording (WAV, WebM, Ogg, MP3, M4A) with the session's engine.
+
+        Args:
+            audio: The file's bytes.
+            content_type: Its media type.
+            language: A BCP 47 language (default: the session's).
+
+        Returns:
+            The text, the audio's length and the engine.
+        """
+        data = self._transport.send_bytes(
+            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language}
+        )
+        return Transcript.model_validate(data)
+
 
 class AsyncEvokaiSession(_SessionBase):
     """A session over HTTP with a session token (async); see :class:`EvokaiSession`.
@@ -1132,3 +1190,51 @@ class AsyncEvokaiSession(_SessionBase):
     async def disconnect(self, provider: str) -> None:
         """Disconnect a provider: the person's tokens are deleted."""
         await self._transport.send(calls.session_disconnect(provider), self.token)
+
+    async def speak(
+        self,
+        text: str | None = None,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+        format: SpeechFormat = "pcm",
+        sample_rate: int = 24_000,
+    ) -> Speech:
+        """Speak a text, or one ``say`` segment of this conversation, with the session's engine.
+
+        Server speech: ``POST /v1/session/speech`` (needs server voice on the service).
+
+        Args:
+            text: A text (made speakable and redacted on the server).
+            turn_id: Or a ``say`` segment: its turn...
+            index: ...and its index.
+            format: ``pcm`` (16-bit mono at ``sample_rate``) or ``opus`` (Ogg Opus, 48 kHz).
+            sample_rate: The PCM sample rate.
+
+        Returns:
+            The audio and its timings (words, marks, visemes).
+        """
+        body = speech_body(text, turn_id, index, format, sample_rate)
+        out, parser = Speech(), SseParser()
+        async with self._transport.stream(SPEECH_PATH, body, self.token) as response:
+            async for chunk in response.aiter_bytes():
+                collect(parser.feed(chunk), out)
+        return finished(out)
+
+    async def transcribe(
+        self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
+    ) -> Transcript:
+        """Transcribe a recording (WAV, WebM, Ogg, MP3, M4A) with the session's engine.
+
+        Args:
+            audio: The file's bytes.
+            content_type: Its media type.
+            language: A BCP 47 language (default: the session's).
+
+        Returns:
+            The text, the audio's length and the engine.
+        """
+        data = await self._transport.send_bytes(
+            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language}
+        )
+        return Transcript.model_validate(data)

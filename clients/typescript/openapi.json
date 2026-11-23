@@ -5030,6 +5030,102 @@
         "title": "SourceDef",
         "type": "object"
       },
+      "SpeechChoice": {
+        "description": "The server speech engines a session token chooses.",
+        "properties": {
+          "stt": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt"
+          },
+          "tts": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts"
+          }
+        },
+        "title": "SpeechChoice",
+        "type": "object"
+      },
+      "SpeechRequest": {
+        "description": "What to speak: a text, or a ``say`` segment of this conversation.",
+        "properties": {
+          "format": {
+            "default": "pcm",
+            "enum": [
+              "pcm",
+              "opus"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "sampleRate": {
+            "default": 24000,
+            "enum": [
+              16000,
+              22050,
+              24000,
+              44100,
+              48000
+            ],
+            "title": "Samplerate",
+            "type": "integer"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "turnId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnid"
+          }
+        },
+        "title": "SpeechRequest",
+        "type": "object"
+      },
       "SpeechTagDef": {
         "additionalProperties": false,
         "description": "Speech tags: ``[laughs]`` with the default delimiters.",
@@ -5461,6 +5557,16 @@
             ],
             "title": "Modules"
           },
+          "speech": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeechChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "storageMode": {
             "anyOf": [
               {
@@ -5791,6 +5897,30 @@
           "toolUse"
         ],
         "title": "ToolUseBlock",
+        "type": "object"
+      },
+      "Transcript": {
+        "description": "What was heard.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "durationMs",
+          "engine"
+        ],
+        "title": "Transcript",
         "type": "object"
       },
       "Try": {
@@ -14875,6 +15005,44 @@
         ]
       }
     },
+    "/agent/v1/session/speech": {
+      "post": {
+        "description": "Speak a text or a ``say`` segment with the session's speech engine.\n\nA segment that is not in this conversation is 404.\n\nReturns:\n    The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).\n\nRaises:\n    BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.",
+        "operationId": "speech_agent_v1_session_speech_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Audio and timings"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Speech",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
     "/agent/v1/session/tool-results": {
       "post": {
         "description": "Answer a custom client tool call the running turn waits for (once).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: No call of this session waits under that id here (answered, timed out, or the\n        turn runs on another task) (``unknown_call``).\n    AppError: The result is larger than 32 KB (413 ``too_large``).",
@@ -14924,6 +15092,68 @@
         "summary": "Tool Result",
         "tags": [
           "session"
+        ]
+      }
+    },
+    "/agent/v1/session/transcribe": {
+      "post": {
+        "description": "Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.\n\nReturns:\n    The text, the audio's length and the engine.\n\nRaises:\n    AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).\n    BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.",
+        "operationId": "transcribe_agent_v1_session_transcribe_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 35,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transcript"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transcribe",
+        "tags": [
+          "voice"
         ]
       }
     },
