@@ -13,6 +13,7 @@ export {
   EvokaiValidationError,
 } from '../core/http'
 export type { FetchLike } from '../core/http'
+export { markupPattern, stripMarkup } from '../core/markup'
 
 // session and state
 export { EvokaiSession, isLimitError } from './session'

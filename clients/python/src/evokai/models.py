@@ -470,6 +470,8 @@ class SessionInfo(WireModel):
     memory: MemoryState | None = None
     """Whether memory is on for the person and whether to ask them (None: no application)."""
     suggestions: list[str] = Field(default_factory=list)
+    markup: dict[str, Any] | None = None
+    """The delimiters of the answers' inline markup (``cue``, ``speech``), None without."""
 
 
 # Server runs

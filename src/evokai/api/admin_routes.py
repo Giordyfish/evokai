@@ -28,6 +28,7 @@ from evokai.agents.prompts import long_date
 from evokai.agents.templates import check_agent_templates, check_prompt, syntax_to_save
 from evokai.api.deps import admin_app, services
 from evokai.assistant.privacy import MAX_TTL_DAYS, lists_everyone, own_subject
+from evokai.audio.speech.markup import MarkupDef
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
 from evokai.connectors import validate as validate_connector
@@ -142,6 +143,9 @@ class AppPatch(BaseModel):
     identifiers masked, secrets removed) or ``full`` (secrets removed; read as ``masked`` while
     ``pii.history`` or ``pii.model`` is enforced). External storage keeps none, whatever this
     says."""
+    markup: MarkupDef | None = None
+    """Inline markup the agents may write: ``cue`` (``{wave}``, delivered as marks on the
+    spoken segments) and ``speech`` (``[laughs]``, for expressive voices); null removes it."""
 
 
 EVAL_KEYS = ("eval_monthly_usd", "eval_judge_model", "eval_on_save", "eval_credential")
@@ -168,6 +172,7 @@ DEFAULT_KEYS = frozenset({
     "timezone",
     "messages",
     "tracing_content",
+    "markup",
 })
 """Application settings kept in its defaults."""
 
@@ -254,6 +259,7 @@ async def get_application(svc: Svc, a: Admin) -> dict[str, Any]:
         "eval_on_save": (app.defaults or {}).get("eval_on_save", True),
         "hasEvalCredential": bool((app.defaults or {}).get("eval_credential")),
         "tracing_content": (app.defaults or {}).get("tracing_content", "masked"),
+        "markup": (app.defaults or {}).get("markup"),
         "memory_mode": (app.defaults or {}).get("memory_mode", "on"),
         "memory_ttl_days": (app.defaults or {}).get("memory_ttl_days"),
         "redteam_gate": (app.defaults or {}).get("redteam_gate", "off"),
@@ -302,6 +308,8 @@ async def patch_application(
             f"A system application keeps its audit log {MAX_TTL_DAYS} days at least.",
             code="system_audit_ttl",
         )
+    if "markup" in fields:
+        fields["markup"] = body.markup.model_dump(exclude_none=True) if body.markup else None
     if "residency" in fields:
         fields["residency"] = body.residency.stored() if body.residency else None
     if "data_protection" in fields:

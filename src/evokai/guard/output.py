@@ -9,6 +9,7 @@ checks run on the whole answer at the end of the step (monitor costs no latency)
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -65,6 +66,9 @@ class OutputRules:
     prompt_shingles: set[str] = field(default_factory=set)
     vault: identifiers.Vault | None = None
     """Tokens to put back (reversible tokenisation towards the model)."""
+    clean: Callable[[str], str] | None = None
+    """What the leak check reads: the answer without its inline markup (cues between the words
+    of the system prompt must not hide it)."""
 
     @property
     def changes_text(self) -> bool:
@@ -168,7 +172,7 @@ class OutputFilter:
             self.shown += delta
             return delta
         self._buffer += delta
-        if self.rules.leak and leaked(self.raw, self.rules.prompt_shingles):
+        if self.rules.leak and leaked(self._read(), self.rules.prompt_shingles):
             self.blocked = True
             self.changes.leak = True
             self._buffer = ""
@@ -190,7 +194,7 @@ class OutputFilter:
         if self.blocked or not self._buffer:
             self._buffer = ""
             return ""
-        if self.rules.leak and leaked(self.raw, self.rules.prompt_shingles):
+        if self.rules.leak and leaked(self._read(), self.rules.prompt_shingles):
             self.blocked = True
             self.changes.leak = True
             self._buffer = ""
@@ -199,6 +203,9 @@ class OutputFilter:
         self._buffer = ""
         self.shown += out
         return out
+
+    def _read(self) -> str:
+        return self.rules.clean(self.raw) if self.rules.clean else self.raw
 
     def _cut(self) -> int:
         """How much of the buffer can go out now without splitting anything a rule must see whole.

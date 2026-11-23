@@ -29,6 +29,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/features.md`: Features
 - `references/index.md`: Evokai
 - `references/knowledge.md`: Knowledge bases
+- `references/markup.md`: Inline markup
 - `references/memory.md`: Long-term memory
 - `references/models.md`: Model suitability
 - `references/openai-compatible.md`: OpenAI-compatible API

@@ -53,6 +53,14 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   reduced motion, optional one-shot images per change of state). It rests and flies exactly as the orb does, and the
   host says where it is as `data-orb`. With `position="bottom-left"` the minimized bubble and its actions mirror
   around a launcher of any size.
+- Inline markup ([docs](docs/markup.md)): an application (and an agent, kind by kind) declares cues (`{wave}`,
+  `{point:left}`) and speech tags (`[laughs]`) with their delimiters and optional allowed names, static or from a
+  session's prompt module. Spoken segments carry the cleaned text plus `marks` (`{name, arg?, at, spokenAt?}`) and
+  `tagged` (the spoken form with its speech tags); unknown names are dropped and counted in the trace
+  (`markupDropped`). `text` events and stored messages keep the markup; a person's markup is neutralised before the
+  model sees it; the leak check reads the answer without it. `GET /v1/session` returns the delimiters (`markup`), the
+  TypeScript client's `stripMarkup` hides them and `<evokai-chat>` uses it. Set in the application YAML (`markup:`),
+  `PATCH /v1/admin/application` and the console's Limits page.
 
 ### Changed
 

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from evokai.agents.prompts import PageContext
 from evokai.api.deps import services, session
+from evokai.audio.speech.markup import markup_of
 from evokai.core.errors import AppError, Conflict, Forbidden, NotFound
 from evokai.core.security import code_matches
 from evokai.core.util import utcnow
@@ -55,7 +56,24 @@ async def info(svc: Svc, s: Sess) -> dict[str, Any]:
         "memories": await svc.store.memories.facts(s.who),
         "memory": (await svc.memory.state(app, s.who)).view() if app else None,
         "suggestions": await _suggestions(svc, c.application_id, agent),
+        "markup": await _markup(svc, app, agent, conv),
     }
+
+
+async def _markup(svc: Services, app: Any, agent: str, conv: Any) -> dict[str, Any] | None:
+    """The delimiters of the answers' inline markup, so a client can hide it in what it shows.
+
+    Returns:
+        ``{cue?: {open, close}, speech?: {open, close}}``, or None without markup.
+    """
+    if app is None:
+        return None
+    try:
+        own = (await svc.agents.active(app.id, agent)).markup
+    except AppError:
+        own = None
+    m = markup_of((app.defaults or {}).get("markup"), own, conv)
+    return m.view if m else None
 
 
 async def _suggestions(svc: Services, application_id: str, agent: str) -> list[str]:

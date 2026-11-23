@@ -297,7 +297,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET | `/v1/console/me`, `/applications`, `/health` | console cookie | who is logged in, its applications, health |
 | GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility), per console identity; audited |
 
-Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, filler?}`), `tool` (start/done/error),
+Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (start/done/error),
 `chart` (a chart, or an `image` the agent's code drew), `diagram`, `ask`, `navigate`, `confirm` (`{actionId, items, why}`: `why[i]` says why
 `items[i]` waits, an i18n key and an [ask rule](security.md#ask-rules)'s label), `rewritten` (`{replaced, messageId, replacedFrom?}`, the
 last question was [rewritten](#rewriting-the-last-question)), `citation` (`{index, kb, documentId, title,

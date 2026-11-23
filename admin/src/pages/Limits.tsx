@@ -14,6 +14,7 @@ import { done, sparkle, toast } from '../magic'
 import { setTitle, useConsole, useLoad } from '../state'
 import { Btn, Field, Hero, Panel, Switch, Tag } from '../ui'
 import { Loads } from './common'
+import { markupForm, markupPatch, type MarkupForm } from '../markup'
 import { rich, t } from '../i18n'
 
 const MESSAGE_KEYS: Array<[LimitMessageKey, () => string]> = [
@@ -35,9 +36,98 @@ export function Limits({ app }: { app: ConsoleApplication }) {
           <Form key={JSON.stringify(a)} app={app} a={a} reload={load.reload} />
           <EvalSettings key={`e${JSON.stringify(a)}`} app={app} a={a} reload={load.reload} />
           <AlertSettings key={`c${JSON.stringify(a)}`} app={app} a={a} reload={load.reload} />
+          <MarkupSettings key={`m${JSON.stringify(a)}`} app={app} a={a} reload={load.reload} />
         </>
       )}
     </Loads>
+  )
+}
+
+/** Inline markup: the cues the agents may write for the page, and the speech tags for expressive voices. */
+function MarkupSettings({ app, a, reload }: { app: ConsoleApplication; a: Application; reload: () => Promise<void> }) {
+  const [form, setForm] = useState<MarkupForm>(() => markupForm(a.markup))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const set = (patch: Partial<MarkupForm>) => setForm({ ...form, ...patch })
+  const save = async (e: Event) => {
+    const btn = e.currentTarget as Element
+    const r = markupPatch(form)
+    if (!r.ok) return setError(t(r.error))
+    setBusy(true)
+    setError(null)
+    try {
+      await forApp(app.id).admin.application.patch({ markup: r.markup })
+      sparkle(btn)
+      done(btn)
+      toast(t('limits.markupSaved'), app.name)
+      await reload()
+    } catch (err) {
+      setError(describe(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Panel
+      title={t('limits.markup')}
+      style="margin-top:16px"
+      actions={
+        <Btn sm kind="pri" check busy={busy ? t('common.saving') : false} onClick={(e) => void save(e)}>
+          {t('common.save')}
+        </Btn>
+      }
+    >
+      <p class="hint">{t('limits.markupHint')}</p>
+      {error ? <p class="hint" style="color:var(--s-bad)">{error}</p> : null}
+      <div class="grid g2" style="gap:0 14px">
+        <div>
+          <Field label={t('limits.markupCues')} hint={t('limits.markupCuesHint')}>
+            <Switch on={form.cueOn} onChange={(on) => set({ cueOn: on })} label={form.cueOn ? t('limits.markupOn') : t('limits.markupOff')} />
+          </Field>
+          {form.cueOn ? (
+            <>
+              <div class="grid g2" style="gap:0 10px">
+                <Field label={t('limits.markupOpen')} id="mk-cue-open">
+                  <input id="mk-cue-open" class="in mono" value={form.cueOpen} onInput={(e) => set({ cueOpen: e.currentTarget.value })} />
+                </Field>
+                <Field label={t('limits.markupClose')} id="mk-cue-close">
+                  <input id="mk-cue-close" class="in mono" value={form.cueClose} onInput={(e) => set({ cueClose: e.currentTarget.value })} />
+                </Field>
+              </div>
+              <Field label={t('limits.markupNames')} id="mk-cue-names" hint={t('limits.markupNamesHint')}>
+                <input id="mk-cue-names" class="in mono" value={form.cueNames} onInput={(e) => set({ cueNames: e.currentTarget.value })} />
+              </Field>
+              <Field label={t('limits.markupFromModule')} hint={t('limits.markupFromModuleHint')}>
+                <div class="grid g2" style="gap:0 10px">
+                  <input class="in mono" value={form.cueModule} placeholder={t('limits.markupModulePh')} aria-label={t('limits.markupModulePh')} onInput={(e) => set({ cueModule: e.currentTarget.value })} />
+                  <input class="in mono" value={form.cueParam} placeholder={t('limits.markupParamPh')} aria-label={t('limits.markupParamPh')} onInput={(e) => set({ cueParam: e.currentTarget.value })} />
+                </div>
+              </Field>
+            </>
+          ) : null}
+        </div>
+        <div>
+          <Field label={t('limits.markupSpeech')} hint={t('limits.markupSpeechHint')}>
+            <Switch on={form.speechOn} onChange={(on) => set({ speechOn: on })} label={form.speechOn ? t('limits.markupOn') : t('limits.markupOff')} />
+          </Field>
+          {form.speechOn ? (
+            <>
+              <div class="grid g2" style="gap:0 10px">
+                <Field label={t('limits.markupOpen')} id="mk-sp-open">
+                  <input id="mk-sp-open" class="in mono" value={form.speechOpen} onInput={(e) => set({ speechOpen: e.currentTarget.value })} />
+                </Field>
+                <Field label={t('limits.markupClose')} id="mk-sp-close">
+                  <input id="mk-sp-close" class="in mono" value={form.speechClose} onInput={(e) => set({ speechClose: e.currentTarget.value })} />
+                </Field>
+              </div>
+              <Field label={t('limits.markupNames')} id="mk-sp-names" hint={t('limits.markupNamesHint')}>
+                <input id="mk-sp-names" class="in mono" value={form.speechNames} onInput={(e) => set({ speechNames: e.currentTarget.value })} />
+              </Field>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </Panel>
   )
 }
 
