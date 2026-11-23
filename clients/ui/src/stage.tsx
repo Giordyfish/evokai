@@ -38,15 +38,13 @@ export function voiceStatus(s: Strings, st: ControllerState, bare = false): stri
   const phase = stagePhase(st)
   const t = st.muted
     ? s.micOff
-    : st.micAsleep
-      ? s.micAsleep
-      : phase === 'speaking'
-        ? s.speaking
-        : phase === 'thinking'
-          ? s.thinking
-          : st.session.phase === 'interrupted'
-            ? s.interrupted
-            : s.listening
+    : phase === 'speaking'
+      ? s.speaking
+      : phase === 'thinking'
+        ? s.thinking
+        : st.session.phase === 'interrupted'
+          ? s.interrupted
+          : s.listening
   return bare ? t.replace(/(…|\.\.\.)$/, '') : t
 }
 

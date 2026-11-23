@@ -27,9 +27,7 @@ header and the middle while the chat and voice layers crossfade.
 - **voice**: voice mode inside the panel, the page behind still visible and usable: the orb (the user's voice swells
   it, the agent's moves the plasma, a ring turns while it thinks), the status, the subtitles (said and still to say),
   the latest charts under them, keyboard, mute and end, and «Interrupt by speaking». The header shows the phase and a
-  **minimize** button next to close. When the browser's recogniser stops and cannot start again by itself (iOS may
-  allow it only from a tap), the status says «Tap to listen again» and the mic shows closed; any tap on the panel or
-  the stage starts it again.
+  **minimize** button next to close.
 - **minimized**: the panel closes and the conversation goes on in the launcher orb, which follows the voice. A bubble
   beside it shows the status, the agent's line or what the user is saying, and a chip for the latest chart («Open»
   brings the panel back). Hovering the orb (or moving the keyboard focus to it) raises mute, restore and end above it;

@@ -18,8 +18,7 @@
  *
  * A recogniser of the device (`OnDeviceStt`) that was open while the agent spoke is replaced by a fresh one when the
  * agent has finished: on iOS, playing audio can leave a running recogniser deaf without ending it. What a recogniser
- * started after the agent finished hears is the user, never its echo. A recogniser that cannot be restarted puts the
- * microphone to sleep (`micAsleep`, the `asleep` event) until `wake()`, called from the next tap.
+ * started after the agent finished hears is the user, never its echo.
  */
 import type { TurnPhase } from '../../core/types'
 import { playMicSound } from '../audio/mic-sounds'
@@ -93,9 +92,6 @@ const CHARS_PER_SECOND = 14
 /** A recogniser is replaced only after the user has said nothing for this long (ms). */
 const USER_PAUSE_MS = 1500
 
-/** A tap starts again a recogniser that has reported nothing for this long (ms). */
-const WAKE_QUIET_MS = 5000
-
 export class BrowserVoiceEngine implements VoiceEngine {
   readonly kind = 'browser' as const
   readonly signals = new AudioSignals()
@@ -134,13 +130,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
   private settling = ''
   /** The recogniser running has heard the agent (it was open while the agent spoke). */
   private heardAgent = false
-  /** The recogniser has heard something since the engine started: an error after that is not a refusal. */
-  private proven = false
-  /** The recogniser was replaced outside a user gesture and has heard nothing since. */
-  private unproven = false
-  /** When the recogniser last reported anything (the user, or the agent's echo). */
-  private heardAt = 0
-  private asleep_ = false
   /** When the user was last heard (a recogniser is not replaced while they are talking). */
   private userAt = 0
   private recycleTimer: ReturnType<typeof setTimeout> | null = null
@@ -189,11 +178,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
     return this.micOpen_
   }
 
-  /** The recogniser could not be restarted: the microphone is closed until `wake()` (from a user gesture). */
-  get micAsleep(): boolean {
-    return this.asleep_
-  }
-
   on<K extends keyof VoiceEvents>(event: K, fn: (value: VoiceEvents[K]) => void): () => void {
     return this.events.on(event, fn)
   }
@@ -226,19 +210,9 @@ export class BrowserVoiceEngine implements VoiceEngine {
         this.onSay(e.turnId ?? null, e.index, { text: e.text, spoken: e.spoken || e.text, ...(e.turnId ? { say: { turnId: e.turnId, index: e.index } } : {}) }),
       ),
       this.session.on('done', () => this.settle()),
-      this.stt.on('interim', (t) => {
-        if (t.trim()) this.heardSomething()
-        this.onInterim(t)
-      }),
-      this.stt.on('final', (t) => {
-        if (t.trim()) this.heardSomething()
-        this.onFinal(t)
-      }),
-      this.stt.on('speechstart', () => this.heardSomething()),
+      this.stt.on('interim', (t) => this.onInterim(t)),
+      this.stt.on('final', (t) => this.onFinal(t)),
       this.stt.on('error', (e) => {
-        // Once it has heard anything, a recogniser that fails or cannot restart is not a refusal: the microphone sleeps
-        // until the next tap instead of ending the conversation.
-        if (e.code === 'stalled' || (this.proven && e.code !== 'unsupported' && e.code !== 'language-not-supported')) return this.sleep()
         void this.stop().then(() => this.fail(e.code, e.message))
       }),
       this.tts.on('start', ({ text }) => {
@@ -288,7 +262,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
     this.stash = null
     this.stopSpeaking()
     this.closeMic()
-    this.proven = this.unproven = this.asleep_ = false
     this.stopMeter?.()
     this.stopMeter = null
     if (!this.opts.microphone) this.microphone.stop()
@@ -306,18 +279,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
     if (!this.active) return
     if (muted) this.closeMic()
     else if (this.interrupt_ || !this.agentBusy()) void this.listen().catch(() => undefined)
-  }
-
-  /**
-   * From a user gesture (any tap on the conversation): a microphone that went to sleep, a recogniser restarted
-   * outside a gesture that has heard nothing since, or one that has reported nothing for a while (it may have gone
-   * deaf without ending) is started again. Some browsers (iOS) may only start one from a gesture. Nothing happens
-   * while muted, while the microphone is closed for the agent's turn, or while the recogniser is hearing.
-   */
-  wake(): void {
-    if (!this.active || this.muted) return
-    if (!this.interrupt_ && this.agentBusy()) return
-    if (this.asleep_ || this.unproven || Date.now() - this.heardAt > WAKE_QUIET_MS) void this.recycle(true).catch(() => undefined)
   }
 
   /** Strict turns (`false`) or talking over the agent (`true`); takes effect at once. */
@@ -347,10 +308,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
       this.micOpen_ = true
       this.events.emit('mic', true)
     }
-    if (this.asleep_) {
-      this.asleep_ = false
-      this.events.emit('asleep', false)
-    }
   }
 
   private closeMic(): void {
@@ -363,30 +320,12 @@ export class BrowserVoiceEngine implements VoiceEngine {
   }
 
   /** A fresh recogniser in place of the running one; the microphone stays open and a phrase being said is sent. */
-  private async recycle(gesture = false): Promise<void> {
+  private async recycle(): Promise<void> {
     if (!this.active || this.muted) return
     if (this.settleTimer && this.settling) this.commit(this.settling)
     this.clearSettle()
     this.stt.abort()
-    this.unproven = !gesture
     await this.listen()
-  }
-
-  /** The recogniser cannot go on: the microphone is shown closed until `wake()`. */
-  private sleep(): void {
-    if (!this.active) return
-    this.closeMic()
-    this.unproven = false
-    if (!this.asleep_) {
-      this.asleep_ = true
-      this.events.emit('asleep', true)
-    }
-  }
-
-  private heardSomething(): void {
-    this.proven = true
-    this.unproven = false
-    this.heardAt = Date.now()
   }
 
   private agentBusy(): boolean {

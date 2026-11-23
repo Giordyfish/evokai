@@ -168,10 +168,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 - Browser voice on Safari and iOS: the microphone no longer goes deaf after the agent's first answer, and a phrase is
   no longer lost. A device recogniser that was open while the agent spoke is replaced when it finishes; a session that
-  ends with its last phrase still interim delivers it; results that repeat earlier phrases send only the new words; a
-  short reply that repeats the agent's words is sent. A recogniser that cannot restart puts the microphone to sleep
-  instead of ending the conversation (`micAsleep`, the `asleep` event), and the next tap wakes it (`wake()`; the
-  panel and the stage say «Tap to listen again»).
+  ends with its last phrase still interim delivers it; results that repeat earlier phrases send only the new words, and
+  a phrase that follows one already sent is sent in full; a short reply that repeats the agent's words is sent.
 
 ### Upgrading
 

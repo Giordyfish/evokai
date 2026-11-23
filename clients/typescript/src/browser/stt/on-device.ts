@@ -107,16 +107,7 @@ const FATAL = new Set(['not-allowed', 'service-not-allowed', 'language-not-suppo
 export interface OnDeviceSttOptions extends OnDeviceOptions {
   /** Restart delay of a continuous recogniser (ms, default 150). */
   restartMs?: number
-  /**
-   * A continuous recogniser that ends this soon after starting, having heard nothing, failed to start (ms, default
-   * 1000). Three such ends in a row stop the restarts with the error `stalled`: the next start (from a user gesture,
-   * where a browser may require one) tries again.
-   */
-  minSessionMs?: number
 }
-
-/** Fast ends in a row after which a continuous recogniser stops restarting itself. */
-const STALL_AFTER = 3
 
 /**
  * A result without the words a recogniser already gave as final in this session. Some recognisers (WebKit is
@@ -141,8 +132,6 @@ export class OnDeviceStt implements SttEngine {
   private active = false
   private continuous = false
   private track: MediaStreamTrack | null = null
-  /** Continuous recognisers in a row that ended at once without hearing anything. */
-  private fastEnds = 0
   /** Counts starts and stops: a start still checking support gives way to a later start, stop or abort. */
   private gen = 0
   /** On the device (processLocally), or the browser's online recogniser where only that one is allowed and exists. */
@@ -182,7 +171,6 @@ export class OnDeviceStt implements SttEngine {
     this.active = true
     this.continuous = opts.continuous
     this.track = opts.track ?? null
-    this.fastEnds = 0
     this.listen()
   }
 
@@ -196,11 +184,9 @@ export class OnDeviceStt implements SttEngine {
     r.interimResults = true
     if (this.local) r.processLocally = true
     this.rec = r
-    const startedAt = Date.now()
-    /** This session's final text (to drop it when repeated), the phrase heard but not final yet, and any result. */
+    /** This session's final text (to drop it when repeated), and the phrase heard but not final yet. */
     let finals = ''
     let pending = ''
-    let heard = false
     r.onresult = (e) => {
       if (this.rec !== r) return
       if (!this.continuous) {
@@ -218,7 +204,6 @@ export class OnDeviceStt implements SttEngine {
         const res = e.results[k]
         if (!res) continue
         const text = withoutRepeat(res[0]?.transcript ?? '', finals)
-        if (text.trim()) heard = true
         if (res.isFinal) {
           finals = `${finals} ${text}`
           pending = ''
@@ -230,10 +215,7 @@ export class OnDeviceStt implements SttEngine {
         }
       }
     }
-    r.onspeechstart = () => {
-      heard = true
-      this.events.emit('speechstart', null)
-    }
+    r.onspeechstart = () => this.events.emit('speechstart', null)
     r.onerror = (e) => {
       if (this.rec !== r) return
       if (FATAL.has(e.error)) {
@@ -249,15 +231,6 @@ export class OnDeviceStt implements SttEngine {
         if (pending.trim()) {
           this.events.emit('interim', '')
           this.events.emit('final', pending)
-        }
-        this.fastEnds = !heard && Date.now() - startedAt < (this.opts.minSessionMs ?? 1000) ? this.fastEnds + 1 : 0
-        if (this.fastEnds >= STALL_AFTER) {
-          // Restarting outside a user gesture can fail at once, over and over: stop, and say so.
-          this.active = false
-          this.rec = null
-          this.events.emit('error', { code: 'stalled', message: 'Speech recognition keeps ending as soon as it starts.' })
-          this.events.emit('end', null)
-          return
         }
         setTimeout(() => this.listen(), this.opts.restartMs ?? 150)
       } else {

@@ -103,7 +103,6 @@ export interface Strings {
   mute: string
   unmute: string
   micOff: string
-  micAsleep: string
   endVoice: string
   talkOver: string
   talkOverOn: string
@@ -283,7 +282,6 @@ export const en: Strings = {
   mute: 'Mute the microphone',
   unmute: 'Unmute the microphone',
   micOff: 'Microphone off',
-  micAsleep: 'Tap to listen again',
   endVoice: 'End voice mode',
   talkOver: 'Interrupt by speaking',
   talkOverOn: 'If you speak while {title} speaks, it stops and listens',
@@ -446,7 +444,6 @@ export const it: Strings = {
   mute: 'Silenzia il microfono',
   unmute: 'Riattiva il microfono',
   micOff: 'Microfono spento',
-  micAsleep: 'Tocca per riattivare l’ascolto',
   endVoice: 'Termina la modalità vocale',
   talkOver: 'Interrompi parlando',
   talkOverOn: 'Se parli mentre {title} parla, si ferma e ti ascolta',

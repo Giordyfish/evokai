@@ -69,11 +69,6 @@ export interface VoiceEvents {
   hold: boolean
   /** The microphone opened (`true`) or closed (`false`): in strict turns it is closed during the agent's turn. */
   mic: boolean
-  /**
-   * The recogniser could not be restarted (`true`): the microphone is closed until the engine's `wake()` runs from a
-   * user gesture; `false` when it listens again.
-   */
-  asleep: boolean
   error: VoiceError
 }
 

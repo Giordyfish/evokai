@@ -328,7 +328,6 @@ interface VoiceEvents {
   bargeIn: { turnId: string | null; heard: string }
   hold: boolean                                          // the agent paused for the user (true) or carried on (false)
   mic: boolean                                           // the microphone opened or closed (strict turns, mute)
-  asleep: boolean                                        // the recogniser could not restart: closed until wake()
   error: VoiceError                                      // { code, message }
 }
 interface VoiceCommonOptions {
@@ -343,9 +342,8 @@ class BrowserVoiceEngine implements VoiceEngine {
   constructor(opts: VoiceCommonOptions & { session; stt?: SttEngine; tts?: TtsEngine; ttsOptions?: ChooseTtsOptions; rate?; meterMicrophone?; recognition?; restartMs?
     talkOver? = true; holdWords? = 2; holdMs? = 1600; settleMs? = 750; echoTailMs? = 4000 })
   readonly microphone: Microphone; readonly stt: SttEngine; readonly tts: TtsEngine
-  readonly talkOver: boolean; readonly held: boolean; readonly micOpen: boolean; readonly micAsleep: boolean
+  readonly talkOver: boolean; readonly held: boolean; readonly micOpen: boolean
   setTalkOver(on: boolean): void      // off: strict turns, the microphone opens only when the agent has finished
-  wake(): void                        // from a user gesture: start a sleeping or silent recogniser again
 }
 class ServerVoiceEngine implements VoiceEngine {
   constructor(opts: Omit<VoiceCommonOptions, 'microphone'> & { session; iceServers?; loadPipecat?: () => Promise<PipecatModules>; reloadAfterTurn?; audioContext? })
@@ -386,13 +384,8 @@ Keeping the microphone alive (Safari and every iOS browser, where the online rec
   finished hears is the user's, so the echo tail no longer drops a short reply that repeats the agent's words;
 - a recogniser that ends with its last phrase still interim delivers it as final before restarting, and a result that
   repeats the phrases already final in its session is reported without them;
-- a continuous recogniser that ends three times in a row as soon as it starts (within `minSessionMs`, 1000 ms) stops
-  restarting with the error `stalled`; once the recogniser has heard anything, that or any recogniser error other
-  than an unsupported language does not end the conversation: the microphone goes to sleep (`micAsleep`, the `asleep`
-  event, `mic` false) until `wake()`;
-- `wake()`, called from a user gesture (`<evokai-chat>` and `<evokai-voice>` call it on every tap), starts the
-  recogniser again when it is asleep, was replaced outside a gesture and has heard nothing since, or has reported
-  nothing for 5 s. It does nothing while muted or while the microphone is closed for the agent's turn.
+- a phrase sent when it settled loses its words only from a transcript that goes on from it: a different phrase that
+  follows without a final result is sent in full.
 
 **Server engine**: Pipecat over WebRTC. The offer goes to `/v1/session/voice/offer` with the bearer token; with
 external storage the history is sent as `requestData.history`. RTVI messages `{evokai: event}` are fed into the
@@ -411,7 +404,7 @@ interface SttEngine {
   stop(): void; abort(): void
   on('interim' | 'final', (text) => void); on('speechstart' | 'end', () => void); on('error', (e: VoiceError) => void)
 }
-class OnDeviceStt implements SttEngine { constructor(opts?: { lang? = 'en-US'; recognition?; restartMs? = 150; minSessionMs? = 1000; allowOnline? }) }
+class OnDeviceStt implements SttEngine { constructor(opts?: { lang? = 'en-US'; recognition?; restartMs? = 150; allowOnline? }) }
 recognitionSupport(opts?), installRecognition(opts?), ensureRecognition(opts?)
 ```
 

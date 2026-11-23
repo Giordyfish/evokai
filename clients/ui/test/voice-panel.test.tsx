@@ -235,22 +235,6 @@ describe('voice in the panel, minimized voice and the one orb', () => {
     expect(stringsFor('en').interrupted).toBe('Interrupted, listening…')
   })
 
-  test('a microphone that went to sleep says so, and any tap on the conversation wakes it', async () => {
-    const { el, $ } = await opened({ locale: 'it' })
-    voice(el, true, 'listening', { micOpen: false, micAsleep: true })
-    await until(() => $('.panel[data-layer=voice]'))
-    expect($('[part~="stage-status"]')!.textContent).toBe('Tocca per riattivare l’ascolto')
-    expect(stringsFor('en').micAsleep).toBe('Tap to listen again')
-    const c = el.controller as unknown as { wakeMic(): void }
-    let woken = 0
-    c.wakeMic = () => void woken++
-    $('[part~="stage-status"]')!.click()
-    expect(woken).toBe(1)
-    // Muted is what the user chose: it wins over the sleeping microphone.
-    voice(el, true, 'listening', { micOpen: false, micAsleep: true, muted: true })
-    await until(() => $('[part~="stage-status"]')!.textContent === 'Microfono spento')
-  })
-
   test('minimize and restore are replaceable icons, with texts in both languages', () => {
     expect(ICON_NAMES).toEqual(expect.arrayContaining(['minimize', 'restore', 'chart']))
     expect(stringsFor('it')).toMatchObject({ minimize: 'Riduci', restore: 'Riapri', restoreHint: 'Riapri il pannello', openChart: 'Apri' })

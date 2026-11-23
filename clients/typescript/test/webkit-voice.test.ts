@@ -136,75 +136,42 @@ describe('WebKit recognition in a voice conversation', () => {
     await vi.waitFor(() => expect(chats(s)).toEqual(['the red one']))
   })
 
-  test('restarts that fail at once put the microphone to sleep; a tap wakes it', async () => {
+  test('a recogniser error ends voice mode as before, even after the user was heard', async () => {
     const s = setup()
-    await s.engine.start()
-    const asleep: boolean[] = []
-    s.engine.on('asleep', (a) => asleep.push(a))
-    // A restart outside a user gesture that ends as soon as it starts, three times in a row.
-    for (let k = 0; k < 3; k++) {
-      await vi.waitFor(() => expect(s.rec.instances).toHaveLength(k + 1))
-      s.rec.instances[k]!.onend?.()
-    }
-    await vi.waitFor(() => expect(s.engine.micAsleep).toBe(true))
-    expect(s.engine.micOpen).toBe(false)
-    expect(s.engine.state).toBe('active') // the conversation goes on
-    await new Promise((r) => setTimeout(r, 5))
-    expect(s.rec.instances).toHaveLength(3)
-    s.engine.wake()
-    await vi.waitFor(() => expect(s.engine.micAsleep).toBe(false))
-    expect(s.engine.micOpen).toBe(true)
-    expect(asleep).toEqual([true, false])
-    s.rec.instances[3]!.say('are you there', true)
-    await vi.waitFor(() => expect(chats(s)).toEqual(['are you there']))
-  })
-
-  test('a capture error once the user has been heard puts the microphone to sleep instead of ending the conversation', async () => {
-    const s = setup()
+    const errors: string[] = []
+    s.engine.on('error', (e) => errors.push(e.code))
     await s.engine.start()
     s.rec.instances[0]!.say('hello there', true)
     await vi.waitFor(() => expect(chats(s)).toHaveLength(1))
-    // WebKit reports a muted capture source as `audio-capture`.
     s.rec.instances[0]!.onerror?.({ error: 'audio-capture' })
-    await vi.waitFor(() => expect(s.engine.micAsleep).toBe(true))
+    await vi.waitFor(() => expect(s.engine.state).toBe('error'))
+    expect(errors).toEqual(['audio-capture'])
+  })
+
+  test('a recogniser that ends as soon as it starts is restarted every time', async () => {
+    const s = setup()
+    await s.engine.start()
+    for (let k = 0; k < 5; k++) {
+      await vi.waitFor(() => expect(s.rec.instances).toHaveLength(k + 1))
+      s.rec.instances[k]!.onend?.()
+    }
+    await vi.waitFor(() => expect(s.rec.instances).toHaveLength(6))
+    expect(s.engine.micOpen).toBe(true)
     expect(s.engine.state).toBe('active')
-    expect(s.engine.micOpen).toBe(false)
   })
 
-  test('a tap starts again a recogniser that has heard nothing since it was replaced; not one that hears', async () => {
+  test('muting while the recogniser is being replaced leaves the microphone closed', async () => {
     const s = setup()
     await s.engine.start()
+    const mic: boolean[] = []
+    s.engine.on('mic', (m) => mic.push(m))
     await agentSays(s, 'Your order ships tomorrow.')
-    await vi.waitFor(() => expect(s.rec.instances).toHaveLength(2))
-    s.engine.wake()
-    await vi.waitFor(() => expect(s.rec.instances).toHaveLength(3))
-    s.rec.instances[2]!.say('thanks', false)
-    s.engine.wake() // it hears: left alone
-    await new Promise((r) => setTimeout(r, 5))
-    expect(s.rec.instances).toHaveLength(3)
-  })
-
-  test('a tap on the mute button of a sleeping microphone leaves it closed', async () => {
-    const s = setup()
-    await s.engine.start()
-    s.rec.instances[0]!.say('hello there', true)
-    s.rec.instances[0]!.onerror?.({ error: 'audio-capture' })
-    await vi.waitFor(() => expect(s.engine.micAsleep).toBe(true))
-    // The click wakes the microphone first (capture phase), then the button mutes it, before the recogniser started.
-    s.engine.wake()
+    // The agent finished: the replacement is under way when the user mutes.
     s.engine.setMuted(true)
     await new Promise((r) => setTimeout(r, 5))
     expect(s.engine.micOpen).toBe(false)
+    expect(mic).toEqual([false])
     expect(s.rec.instances.filter((r) => r.started)).toHaveLength(0)
-  })
-
-  test('muted, a tap does not open the microphone', async () => {
-    const s = setup()
-    await s.engine.start()
-    s.engine.setMuted(true)
-    s.engine.wake()
-    await new Promise((r) => setTimeout(r, 5))
-    expect(s.engine.micOpen).toBe(false)
   })
 })
 
