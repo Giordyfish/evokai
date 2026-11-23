@@ -8,7 +8,7 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-23
+## [0.2.0] - 2026-11-24
 
 ### Added
 
