@@ -16,10 +16,11 @@ remember things about them and shows what is remembered, to change or delete (se
 ## One orb, four views
 
 There is only ever one orb on screen. It rests in the launcher (panel closed), in the header (chat) or in the middle of
-the panel (voice mode), and flies between them (transform only, a slight arc, a small splash where it lands). When
-something opens the orb moves first and the panel's box opens around it once it has landed; when something closes the
-box closes first and the orb travels after. Turning voice on or off inside the open panel flies the orb between the
-header and the middle while the chat and voice layers crossfade.
+the panel (voice mode). It never travels across the page: it hops, fading out where it was and fading in where it goes
+(transform and opacity only). When something opens, the launcher orb fades out while the panel's box rises a little into
+place, and the orb fades in on it; when something closes, the box sinks away while the orb fades out, and it fades in
+again in the launcher. Turning voice on or off inside the open panel hops the orb between the header and the middle
+while the chat and voice layers crossfade.
 
 - **closed**: the launcher orb, bottom right (bottom left with `position="bottom-left"`).
 - **chat**: the panel; the launcher is hidden while it is open, so on a desktop the panel reaches the bottom margin.
@@ -36,7 +37,7 @@ header and the middle while the chat and voice layers crossfade.
 Closing the panel from voice mode ends voice; closing it any other way while voice is on (`close()`, Ctrl/⌘+J, the
 React `open` prop) minimizes it, and `open()` restores it. The view is on the host as `data-view` (`closed`, `chat`,
 `voice`, `minimized`), and where the orb is as `data-orb` (`launcher`, `head`, `center`, `flying`). With
-`prefers-reduced-motion` nothing flies: every change is instant.
+`prefers-reduced-motion` every change is instant.
 
 With `position="bottom-left"` everything mirrors: the launcher and the panel sit on the left, the minimized bubble
 opens to the right of the launcher and the hover actions rise above it.
@@ -44,9 +45,9 @@ opens to the right of the launcher and the hover actions rise above it.
 ### Your own orb
 
 The orb can be replaced, and whatever replaces it lives exactly as the orb does: it rests in the launcher, the
-header and the middle of voice mode, takes the same flight between them (transform only, the slight arc, the box
-opening around it once it has landed and closing before it leaves), speaks from the launcher while voice is
-minimized with the bubble beside it and the actions above it, and with reduced motion it moves without flying. There is still
+header and the middle of voice mode, hops between them in the same way (fading out where it was, in where it goes,
+while the box rises or sinks), speaks from the launcher while voice is minimized with the bubble beside it and the
+actions above it, and with reduced motion it changes place at once. There is still
 one of it on screen: it is never copied, only moved. In order of precedence:
 
 1. **An element of yours**: one child with `slot="orb"`. It is laid out in a square box of 168 CSS pixels (the
@@ -379,7 +380,7 @@ to its controls, Escape ends voice mode and gives the focus back to the voice bu
 the message box); the status and the subtitles are announced, in the panel and in the minimized bubble. Minimizing and
 ending voice from the orb give the focus to the launcher, whose buttons come up with keyboard focus too. The
 full-screen stage of `<evokai-voice>` is a modal dialog: the focus stays inside (Tab cycles), Escape ends voice mode.
-With `prefers-reduced-motion` the orb draws one still frame, nothing flies and nothing animates.
+With `prefers-reduced-motion` the orb draws one still frame, nothing hops and nothing animates.
 
 ## Develop
 
@@ -388,7 +389,7 @@ npm run demo        # a sample page against a local Evokai (see below)
 npm test            # vitest (jsdom): markdown, theme, texts, the elements against a fake Evokai, the React wrapper
 npm run build       # ESM + types; fails when the bundle size budget is exceeded
 npm run smoke       # Playwright against the running demo (light, dark, a custom theme), screenshots in test-results/
-node e2e/voice-panel.mjs [folder] [--skin look.mjs]   # every view and the orb in flight, offline (demo/fake.html)
+node e2e/voice-panel.mjs [folder] [--skin look.mjs]   # every view and the orb between places, offline (demo/fake.html)
 ```
 
 The demo plays your backend: it mints tokens with a server key for a demo user.

@@ -57,8 +57,6 @@ const LOOK = `
 .orbfly[data-at=launcher][data-phase=idle] .orbcore{animation:ekpulse 4.2s ease-in-out infinite}
 @keyframes ekpulse{0%,100%{box-shadow:0 calc(4px*var(--k,1)) calc(20px*var(--k,1)) color-mix(in oklab,var(--evokai-orb-main,${ORB.main}) 30%,transparent)}50%{box-shadow:0 calc(6px*var(--k,1)) calc(30px*var(--k,1)) color-mix(in oklab,var(--evokai-orb-main,${ORB.main}) 50%,transparent)}}
 .orbfly .ringfx{position:absolute;left:-50%;top:-50%;width:200%;height:200%;pointer-events:none}
-.splash{position:fixed;z-index:var(--ek-z);border-radius:50%;border:2px solid var(--ek-accent);pointer-events:none;animation:eksplash .6s ease-out forwards}
-@keyframes eksplash{from{transform:scale(.9);opacity:.8}to{transform:scale(1.5);opacity:0}}
 .oslot{position:relative;display:inline-grid;place-items:center;flex:none}
 .oslot:not([data-here])>slot{visibility:hidden}
 .oslot.launch{min-width:60px;min-height:60px;border-radius:50%}
@@ -97,13 +95,13 @@ const LOOK = `
 .ab.fin{background:var(--ek-brand);color:var(--ek-on-brand);box-shadow:none}
 .ab.muted{color:var(--ek-danger)}
 .panel{position:fixed;z-index:var(--ek-z);bottom:24px;right:24px;top:64px;width:min(25.5rem,calc(100vw - 32px));display:flex;flex-direction:column;overflow:hidden;
-background:var(--ek-surface);border:1px solid var(--ek-border);border-radius:var(--ek-radius);box-shadow:0 40px 90px -40px rgb(0 0 0/.45);transform-origin:var(--ek-origin,40px 40px)}
+background:var(--ek-surface);border:1px solid var(--ek-border);border-radius:var(--ek-radius);box-shadow:0 40px 90px -40px rgb(0 0 0/.45);transform-origin:50% 100%}
 :host([position=bottom-left]) .panel{right:auto;left:24px}
 .panel[data-box=pre]{opacity:0;pointer-events:none}
 .panel[data-box=in]{animation:ekboxin .32s cubic-bezier(.2,.8,.2,1) both}
 .panel[data-box=out]{animation:ekboxout .24s cubic-bezier(.4,0,1,1) both;pointer-events:none}
-@keyframes ekboxin{from{opacity:0;transform:scale(.5)}}
-@keyframes ekboxout{to{opacity:0;transform:scale(.5)}}
+@keyframes ekboxin{from{opacity:0;transform:translateY(18px) scale(.985)}}
+@keyframes ekboxout{to{opacity:0;transform:translateY(18px) scale(.985)}}
 @media (max-width:640px){.panel{inset:0;width:auto;border-radius:0;border:0}}
 .aurora{position:absolute;inset:0 0 auto;height:160px;pointer-events:none;overflow:hidden;opacity:.55}
 .aurora i{position:absolute;width:220px;height:220px;border-radius:50%;filter:blur(60px);background:var(--ek-aurora-1);top:-140px;left:-40px;animation:ekdrift 18s ease-in-out infinite alternate}

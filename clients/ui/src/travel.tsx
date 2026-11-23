@@ -1,8 +1,9 @@
 /**
  * The panel's one orb. A single WebGL canvas, drawn at the largest size the orb takes (the middle of the voice layer)
  * and scaled with a transform, rests on one of three empty places in the layout (the launcher, the header, the voice
- * layer) and follows it; between them it flies (`fly`), transform only. The plasma's scale follows the size on screen,
- * so the small orb looks as it always did and the big one too, with no swap at either end.
+ * layer) and follows it; from one to another it hops (`fly`): it fades out where it was and fades in where it goes,
+ * transform and opacity only, never crossing the page. The plasma's scale follows the size on screen, so the small orb
+ * looks as it always did and the big one too.
  *
  * Its motion: idle it drifts (faster while a turn runs); in voice mode it follows the voice as the stage did (the user's
  * voice swells it, the agent's moves the plasma), in the launcher too while the panel is minimized, with the thinking
@@ -17,7 +18,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 
 import type { ChatState } from './chatstate'
 import type { Controller } from './controller'
-import { flightAt, type Rest, type Spot } from './flow'
+import { hopAt, type Rest, type Spot } from './flow'
 import { createOrb, newMotion, orbFallback, orbZoom, reducedMotion, stepMotion, swell, type OrbPhase } from './orb'
 import { orbFromStyle, orbImageFor, orbTransition, type OrbColors, type OrbImages } from './theme'
 
@@ -138,24 +139,16 @@ export function TravelOrb(props: TravelProps): VNode {
   const kind = props.custom ? 'element' : props.images ? 'images' : 'orb'
   const key = `${kind}:${JSON.stringify(props.colors ?? {})}`
 
-  const place = (p: Spot) => {
+  /** Rest on a place; `scale` and `opacity` shrink and fade it about its centre (a hop). */
+  const place = (p: Spot, scale = 1, opacity = 1) => {
     const el = host.current
     if (!el) return
     pos.current = p
-    const k = p.size / ORB_MAX
-    el.style.transform = `translate(${(p.x - p.size / 2).toFixed(2)}px,${(p.y - p.size / 2).toFixed(2)}px) scale(${k.toFixed(4)})`
+    const size = p.size * scale
+    const k = size / ORB_MAX
+    el.style.transform = `translate(${(p.x - size / 2).toFixed(2)}px,${(p.y - size / 2).toFixed(2)}px) scale(${k.toFixed(4)})`
+    el.style.opacity = opacity === 1 ? '' : opacity.toFixed(3)
     el.style.setProperty('--k', (1 / k).toFixed(3))
-  }
-
-  const splash = (b: Spot) => {
-    const parent = host.current?.parentNode
-    if (!parent || typeof document === 'undefined') return
-    const sp = document.createElement('div')
-    sp.className = 'splash'
-    sp.setAttribute('aria-hidden', 'true')
-    Object.assign(sp.style, { left: `${b.x - b.size / 2}px`, top: `${b.y - b.size / 2}px`, width: `${b.size}px`, height: `${b.size}px` })
-    parent.appendChild(sp)
-    setTimeout(() => sp.remove(), 700)
   }
 
   props.handle.current = {
@@ -171,7 +164,7 @@ export function TravelOrb(props: TravelProps): VNode {
         }
         flight.current = { a, b, start: performance.now(), ms, done }
         place(a)
-        // A hidden tab pauses the frames: the flight still ends.
+        // A hidden tab pauses the frames: the hop still ends.
         setTimeout(done, ms + 400)
       })
     },
@@ -182,7 +175,7 @@ export function TravelOrb(props: TravelProps): VNode {
     const rc = ring.current
     const el = host.current
     if (!el) return
-    // An element or images in place of the orb: no WebGL, only the places and the flights.
+    // An element or images in place of the orb: no WebGL, only the places and the hops.
     const orb = canvas ? createOrb(canvas, ORB_MAX, live.current.colors) : null
     const ctx = rc?.getContext('2d') ?? null
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio) || 1)
@@ -202,9 +195,11 @@ export function TravelOrb(props: TravelProps): VNode {
         const t = (now - f.start) / f.ms
         if (t >= 1) {
           place(f.b)
-          splash(f.b)
           f.done()
-        } else place(flightAt(f.a, f.b, t))
+        } else {
+          const h = hopAt(f.a, f.b, t)
+          place(h.spot, h.scale, h.opacity)
+        }
       } else if (L.at !== 'flying' && !L.frozen) {
         const p = spotOf(L.find(L.at))
         if (p) place(p)
