@@ -241,6 +241,8 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "ask_rules": [],
     "modules": [],
     "template_syntax": "legacy",
+    "builtin_tools": [],
+    "openai_confirm": False,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -425,6 +427,9 @@ class AgentDef(BaseModel):
         for key, default in _LATER_DEFAULTS.items():
             if out.get(key) == default:
                 out.pop(key, None)
+        ct = out.get("client_tools")
+        if isinstance(ct, dict) and not ct.get("custom"):
+            ct.pop("custom", None)  # custom client tools came later
         return out
 
     def with_version(self) -> AgentDef:
