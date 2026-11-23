@@ -278,6 +278,8 @@ session.on('navigate', (e) => router.go(e.path))
 
 await session.loadConversation() // resumes a turn still running
 const done = await session.chat({ text: 'How many orders shipped this week?' }) // streams; resolves with the `done` event
+await session.chat({ text: 'Is this invoice right?', files: [file] }) // File or Blob, when info().attachments allows
+const image = await session.attachment(id) // a question's image (ChatMessage.attachments), as a Blob
 await session.confirm(actionId, true) // an open confirmation
 await session.rewrite('Show last week instead') // replace the last question while `ChatMessage.rewritable`
 await session.answer(askId, ['By agent']) // an open question

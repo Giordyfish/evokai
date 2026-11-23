@@ -260,6 +260,7 @@ which choices exist, and the console grants or revokes them one by one.
 | `code` (`code`) | `*` (isolated code execution, [code](code.md)) | true / false | false |
 | `connection` (`connections`) | a provider people may connect (`microsoft365`, `google`) or one of its tool families (`microsoft365/mail`, `/calendar`, `/files`) | true / false | providers false; families true (they need their provider) |
 | `openai` (`openai`) | `confirm` (tools that change data over the OpenAI-compatible API, with a typed yes: [confirmations in text](openai-compatible.md#confirmations-in-text)) | true / false | false |
+| `attachments` (`attachments`) | `*` (files people attach to chat messages: [attachments](attachments.md)) | true / false | false |
 | `builtin` (`builtin_tools`) | a provider built-in tool: `web_search`, `web_fetch`, `code_execution`, `image_generation`, `file_search`, `mcp_server`, `memory` ([built-in tools](builtin-tools.md)) | true / false | false |
 | `capability` (`capabilities`) | a capability of the catalog (`code_mode`, `compaction`, `subagents`, every pydantic-ai-harness one: [capabilities](capabilities.md)) | true / false | false |
 
