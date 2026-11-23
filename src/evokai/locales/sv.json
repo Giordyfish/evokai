@@ -59,7 +59,7 @@
       "fem": 5, "femte": 5
     },
     "numbers": {
-      "group": [" ", " "],
+      "group": ["\u00a0", "\u202f", " "],
       "decimal": ",",
       "decimalWord": "komma",
       "percent": "procent",

@@ -31,16 +31,24 @@ from evokai.i18n import known_locales, pack
 # A number with its sign, currency and suffix. The guards keep digits inside words and identifiers
 # untouched: no letter, digit or underscore before, no separator before (the tail of a longer
 # string), no letter-hyphen before («COVID-19»); no digit or separator-digit after the number, no
-# letter after the whole match. Groups may be split by a no-break space (French, Swedish).
-_SEP = r"[.,:/\u00a0\u202f]"
-_TOKEN = re.compile(
+# letter after the whole match. Groups may be split by a no-break space (French, Swedish) and, in
+# a language that groups with spaces, by a plain space followed by exactly three digits («1 000»).
+_SEP = r"(?:[.,:/\u00a0\u202f]{space})"
+_NUMBER = (
     r"(?<!\w)(?<![.,/:\u00a0\u202f])(?<![^\W\d]-)"
     r"(?:(?<![^\s(\[«\"'])(?P<sign>[-−+]))?"
     r"(?P<pre>(?:€|\bEUR)\s?)?"
-    rf"(?P<num>\d+(?:{_SEP}\d+)*)(?!\d)(?!{_SEP}\d)"
+    r"(?P<num>\d+(?:{sep}\d+)*)(?!\d)(?!{sep}\d)"
     r"(?P<suf>\s?%|\s?€|\s(?:euro|EUR)\b|\s?°\s?[CF]\b|[°ºª])?"
     r"(?!\w)"
 )
+
+
+@cache
+def _token_re(spaces: bool) -> re.Pattern[str]:
+    sep = _SEP.format(space=r"| (?=\d{3}(?!\d))" if spaces else "")
+    return re.compile(_NUMBER.replace("{sep}", sep))
+
 
 _MAX = 999_999_999_999
 _PLAIN = re.compile(r"0|[1-9]\d{0,11}")
@@ -135,7 +143,7 @@ def spell_numbers(text: str, locale: str) -> str:
     words = number_words(locale)
     if words is None:
         return text
-    return _TOKEN.sub(lambda m: _token(m, words), text)
+    return _token_re(" " in words.group).sub(lambda m: _token(m, words), text)
 
 
 def cardinal(n: int, w: NumberWords) -> str:

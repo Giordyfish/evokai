@@ -59,7 +59,7 @@
       "cinq": 5, "cinquième": 5, "cinquieme": 5
     },
     "numbers": {
-      "group": [" ", " "],
+      "group": ["\u202f", "\u00a0", " "],
       "decimal": ",",
       "decimalWord": "virgule",
       "percent": "pour cent",

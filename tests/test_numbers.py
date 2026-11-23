@@ -244,6 +244,10 @@ def test_speech_rules_carry_their_locale() -> None:
         # Swedish: space groups, comma decimals
         ("sv", "1\u00a0000", "etttusen"),
         ("sv", "12,5 %", "tolv komma fem procent"),
+        ("fr", "1 000 points", "mille points"),
+        ("fr", "12 345,5", "douze mille trois cent quarante-cinq virgule cinq"),
+        ("sv", "1 000 kronor", "etttusen kronor"),
+        ("fr", "3 et 4", "trois et quatre"),
         ("sv", "17:26", "sjutton och tjugosex"),
         ("sv", "-2", "minus två"),
     ],
@@ -256,3 +260,8 @@ def test_other_languages_spell_numbers(locale: str, text: str, spoken: str) -> N
 def test_other_languages_leave_codes_and_versions(locale: str) -> None:
     for text in ("COVID-19", "v2", "2.0.1", "00184", "123456789012345"):
         assert spell_numbers(text, locale) == text
+
+
+def test_a_plain_space_groups_only_where_the_language_groups_with_spaces() -> None:
+    assert spell_numbers("Ho 3 100 punti", "it") == "Ho tre cento punti"
+    assert spell_numbers("Les 3 10 points", "fr") == "Les trois dix points"
