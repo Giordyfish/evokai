@@ -10,6 +10,10 @@ application:
   storage_mode: evokai
   conversation_ttl_days: 30
   monthly_cap_usd: 20
+  # Its evals' monthly budget: one try of the suite on a large model uses about a third of the
+  # default (2), so the owner could not compare three models. This fits about fifteen tries.
+  defaults:
+    eval_monthly_usd: 10
   memory:
     mode: "off"
   redteam:

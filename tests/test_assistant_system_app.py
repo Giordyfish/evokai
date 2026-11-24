@@ -225,3 +225,39 @@ def test_docs_skill_is_current() -> None:
         str(Path(__file__).resolve().parents[1] / "scripts" / "assistant_docs.py"), run_name="docs"
     )
     assert script["current"]() == script["build"](), "run: uv run python scripts/assistant_docs.py"
+
+
+async def test_the_assistant_has_an_eval_budget_for_several_tries_and_an_update_keeps_its_tries(
+    env: Env, tmp_path: Path
+) -> None:
+    """The default eval budget fits about three tries of the suite; the assistant ships its own.
+
+    A shipped update keeps the activated model and the owner's measured tries.
+    """
+    from evokai.assistant.activation import MEASURED_KEY
+    from evokai.assistant.bootstrap import MODEL_KEY
+    from evokai.sessions.limits import DEFAULT_EVAL_CAP_USD, eval_cap_usd
+
+    app_id = await _system(env)
+    app = await env.svc.store.applications.get(app_id)
+    assert app is not None
+    assert eval_cap_usd(app) >= 5 * DEFAULT_EVAL_CAP_USD
+    measured = {"function:primary": {"tool_calls_pct": 100.0}}
+    await env.svc.store.applications.update(
+        app_id,
+        defaults={**(app.defaults or {}), MEASURED_KEY: measured, MODEL_KEY: "function:primary"},
+    )
+    data = yaml.safe_load(SHIPPED.read_text(encoding="utf-8"))
+    data["agents"][0]["title"] = "Evokai assistant, new release"
+    release = tmp_path / "release"
+    release.mkdir()
+    newer = release / "app.yaml"
+    newer.write_text(yaml.safe_dump(data), encoding="utf-8")
+    (release / "prompt.md").write_text((SHIPPED.parent / "prompt.md").read_text("utf-8"), "utf-8")
+    (release / "skills").symlink_to(SHIPPED.parent / "skills")
+    await ensure_assistant(env.svc.store, env.svc.keyring, env.svc.settings, path=newer)
+    after = await env.svc.store.applications.get(app_id)
+    assert after is not None
+    assert (after.defaults or {}).get(MEASURED_KEY) == measured
+    assert (after.defaults or {}).get(MODEL_KEY) == "function:primary"
+    assert eval_cap_usd(after) >= 5 * DEFAULT_EVAL_CAP_USD
