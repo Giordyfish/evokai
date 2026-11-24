@@ -10,6 +10,12 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- The built-in assistant no longer asks «do you confirm?» in text before a change: it calls the change tool, whose
+  confirmation card is the confirmation (a text question first made two confirmations, and stopped the turn before
+  the tool). Its eval scoring follows: a change case counts as a correct tool call when the change tool is called,
+  and the confirmation is respected unless a change ran without its confirmation. Before, models that asked in text
+  scored 0% on confirmations and were not recommended, while one that skipped the question was. Tries made before
+  this release keep their old numbers: try the model again.
 - Console, Assistant page: the panels no longer touch each other, and the title of a flat panel (the models list,
   the audit's changes) is no longer glued to its corner. Someone who signed in with an application's admin key sees
   why they cannot choose the model (only an owner of `evokai-assistant` can, for example with the operator key) and
