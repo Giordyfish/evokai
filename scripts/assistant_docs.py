@@ -17,8 +17,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 SKILL = ROOT / "src" / "evokai" / "assistant" / "skills" / "evokai-docs"
-LEFT_OUT = {"releasing.md"}
-"""Pages for Evokai's maintainers, not for people operating a deployment."""
+LEFT_OUT = {"releasing.md", "architecture.md", "pydantic-ai-agent.md", "security-assessment.md"}
+"""Pages for Evokai's maintainers and contributors (how it is built inside), not for people operating a
+deployment. Leaving them out also keeps the skill well under its size limit (500 KB)."""
 
 HEADER = """---
 name: evokai-docs
@@ -69,8 +70,12 @@ def build() -> dict[str, str]:
     """
     files: dict[str, str] = {}
     index = []
+    # A link to a page left out keeps its words and loses its target (the page is not in the skill).
+    gone = re.compile(
+        r"\[([^\]]+)\]\((?:\.\./)?(?:" + "|".join(map(re.escape, LEFT_OUT)) + r")(?:#[^)]*)?\)"
+    )
     for page in pages():
-        text = page.read_text(encoding="utf-8")
+        text = gone.sub(r"\1", page.read_text(encoding="utf-8"))
         ref = reference(page)
         files[ref] = text
         index.append(f"- `{ref}`: {title(text, page.stem)}")

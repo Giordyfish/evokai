@@ -17,6 +17,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- The console assistant's docs skill leaves out the pages about how Evokai is built inside (architecture, the
+  pydantic-ai integration, the security assessment): with them it reached its 500 KB size limit, and a skill over
+  the limit is refused, which broke the assistant. Links to them keep their words.
 - The console mascot listens by nodding: it looks up a little towards the person, the hat tip leans to them, and it
   nods on each pause (the runes are gone). `<evokai-chat>` reports `listening` while the person talks over the agent
   (a voice turn they cut off), so a mascot or an orb shows it listening instead of idle.

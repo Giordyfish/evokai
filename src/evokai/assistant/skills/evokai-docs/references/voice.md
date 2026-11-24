@@ -13,7 +13,7 @@ Three ways in, all with the session token, all mounted with `EVOKAI_VOICE_ENABLE
 | Transcription | `POST /v1/session/transcribe` | transcribes an audio file sent as the request body |
 | Streaming recognition | `WS /v1/session/transcribe/stream` | transcribes the microphone as the person speaks |
 
-The WebRTC voice sessions ([architecture](architecture.md#voice)) use the same engines.
+The WebRTC voice sessions (architecture) use the same engines.
 
 ## Engines
 

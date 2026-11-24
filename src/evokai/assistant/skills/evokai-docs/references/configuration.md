@@ -611,7 +611,7 @@ agents:
   per request. The other skills stay on demand; when every skill is preloaded and none has files the
   agent gets no `skill_load` tool.
 - `prompt_cache`: Bedrock prompt caching on Anthropic models (see the architecture's
-  [Prompt caching](architecture.md#prompt-caching)). Quote the values: YAML reads a bare `off` as
+  Prompt caching). Quote the values: YAML reads a bare `off` as
   false (accepted too). Other models in the chain run uncached. Caching pays when the cached prefix
   is read again within its TTL: a 1 hour write costs 2x the input price and a read 0.1x, so it
   breaks even from about two requests an hour on the same prefix; `5m` writes cost 1.25x.
@@ -743,7 +743,7 @@ latest messages. The summary is stored in `evokai_conversation_summaries` (delet
 a person's data), never at the provider; each summary call is usage of kind `summary`, counted against the caps (it
 is skipped when a cap is reached). A request a provider refuses as too long gets one compaction and one retry, when
 nothing reached the person yet. With external storage nothing is compacted: the history is windowed as before.
-A [rewrite of the last question](architecture.md#rewriting-the-last-question) drops a summary that covers any of the
+A rewrite of the last question drops a summary that covers any of the
 replaced messages, so no summary keeps them; the next compaction writes it again.
 Context windows come from a vendored [models.dev](https://models.dev) snapshot (`src/evokai/llm/context_windows.json`,
 refreshed with `scripts/models-dev-sync.py` and committed); prices stay hand-maintained in `evokai.llm.prices`.

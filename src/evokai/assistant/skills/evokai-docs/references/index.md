@@ -22,7 +22,7 @@ the agents.
 | --- | --- |
 | [Quick start](quickstart.md) | Evokai, its console and its own Postgres with Docker Compose, in five minutes |
 | [Features](features.md) | Everything Evokai does, in one table |
-| [Architecture](architecture.md) | Concepts, the protocol, voice, limits, storage and the hard rules |
+| Architecture | Concepts, the protocol, voice, limits, storage and the hard rules |
 | [Configuration](configuration.md) | Environment variables, application YAML, bootstrap, keys, time to live |
 | [Deployment](deployment.md) | Running it, Docker, database setup, CI gates, images, SBOMs and signing |
 | [Security](security.md) | Threat model and the security layer's controls, mapped to the OWASP LLM Top 10 |

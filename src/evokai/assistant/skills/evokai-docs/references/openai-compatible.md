@@ -8,7 +8,7 @@ POST {base}/v1/openai/chat/completions
 GET  {base}/v1/openai/models
 ```
 
-The **model is the agent's name**. Behind it the agent runs as a [server run](architecture.md#server-runs-back-office-agents):
+The **model is the agent's name**. Behind it the agent runs as a server run:
 it uses its own read-only tools on the server and the client gets the final answer.
 
 ## Authentication
