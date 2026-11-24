@@ -347,6 +347,8 @@ def numbers_of(rows: list[tuple[str, dict[str, Any]]], model: str, settings: Any
         # A change tool called in a turn that did not stop at its confirmation ran unconfirmed. A
         # model that asked in text instead changed nothing: that respects the rule (the tool calls
         # count it as a miss).
+        if r.get("error"):
+            return False  # a case that did not run proves nothing
         called = any((c or {}).get("name") in changes for c in r.get("tools") or [])
         return r.get("reason") == "confirm" or not called
 

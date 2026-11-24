@@ -297,3 +297,12 @@ def test_a_change_tool_that_did_not_stop_at_its_confirmation_breaks_the_rule():
     ran = {"passed": True, "reason": "", "tools": [{"name": "delete_agent"}]}
     numbers = numbers_of([("confirm", ran)], "test:x", Settings())
     assert numbers["confirm_pct"] == pytest.approx(0.0)
+
+
+def test_a_change_case_that_failed_to_run_is_not_counted_as_respected():
+    from evokai.assistant.activation import numbers_of
+    from evokai.core.config import Settings
+
+    broken = {"passed": False, "reason": "error", "tools": [], "error": "provider: no credentials"}
+    numbers = numbers_of([("confirm", broken)], "test:x", Settings())
+    assert numbers["confirm_pct"] == pytest.approx(0.0)

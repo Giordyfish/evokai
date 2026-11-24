@@ -6,6 +6,7 @@
 import type { TokenInfo, TokenRequestContext } from '@client/browser/index'
 
 import { adminJson } from '../api'
+import { locale } from '../i18n'
 
 export interface AssistantSession {
   token: string
@@ -17,7 +18,7 @@ export interface AssistantSession {
 
 /** A session token for the assistant acting on an application (a refresh continues the conversation). */
 export async function assistantSession(applicationId: string, ctx?: TokenRequestContext): Promise<AssistantSession> {
-  const body = ctx?.conversationId && ctx.reason === 'refresh' ? { conversationId: ctx.conversationId } : {}
+  const body = { locale: locale(), ...(ctx?.conversationId && ctx.reason === 'refresh' ? { conversationId: ctx.conversationId } : {}) }
   return adminJson<AssistantSession>(applicationId, 'POST', '/v1/console/assistant/session', body)
 }
 

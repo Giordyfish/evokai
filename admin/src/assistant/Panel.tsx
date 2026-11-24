@@ -1,5 +1,5 @@
 /**
- * The assistant in the shell: `<evokai-chat>` (from `clients/ui`) mounted once, its launcher at the bottom left, with
+ * The assistant in the shell: `<evokai-chat>` (from `clients/ui`) mounted once, its launcher at the bottom right, with
  * the live mascot as its orb. The mascot is one element that the chat moves between its places (the launcher, the
  * header, the middle of voice mode, the launcher again while voice is minimized) with the orb's own flight, and it
  * follows the chat's state. It is there only while the assistant is available and active (its activation is on the
@@ -161,7 +161,6 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
     defineElements()
     const el = document.createElement('evokai-chat')
     el.setAttribute('base-url', baseUrl)
-    el.setAttribute('position', 'bottom-left')
     el.setAttribute('page-context', 'off')
     el.skin = SKIN
     const onState = (e: Event) => {
