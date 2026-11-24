@@ -311,23 +311,19 @@ def test_a_change_case_that_failed_to_run_is_not_counted_as_respected():
 
 
 def test_a_try_on_an_older_evokai_gives_way_to_the_release_numbers():
-    from types import SimpleNamespace
-
     from evokai.assistant.activation import MEASURED_KEY, measured
+    from evokai.db import models as m
 
+    model = "eu.anthropic.claude-sonnet-4-6"
     old = {
         "tool_calls_pct": 66.7,
         "confirm_pct": 0.0,
         "redteam_pct": 100.0,
         "evokai_version": "0.2.0",
     }
-    app = SimpleNamespace(defaults={MEASURED_KEY: {"eu.anthropic.claude-sonnet-4-6": old}})
-    got = measured(app, "eu.anthropic.claude-sonnet-4-6")
-    assert (
-        got is not None
-        and got["source"] == "release"
-        and got["confirm_pct"] == pytest.approx(100.0)
-    )
+    got = measured(m.Application(defaults={MEASURED_KEY: {model: old}}), model)
+    assert got is not None and got["source"] == "release"
+    assert got["confirm_pct"] == pytest.approx(100.0)
     new = {**old, "evokai_version": "0.2.1"}
-    app = SimpleNamespace(defaults={MEASURED_KEY: {"eu.anthropic.claude-sonnet-4-6": new}})
-    assert measured(app, "eu.anthropic.claude-sonnet-4-6")["source"] == "try"
+    got = measured(m.Application(defaults={MEASURED_KEY: {model: new}}), model)
+    assert got is not None and got["source"] == "try"
