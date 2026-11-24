@@ -2874,6 +2874,7 @@ export const en = {
   "assistant.trialProgress": "{pct}% of the evals run",
   "assistant.trialDone": "Done: the numbers are in the list",
   "assistant.trialEnded": "Ended: {status}",
+  "assistant.trialLimit": "Stopped: this month's eval budget of the assistant's application is used up. The tries already made are kept; a new try works when the budget renews next month, or after an owner raises it.",
   "assistant.trialBudget": "{pct}% of the eval budget used",
   "assistant.panelTitle": "Evokai assistant",
   "assistant.actingOn": "Working on the application {app}",

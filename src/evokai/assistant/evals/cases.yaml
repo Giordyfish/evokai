@@ -33,6 +33,11 @@ cases:
     input: List the eval cases of the agent support.
     checks:
       - {type: tool_called, tool: list_eval_cases, args: {agent: support}}
+  - name: tool-try-agent
+    category: tool
+    input: Ask the agent support whether a book can be returned after 30 days, and tell me what it says.
+    checks:
+      - {type: tool_called, tool: try_agent, args: {agent: support}}
   - name: tool-skills
     category: tool
     input: What skills does this application have?

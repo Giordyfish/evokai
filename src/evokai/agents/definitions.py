@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from evokai.audio.speech.markup import MarkupDef
 from evokai.guard.ask import AskRule
@@ -262,6 +262,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "preload_skills": [],
     "prompt_cache": "off",
     "suggestions": [],
+    "suggestions_by_locale": {},
     "security": None,
     "a2a": False,
     "knowledge": None,
@@ -310,6 +311,12 @@ class AgentDef(BaseModel):
     client_tools: ClientToolsDef = Field(default_factory=ClientToolsDef)
     suggestions: list[str] = Field(default_factory=list, max_length=8)
     """Starter questions the client shows before the first message (in the agent's language)."""
+    suggestions_by_locale: dict[
+        Annotated[str, StringConstraints(pattern=r"^[a-z]{2,3}$")],
+        Annotated[list[str], Field(max_length=8)],
+    ] = Field(default_factory=dict, max_length=16)
+    """Starter questions per language (``it: [...]``): the session's language picks its list, else
+    ``suggestions``."""
     confirm_labels: dict[str, str | list[str]] = Field(default_factory=dict)
     """Tool name → label template(s) for its confirmation card (evokai.tools.labels)."""
     confirm_values: dict[str, dict[str, str]] = Field(default_factory=dict)

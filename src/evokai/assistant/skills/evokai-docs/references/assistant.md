@@ -149,11 +149,11 @@ measured requirements above: a model recommended only by the estimate opens the 
 
 ## The panel and the mascot
 
-The console embeds `<evokai-chat>` from the UI components once, with its launcher at the bottom left
-(`position="bottom-left"`, past the sidebar on a wide screen) and the mascot as its orb (`slot="orb"`, see the UI components' README, "Your own orb").
+The console embeds `<evokai-chat>` from the UI components once, with its launcher at the bottom right and the
+mascot as its orb (`slot="orb"`, see the UI components' README, "Your own orb").
 There is no button: the mascot is the launcher. A click (or Ctrl/Cmd+J) opens the chat and the mascot moves to the
 panel's header as the orb does; in voice mode, to the middle of the panel; minimized, the conversation goes on in the
-mascot at the bottom left with the bubble beside it and mute, restore and end above it on hover or focus. While the assistant is not active (or not available to the person) there is no
+mascot at the bottom right with the bubble beside it and mute, restore and end above it on hover or focus. While the assistant is not active (or not available to the person) there is no
 launcher: it is activated from the Assistant page. The chat acts on the application the person is looking at; on a
 page without one, on the last application they opened, else the first one they can see other than the assistant's
 own, and a new conversation says which. Until the first-use notice is read, opening the chat shows the notice, and
@@ -172,7 +172,7 @@ conversation's state the component exposes to slotted content:
 | a tool runs | the rune circle |
 | waiting for a confirmation | the dark flame |
 | a change applied | the staff sparkles |
-| listening | live: the hat perks up, a rune appears at each syllable and orbits the hat, then the runes fly into the hat tip on a pause |
+| listening | live: it looks up a little towards the person, the hat tip leans to them, and it nods on each pause; also while the person talks over it |
 | speaking | live: the eyes light up with the voice |
 
 The live states are drawn with WebGL; the console's "still" mascot preference and reduced motion are respected.

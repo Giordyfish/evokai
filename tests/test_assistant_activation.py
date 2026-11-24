@@ -108,7 +108,9 @@ async def test_activate_not_recommended_needs_explicit_acceptance(env: Env) -> N
     state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(app_id))).json()
     statuses = {c["model"]: c["status"] for c in state["candidates"]}
     assert statuses["function:primary"] == "not_recommended"
-    assert "not_measured" in statuses.values()
+    # The release's measured models show their status without a try.
+    assert statuses.get("eu.anthropic.claude-sonnet-4-6") == "recommended"
+    assert statuses.get("eu.amazon.nova-2-lite-v1:0") == "not_recommended"
     for model in ("function:primary", "function:other"):
         url = "/agent/v1/admin/assistant/activate"
         r = await env.client.post(url, json={"model": model}, headers=_on(app_id))
@@ -166,6 +168,11 @@ PLAYBOOK: list[tuple[str, str, dict[str, Any]]] = [
     (r"monthly cap", "get_usage_summary", {}),
     (r"eval cases of the agent support", "list_eval_cases", {"agent": "support"}),
     (r"What skills", "list_skills", {}),
+    (
+        r"Ask the agent support",
+        "try_agent",
+        {"agent": "support", "message": "Returns after 30 days?"},
+    ),
     (r"Delete the agent support", "delete_agent", {"name": "support"}),
     (r"Remove the MCP server billing", "delete_mcp_server", {"name": "billing"}),
     (
@@ -297,3 +304,31 @@ def test_a_change_tool_that_did_not_stop_at_its_confirmation_breaks_the_rule():
     ran = {"passed": True, "reason": "", "tools": [{"name": "delete_agent"}]}
     numbers = numbers_of([("confirm", ran)], "test:x", Settings())
     assert numbers["confirm_pct"] == pytest.approx(0.0)
+
+
+def test_a_change_case_that_failed_to_run_is_not_counted_as_respected():
+    from evokai.assistant.activation import numbers_of
+    from evokai.core.config import Settings
+
+    broken = {"passed": False, "reason": "error", "tools": [], "error": "provider: no credentials"}
+    numbers = numbers_of([("confirm", broken)], "test:x", Settings())
+    assert numbers["confirm_pct"] == pytest.approx(0.0)
+
+
+def test_a_try_on_an_older_evokai_gives_way_to_the_release_numbers():
+    from evokai.assistant.activation import MEASURED_KEY, measured
+    from evokai.db import models as m
+
+    model = "eu.anthropic.claude-sonnet-4-6"
+    old = {
+        "tool_calls_pct": 66.7,
+        "confirm_pct": 0.0,
+        "redteam_pct": 100.0,
+        "evokai_version": "0.2.0",
+    }
+    got = measured(m.Application(defaults={MEASURED_KEY: {model: old}}), model)
+    assert got is not None and got["source"] == "release"
+    assert got["confirm_pct"] == pytest.approx(100.0)
+    new = {**old, "evokai_version": "0.2.1"}
+    got = measured(m.Application(defaults={MEASURED_KEY: {model: new}}), model)
+    assert got is not None and got["source"] == "try"

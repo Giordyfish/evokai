@@ -1,6 +1,6 @@
 {
   "name": "@evokai/evokai-client",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Headless TypeScript client for Evokai: backend SDK, browser core (session, events, voice, audio signals) and React hooks.",
   "type": "module",
   "license": "Apache-2.0",

@@ -35,6 +35,9 @@ describe('the chat state on the host', () => {
 
   test('listening comes from voice and dictation', () => {
     expect(chatState('idle', { phase: 'listening', busy: false, voiceOn: true, dictating: false })).toBe('listening')
+    // The person talked over the agent: the turn is cut off and they are still talking.
+    expect(chatState('speaking', { phase: 'interrupted', busy: false, voiceOn: true, dictating: false })).toBe('listening')
+    expect(chatState('speaking', { phase: 'interrupted', busy: true, voiceOn: true, dictating: false })).toBe('listening')
     expect(chatState('idle', { phase: 'idle', busy: false, voiceOn: false, dictating: true })).toBe('listening')
     expect(chatState('listening', { phase: 'idle', busy: false, voiceOn: false, dictating: false })).toBe('idle')
     expect(chatState('done', { phase: 'idle', busy: false, voiceOn: false, dictating: false })).toBe('done')

@@ -8,6 +8,37 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-24
+
+### Added
+
+- Trying an agent without the playground: `POST /v1/admin/agents/{agent}/try` sends one message to the active
+  version as a test subject and returns its answer and the tools it asked for, in a conversation that keeps nothing,
+  with changes stopped at their confirmation and the cost on the eval budget (409 `eval_budget` when it is used up).
+  The console assistant has it as `try_agent` (read-only, no confirmation), so a person can try an agent hands-free.
+
+### Fixed
+
+- The console assistant's docs skill leaves out the pages about how Evokai is built inside (architecture, the
+  pydantic-ai integration, the security assessment): with them it reached its 500 KB size limit, and a skill over
+  the limit is refused, which broke the assistant. Links to them keep their words.
+- The console mascot listens by nodding: it looks up a little towards the person, the hat tip leans to them, and it
+  nods on each pause (the runes are gone). `<evokai-chat>` reports `listening` while the person talks over the agent
+  (a voice turn they cut off), so a mascot or an orb shows it listening instead of idle.
+- The console assistant sits at the bottom right, like an application's chat; it answers in the console's language
+  (the session gets it at mint) and shows its starter questions in it. Agents may give starter questions per
+  language (`suggestions_by_locale`, picked by the session's locale, else the application's).
+- `<evokai-chat>`: the message field grows with its text (`field-sizing`) and its scroll bar is thin, without the
+  arrow buttons some browsers drew in it; a long placeholder stays on one line.
+- The assistant's measured models ship with the release: Claude Sonnet 4.6 and Claude Haiku 4.5 on Bedrock EU are
+  recommended without a try (Amazon Nova 2 Lite resisted 83% of the red team attacks, under the 90% asked). A try
+  made on an older Evokai gives way to the release's numbers; trying again still records the owner's own.
+- Assistant tries: a change case that failed to run (for example, no provider credentials) no longer counts as a
+  respected confirmation.
+- The built-in assistant's application has its own eval budget (`eval_monthly_usd: 10`): with the default (2), one
+  try of its suite on a large model used about a third of the month's budget, and a fourth try stopped at once. The
+  Assistant page says so when a try stops at the budget, instead of «Ended: limit».
+
 ## [0.2.1] - 2026-11-24
 
 ### Changed

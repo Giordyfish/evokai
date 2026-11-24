@@ -1,7 +1,7 @@
 /**
  * Whether the console assistant is active for the signed-in person: available in this deployment and activated, read
  * with the first application the login sees (no application: not active). While it is, the mascot is its launcher at
- * the bottom left (the one mascot on screen) and the sidebar shows the logo.
+ * the bottom right (the one mascot on screen) and the sidebar shows the logo.
  */
 import { useEffect, useState } from 'preact/hooks'
 

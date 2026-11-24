@@ -1,6 +1,6 @@
 [project]
 name = "evokai-client"
-version = "0.2.1"
+version = "0.2.2"
 description = "Python client for Evokai: session tokens, server runs, admin API and streamed session chats"
 readme = "README.md"
 authors = [

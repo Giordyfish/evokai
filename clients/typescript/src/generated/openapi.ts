@@ -349,6 +349,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/agents/{agent}/try": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Try Agent
+         * @description Send one message to an agent as a test subject and read its answer.
+         *
+         *     A real turn of the active version, like the playground's, in a conversation that keeps
+         *     nothing. A change the agent asks for stops at its confirmation and never runs. It is paid from
+         *     the application's eval budget.
+         *
+         *     Returns:
+         *         answer, toolsAsked (names), toolsRan (names), stoppedAtConfirmation, error, and the eval
+         *         budget used this month (share).
+         *
+         *     Raises:
+         *         Conflict: The eval budget is used up (``eval_budget``).
+         */
+        post: operations["try_agent_agent_v1_admin_agents__agent__try_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/agents/{agent}/versions/{version}/publish": {
         parameters: {
             query?: never;
@@ -4618,6 +4649,10 @@ export interface components {
             subagents?: string[];
             /** Suggestions */
             suggestions?: string[];
+            /** Suggestions By Locale */
+            suggestions_by_locale?: {
+                [key: string]: string[];
+            };
             /** Temperature */
             temperature?: number | null;
             /**
@@ -6514,11 +6549,13 @@ export interface components {
         };
         /**
          * SessionBody
-         * @description The conversation to continue (a token refresh); omitted = a new one.
+         * @description The conversation to continue (a token refresh; omitted = a new one) and the language.
          */
         SessionBody: {
             /** Conversationid */
             conversationId?: string | null;
+            /** Locale */
+            locale?: string | null;
         };
         /**
          * SkillBody
@@ -6907,6 +6944,15 @@ export interface components {
         Try: {
             /** Model */
             model: string;
+        };
+        /**
+         * TryBody
+         * @description A message to send to an agent.
+         */
+        TryBody: {
+            /** Message */
+            message: string;
+            page?: components["schemas"]["PageContext"] | null;
         };
         /**
          * Unlock
@@ -7571,6 +7617,50 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    try_agent_agent_v1_admin_agents__agent__try_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TryBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This month's eval budget is used up (eval_budget) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

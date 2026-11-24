@@ -335,9 +335,11 @@ console = APIRouter(prefix="/v1/console", tags=["console"])
 
 
 class SessionBody(BaseModel):
-    """The conversation to continue (a token refresh); omitted = a new one."""
+    """The conversation to continue (a token refresh; omitted = a new one) and the language."""
 
     conversationId: str | None = Field(default=None, max_length=64)
+    locale: str | None = Field(default=None, max_length=35)
+    """The console's language: the assistant answers in it and shows its starter questions in it."""
 
 
 @console.post("/assistant/session")
@@ -381,6 +383,7 @@ async def assistant_session(
         subject=a.subject,
         agent=shipped.AGENT,
         conversationId=body.conversationId if body else None,
+        locale=body.locale if body else None,
         forwardCredential=credential,
         voiceEngine="browser",
         ttlSeconds=svc.settings.session_token_max_ttl,

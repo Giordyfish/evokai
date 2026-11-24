@@ -9,7 +9,6 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/admin-mcp.md`: Operate Evokai from an AI agent
 - `references/ag-ui.md`: AG-UI
 - `references/ai-sdk.md`: Use Evokai from the AI SDK
-- `references/architecture.md`: Evokai architecture
 - `references/assistant.md`: The console assistant
 - `references/attachments.md`: Attachments
 - `references/builtin-tools.md`: Provider built-in tools
@@ -39,10 +38,8 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/openai-compatible.md`: OpenAI-compatible API
 - `references/privacy.md`: Privacy and data protection
 - `references/prompt-modules.md`: Prompt modules
-- `references/pydantic-ai-agent.md`: Turns and runs on the pydantic-ai Agent
 - `references/quickstart.md`: Quick start: Evokai in five minutes
 - `references/redteam.md`: Red team
-- `references/security-assessment.md`: Security assessment of the browser session API
 - `references/security.md`: Security of agents
 - `references/templates.md`: Templates
 - `references/voice.md`: Server speech
