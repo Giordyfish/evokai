@@ -185,7 +185,8 @@ a.src-title:hover{text-decoration:underline;color:var(--ek-brand)}
 .composer{position:relative;padding:8px 16px 16px}
 .field{display:flex;align-items:flex-end;gap:8px;padding:8px 8px 8px 16px;border-radius:24px;background:var(--ek-muted);border:1px solid var(--ek-border)}
 .field:focus-within{border-color:var(--ek-accent)}
-textarea{flex:1;align-self:center;min-height:1.5rem;max-height:10rem;resize:none;border:0;background:transparent;color:var(--ek-text);font:15px/1.5 var(--ek-font);outline:none}
+textarea{flex:1;align-self:center;min-height:1.5rem;max-height:10rem;field-sizing:content;resize:none;border:0;background:transparent;color:var(--ek-text);font:15px/1.5 var(--ek-font);outline:none;scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--ek-subtle) 40%,transparent) transparent}
+textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 textarea::placeholder{color:var(--ek-subtle)}
 textarea:focus-visible{outline:none}
 .cb{display:grid;place-items:center;width:36px;height:36px;border-radius:999px;color:var(--ek-subtle);transition:background .15s,color .15s}

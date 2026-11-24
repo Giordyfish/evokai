@@ -4618,6 +4618,10 @@ export interface components {
             subagents?: string[];
             /** Suggestions */
             suggestions?: string[];
+            /** Suggestions By Locale */
+            suggestions_by_locale?: {
+                [key: string]: string[];
+            };
             /** Temperature */
             temperature?: number | null;
             /**
@@ -6514,11 +6518,13 @@ export interface components {
         };
         /**
          * SessionBody
-         * @description The conversation to continue (a token refresh); omitted = a new one.
+         * @description The conversation to continue (a token refresh; omitted = a new one) and the language.
          */
         SessionBody: {
             /** Conversationid */
             conversationId?: string | null;
+            /** Locale */
+            locale?: string | null;
         };
         /**
          * SkillBody

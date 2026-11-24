@@ -62,7 +62,7 @@ async def info(svc: Svc, s: Sess) -> dict[str, Any]:
         else None,
         "memories": await svc.store.memories.facts(s.who),
         "memory": (await svc.memory.state(app, s.who)).view() if app else None,
-        "suggestions": await _suggestions(svc, c.application_id, agent),
+        "suggestions": await _suggestions(svc, c.application_id, agent, _language(app, conv)),
         "markup": await _markup(svc, app, agent, conv),
         "speech": speech_view(c.speech_tts, c.speech_stt),
         "attachments": await _attachments_offer(svc, app, agent, c.model),
@@ -145,16 +145,31 @@ async def takes_attachments(svc: Services, authorization: str | None) -> bool:
     return config is not None and config.enabled
 
 
-async def _suggestions(svc: Services, application_id: str, agent: str) -> list[str]:
-    """The agent's starter questions, or none when the agent is gone.
+def _language(app: Any, conv: Any) -> str:
+    """The session's language: its locale, else the application's (``it`` of ``it-IT``).
+
+    Returns:
+        A language code, or an empty string.
+    """
+    tag = ((conv.prompt_options if conv is not None else None) or {}).get("locale") or (
+        (app.defaults if app is not None else None) or {}
+    ).get("locale")
+    return str(tag or "").split("-")[0].lower()
+
+
+async def _suggestions(
+    svc: Services, application_id: str, agent: str, language: str = ""
+) -> list[str]:
+    """The agent's starter questions in the session's language, or none when the agent is gone.
 
     Returns:
         The suggestions.
     """
     try:
-        return (await svc.agents.active(application_id, agent)).suggestions
+        a = await svc.agents.active(application_id, agent)
     except AppError:
         return []
+    return a.suggestions_by_locale.get(language) or a.suggestions
 
 
 @router.get("/conversation")

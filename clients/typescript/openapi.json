@@ -350,6 +350,20 @@
             "title": "Suggestions",
             "type": "array"
           },
+          "suggestions_by_locale": {
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-z]{2,3}$": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "type": "array"
+              }
+            },
+            "title": "Suggestions By Locale",
+            "type": "object"
+          },
           "temperature": {
             "anyOf": [
               {
@@ -5059,7 +5073,7 @@
         "type": "object"
       },
       "SessionBody": {
-        "description": "The conversation to continue (a token refresh); omitted = a new one.",
+        "description": "The conversation to continue (a token refresh; omitted = a new one) and the language.",
         "properties": {
           "conversationId": {
             "anyOf": [
@@ -5072,6 +5086,18 @@
               }
             ],
             "title": "Conversationid"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
           }
         },
         "title": "SessionBody",

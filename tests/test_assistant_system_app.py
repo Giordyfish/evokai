@@ -261,3 +261,20 @@ async def test_the_assistant_has_an_eval_budget_for_several_tries_and_an_update_
     assert (after.defaults or {}).get(MEASURED_KEY) == measured
     assert (after.defaults or {}).get(MODEL_KEY) == "function:primary"
     assert eval_cap_usd(after) >= 5 * DEFAULT_EVAL_CAP_USD
+
+
+async def test_the_assistant_speaks_the_console_language_and_suggests_in_it(env: Env) -> None:
+    """The console sends its language: the session's starter questions are in it."""
+    from evokai.api.session_routes import _language, _suggestions
+
+    app_id = await _system(env)
+    app = await env.svc.store.applications.get(app_id)
+
+    from types import SimpleNamespace
+
+    conv = SimpleNamespace(prompt_options={"locale": "it-IT"})
+    italian = await _suggestions(env.svc, app_id, "assistant", _language(app, conv))
+    english = await _suggestions(env.svc, app_id, "assistant", _language(app, None))
+    assert italian and italian != english
+    assert any("applicazione" in q for q in italian)
+    assert any("application" in q for q in english)

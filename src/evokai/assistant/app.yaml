@@ -58,3 +58,8 @@ agents:
       - "What does this application have?"
       - "Which agents use the most of the cap?"
       - "How do I connect an MCP server?"
+    suggestions_by_locale:
+      it:
+        - "Cosa contiene questa applicazione?"
+        - "Quali agenti usano di più il tetto di spesa?"
+        - "Come collego un server MCP?"
