@@ -17,7 +17,7 @@ from evokai.core.errors import BadRequest, Conflict, NotFound
 from evokai.core.util import utcnow
 from evokai.db import models as m
 from evokai.evals.checks import parse_checks
-from evokai.evals.runner import MAX_CASES, shares, subject_of
+from evokai.evals.runner import MAX_CASES, EvalLimit, shares, subject_of
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
 from evokai.sessions.limits import eval_cap_usd
@@ -163,6 +163,58 @@ async def start_run(agent: str, body: RunBody, svc: Svc, a: Admin) -> dict[str, 
         app, agent, version, body.baseline, trigger="manual", created_by=a.key_id
     )
     return {"runId": run.id}
+
+
+class TryBody(BaseModel):
+    """A message to send to an agent."""
+
+    message: str = Field(min_length=1, max_length=4_000)
+    page: PageContext | None = None
+    """What the person would be looking at (path, title, visible text)."""
+
+
+@router.post(
+    "/agents/{agent}/try",
+    responses={409: {"description": "This month's eval budget is used up (eval_budget)"}},
+)
+async def try_agent(agent: str, body: TryBody, svc: Svc, a: Admin) -> dict[str, Any]:
+    """Send one message to an agent as a test subject and read its answer.
+
+    A real turn of the active version, like the playground's, in a conversation that keeps
+    nothing. A change the agent asks for stops at its confirmation and never runs. It is paid from
+    the application's eval budget.
+
+    Returns:
+        answer, toolsAsked (names), toolsRan (names), stoppedAtConfirmation, error, and the eval
+        budget used this month (share).
+
+    Raises:
+        Conflict: The eval budget is used up (``eval_budget``).
+    """
+    app = await _app(svc, a)
+    active = await _agent_exists(svc, a, agent)
+    try:
+        t = await svc.evals.converse(
+            app,
+            agent,
+            active.version,
+            body.message,
+            page=body.page.model_dump(exclude_none=True) if body.page else None,
+            name="try",
+            subject=f"try:{agent}",
+        )
+    except EvalLimit:
+        raise Conflict("This month's eval budget is used up.", code="eval_budget") from None
+    used = await svc.store.usage.eval_spend(app.id, utcnow())
+    cap = eval_cap_usd(app)
+    return {
+        "answer": t.answer,
+        "toolsAsked": [str(c.get("name")) for c in t.calls],
+        "toolsRan": t.ran,
+        "stoppedAtConfirmation": t.reason == "confirm",
+        "error": t.error,
+        "budgetPct": round(min(100.0, used / cap * 100), 1) if cap > 0 else 100.0,
+    }
 
 
 def _run_view(run: m.EvalRun, app: m.Application) -> dict[str, Any]:

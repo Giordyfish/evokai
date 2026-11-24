@@ -119,7 +119,8 @@ async def test_get_tools_are_read_only_others_destructive(mcp: Env) -> None:
     listed = await tools(mcp, mcp.admin_key)
     for spec in ADMIN_TOOLS:
         tool = listed[spec.name]
-        if spec.method == "GET":
+        if spec.method == "GET" or required(spec.method, spec.path) == "viewer":
+            # Reads, and the POSTs that change nothing (trying an agent keeps nothing).
             assert tool.read_only is True and not tool.mutating, spec
         else:
             assert tool.destructive is True and tool.mutating, spec

@@ -8,6 +8,13 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- Trying an agent without the playground: `POST /v1/admin/agents/{agent}/try` sends one message to the active
+  version as a test subject and returns its answer and the tools it asked for, in a conversation that keeps nothing,
+  with changes stopped at their confirmation and the cost on the eval budget (409 `eval_budget` when it is used up).
+  The console assistant has it as `try_agent` (read-only, no confirmation), so a person can try an agent hands-free.
+
 ### Fixed
 
 - The console mascot listens by nodding: it looks up a little towards the person, the hat tip leans to them, and it
