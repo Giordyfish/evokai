@@ -27,6 +27,7 @@ from tests.conftest import ORIGIN, Env, Tool
 
 SPEECH = b"\x01\x00" * 320
 TURN_TIME = 0.6
+START_TIMEOUT = 30.0
 
 
 def _utterance() -> list[Frame]:
@@ -46,7 +47,9 @@ async def _voice(
     principal = await env.svc.auth.session(tok["token"])
     tts = tts or FakeTTS()
     chain = agent_chain(env.svc, principal, stt=FakeSTT(phrases), tts=tts, external=False)
-    down, _ = await run_test(Pipeline(chain), frames_to_send=frames)
+    # Pipecat gives the pipeline 1 s to start; on a loaded CI runner (parallel workers, Postgres)
+    # it can take longer, and the test failed before the voice turn even began.
+    down, _ = await run_test(Pipeline(chain), frames_to_send=frames, start_timeout=START_TIMEOUT)
     events = [f.data["evokai"] for f in down if isinstance(f, RTVIServerMessageFrame)]
     return events, tts, list(down), tok["token"]
 
