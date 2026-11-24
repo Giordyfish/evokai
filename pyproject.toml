@@ -89,6 +89,7 @@ dev = [
     "fakeredis>=2.40",
     "pytest-recording>=0.15",
     "vcrpy>=9.4",
+    "pytest-xdist>=3.8",
 ]
 # The documentation site (mkdocs.yml): never installed with the service.
 docs = [

@@ -1,8 +1,9 @@
 # Releasing
 
 Work lands on `develop`; `main` holds what is released and changes only through a pull request from `develop` (or a
-`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then runs every gate
-(the CI workflow) and publishes:
+`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then makes sure every
+gate passed on that commit (it waits for the CI run of the push to `main` and reuses it; without one, it runs the CI
+workflow itself) and publishes:
 
 | What | Where | How |
 |---|---|---|

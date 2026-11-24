@@ -101,7 +101,9 @@ async def test_a_spoken_yes_confirms_the_pending_change(env: Env) -> None:
 async def test_speaking_over_the_agent_cancels_its_turn(env: Env) -> None:
     env.script.gate = asyncio.Event()
     env.script.add("function:primary", ["Sto guardando i dati del mese. ", "WAIT", "Ecco."])
-    frames = [*_utterance()[:-1], SleepFrame(0.3), InterruptionFrame(), SleepFrame(TURN_TIME)]
+    # The agent holds at its WAIT (the gate never opens) until the person talks over it, so the
+    # interruption can come late: a short pause raced a slow runner, where no turn had started.
+    frames = [*_utterance()[:-1], SleepFrame(2.0), InterruptionFrame(), SleepFrame(TURN_TIME)]
     events, tts, _, _ = await _voice(env, ["Riassumi il mese"], frames)
 
     done = [e for e in events if e["type"] == "done"]
