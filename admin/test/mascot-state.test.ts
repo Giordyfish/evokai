@@ -1,5 +1,5 @@
 import { mascotFor, MASCOT_CLIPS, stillFor } from '../src/mascot/state'
-import { Listener, newRune, orbit, RING } from '../src/mascot/runes'
+import { Listener, NOD_S, nodDip } from '../src/mascot/listener'
 
 describe('the mascot follows the chat', () => {
   it('maps every chat state to its animation', () => {
@@ -30,8 +30,8 @@ describe('the mascot follows the chat', () => {
   })
 })
 
-describe('the rune listening style', () => {
-  it('a syllable adds a rune, a pause sends the runes into the hat', () => {
+describe('the nodding listening style', () => {
+  it('syllables and pauses come from the level; a pause ends a phrase once', () => {
     const events: string[] = []
     const l = new Listener({ onSyllable: () => events.push('syl'), onPause: () => events.push('pause') })
     let t = 0
@@ -48,13 +48,10 @@ describe('the rune listening style', () => {
     expect(events.filter((e) => e === 'pause')).toHaveLength(1)
   })
 
-  it('runes orbit the hat, in front larger than behind', () => {
-    const front = orbit(Math.PI / 2)
-    const back = orbit(-Math.PI / 2)
-    expect(front[2]).toBeGreaterThan(back[2])
-    expect(front[0]).toBeCloseTo(RING.x, 3)
-    const r = newRune(() => 0.3)
-    expect(r.strokes.length).toBeGreaterThanOrEqual(2)
-    expect(r.suck).toBe(-1)
+  it('a nod dips once and comes back', () => {
+    expect(nodDip(-1)).toBe(0)
+    expect(nodDip(0)).toBe(0)
+    expect(nodDip(NOD_S / 2)).toBeCloseTo(1, 5)
+    expect(nodDip(NOD_S)).toBe(0)
   })
 })

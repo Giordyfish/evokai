@@ -10,6 +10,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- The console mascot listens by nodding: it looks up a little towards the person, the hat tip leans to them, and it
+  nods on each pause (the runes are gone). `<evokai-chat>` reports `listening` while the person talks over the agent
+  (a voice turn they cut off), so a mascot or an orb shows it listening instead of idle.
 - The console assistant sits at the bottom right, like an application's chat; it answers in the console's language
   (the session gets it at mint) and shows its starter questions in it. Agents may give starter questions per
   language (`suggestions_by_locale`, picked by the session's locale, else the application's).
