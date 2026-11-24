@@ -1,6 +1,6 @@
 # Capabilities
 
-A capability adds something to an agent's runs on the pydantic-ai engine ([pydantic-ai agent](pydantic-ai-agent.md)):
+A capability adds something to an agent's runs on the pydantic-ai engine (pydantic-ai agent):
 Evokai's own Code Mode, compaction and subagents, and every capability of pydantic-ai-harness 0.69. The catalog is
 `evokai.capabilities`; this page lists it.
 

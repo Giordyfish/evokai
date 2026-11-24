@@ -6179,6 +6179,32 @@
         "title": "Try",
         "type": "object"
       },
+      "TryBody": {
+        "description": "A message to send to an agent.",
+        "properties": {
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "TryBody",
+        "type": "object"
+      },
       "Unlock": {
         "description": "The application's slug, typed by the person who unlocks or resets it.",
         "properties": {
@@ -7283,6 +7309,64 @@
         "summary": "Switch Model",
         "tags": [
           "costs"
+        ]
+      }
+    },
+    "/agent/v1/admin/agents/{agent}/try": {
+      "post": {
+        "description": "Send one message to an agent as a test subject and read its answer.\n\nA real turn of the active version, like the playground's, in a conversation that keeps\nnothing. A change the agent asks for stops at its confirmation and never runs. It is paid from\nthe application's eval budget.\n\nReturns:\n    answer, toolsAsked (names), toolsRan (names), stoppedAtConfirmation, error, and the eval\n    budget used this month (share).\n\nRaises:\n    Conflict: The eval budget is used up (``eval_budget``).",
+        "operationId": "try_agent_agent_v1_admin_agents__agent__try_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Try Agent Agent V1 Admin Agents  Agent  Try Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "This month's eval budget is used up (eval_budget)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Try Agent",
+        "tags": [
+          "evals"
         ]
       }
     },

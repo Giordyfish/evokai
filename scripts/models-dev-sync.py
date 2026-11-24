@@ -115,7 +115,7 @@ def main() -> int:
         raw = Path(args.source).read_text(encoding="utf-8")
     else:
         req = urllib.request.Request(URL, headers={"User-Agent": "evokai-models-dev-sync"})
-        with urllib.request.urlopen(req, timeout=60) as r:  # ruff: ignore[S310] (fixed https URL)
+        with urllib.request.urlopen(req, timeout=60) as r:  # ruff: ignore[suspicious-url-open-usage] (fixed https URL)
             raw = r.read().decode("utf-8")
     snapshot = build(json.loads(raw))
     out = Path(args.out)

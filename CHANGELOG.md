@@ -8,8 +8,18 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- Trying an agent without the playground: `POST /v1/admin/agents/{agent}/try` sends one message to the active
+  version as a test subject and returns its answer and the tools it asked for, in a conversation that keeps nothing,
+  with changes stopped at their confirmation and the cost on the eval budget (409 `eval_budget` when it is used up).
+  The console assistant has it as `try_agent` (read-only, no confirmation), so a person can try an agent hands-free.
+
 ### Fixed
 
+- The console assistant's docs skill leaves out the pages about how Evokai is built inside (architecture, the
+  pydantic-ai integration, the security assessment): with them it reached its 500 KB size limit, and a skill over
+  the limit is refused, which broke the assistant. Links to them keep their words.
 - The console mascot listens by nodding: it looks up a little towards the person, the hat tip leans to them, and it
   nods on each pause (the runes are gone). `<evokai-chat>` reports `listening` while the person talks over the agent
   (a voice turn they cut off), so a mascot or an orb shows it listening instead of idle.

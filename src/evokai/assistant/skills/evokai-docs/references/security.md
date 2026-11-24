@@ -554,4 +554,4 @@ granted, and an agent must list a channel to be reached through it.
 - No conversation is ever stored at a model provider (`evokai.llm.policy`), only EU inference profiles are allowed by
   the deployment allow-list, and an application may declare its data residency ([privacy](privacy.md)).
 - Session tokens, origins, CORS, headers and the console's authentication are reviewed in
-  [security-assessment](security-assessment.md).
+  security-assessment.

@@ -168,6 +168,11 @@ PLAYBOOK: list[tuple[str, str, dict[str, Any]]] = [
     (r"monthly cap", "get_usage_summary", {}),
     (r"eval cases of the agent support", "list_eval_cases", {"agent": "support"}),
     (r"What skills", "list_skills", {}),
+    (
+        r"Ask the agent support",
+        "try_agent",
+        {"agent": "support", "message": "Returns after 30 days?"},
+    ),
     (r"Delete the agent support", "delete_agent", {"name": "support"}),
     (r"Remove the MCP server billing", "delete_mcp_server", {"name": "billing"}),
     (

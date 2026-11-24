@@ -79,7 +79,7 @@ conversations of the last 7 days, once each) with `EVOKAI_MEMORY_SUMMARY_MODEL` 
 the allow-lists and the residency), when the person's memory is active, the conversation has at least two messages of
 the person and the caps allow it. The summary call is a usage record (kind `llm`, tag `evokai:memory`) of the person.
 
-When the person [rewrites their last question](architecture.md#rewriting-the-last-question), memory keeps nothing of
+When the person rewrites their last question, memory keeps nothing of
 the replaced turn: the conversation's episode is deleted (it is written again once the conversation is finished), and
 so are the memories its agents wrote since the replaced question (an older memory one of them had superseded comes
 back). A memory the agent only merged with an existing near-duplicate keeps the merged text.

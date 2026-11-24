@@ -252,3 +252,54 @@ async def test_the_console_sees_shares_and_counts_never_amounts(env: Env) -> Non
         "/agent/v1/admin/agents/nobody/evals/runs", json={}, headers=CONSOLE
     )
     assert busy.status_code == 404
+
+
+# ── trying an agent (the console assistant's try_agent) ───────────────────────────────────────
+
+
+async def test_trying_an_agent_answers_and_keeps_nothing(env: Env) -> None:
+    env.script.add("function:primary", ["October has 24 orders open."])
+    r = await env.client.post(
+        "/agent/v1/admin/agents/helper/try",
+        json={"message": "How did October go?"},
+        headers=adm(env),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["answer"] == "October has 24 orders open."
+    assert body["stoppedAtConfirmation"] is False and body["error"] is None
+    assert 0 <= body["budgetPct"] <= 100
+    assert not MONEY.search(json.dumps({k: v for k, v in body.items() if k != "answer"}))
+    # Nothing is kept: no conversation of the test subject remains.
+    convs = await env.client.get("/agent/v1/admin/conversations", headers=adm(env))
+    assert all(
+        not str(c.get("subject", "")).startswith("try:") for c in convs.json().get("items", [])
+    )
+
+
+async def test_a_change_asked_for_while_trying_stops_at_its_confirmation(env: Env) -> None:
+    await env.client.patch(
+        "/agent/v1/admin/application", json={"eval_credential": "test-user-token"}, headers=adm(env)
+    )
+    env.script.add(
+        "function:primary",
+        [Tool("orders_month", {"period": "2026-10"})],
+        [Tool("order_refund", {"period": "2026-10"}, call_id="t2")],
+    )
+    r = await env.client.post(
+        "/agent/v1/admin/agents/helper/try", json={"message": "Refund October"}, headers=adm(env)
+    )
+    body = r.json()
+    assert body["stoppedAtConfirmation"] is True
+    assert body["toolsAsked"] == ["orders_month", "order_refund"]
+    assert [c[0] for c in env.mcp.calls] == ["orders_month"]  # the change never ran
+
+
+async def test_trying_an_agent_stops_at_the_eval_budget(env: Env) -> None:
+    await env.client.patch(
+        "/agent/v1/admin/application", json={"eval_monthly_usd": 0}, headers=adm(env)
+    )
+    r = await env.client.post(
+        "/agent/v1/admin/agents/helper/try", json={"message": "Hi"}, headers=adm(env)
+    )
+    assert r.status_code == 409 and r.json()["error"] == "eval_budget"

@@ -180,7 +180,7 @@ only through `--build-context`.
 
 The image (with the console built in) runs as uid 1001 on a read-only root filesystem with a tmpfs `/tmp`, listens on 8787
 and has a health check on `{EVOKAI_BASE_PATH}/health`. Released images are published to
-`ghcr.io/giordyfish/evokai` by `.github/workflows/release.yml` ([releasing](releasing.md)).
+`ghcr.io/giordyfish/evokai` by `.github/workflows/release.yml` (releasing).
 
 
 ## Supply chain
@@ -241,4 +241,4 @@ frame-ancestors 'none'` and `Cache-Control: no-store` (the console has its own s
 `X-Forwarded-Proto: https`. The browser session API (`/v1/session/*`) answers CORS for the origins the applications
 allow (never with credentials); bodies over 2 MB there (a recording to transcribe: `EVOKAI_TRANSCRIBE_MAX_BYTES`;
 speech and tool results: 256 KB), or 8 MB elsewhere, get 413. See
-[security assessment](security-assessment.md).
+security assessment.

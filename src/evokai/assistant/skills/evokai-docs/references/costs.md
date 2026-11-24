@@ -2,7 +2,7 @@
 
 Where an application's usage is heading this month, alerts before a cap is reached, the cheapest model that still
 passes an agent's evals, and agents that would gain from prompt caching. People see shares of the caps and costs as a
-percentage of the current model's, never an amount (see the hard rule in [architecture](architecture.md)). Code:
+percentage of the current model's, never an amount (see the hard rule in architecture). Code:
 `src/evokai/costs/` (`forecast`, `alerts`, `recommend`, `service`).
 
 ## Prices
@@ -89,7 +89,7 @@ everything a save does: allow-lists, residency, grants, evals, red team and its 
 `prompt_cache: off`
 whose stable prompt (instructions, preloaded skills, the list of skills) reaches the model's minimum cacheable prefix
 (4,096 tokens on Haiku, 1,024 otherwise), with the share of an average call's input it would serve. See
-[Prompt caching](architecture.md#prompt-caching).
+Prompt caching.
 
 ## Settings
 

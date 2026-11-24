@@ -19,7 +19,7 @@ The tools are generated from Evokai's OpenAPI, restricted to an explicit allow-l
 | --- | --- |
 | The application | `get_application`, `update_application` (a subset of the settings, below), `get_health`, `get_usage_summary` |
 | Agents | `list_agents`, `put_agent`, `delete_agent`, `list_agent_versions`, `get_agent_version_stats`, `switch_agent_model`, `get_model_recommendations` |
-| Evals and red team | `list_eval_cases`, `put_eval_case`, `delete_eval_case`, `list_eval_runs`, `start_eval_run`, `get_eval_run`, `list_redteam_runs`, `start_redteam_run`, `get_redteam_run` |
+| Evals and red team | `try_agent` (one message to an agent, read-only: nothing is kept, changes stop at their confirmation, paid from the eval budget), `list_eval_cases`, `put_eval_case`, `delete_eval_case`, `list_eval_runs`, `start_eval_run`, `get_eval_run`, `list_redteam_runs`, `start_redteam_run`, `get_redteam_run` |
 | Prompts and skills | `list_prompts`, `put_prompt`, `list_skills`, `get_skill`, `put_skill`, `delete_skill`, `get_skill_file`, `put_skill_file`, `delete_skill_file` |
 | MCP servers | `list_mcp_servers`, `put_mcp_server` (configuration only), `delete_mcp_server`, `list_connectors` |
 | Grants and policy | `get_grants`, `change_grants`, `get_security_policy`, `get_ask_rules` |
