@@ -2,7 +2,7 @@
 
 <img src="docs/assets/evokai-mascot.png" alt="Evokai, a small mage in a big violet hat" width="168" />
 
-# Evokai™
+# Evokai
 
 **Bring AI into your product: complete, governed, ready to plug in.**<br/>
 The agent backend, the chat and voice interface, the admin console, the governance and the monitoring, in one
@@ -346,6 +346,6 @@ Starring the repository and telling others about it helps too.
 
 Copyright 2026 Giordano Pescetelli. Licensed under the [Apache License 2.0](LICENSE).
 
-The name **Evokai™**, its logo and its mascot are unregistered trademarks of Giordano Pescetelli and are not covered
+The name **Evokai**, its logo and its mascot are unregistered trademarks of Giordano Pescetelli and are not covered
 by the license (see [NOTICE](NOTICE) and [TRADEMARKS.md](TRADEMARKS.md)): forks and derived works must use their own
 name and branding and keep the copyright notices.
