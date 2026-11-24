@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-24
+
 ### Changed
 
 - Browser voice: the Safari and iOS changes of 0.2.0 are reverted (recogniser replaced after the agent speaks, an
