@@ -42,7 +42,10 @@ export const appHref = (slug: string, tab: Tab = 'overview', id?: string): strin
 
 export interface Console {
   me: ConsoleMe
+  /** The applications the console lists (not the assistant's own while the assistant is off). */
   apps: ConsoleApplication[]
+  /** Every application of this login, the hidden ones too (the Assistant page reads its own role there). */
+  allApps: ConsoleApplication[]
   canCreate: boolean
   reloadApps: () => Promise<void>
   /** The login ended: back to sign in. */

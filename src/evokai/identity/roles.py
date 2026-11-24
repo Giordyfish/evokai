@@ -37,6 +37,7 @@ OWNER_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/v1/admin/application/reset"),
     ("GET", "/v1/admin/application/reset/preview"),
     ("POST", "/v1/admin/assistant/activate"),
+    ("POST", "/v1/admin/assistant/switch"),
     ("POST", "/v1/admin/assistant/try"),
     ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
 })

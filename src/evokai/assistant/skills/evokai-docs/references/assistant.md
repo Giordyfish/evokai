@@ -142,6 +142,7 @@ measured requirements above: a model recommended only by the estimate opens the 
 | `GET /v1/admin/assistant` | any console role: state, requirements, candidates (with their estimate), the latest try |
 | `POST /v1/admin/assistant/activate` `{model, acceptNotRecommended?}` | an owner of the assistant's application |
 | `POST /v1/admin/assistant/try` `{model}` | an owner of the assistant's application |
+| `POST /v1/admin/assistant/switch` `{on}` | an owner of the assistant's application: off, no launcher, no application in the console's list, sessions refused; the model is kept |
 | `POST /v1/console/assistant/session` `{conversationId?}` | a console login on an application |
 | `GET /v1/console/assistant/privacy`, `POST` `{version}` | a console login: the notice, the voice in use, inspections of one's conversations |
 | `POST /v1/admin/assistant/conversations/{id}/inspect` `{reason}` | an owner of the assistant's application |

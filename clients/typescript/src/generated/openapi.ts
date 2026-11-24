@@ -753,6 +753,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/assistant/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Assistant
+         * @description Switch the assistant on or off (owner of its application).
+         *
+         *     Off, the console shows neither its launcher nor its application, and its sessions are
+         *     refused; the model is kept, so switching it on again needs no new choice.
+         *
+         *     Returns:
+         *         ok, on and the model.
+         *
+         *     Raises:
+         *         Conflict: Switching on an assistant that never had a model (``no_model``: activate one).
+         */
+        post: operations["switch_assistant_agent_v1_admin_assistant_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/assistant/try": {
         parameters: {
             query?: never;
@@ -2917,7 +2946,8 @@ export interface paths {
          * @description The applications of this login, with what the console's list and switcher show.
          *
          *     Returns:
-         *         items, and whether this login may create applications (operator).
+         *         items (``hidden``: the assistant's application while the assistant is off), and whether
+         *         this login may create applications (operator).
          */
         get: operations["console_applications_agent_v1_console_applications_get"];
         put?: never;
@@ -6773,6 +6803,14 @@ export interface components {
             subject: string;
         };
         /**
+         * Switch
+         * @description Switching the assistant on or off.
+         */
+        Switch: {
+            /** On */
+            on: boolean;
+        };
+        /**
          * SwitchBody
          * @description The model the agent should answer with.
          */
@@ -8125,6 +8163,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Inspect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_assistant_agent_v1_admin_assistant_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Switch"];
             };
         };
         responses: {

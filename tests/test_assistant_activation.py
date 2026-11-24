@@ -127,6 +127,47 @@ async def test_activate_not_recommended_needs_explicit_acceptance(env: Env) -> N
     assert r.status_code == 400 and r.json()["error"] == "model"
 
 
+async def test_switch_off_and_on_keeps_the_model_and_hides_the_application(env: Env) -> None:
+    app_id = await _system(env)
+    await _measured(env, app_id, "function:primary", GOOD)
+    await _console_as(env, {"*": "owner"})
+    url = "/agent/v1/admin/assistant/switch"
+    # Never activated: nothing to switch on.
+    r = await env.client.post(url, json={"on": True}, headers=_on(app_id))
+    assert r.status_code == 409 and r.json()["error"] == "no_model", r.text
+
+    async def listed() -> dict[str, bool]:
+        items = (await env.client.get("/agent/v1/console/applications", headers=CONSOLE)).json()
+        return {a["slug"]: a["hidden"] for a in items["items"]}
+
+    assert (await listed())[SLUG] is True
+    r = await env.client.post(
+        "/agent/v1/admin/assistant/activate",
+        json={"model": "function:primary"},
+        headers=_on(app_id),
+    )
+    assert r.status_code == 200, r.text
+    assert (await listed())[SLUG] is False
+
+    r = await env.client.post(url, json={"on": False}, headers=_on(app_id))
+    assert r.status_code == 200 and r.json()["model"] == "function:primary", r.text
+    state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(app_id))).json()
+    assert state["active"] is False and state["off"] is True
+    assert state["model"] == "function:primary"
+    assert (await listed())[SLUG] is True
+    r = await _mint(env)
+    assert r.status_code == 409 and r.json()["error"] == "assistant_inactive", r.text
+    agent = await env.svc.store.agents.active(app_id, "assistant")
+    assert agent is not None and agent.definition["model"] == "evokai:unset"
+
+    r = await env.client.post(url, json={"on": True}, headers=_on(app_id))
+    assert r.status_code == 200, r.text
+    state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(app_id))).json()
+    assert state["active"] is True and state["off"] is False
+    assert state["model"] == "function:primary"
+    assert (await _mint(env)).status_code == 200
+
+
 async def test_activate_needs_owner(env: Env) -> None:
     app_id = await _system(env)
     body = {"model": "function:primary", "acceptNotRecommended": True}

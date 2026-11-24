@@ -293,7 +293,7 @@ export function Shell({ route }: { route: Route }) {
           </Btn>
         </div>
       </aside>
-      <div class="content">
+      <div class={`content ${assistantOn ? 'withassistant' : ''}`}>
         <div class="topbar">
           <Btn kind="ic sm mbar" label={t('shell.menu')} onClick={() => setOpen(!open)}>
             <Icon name="menu" />

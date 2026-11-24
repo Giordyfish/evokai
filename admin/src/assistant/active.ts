@@ -9,11 +9,27 @@ import { adminJson } from '../api'
 import { useConsole } from '../state'
 import { assistantActive, type AssistantState } from './choice'
 
-/** The assistant's state (null until read, or when it cannot be read); read again when `again` changes. */
+const CHANGED = 'evokai-assistant-changed'
+
+/** The assistant was activated or switched on or off: every reader reads its state again at once. */
+export const assistantChanged = (): void => {
+  dispatchEvent(new Event(CHANGED))
+}
+
+/**
+ * The assistant's state (null until read, or when it cannot be read); read again when `again` changes and when
+ * `assistantChanged()` is called.
+ */
 export function useAssistantState(...again: unknown[]): AssistantState | null {
   const c = useConsole()
-  const anyApp = c.apps[0]?.id ?? ''
+  const anyApp = c.allApps[0]?.id ?? ''
   const [state, setState] = useState<AssistantState | null>(null)
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    const on = () => setN((k) => k + 1)
+    addEventListener(CHANGED, on)
+    return () => removeEventListener(CHANGED, on)
+  }, [])
   useEffect(() => {
     if (!anyApp) {
       setState(null)
@@ -26,7 +42,7 @@ export function useAssistantState(...again: unknown[]): AssistantState | null {
     return () => {
       live = false
     }
-  }, [anyApp, ...again])
+  }, [anyApp, n, ...again])
   return state
 }
 

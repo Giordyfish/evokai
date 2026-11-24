@@ -50,6 +50,8 @@ export interface Trial {
 export interface AssistantState {
   available: boolean
   active: boolean
+  /** Switched off by an owner: no launcher, no application in the list; the model is kept. */
+  off?: boolean
   model: string | null
   applicationId?: string
   slug?: string

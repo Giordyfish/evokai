@@ -42,6 +42,8 @@ UNSET_MODEL = "evokai:unset"
 """The agent's model until an owner activates one (sessions are refused meanwhile)."""
 MODEL_KEY = "assistant_model"
 """Where the activated model is kept, in the application's defaults."""
+OFF_KEY = "assistant_model_off"
+"""The model of an assistant an owner switched off (kept so switching it on needs no new choice)."""
 UPDATE_KEY = "system_update_available"
 
 

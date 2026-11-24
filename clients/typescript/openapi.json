@@ -5622,6 +5622,20 @@
         "title": "SubjectRequest",
         "type": "object"
       },
+      "Switch": {
+        "description": "Switching the assistant on or off.",
+        "properties": {
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "Switch",
+        "type": "object"
+      },
       "SwitchBody": {
         "description": "The model the agent should answer with.",
         "properties": {
@@ -8024,6 +8038,50 @@
           }
         },
         "summary": "Inspect Conversation",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/switch": {
+      "post": {
+        "description": "Switch the assistant on or off (owner of its application).\n\nOff, the console shows neither its launcher nor its application, and its sessions are\nrefused; the model is kept, so switching it on again needs no new choice.\n\nReturns:\n    ok, on and the model.\n\nRaises:\n    Conflict: Switching on an assistant that never had a model (``no_model``: activate one).",
+        "operationId": "switch_assistant_agent_v1_admin_assistant_switch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Switch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Switch Assistant Agent V1 Admin Assistant Switch Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch Assistant",
         "tags": [
           "admin"
         ]
@@ -13175,7 +13233,7 @@
     },
     "/agent/v1/console/applications": {
       "get": {
-        "description": "The applications of this login, with what the console's list and switcher show.\n\nReturns:\n    items, and whether this login may create applications (operator).",
+        "description": "The applications of this login, with what the console's list and switcher show.\n\nReturns:\n    items (``hidden``: the assistant's application while the assistant is off), and whether\n    this login may create applications (operator).",
         "operationId": "console_applications_agent_v1_console_applications_get",
         "responses": {
           "200": {

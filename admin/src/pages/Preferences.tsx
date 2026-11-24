@@ -255,14 +255,26 @@ function Accessibility({ p }: { p: Prefs }) {
           labels={{ system: t('prefs.followSystem'), reduce: t('prefs.on'), full: t('prefs.off') }}
         />
       </Row>
-      <Row label={t('prefs.mascot')} hint={assistantOn ? `${t('prefs.mascotHint')} ${t('prefs.mascotAssistant')}` : t('prefs.mascotHint')}>
-        <Seg
-          options={CHOICES.mascot}
-          value={p.mascot}
-          onChange={(v) => setPrefs({ mascot: v })}
-          labels={{ on: t('prefs.mascotOn'), still: t('prefs.mascotStill'), hidden: t('prefs.mascotHidden') }}
-        />
-      </Row>
+      {assistantOn ? (
+        // The assistant's mage is the one on screen: animated or still. Removing it is switching the assistant off.
+        <Row label={t('prefs.mascot')} hint={t('prefs.mascotAssistant')}>
+          <Seg
+            options={['on', 'still'] as const}
+            value={p.mascot === 'still' ? 'still' : 'on'}
+            onChange={(v) => setPrefs({ mascot: v })}
+            labels={{ on: t('prefs.mascotOn'), still: t('prefs.mascotStill') }}
+          />
+        </Row>
+      ) : (
+        <Row label={t('prefs.mascot')} hint={t('prefs.mascotHint')}>
+          <Seg
+            options={CHOICES.mascot}
+            value={p.mascot}
+            onChange={(v) => setPrefs({ mascot: v })}
+            labels={{ on: t('prefs.mascotOn'), still: t('prefs.mascotStill'), hidden: t('prefs.mascotHidden') }}
+          />
+        </Row>
+      )}
       <Row label={t('prefs.textSize')} hint={t('prefs.textSizeHint')}>
         <Seg
           options={CHOICES.textSize.map(String) as Array<'100' | '112' | '125'>}

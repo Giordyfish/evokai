@@ -48,7 +48,13 @@ agents:
     client_tools:
       navigate:
         enabled: true
-        description: "Take the person to a page of the Evokai console."
+        description: >-
+          Take the person to a page of the Evokai console. Paths: /apps (every application), /apps/{slug}
+          (an application's overview), /apps/{slug}/{tab} with tab one of agents, evals, perms, mcp, connections,
+          channels, skills, prompts, knowledge, workflows, approvals, keys, limits, usage, traces,
+          conversations, security, privacy, providers, compliance, audit; /apps/{slug}/agents/{agent} (one
+          agent); /usage, /health, /access, /assistant, /preferences, /playground, /setup. {slug} is the
+          application's slug as the admin tools return it (e.g. vita), never its name or its id.
         path_pattern: "^/(apps|setup|playground|usage|health|access|preferences|assistant)(/[A-Za-z0-9_.:-]+)*/?(\\?[A-Za-z0-9=&_.:-]*)?$"
       chart: true
       diagram: false
