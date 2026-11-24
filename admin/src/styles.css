@@ -26,7 +26,7 @@ code,.mono{font:13px var(--mono)}
 .brand img{width:34px;height:34px}
 /* The small mage in the logo's place, a little larger than the mark and drawn over the header's padding. */
 .brand img.bmage{width:44px;height:44px;margin:-5px}
-.brand b{font:650 19px var(--disp);letter-spacing:-.02em}.brand sup{font:500 9px var(--ui);color:var(--mu)}
+.brand b{font:650 19px var(--disp);letter-spacing:-.02em}
 .switch{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:var(--r-lg);border:1px solid var(--hair);background:var(--glass2);color:var(--tx);cursor:pointer;text-align:left;font:500 14px var(--ui);position:relative}
 .switch:hover{border-color:color-mix(in srgb,var(--vi) 40%,transparent)}
 .av{width:28px;height:28px;border-radius:var(--r-sm);display:grid;place-items:center;font:650 13px var(--disp);color:#fff;flex:none}

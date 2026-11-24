@@ -8,6 +8,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Changed
+
+- The ™ sign is gone from the console, the README and the NOTICE files; the name, logo and mascot stay trademarks as
+  the NOTICE says.
+
 ## [0.2.2] - 2026-11-24
 
 ### Added

@@ -214,9 +214,7 @@ export function Shell({ route }: { route: Route }) {
       <aside class="side" aria-label={t('shell.navigation')}>
         <a class="brand" href="#/apps" title={t('shell.home')} aria-label={t('shell.homeLabel')}>
           <BrandMark assistantActive={assistantOn} />
-          <b>
-            Evokai<sup>™</sup>
-          </b>
+          <b>Evokai</b>
         </a>
         <div style="position:relative">
           <button class="switch" aria-haspopup="true" aria-expanded={pop} onClick={() => setPop(!pop)}>
