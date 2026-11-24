@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-24
+
 ### Added
 
 - Trying an agent without the playground: `POST /v1/admin/agents/{agent}/try` sends one message to the active
