@@ -83,6 +83,7 @@ code,.mono{font:13px var(--mono)}
 .panel>h3 .x{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .panel>h3 small{font:400 13px var(--ui);color:var(--mu)}
 .panel.flat{padding:0;overflow:hidden}
+.panel.flat>h3{padding:18px 20px 0}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-content:start}
 .g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g-21{grid-template-columns:minmax(0,1.55fr) minmax(0,1fr)}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .lbl{display:block;font:500 13px var(--ui);color:var(--mu);margin:0 0 6px}
@@ -519,6 +520,7 @@ details.acc>summary .ctl{cursor:default}
 /* Compact density: tighter tables, panels and navigation. */
 :root[data-density=compact] .panel{padding:14px 16px}
 :root[data-density=compact] .panel.flat{padding:0}
+:root[data-density=compact] .panel.flat>h3{padding:14px 16px 0}
 :root[data-density=compact] .tbl th{padding:9px 12px}
 :root[data-density=compact] .tbl td{padding:8px 12px}
 :root[data-density=compact] .item{padding:9px 14px}

@@ -8,6 +8,13 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Fixed
+
+- Console, Assistant page: the panels no longer touch each other, and the title of a flat panel (the models list,
+  the audit's changes) is no longer glued to its corner. Someone who signed in with an application's admin key sees
+  why they cannot choose the model (only an owner of `evokai-assistant` can, for example with the operator key) and
+  the buttons disabled, instead of a model list without them.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added
