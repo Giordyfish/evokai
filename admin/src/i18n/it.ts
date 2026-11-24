@@ -2872,6 +2872,7 @@ export const it: Messages = {
   "assistant.trialProgress": "{pct}% degli evals eseguiti",
   "assistant.trialDone": "Fatto: i valori sono nell'elenco",
   "assistant.trialEnded": "Terminata: {status}",
+  "assistant.trialLimit": "Interrotta: il budget mensile degli evals dell'applicazione dell'assistente è esaurito. Le prove già fatte restano; una nuova prova funziona quando il budget si rinnova il mese prossimo, o dopo che un owner lo alza.",
   "assistant.trialBudget": "{pct}% del budget degli evals usato",
   "assistant.panelTitle": "Assistente di Evokai",
   "assistant.actingOn": "Lavora sull'applicazione {app}",

@@ -8,6 +8,12 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Fixed
+
+- The built-in assistant's application has its own eval budget (`eval_monthly_usd: 10`): with the default (2), one
+  try of its suite on a large model used about a third of the month's budget, and a fourth try stopped at once. The
+  Assistant page says so when a try stops at the budget, instead of «Ended: limit».
+
 ## [0.2.1] - 2026-11-24
 
 ### Changed
