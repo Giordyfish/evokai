@@ -36,6 +36,7 @@ OWN_WRITES: dict[str, Mapping[str, str] | None] = {
     "/v1/admin/application/unlock": None,
     "/v1/admin/application/reset": None,
     "/v1/admin/assistant/activate": None,
+    "/v1/admin/assistant/switch": None,
     "/v1/admin/assistant/try": None,
     "/v1/admin/assistant/conversations/{conversation_id}/inspect": None,
     "/v1/admin/agents/{name}": _AGENT,
@@ -96,7 +97,7 @@ IDENTITY = frozenset({
     "created_at",
 })
 """Columns that say which application it is, not how it is set."""
-KEPT_DEFAULTS = (shipped.MODEL_KEY, MEASURED_KEY)
+KEPT_DEFAULTS = (shipped.MODEL_KEY, shipped.OFF_KEY, MEASURED_KEY)
 """Defaults a reset keeps: the activated model and the owner's measured tries (results, not
 settings). Every other default goes, the shipped definition writes its own."""
 

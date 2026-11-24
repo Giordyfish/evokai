@@ -117,6 +117,29 @@ async def test_client_tools_emit_navigation_and_sanitised_charts(env: Env) -> No
     assert [p["label"] for p in chart["points"]] == ["A", "B"]
 
 
+async def test_navigation_takes_a_hash_route_and_explains_a_refused_path(env: Env) -> None:
+    env.script.add(
+        "function:primary",
+        [
+            Tool("ui_navigate", {"path": "#/backend/y"}, "a"),
+            Tool("ui_navigate", {"path": "https://example.com/x"}, "b"),
+        ],
+        ["Ecco."],
+    )
+    tok = await env.token()
+    ev = await env.chat(tok["token"], text="Apri")
+    assert [e["path"] for e in ev if e["type"] == "navigate"] == ["/backend/y"]
+    _, messages = env.script.seen[-1]
+    refused = [
+        str(p.content)
+        for m in messages
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+        if isinstance(p, ToolReturnPart) and p.tool_call_id == "b"
+    ]
+    assert refused and "starts with /" in refused[0], refused
+
+
 async def test_ask_ends_the_turn_and_the_answer_is_labelled(env: Env) -> None:
     env.script.add(
         "function:primary",

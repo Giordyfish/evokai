@@ -233,6 +233,46 @@ async def activate_assistant(
     return {"ok": True, "model": model, "recommended": recommended}
 
 
+class Switch(BaseModel):
+    """Switching the assistant on or off."""
+
+    on: bool
+
+
+@router.post("/assistant/switch")
+async def switch_assistant(body: Switch, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
+    """Switch the assistant on or off (owner of its application).
+
+    Off, the console shows neither its launcher nor its application, and its sessions are
+    refused; the model is kept, so switching it on again needs no new choice.
+
+    Returns:
+        ok, on and the model.
+
+    Raises:
+        Conflict: Switching on an assistant that never had a model (``no_model``: activate one).
+    """
+    app = await _owned_assistant(svc, a, "switches")
+    defaults = app.defaults or {}
+    if body.on:
+        model = defaults.get(shipped.MODEL_KEY) or defaults.get(shipped.OFF_KEY)
+        if not model:
+            raise Conflict("Choose the assistant's model first.", code="no_model")
+        if not defaults.get(shipped.MODEL_KEY):
+            await activation.activate(svc, app, str(model), by=a.key_id)
+    else:
+        model = await activation.switch_off(svc, app, by=a.key_id) or defaults.get(shipped.OFF_KEY)
+    await audit.record(
+        request,
+        a,
+        "assistant.switch",
+        target=str(model or ""),
+        before={"on": bool(defaults.get(shipped.MODEL_KEY))},
+        after={"on": body.on},
+    )
+    return {"ok": True, "on": body.on, "model": model}
+
+
 @router.post("/assistant/try", status_code=202)
 async def try_assistant_model(body: Try, svc: Svc, a: Admin) -> dict[str, Any]:
     """Run the assistant's eval suite on one model (owner), against the recorded admin MCP server.

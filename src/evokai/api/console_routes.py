@@ -28,6 +28,7 @@ from evokai.api.deps import admin_app, console_login, operator, services
 from evokai.api.grants_routes import grant_view
 from evokai.api.trace_routes import note_view
 from evokai.api.trace_routes import summary as trace_summary
+from evokai.assistant import bootstrap as shipped
 from evokai.assistant.privacy import lists_everyone, own_subject
 from evokai.core.caps import LEGACY
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
@@ -808,17 +809,34 @@ async def _card(svc: Services, app: m.Application, now: datetime) -> dict[str, A
     }
 
 
+def _assistant_off(app: m.Application) -> bool:
+    """Whether this is the built-in assistant's application while the assistant is not on.
+
+    The console lists it only while the assistant is active (``hidden`` otherwise); the
+    Assistant page still manages it.
+
+    Returns:
+        True for the assistant's application without an active model.
+    """
+    return (
+        bool(app.system)
+        and app.slug == shipped.SLUG
+        and not (app.defaults or {}).get(shipped.MODEL_KEY)
+    )
+
+
 @router.get("/v1/console/applications")
 async def console_applications(svc: Svc, login: ConsoleUser) -> dict[str, Any]:
     """The applications of this login, with what the console's list and switcher show.
 
     Returns:
-        items, and whether this login may create applications (operator).
+        items (``hidden``: the assistant's application while the assistant is off), and whether
+        this login may create applications (operator).
     """
     now = utcnow()
     return {
         "items": [
-            {**await _card(svc, a, now), "role": login.role_for(a)}
+            {**await _card(svc, a, now), "role": login.role_for(a), "hidden": _assistant_off(a)}
             for a in await _visible(svc, login)
         ],
         "canCreate": login.deployment_owner,

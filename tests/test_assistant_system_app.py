@@ -66,6 +66,7 @@ async def test_any_write_on_locked_system_app_is_409(env: Env) -> None:
         "/agent/v1/admin/application/unlock",
         "/agent/v1/admin/application/reset",
         "/agent/v1/admin/assistant/activate",
+        "/agent/v1/admin/assistant/switch",
         "/agent/v1/admin/assistant/try",
         "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect",
     }

@@ -1140,6 +1140,8 @@ export interface ConsoleApplication {
   grants: GrantSummary
   /** The role of this login on the application. */
   role?: ConsoleRole | null
+  /** The built-in assistant's application while the assistant is off: only its own page shows it. */
+  hidden?: boolean
 }
 export interface ConsoleHealth {
   database: { status: 'ok' | 'down'; error: string | null; latencyMs: number; dialect: string; schema: string | null; revision: string | null; head: string | null }

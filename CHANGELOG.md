@@ -8,6 +8,21 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- An on/off switch for the console assistant on the Assistant page (`POST /v1/admin/assistant/switch`, owner): off,
+  the console shows neither the mage nor the assistant's application and its sessions are refused; the model is kept,
+  so switching it on again needs no new choice. `GET /v1/console/applications` marks that application `hidden`.
+
+### Fixed
+
+- The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
+  page scrolls past it so it never covers the last line.
+- The console assistant could not open pages: the navigate tool now lists the console's paths and wants the
+  application's slug, a hash route (`#/apps/x`) is the same page, and a refused path tells the model the format.
+- With the assistant on, the Mascot preference offers animated or still (the assistant's mage); removing the mage is
+  switching the assistant off.
+
 ### Changed
 
 - The ™ sign is gone from the console, the README and the NOTICE files; the name, logo and mascot stay trademarks as

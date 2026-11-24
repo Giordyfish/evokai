@@ -3099,10 +3099,17 @@ class TurnEngine:
 
         if name == "ui_navigate":
             path = args.get("path")
+            # A hash route ("#/apps/x") is the same page as its path.
+            if isinstance(path, str):
+                path = path.strip().removeprefix("#")
             if not isinstance(path, str) or not re.match(
                 agent.client_tools.navigate.path_pattern, path
             ):
-                return ToolResult(False, "Path not allowed.")
+                return ToolResult(
+                    False,
+                    "Path not allowed: give a path that starts with / and matches "
+                    f"{agent.client_tools.navigate.path_pattern} (no address, no spaces).",
+                )
             show({"type": "navigate", "path": path})
             return ToolResult(True, f"Opened {path}")
         if name == "ui_chart":

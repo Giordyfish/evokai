@@ -51,6 +51,8 @@ code,.mono{font:13px var(--mono)}
 .side .me{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mu);flex:1;min-width:0}
 .side .me i{width:26px;height:26px;border-radius:50%;background:var(--vis);display:grid;place-items:center;font:600 11px var(--ui);color:var(--vi);font-style:normal;flex:none}
 .content{min-width:0;padding:12px 24px 80px 28px;overflow-x:clip}
+/* The assistant's launcher sits over the bottom right: every page scrolls past it, so it never covers the last line. */
+.content.withassistant{padding-bottom:150px}
 .topbar{display:flex;align-items:center;gap:12px;height:56px;position:sticky;top:0;z-index:15;margin:0 -24px 6px -28px;padding:0 24px 0 28px;background:linear-gradient(var(--bg) 55%,transparent)}
 .crumbs{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--mu);min-width:0;white-space:nowrap;overflow:hidden}
 .crumbs a{color:var(--mu);text-decoration:none;cursor:pointer}.crumbs a:hover{color:var(--tx)}
@@ -380,6 +382,7 @@ td .seg{flex-wrap:nowrap}td .seg [data-v]{padding:0 9px;white-space:nowrap}
   .side{position:fixed;inset:8px auto 8px 8px;width:min(290px,86vw);height:auto;margin:0;z-index:70;transform:translateX(-110%);transition:transform .25s}
   .shell.open .side{transform:none}
   .content{padding:0 16px 80px}
+  .content.withassistant{padding-bottom:150px}
   .topbar{margin:0 -16px 0;padding:0 16px}
   .mbar{display:inline-flex}
   .cmdk{min-width:0;width:38px;padding:0;justify-content:center}.cmdk span,.cmdk kbd{display:none}

@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'preact/hooks'
 
 import { adminJson, describe } from '../api'
+import { assistantChanged } from '../assistant/active'
 import { activateBody, type AssistantState, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../assistant/choice'
 import { deleted, kindText, type ResetPreview, resetExport, slugTyped } from '../assistant/reset'
 import { fitBadge, fitReasons } from '../fit'
@@ -15,7 +16,7 @@ import { download } from '../format'
 import { num, t, tn } from '../i18n'
 import { Empty, toast } from '../magic'
 import { setTitle, useConsole } from '../state'
-import { Bar, Btn, Field, Hero, Panel, Tag } from '../ui'
+import { Bar, Btn, Field, Hero, Panel, Switch, Tag } from '../ui'
 
 function Numbers({ c }: { c: Candidate }) {
   const m = c.measured
@@ -147,8 +148,8 @@ export function Assistant() {
   const [picked, setPicked] = useState<Candidate | null>(null)
   const [ticked, setTicked] = useState(false)
   const [busy, setBusy] = useState(false)
-  const anyApp = c.apps[0]?.id ?? ''
-  const system = state?.applicationId ? c.apps.find((a) => a.id === state.applicationId) : undefined
+  const anyApp = c.allApps[0]?.id ?? ''
+  const system = state?.applicationId ? c.allApps.find((a) => a.id === state.applicationId) : undefined
   const owner = system?.role === 'owner'
 
   const load = async () => {
@@ -177,8 +178,25 @@ export function Assistant() {
       setPicked(null)
       setTicked(false)
       await load()
+      assistantChanged()
+      await c.reloadApps()
     } catch (e) {
       toast(t('assistant.notActivated'), describe(e), null)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const switchTo = async (on: boolean) => {
+    if (!state?.applicationId) return
+    setBusy(true)
+    try {
+      await adminJson(state.applicationId, 'POST', '/v1/admin/assistant/switch', { on })
+      toast(on ? t('assistant.switchedOn') : t('assistant.switchedOff'), state.model ?? '', on ? 'sparkles' : null)
+      await load()
+      assistantChanged()
+      await c.reloadApps()
+    } catch (e) {
+      toast(t('assistant.notSwitched'), describe(e), null)
     } finally {
       setBusy(false)
     }
@@ -215,17 +233,27 @@ export function Assistant() {
         title={t('page.assistant')}
         sub={t('assistant.sub')}
         actions={
-          state.active ? (
-            <Tag tone="ok" dot>
-              {t('assistant.active', { model: state.model ?? '' })}
-            </Tag>
-          ) : (
-            <Tag tone="warn" dot>
-              {t('assistant.inactive')}
-            </Tag>
-          )
+          <>
+            {state.active ? (
+              <Tag tone="ok" dot>
+                {t('assistant.active', { model: state.model ?? '' })}
+              </Tag>
+            ) : state.off ? (
+              <Tag dot>{t('assistant.off')}</Tag>
+            ) : (
+              <Tag tone="warn" dot>
+                {t('assistant.inactive')}
+              </Tag>
+            )}
+            {state.active || state.off ? (
+              <span title={t('assistant.switchHint')}>
+                <Switch on={!!state.active} disabled={!owner || busy} onChange={(v) => void switchTo(v)} label={t('assistant.switchLabel')} />
+              </span>
+            ) : null}
+          </>
         }
       />
+      {state.active || state.off ? <p class="hint">{t('assistant.switchHint')}</p> : null}
       <div class="grid">
         <Panel cls="disclaimer" title={t('assistant.disclaimerTitle')}>
           <p class="hint">{t('assistant.disclaimerText')}</p>
