@@ -270,10 +270,10 @@ async def test_the_assistant_speaks_the_console_language_and_suggests_in_it(env:
     app_id = await _system(env)
     app = await env.svc.store.applications.get(app_id)
 
-    class Conv:
-        prompt_options = {"locale": "it-IT"}
+    from types import SimpleNamespace
 
-    italian = await _suggestions(env.svc, app_id, "assistant", _language(app, Conv()))
+    conv = SimpleNamespace(prompt_options={"locale": "it-IT"})
+    italian = await _suggestions(env.svc, app_id, "assistant", _language(app, conv))
     english = await _suggestions(env.svc, app_id, "assistant", _language(app, None))
     assert italian and italian != english
     assert any("applicazione" in q for q in italian)

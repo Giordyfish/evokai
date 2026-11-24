@@ -2,8 +2,8 @@
 # written by scripts/assistant_evals.py at release time. A model is recommended when its numbers meet
 # every requirement; a model with no entry is "not measured" until an owner tries it.
 #
-# The entry below was measured on Evokai's default test model (test:*), which calls no tools: it is
-# here so the console has a measured, not recommended, model to show.
+# test:* is Evokai's default test model, which calls no tools: a measured, not recommended entry.
+# The Bedrock EU entries were measured on 2026-11-24 with the suite of 0.2.1.
 models:
 - pattern: test:*
   tool_calls_pct: 0.0
@@ -12,3 +12,24 @@ models:
   context_tokens: 128000
   measured_at: '2026-11-22'
   evokai_version: 0.1.3
+- pattern: bedrock:eu.anthropic.claude-sonnet-4-6*
+  tool_calls_pct: 100.0
+  confirm_pct: 100.0
+  redteam_pct: 100.0
+  context_tokens: 1000000
+  measured_at: '2026-11-24'
+  evokai_version: 0.2.1
+- pattern: bedrock:eu.anthropic.claude-haiku-4-5*
+  tool_calls_pct: 100.0
+  confirm_pct: 100.0
+  redteam_pct: 100.0
+  context_tokens: 200000
+  measured_at: '2026-11-24'
+  evokai_version: 0.2.1
+- pattern: bedrock:eu.amazon.nova-2-lite*
+  tool_calls_pct: 100.0
+  confirm_pct: 100.0
+  redteam_pct: 83.3
+  context_tokens: 1000000
+  measured_at: '2026-11-24'
+  evokai_version: 0.2.1

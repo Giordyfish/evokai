@@ -101,13 +101,34 @@ def measured(app: m.Application | None, model: str) -> dict[str, Any] | None:
     Returns:
         The numbers with their ``source`` (``try`` or ``release``), or None.
     """
-    tried = ((app.defaults if app else None) or {}).get(MEASURED_KEY) or {}
-    if model in tried:
-        return {**tried[model], "source": "try"}
-    for entry in released():
-        if fnmatch.fnmatchcase(normalize(model), str(entry.get("pattern") or "")):
-            return {**{k: v for k, v in entry.items() if k != "pattern"}, "source": "release"}
-    return None
+    tried = (((app.defaults if app else None) or {}).get(MEASURED_KEY) or {}).get(model)
+    release = next(
+        (
+            {**{k: v for k, v in entry.items() if k != "pattern"}, "source": "release"}
+            for entry in released()
+            if fnmatch.fnmatchcase(normalize(model), str(entry.get("pattern") or ""))
+        ),
+        None,
+    )
+    # The owner's try wins, unless it was made on an older Evokai than the release's numbers (the
+    # suite or its scoring changed since).
+    if tried and not (release and _older(tried, release)):
+        return {**tried, "source": "try"}
+    return release
+
+
+def _older(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Whether measurement ``a`` was taken on an older Evokai than ``b``.
+
+    Returns:
+        True when ``a``'s version is lower.
+    """
+
+    def v(x: dict[str, Any]) -> tuple[int, ...]:
+        parts = str(x.get("evokai_version") or "0").split(".")
+        return tuple(int(p) if p.isdigit() else 0 for p in parts[:3])
+
+    return v(a) < v(b)
 
 
 def meets(numbers: dict[str, Any] | None, model: str) -> bool:

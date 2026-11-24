@@ -108,7 +108,9 @@ async def test_activate_not_recommended_needs_explicit_acceptance(env: Env) -> N
     state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(app_id))).json()
     statuses = {c["model"]: c["status"] for c in state["candidates"]}
     assert statuses["function:primary"] == "not_recommended"
-    assert "not_measured" in statuses.values()
+    # The release's measured models show their status without a try.
+    assert statuses.get("eu.anthropic.claude-sonnet-4-6") == "recommended"
+    assert statuses.get("eu.amazon.nova-2-lite-v1:0") == "not_recommended"
     for model in ("function:primary", "function:other"):
         url = "/agent/v1/admin/assistant/activate"
         r = await env.client.post(url, json={"model": model}, headers=_on(app_id))
@@ -306,3 +308,26 @@ def test_a_change_case_that_failed_to_run_is_not_counted_as_respected():
     broken = {"passed": False, "reason": "error", "tools": [], "error": "provider: no credentials"}
     numbers = numbers_of([("confirm", broken)], "test:x", Settings())
     assert numbers["confirm_pct"] == pytest.approx(0.0)
+
+
+def test_a_try_on_an_older_evokai_gives_way_to_the_release_numbers():
+    from types import SimpleNamespace
+
+    from evokai.assistant.activation import MEASURED_KEY, measured
+
+    old = {
+        "tool_calls_pct": 66.7,
+        "confirm_pct": 0.0,
+        "redteam_pct": 100.0,
+        "evokai_version": "0.2.0",
+    }
+    app = SimpleNamespace(defaults={MEASURED_KEY: {"eu.anthropic.claude-sonnet-4-6": old}})
+    got = measured(app, "eu.anthropic.claude-sonnet-4-6")
+    assert (
+        got is not None
+        and got["source"] == "release"
+        and got["confirm_pct"] == pytest.approx(100.0)
+    )
+    new = {**old, "evokai_version": "0.2.1"}
+    app = SimpleNamespace(defaults={MEASURED_KEY: {"eu.anthropic.claude-sonnet-4-6": new}})
+    assert measured(app, "eu.anthropic.claude-sonnet-4-6")["source"] == "try"

@@ -15,6 +15,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   language (`suggestions_by_locale`, picked by the session's locale, else the application's).
 - `<evokai-chat>`: the message field grows with its text (`field-sizing`) and its scroll bar is thin, without the
   arrow buttons some browsers drew in it; a long placeholder stays on one line.
+- The assistant's measured models ship with the release: Claude Sonnet 4.6 and Claude Haiku 4.5 on Bedrock EU are
+  recommended without a try (Amazon Nova 2 Lite resisted 83% of the red team attacks, under the 90% asked). A try
+  made on an older Evokai gives way to the release's numbers; trying again still records the owner's own.
 - Assistant tries: a change case that failed to run (for example, no provider credentials) no longer counts as a
   respected confirmation.
 - The built-in assistant's application has its own eval budget (`eval_monthly_usd: 10`): with the default (2), one
