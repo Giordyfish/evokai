@@ -6506,7 +6506,7 @@
   "info": {
     "summary": "Agents runtime: any model provider, MCP tools, skills and voice sessions.",
     "title": "Evokai",
-    "version": "0.2.1"
+    "version": "0.2.2"
   },
   "openapi": "3.1.0",
   "paths": {
