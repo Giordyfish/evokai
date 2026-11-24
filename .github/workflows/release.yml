@@ -1,5 +1,6 @@
 # A release, from a tag vX.Y.Z (see docs/releasing.md for the one-time setup):
-#   - every gate (the CI workflow);
+#   - every gate (the CI workflow), unless the CI workflow already passed on this very commit (the push to main that the
+#     tag points at): then that run is waited for and reused instead of running the same tests again;
 #   - the service image, lite and full, linux/amd64 and linux/arm64, to ghcr.io/giordyfish/evokai, signed (keyless);
 #   - the Python client (evokai-client) and its alias (evokai) to PyPI with trusted publishing: no token in the
 #     repository;
@@ -52,14 +53,46 @@ jobs:
             || { echo "::error file=clients/aliases/python/pyproject.toml::dependency is not evokai-client==$version"; fail=1; }
           exit $fail
 
+  # The commit a release tag points at is on main, whose push ran the CI workflow already: wait for that run and reuse
+  # it. Only when there is none (or it did not pass) do the gates run here.
+  ci:
+    name: CI passed on this commit
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read   # read the CI runs of this commit
+    outputs:
+      green: ${{ steps.c.outputs.green }}
+    steps:
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          green=false
+          for _ in $(seq 1 110); do
+            runs=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push" \
+              --jq '[.workflow_runs[] | {status, conclusion}]')
+            if [ "$(jq '[.[] | select(.conclusion == "success")] | length' <<< "$runs")" -gt 0 ]; then green=true; break; fi
+            if [ "$(jq '[.[] | select(.status != "completed")] | length' <<< "$runs")" -eq 0 ]; then break; fi
+            sleep 30
+          done
+          echo "CI on $SHA passed: $green"
+          echo "green=$green" >> "$GITHUB_OUTPUT"
+
   gates:
     name: Gates
-    needs: versions
+    needs: [versions, ci]
+    if: ${{ !cancelled() && needs.ci.result == 'success' && needs.ci.outputs.green != 'true' }}
     uses: ./.github/workflows/ci.yml
 
   image:
     name: Image (${{ matrix.flavour }})
-    needs: [versions, gates]
+    needs: [versions, ci, gates]
+    # Published only after tests passed: the CI run of this commit, or the gates here.
+    if: ${{ !cancelled() && needs.versions.result == 'success' && needs.ci.result == 'success' && (needs.gates.result == 'success' || (needs.gates.result == 'skipped' && needs.ci.outputs.green == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -129,7 +162,9 @@ jobs:
 
   pypi:
     name: PyPI (evokai-client)
-    needs: [versions, gates]
+    needs: [versions, ci, gates]
+    # Published only after tests passed: the CI run of this commit, or the gates here.
+    if: ${{ !cancelled() && needs.versions.result == 'success' && needs.ci.result == 'success' && (needs.gates.result == 'success' || (needs.gates.result == 'skipped' && needs.ci.outputs.green == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -178,7 +213,9 @@ jobs:
 
   npm:
     name: npm (@evokai/evokai-client, @evokai/evokai-ui, evokai)
-    needs: [versions, gates]
+    needs: [versions, ci, gates]
+    # Published only after tests passed: the CI run of this commit, or the gates here.
+    if: ${{ !cancelled() && needs.versions.result == 'success' && needs.ci.result == 'success' && (needs.gates.result == 'success' || (needs.gates.result == 'skipped' && needs.ci.outputs.green == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
