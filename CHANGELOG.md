@@ -8,6 +8,13 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Changed
+
+- Browser voice: the Safari and iOS changes of 0.2.0 are reverted (recogniser replaced after the agent speaks, an
+  interim phrase sent when a session ends, repeated results stripped, the echo rule for short replies). They fixed
+  behaviour that could not be reproduced on the iPads in use, where 0.1 already worked; the voice is again as in
+  0.1.3.
+
 ### Fixed
 
 - Console, Assistant page: the panels no longer touch each other, and the title of a flat panel (the models list,

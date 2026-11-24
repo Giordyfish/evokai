@@ -4,7 +4,6 @@
  * `unsupported`, unless the application allows the browser's online recogniser (`allowOnline`, e.g. Safari and every
  * iOS browser, where the audio goes to the browser vendor's speech service): then that one is used, and only there.
  */
-import { norm } from '../speech'
 import { Emitter, type SttEngine, type SttEvents, type SttSupport } from '../voice/types'
 
 export interface RecognitionResultLike {
@@ -109,19 +108,6 @@ export interface OnDeviceSttOptions extends OnDeviceOptions {
   restartMs?: number
 }
 
-/**
- * A result without the words a recogniser already gave as final in this session. Some recognisers (WebKit is
- * reported to) repeat the earlier phrases at the start of a later result; those words were reported once already.
- */
-export function withoutRepeat(text: string, before: string): string {
-  const said = norm(before).split(' ').filter(Boolean)
-  if (!said.length) return text
-  const words = text.trim().split(/\s+/).filter(Boolean)
-  if (words.length <= said.length) return text
-  const head = norm(words.slice(0, said.length).join(' '))
-  return head === said.join(' ') ? words.slice(said.length).join(' ') : text
-}
-
 /** The on-device `SttEngine`. */
 export class OnDeviceStt implements SttEngine {
   readonly kind = 'on-device' as const
@@ -132,8 +118,6 @@ export class OnDeviceStt implements SttEngine {
   private active = false
   private continuous = false
   private track: MediaStreamTrack | null = null
-  /** Counts starts and stops: a start still checking support gives way to a later start, stop or abort. */
-  private gen = 0
   /** On the device (processLocally), or the browser's online recogniser where only that one is allowed and exists. */
   private local = true
 
@@ -160,14 +144,11 @@ export class OnDeviceStt implements SttEngine {
 
   async start(opts: { continuous: boolean; track?: MediaStreamTrack | null }): Promise<void> {
     if (this.active) return
-    const gen = ++this.gen
     if (!(await ensureRecognition({ ...this.opts, lang: this.lang }))) {
       this.events.emit('error', { code: 'unsupported', message: 'On-device speech recognition is not available.' })
       throw new Error('unsupported')
     }
-    const local = await recognitionIsLocal({ ...this.opts, lang: this.lang })
-    if (gen !== this.gen || this.active) return
-    this.local = local
+    this.local = await recognitionIsLocal({ ...this.opts, lang: this.lang })
     this.active = true
     this.continuous = opts.continuous
     this.track = opts.track ?? null
@@ -184,11 +165,7 @@ export class OnDeviceStt implements SttEngine {
     r.interimResults = true
     if (this.local) r.processLocally = true
     this.rec = r
-    /** This session's final text (to drop it when repeated), and the phrase heard but not final yet. */
-    let finals = ''
-    let pending = ''
     r.onresult = (e) => {
-      if (this.rec !== r) return
       if (!this.continuous) {
         // One phrase: report the whole transcript so far.
         let t = ''
@@ -203,21 +180,15 @@ export class OnDeviceStt implements SttEngine {
       for (let k = e.resultIndex; k < e.results.length; k++) {
         const res = e.results[k]
         if (!res) continue
-        const text = withoutRepeat(res[0]?.transcript ?? '', finals)
+        const text = res[0]?.transcript ?? ''
         if (res.isFinal) {
-          finals = `${finals} ${text}`
-          pending = ''
           this.events.emit('interim', '')
           this.events.emit('final', text)
-        } else {
-          pending = text
-          this.events.emit('interim', text)
-        }
+        } else this.events.emit('interim', text)
       }
     }
     r.onspeechstart = () => this.events.emit('speechstart', null)
     r.onerror = (e) => {
-      if (this.rec !== r) return
       if (FATAL.has(e.error)) {
         this.active = false
         this.events.emit('error', { code: e.error, message: e.message ?? e.error })
@@ -225,15 +196,8 @@ export class OnDeviceStt implements SttEngine {
     }
     r.onend = () => {
       if (this.rec !== r) return
-      if (this.active && this.continuous) {
-        // A session may end with its last phrase still interim (WebKit's continuous recognition may never mark one
-        // final, and Apple's recogniser ends a task after about a minute): it is delivered, not dropped by the restart.
-        if (pending.trim()) {
-          this.events.emit('interim', '')
-          this.events.emit('final', pending)
-        }
-        setTimeout(() => this.listen(), this.opts.restartMs ?? 150)
-      } else {
+      if (this.active && this.continuous) setTimeout(() => this.listen(), this.opts.restartMs ?? 150)
+      else {
         this.active = false
         this.rec = null
         this.events.emit('end', null)
@@ -249,13 +213,11 @@ export class OnDeviceStt implements SttEngine {
   }
 
   stop(): void {
-    this.gen++
     this.active = false
     this.rec?.stop()
   }
 
   abort(): void {
-    this.gen++
     this.active = false
     const r = this.rec
     this.rec = null
