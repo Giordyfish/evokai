@@ -1,10 +1,9 @@
 /**
  * The mascot next to the assistant's chat. Most states play the existing animations (`public/fx`); listening and
  * speaking are drawn live: the body image (`public/mascot/body.png`) is warped in WebGL (breathing, the hat's sway,
- * a lean) with the eyes drawn by the shader, and a 2D canvas on top carries the runes and the sparks.
+ * a lean) with the eyes drawn by the shader, and a 2D canvas on top carries the sparks.
  *
- * - Listening: the hat tip perks up with a slight lean, a rune appears at each syllable the person says, orbits the
- *   hat, and on a pause the runes fly into the hat tip.
+ * - Listening: it looks up a little towards the person, the hat tip leans to them, and it nods on each pause.
  * - Speaking: the eyes light up with the voice's envelope (no squash), sparks rise from the staff when it ends.
  *
  * The "still" mascot preference and reduced motion show the still frame; "hidden" shows nothing. Without WebGL the
@@ -14,7 +13,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 
 import type { AudioSignal, AudioSignals } from '@client/browser/index'
 import { mascotMoves, onPrefs } from '../prefs'
-import { Listener, MAX_RUNES, newRune, type Rune, stepRunes } from './runes'
+import { Listener, nodDip } from './listener'
 import { CLIP_MS, clipSrc, type MascotView, stillFor } from './state'
 
 interface Meta {
@@ -89,8 +88,8 @@ interface Spark {
   rot: number
 }
 
-/** The live renderer: WebGL body and eyes, 2D runes and sparks. Returns null without WebGL. */
-function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D, meta: Meta, body: HTMLImageElement, runeScale: number) {
+/** The live renderer: WebGL body and eyes, 2D sparks. Returns null without WebGL. */
+function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D, meta: Meta, body: HTMLImageElement) {
   const sh = (type: number, src: string) => {
     const s = gl.createShader(type)!
     gl.shaderSource(s, src)
@@ -131,9 +130,9 @@ function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D,
   gl.uniform3f(U('pale'), 0.965, 0.91, 1.0)
 
   const S = { sway: spring(90, 9), tilt: spring(60, 12), eyeScale: spring(140, 16, 1), glow: spring(160, 18), open: spring(500, 30, 1), dy: spring(200, 18) }
-  const runes: Rune[] = []
   const sparks: Spark[] = []
-  let flash = 0
+  let nodAt = -9
+  let nodNow = false
   let env = 0
   let kick = 0
   let mic = 0
@@ -141,11 +140,9 @@ function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D,
   let nextBlink = 2.5
   let blinkUntil = 0
   const listener = new Listener({
-    onSyllable: () => {
-      if (mode === 'listen' && runes.length < MAX_RUNES) runes.push(newRune())
-    },
+    onSyllable: () => undefined,
     onPause: () => {
-      if (mode === 'listen') for (const r of runes) if (r.suck < 0) r.suck = 0
+      if (mode === 'listen') nodNow = true
     },
   })
   const burst = (n: number) => {
@@ -184,11 +181,16 @@ function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D,
       if (mode === 'listen') {
         listener.step(mic, now)
         mic *= 0.97
-        // The hat tip perks up and the body leans a little towards the person.
+        // It leans a little towards the person, the hat tip turns to them, and it nods on each pause.
+        if (nodNow) {
+          nodNow = false
+          nodAt = now
+          S.dy.v += 120
+        }
         S.eyeScale.t = 1.06
         S.glow.t = 0.3
-        S.tilt.t = -0.03
-        swayBase = 0.07 + 0.04 * Math.sin((2 * Math.PI * now) / 3)
+        S.tilt.t = -0.04
+        swayBase = 0.12 + 0.01 * Math.sin(2 * Math.PI * now * 0.8)
       } else {
         env += (Math.min(1, kick) - env) * Math.min(1, dt * 18)
         kick *= Math.exp(-dt / 0.22)
@@ -210,7 +212,7 @@ function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D,
       gl.uniform1f(U('eyeOpen'), Math.max(0.06, Math.min(1.15, S.open.x)))
       gl.uniform1f(U('eyeScale'), S.eyeScale.x)
       gl.uniform1f(U('eyeGlow'), Math.max(0, S.glow.x))
-      gl.uniform2f(U('eyeShift'), 0, mode === 'listen' ? -5 : 0)
+      gl.uniform2f(U('eyeShift'), 0, mode === 'listen' ? -6 + nodDip(now - nodAt) * 10 : 0)
       gl.clearColor(0, 0, 0, 0)
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
@@ -237,7 +239,6 @@ function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D,
         fx.fillStyle = '#c77dff'
         star(p.x, p.y, p.r * 1.8, p.rot)
       }
-      flash = stepRunes(fx, runes, dt, mode === 'listen', flash, runeScale)
       fx.globalAlpha = 1
     },
     /** For screenshots and tests: what the microphone would have said. */
@@ -246,7 +247,7 @@ function createRenderer(gl: WebGLRenderingContext, fx: CanvasRenderingContext2D,
     },
     /** For screenshots and tests: what is on screen. */
     inspect() {
-      return { mode, runes: runes.length, sparks: sparks.length, mic, glow: S.glow.x }
+      return { mode, nodding: nodDip(performance.now() / 1000 - nodAt) > 0, sparks: sparks.length, mic, glow: S.glow.x }
     },
   }
 }
@@ -309,8 +310,7 @@ export function LiveMascot(p: { view: MascotView; signals?: AudioSignals | null;
         const gl = glc.getContext('webgl', { premultipliedAlpha: true, alpha: true })
         const fx = fxc.getContext('2d')
         if (!gl || !fx) throw new Error('webgl')
-        // Runes stay readable on a small mascot.
-        const r = createRenderer(gl, fx, meta, body, Math.min(2.4, Math.max(1, 200 / size)))
+        const r = createRenderer(gl, fx, meta, body)
         renderer.current = r
         if (p.view.kind === 'live') r.setMode(p.view.mode)
         const ratio = Math.min(devicePixelRatio || 1, 2)

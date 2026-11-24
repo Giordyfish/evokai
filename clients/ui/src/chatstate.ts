@@ -3,7 +3,7 @@
  * on the host and a `statechange` event. It is generic: it says what the conversation is doing, not how to show it.
  *
  * - `idle`: nothing going on;
- * - `listening`: voice mode listens, or the person dictates;
+ * - `listening`: voice mode listens (also while the person talks over the agent), or the person dictates;
  * - `thinking`: the turn runs (the model is working);
  * - `tool`: a tool runs;
  * - `confirm`: a change waits for the person's confirmation (until they answer);
@@ -45,7 +45,8 @@ export function fromEvent(prev: ChatState, e: SessionEvent): ChatState {
 
 /** The state from the controller's snapshot (dictation and voice listening win; a running turn keeps its detail). */
 export function chatState(prev: ChatState, s: Snapshot): ChatState {
-  if (s.dictating || (s.voiceOn && s.phase === 'listening')) return 'listening'
+  // A voice turn cut off by the person (`interrupted`) means they are talking: listening, not idle.
+  if (s.dictating || (s.voiceOn && (s.phase === 'listening' || s.phase === 'interrupted'))) return 'listening'
   if (s.phase === 'speaking') return 'speaking'
   if (s.busy) return prev === 'tool' || prev === 'confirm' ? prev : 'thinking'
   return prev === 'confirm' || prev === 'done' ? prev : 'idle'

@@ -172,7 +172,7 @@ conversation's state the component exposes to slotted content:
 | a tool runs | the rune circle |
 | waiting for a confirmation | the dark flame |
 | a change applied | the staff sparkles |
-| listening | live: the hat perks up, a rune appears at each syllable and orbits the hat, then the runes fly into the hat tip on a pause |
+| listening | live: it looks up a little towards the person, the hat tip leans to them, and it nods on each pause; also while the person talks over it |
 | speaking | live: the eyes light up with the voice |
 
 The live states are drawn with WebGL; the console's "still" mascot preference and reduced motion are respected.

@@ -9,7 +9,7 @@
  * | tool | the rune circle |
  * | confirm | the dark flame |
  * | a change applied (after a confirmation) | the staff sparkles, once |
- * | listening | live: the hat tip perks, runes appear per syllable and fly into the hat on a pause |
+ * | listening (also while the person talks over the agent) | live: it looks up towards the person and nods on each pause |
  * | speaking | live: the eye light follows the voice |
  */
 import type { ChatState } from '@ui/chatstate'
