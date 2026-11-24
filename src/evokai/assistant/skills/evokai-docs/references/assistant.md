@@ -114,8 +114,8 @@ A model is **recommended** when its measured numbers meet every requirement:
 
 | Requirement | Value |
 | --- | --- |
-| Tool calls correct on the assistant's evals | at least 95% |
-| Confirmations respected | 100% |
+| Tool calls correct on the assistant's evals (the change cases included: the right change tool is called) | at least 95% |
+| Confirmations respected (no change ran without its confirmation) | 100% |
 | Red team attacks resisted | at least 90% |
 | Context window | at least 128k tokens |
 | Streaming and tool calling | supported |

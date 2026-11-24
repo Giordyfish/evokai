@@ -15,17 +15,13 @@
  *
  * With `talkOver` off the turns are strict: the microphone closes while the agent thinks and speaks, and opens again
  * (with its sound) when it has finished, so the agent can never be cut off.
- *
- * A recogniser of the device (`OnDeviceStt`) that was open while the agent spoke is replaced by a fresh one when the
- * agent has finished: on iOS, playing audio can leave a running recogniser deaf without ending it. What a recogniser
- * started after the agent finished hears is the user, never its echo.
  */
 import type { TurnPhase } from '../../core/types'
 import { playMicSound } from '../audio/mic-sounds'
 import { AudioSignals, meterAnalyser } from '../audio/signals'
 import { Microphone } from '../mic/microphone'
 import type { EvokaiSession } from '../session'
-import { isEcho, isTrailingEcho, meaningfulWords, norm, spokenDecision, stripEcho, tailWords } from '../speech'
+import { isEcho, isTrailingEcho, meaningfulWords, spokenDecision, stripEcho, tailWords } from '../speech'
 import { OnDeviceStt, type OnDeviceSttOptions } from '../stt/on-device'
 import { chooseTts, type ChooseTtsOptions } from '../tts/device'
 import { ServerTts } from '../tts/server'
@@ -89,9 +85,6 @@ export interface BrowserVoiceOptions extends VoiceCommonOptions, Pick<OnDeviceSt
 /** Characters per second at rate 1, to estimate where a voice without word boundaries had got to. */
 const CHARS_PER_SECOND = 14
 
-/** A recogniser is replaced only after the user has said nothing for this long (ms). */
-const USER_PAUSE_MS = 1500
-
 export class BrowserVoiceEngine implements VoiceEngine {
   readonly kind = 'browser' as const
   readonly signals = new AudioSignals()
@@ -126,13 +119,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
   private settleTimer: ReturnType<typeof setTimeout> | null = null
   /** What was already sent of the phrase being recognised (so its final result sends only what is new). */
   private committed = ''
-  /** The interim phrase waiting for `settleMs` to be sent. */
-  private settling = ''
-  /** The recogniser running has heard the agent (it was open while the agent spoke). */
-  private heardAgent = false
-  /** When the user was last heard (a recogniser is not replaced while they are talking). */
-  private userAt = 0
-  private recycleTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(opts: BrowserVoiceOptions) {
     this.session = opts.session
@@ -216,8 +202,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
         void this.stop().then(() => this.fail(e.code, e.message))
       }),
       this.tts.on('start', ({ text }) => {
-        this.heardAgent = true
-        this.clearRecycle()
         const line = this.lineOf(text)
         this.playing = { line, startedAt: Date.now(), at: 0, shown: 0 }
         this.spokeAt = Date.now()
@@ -299,11 +283,7 @@ export class BrowserVoiceEngine implements VoiceEngine {
   private async listen(): Promise<void> {
     if (!this.active && this.current !== 'starting') return
     this.committed = ''
-    // A recogniser started while the agent is silent has not heard it.
-    this.heardAgent = this.tts.speaking || this.held
     await this.stt.start({ continuous: true, track: this.microphone.track })
-    // Closed again while it was starting (muted, or the agent's turn in strict turns): it stays closed.
-    if (this.stt.kind === 'on-device' && !this.stt.running) return
     if (!this.micOpen_) {
       this.micOpen_ = true
       this.events.emit('mic', true)
@@ -317,15 +297,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
       this.micOpen_ = false
       this.events.emit('mic', false)
     }
-  }
-
-  /** A fresh recogniser in place of the running one; the microphone stays open and a phrase being said is sent. */
-  private async recycle(): Promise<void> {
-    if (!this.active || this.muted) return
-    if (this.settleTimer && this.settling) this.commit(this.settling)
-    this.clearSettle()
-    this.stt.abort()
-    await this.listen()
   }
 
   private agentBusy(): boolean {
@@ -344,9 +315,8 @@ export class BrowserVoiceEngine implements VoiceEngine {
     return [this.spokenTurn, ...this.queue.map(forms), ...(this.stash ?? []).map(forms)].join(' ')
   }
 
-  /** The agent is speaking, or spoke a moment ago to the recogniser running (one started after it has not heard it). */
   private recent(): boolean {
-    return this.tts.speaking || this.held || (this.heardAgent && Date.now() - this.spokeAt < (this.opts.echoTailMs ?? 4000))
+    return this.tts.speaking || this.held || Date.now() - this.spokeAt < (this.opts.echoTailMs ?? 4000)
   }
 
   /** The user's part of a transcript, and whether it is someone talking (not echo, not a hesitation). */
@@ -368,7 +338,6 @@ export class BrowserVoiceEngine implements VoiceEngine {
   private onInterim(raw: string): void {
     if (!raw.trim()) return this.events.emit('interim', '')
     const { mine, talking, echo } = this.read(raw)
-    if (talking) this.userAt = Date.now()
     this.events.emit('interim', echo ? '' : mine)
     if (!this.interrupt_ && this.agentBusy()) return
     this.clearSettle()
@@ -384,16 +353,12 @@ export class BrowserVoiceEngine implements VoiceEngine {
     if (!talking) return
     if (this.held) this.armResume()
     const settle = this.opts.settleMs ?? 750
-    if (settle > 0 && (!this.tts.speaking || this.held)) {
-      this.settling = mine
-      this.settleTimer = setTimeout(() => this.commit(mine), settle)
-    }
+    if (settle > 0 && (!this.tts.speaking || this.held)) this.settleTimer = setTimeout(() => this.commit(mine), settle)
   }
 
   private onFinal(raw: string): void {
     this.clearSettle()
     const { mine, talking } = this.read(raw)
-    if (talking) this.userAt = Date.now()
     const fresh = this.fresh(mine)
     this.committed = ''
     if (!fresh.trim()) return
@@ -404,17 +369,11 @@ export class BrowserVoiceEngine implements VoiceEngine {
     this.send(fresh)
   }
 
-  /**
-   * The words of a phrase not sent yet (an interim that settled was sent already). Only a transcript that goes on
-   * from what was sent loses those words (the recogniser may have rewritten one or two of them); another phrase, from
-   * a recogniser that never made the first one final, is new in full.
-   */
+  /** The words of a phrase not sent yet (an interim that settled was sent already). */
   private fresh(text: string): string {
     if (!this.committed) return text
-    const sent = this.committed.trim().split(/\s+/).filter(Boolean)
-    const words = text.trim().split(/\s+/).filter(Boolean)
-    const same = sent.filter((w, i) => words[i] !== undefined && norm(words[i] as string) === norm(w)).length
-    return same * 2 >= sent.length ? words.slice(sent.length).join(' ') : text
+    const before = this.committed.trim().split(/\s+/).length
+    return text.trim().split(/\s+/).slice(before).join(' ')
   }
 
   private commit(text: string): void {
@@ -496,18 +455,11 @@ export class BrowserVoiceEngine implements VoiceEngine {
   private clearSettle(): void {
     if (this.settleTimer) clearTimeout(this.settleTimer)
     this.settleTimer = null
-    this.settling = ''
-  }
-
-  private clearRecycle(): void {
-    if (this.recycleTimer) clearTimeout(this.recycleTimer)
-    this.recycleTimer = null
   }
 
   private clearTimers(): void {
     this.clearResume()
     this.clearSettle()
-    this.clearRecycle()
   }
 
   // ── speaking ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -580,26 +532,13 @@ export class BrowserVoiceEngine implements VoiceEngine {
     this.pending = 0
   }
 
-  /**
-   * After speech or a turn ends: back to listening (in strict turns the microphone opens again). A device recogniser
-   * that was open while the agent spoke is replaced: on iOS the audio it played can leave it deaf without an end.
-   */
+  /** After speech or a turn ends: back to listening (in strict turns the microphone opens again). */
   private settle(): void {
     if (!this.active || this.held || this.tts.speaking || this.pending > 0) return
     this.session.setVoiceActivity('listening')
     if (!this.interrupt_ && !this.micOpen_ && !this.muted && !this.session.state.busy) {
       void playMicSound(this.opts.micSound ?? 'goccia', 'on').catch(() => undefined)
       void this.listen().catch(() => undefined)
-    } else this.recycleAfterAgent()
-  }
-
-  /** Replace a device recogniser that heard the agent, once the user (who may have cut it off) has paused. */
-  private recycleAfterAgent(): void {
-    this.clearRecycle()
-    if (!this.active || !this.micOpen_ || this.muted || !this.heardAgent || this.stt.kind !== 'on-device') return
-    if (this.held || this.tts.speaking || this.pending > 0) return
-    const quiet = Date.now() - this.userAt
-    if (quiet < USER_PAUSE_MS) this.recycleTimer = setTimeout(() => this.recycleAfterAgent(), USER_PAUSE_MS - quiet)
-    else void this.recycle().catch(() => undefined)
+    }
   }
 }
