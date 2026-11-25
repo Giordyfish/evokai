@@ -185,7 +185,7 @@ residency includes `us` or `global` (or the country `US`), whose jurisdiction ru
 rule, and whose browser declaration does not turn online voices off. Otherwise the voice stays on the device: a voice
 of the operating system for the console's language when there is one, else Piper's `it_IT-serena-high` in the browser
 with `pitchShift 1.15` (synthesis stretched and playback sped up by the same factor, a small and bright voice). The
-chat says which voice is in use. Speech recognition stays on the device in every case.
+chat names the voice only when it is the online one, the one whose text leaves the device. Speech recognition stays on the device in every case.
 
 ## Configuration
 

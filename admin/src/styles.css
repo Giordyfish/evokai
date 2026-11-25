@@ -748,7 +748,6 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .assistant-notice .btn{align-self:flex-start;margin-top:6px}
 .assistant-about{margin:4px 0 8px;font-size:12.5px;line-height:1.5;color:var(--mu)}
 .assistant-about p{margin:4px 0}
-.assistant-about .acting{color:var(--tx);font-weight:500}
 .viewed{border-left:3px solid var(--warn);padding-left:8px}
 .mascot{display:block;position:relative}
 .mascot.live canvas{position:absolute;inset:0}

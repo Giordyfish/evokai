@@ -16,6 +16,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
+  named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
 - The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
   page scrolls past it so it never covers the last line.
 - The console assistant could not open pages: the navigate tool now lists the console's paths and wants the
