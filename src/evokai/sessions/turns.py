@@ -2100,6 +2100,7 @@ class TurnEngine:
         emit = rs.emit
         assert emit is not None  # ruff: ignore[assert] (a turn always emits)
         app_names = toolbox.names()
+        figures: set[float] = rs.extra.setdefault("toolFigures", set())
         mutating = toolbox.mutating() | {n for n in app_names if guard.forced_confirmation(n)}
 
         def app_tool(name: str) -> Any:
@@ -2125,6 +2126,9 @@ class TurnEngine:
                 text_out = await guard.tool_result(name, r.text)
                 if span is not None:
                     span.set(outcome="ok" if r.ok else "error", resultChars=len(text_out))
+                if r.ok:
+                    # What a chart may show (``client_tools.chart_from_tools``).
+                    figures.update(visuals.numbers_in(r.text))
                 return ToolResult(ok=r.ok, text=clip(text_out, settings.tool_result_chars))
 
             return handle
@@ -2152,6 +2156,19 @@ class TurnEngine:
 
         def local(name: str) -> Any:
             async def handle(args: dict[str, Any], cid: str, span: Any) -> ToolResult:
+                if name == "ui_chart" and agent.client_tools.chart_from_tools:
+                    chart = visuals.to_chart(args)
+                    loose = visuals.ungrounded(chart, figures) if chart else []
+                    if loose:
+                        if span is not None:
+                            span.set(outcome="error", type="client", ungrounded=len(loose))
+                        shown = ", ".join(str(v) for v in loose[:6])
+                        return ToolResult(
+                            False,
+                            f"Not shown: no tool returned {shown} in this turn. Read the data "
+                            "again with the tools now, then chart their values as they are "
+                            "(a duration in ms with unit ms).",
+                        )
                 r = await self._local(
                     name,
                     args,

@@ -15,6 +15,7 @@ import { ORB_MAX } from '@ui/travel'
 import type { ConsoleApplication } from '@client/core/types'
 import { adminJson, baseUrl, describe } from '../api'
 import { drivePlayground } from './drive'
+import { readPage, showOnPage } from './page'
 import { pageContext, SKIN, sessionApp } from './launcher'
 import { assistantActive, type AssistantState } from './choice'
 import { type AssistantPrivacy, type LocalVoice, needsNotice, noticeLines, viewedLine, voiceKind, voiceOptions, voiceText } from './privacy'
@@ -161,7 +162,11 @@ export function AssistantLauncher({ state, dark }: { state: AssistantState | nul
     // The page the person is on (its console path and title, never its text): "this application" is the one in it.
     el.getPage = () => pageContext(location.hash, document.title)
     // The playground in front of the person: the assistant types there and reads the agent's answer.
-    el.tools = { playground: (args) => drivePlayground(args, go) }
+    el.tools = {
+      playground: (args) => drivePlayground(args, go),
+      read_page: () => readPage(),
+      show_on_page: (args) => showOnPage(args),
+    }
     el.skin = SKIN
     const onState = (e: Event) => {
       const { state: now, previous } = (e as CustomEvent<{ state: ChatState; previous: ChatState }>).detail

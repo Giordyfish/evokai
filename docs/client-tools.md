@@ -7,6 +7,12 @@ an event, and for a tool that waits it holds the turn until the client answers.
 Evokai's own client tools (navigation, charts, diagrams, questions, confirmations, memory) keep working as before;
 this page is about the tools you declare.
 
+A chart's values are numbers the model writes. An agent whose figures must be exactly the data's sets
+`client_tools.chart_from_tools: true`: every value of a chart (a KPI's delta aside) must be a number one of the
+application's tools returned in the same turn, rounded at most as the chart writes it. Otherwise the chart is not shown
+and the model is told to read the data again. Chart units are `eur`, `pct`, `count` (the default) and `ms`, a duration
+the UI writes in milliseconds below a second and in seconds above (850 ms, 4.3 s).
+
 ## Declaring a tool
 
 A tool has a name, a description for the model, a JSON Schema of its arguments and a `wait` flag:

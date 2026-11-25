@@ -1925,6 +1925,11 @@
             "title": "Chart",
             "type": "boolean"
           },
+          "chart_from_tools": {
+            "default": false,
+            "title": "Chart From Tools",
+            "type": "boolean"
+          },
           "custom": {
             "items": {
               "$ref": "#/components/schemas/ClientToolDef"

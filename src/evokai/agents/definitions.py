@@ -118,6 +118,9 @@ class ClientToolsDef(BaseModel):
 
     navigate: NavigateDef = Field(default_factory=NavigateDef)
     chart: bool = True
+    chart_from_tools: bool = False
+    """Every value of a chart must be a number a tool returned in the same turn (rounding
+    allowed): a chart the model wrote from memory is refused and it reads the data again."""
     diagram: bool = True
     ask: bool = True
     memory: bool = True
@@ -474,8 +477,11 @@ class AgentDef(BaseModel):
             if out.get(key) == default:
                 out.pop(key, None)
         ct = out.get("client_tools")
-        if isinstance(ct, dict) and not ct.get("custom"):
-            ct.pop("custom", None)  # custom client tools came later
+        if isinstance(ct, dict):
+            if not ct.get("custom"):
+                ct.pop("custom", None)  # custom client tools came later
+            if not ct.get("chart_from_tools"):
+                ct.pop("chart_from_tools", None)  # so did checked charts
         return out
 
     def with_version(self) -> AgentDef:

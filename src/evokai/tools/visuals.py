@@ -25,9 +25,12 @@ def _text(v: Any, limit: int) -> str:
     return _WS.sub(" ", s).strip()[:limit]
 
 
+UNITS = ("eur", "pct", "ms")
+
+
 def _unit(v: Any) -> str:
     # A figure is money only when the model says so: a missing unit is a plain number.
-    return v if v in ("eur", "pct") else "count"
+    return v if v in UNITS else "count"
 
 
 def _finite(v: Any) -> float | int | None:
@@ -191,6 +194,53 @@ def to_diagram(data: dict[str, Any]) -> dict[str, Any] | None:
             {"kind": "compare", "title": title, "columns": columns, "rows": rows} if rows else None
         )
     return None
+
+
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def numbers_in(text: str) -> set[float]:
+    """The numbers written in a text (a tool's result), to check a chart against.
+
+    Returns:
+        Them, as floats.
+    """
+    out: set[float] = set()
+    for tok in _NUMBER.findall(text or ""):
+        try:
+            n = float(tok)
+        except ValueError:
+            continue
+        if math.isfinite(n):
+            out.add(n)
+    return out
+
+
+def _decimals(v: float) -> int:
+    s = repr(float(v))
+    return 0 if float(v).is_integer() or "e" in s else len(s.split(".")[1])
+
+
+def _found(v: float, seen: set[float]) -> bool:
+    if v in seen:
+        return True
+    # Rounded the way the chart writes it (33.3 for 33.333…): still the tool's number.
+    d = _decimals(v)
+    return any(round(n, d) == v for n in seen)
+
+
+def ungrounded(chart: dict[str, Any], seen: set[float]) -> list[float | int]:
+    """The chart's values that no tool returned (a delta is a comparison, not a figure).
+
+    Returns:
+        Them, in the chart's order.
+    """
+    if chart["type"] == "kpi":
+        values = [it["value"] for it in chart["items"]]
+    else:
+        values = [p["value"] for p in chart["points"]]
+        values += [p["value"] for p in (chart.get("compare") or {}).get("points", [])]
+    return [v for v in values if not _found(float(v), seen)]
 
 
 def chart_summary(chart: dict[str, Any]) -> str:

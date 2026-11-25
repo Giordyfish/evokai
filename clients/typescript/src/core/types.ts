@@ -65,7 +65,8 @@ export type StorageMode = 'evokai' | 'external'
 
 // ── visuals ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Unit = 'eur' | 'count' | 'pct'
+/** `ms`: a duration in milliseconds (written in seconds from one second up). */
+export type Unit = 'eur' | 'count' | 'pct' | 'ms'
 export type ChartType = 'bar' | 'column' | 'line' | 'area' | 'donut' | 'stacked' | 'kpi'
 export interface Point { label: string; value: number }
 export interface Series { name: string; points: Point[] }
