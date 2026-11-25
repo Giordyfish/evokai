@@ -168,7 +168,7 @@ import { EvokaiChat } from '@evokai/evokai-ui/react'
 
 Properties: `getToken(ctx)`, `session` (an `EvokaiSession` of yours), `listConversations()`, `getPage()` (or `null`),
 `theme`, `strings` (any text, see `Strings`), `toolLabels` (a map or a function), `formatValue(value, unit, locale)`
-(how chart values are written: plain numbers by default, `pct` with a percent sign; units such as `eur` are your
+(how chart values are written: plain numbers by default, `pct` with a percent sign, `ms` as a duration (850 ms, 4.3 s); units such as `eur` are your
 application's business figures, never Evokai's costs), `voiceOptions` (microphone sound, rate, barge-in), `skin`
 (your CSS inside the component), `icons` (replaced icons), `tools` (your [client tools](#your-client-tools-and-tool-cards))
 `toolRenderers` (your own tool cards) and `fetcher`.

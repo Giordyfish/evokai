@@ -5266,6 +5266,11 @@ export interface components {
              * @default true
              */
             chart?: boolean;
+            /**
+             * Chart From Tools
+             * @default false
+             */
+            chart_from_tools?: boolean;
             /** Custom */
             custom?: components["schemas"]["ClientToolDef"][];
             /**

@@ -29,8 +29,8 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   team results, traces and the audit log are not part of the definition and stay. None of these routes is a tool of
   the admin MCP server, and the assistant itself is refused on all of them.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
-  `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only), `playground` (below), `ask` and
-  `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
+  `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only),
+  `playground`, `read_page` and `show_on_page` (below), `ask` and `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
   handoffs or subagents. The guard's injection detection and spotlighting are enforced.
 - **Its rights are the person's.** Opening the panel calls `POST /v1/console/assistant/session` with the console
   login. Evokai mints a **delegation token** valid on every application the login can see (`evk_cdt_`, its own issuer
@@ -188,6 +188,17 @@ console's answer) opens the playground on that application and agent, types the 
 and returns the agent's answer, the tools it used, and whether it now waits for a confirmation or a choice (the person
 gives those in the playground). The assistant keeps the conversation going one message per call; after 100 seconds it
 gets what the agent said so far and the turn goes on in the playground. `try_agent` stays for a check nobody watches.
+
+**It sees the page and moves it.** `read_page` returns the page the person is looking at: its path, title and visible
+text (up to 6,000 characters), so the assistant talks about the figures and names the person sees, as the page writes
+them. The text reaches the model as data, spotlighted like any tool result. `show_on_page` scrolls the page to a text
+it shows and highlights it for a moment (a figure lights up with its name), or scrolls by a screen, to the top or to
+the bottom.
+
+**Its figures come from the tools.** Its agent sets `client_tools.chart_from_tools`: every value of a chart must be a
+number an admin tool returned in the same turn (rounded as the chart writes it). A chart written from memory is
+refused, and the assistant reads the data again. Durations use the chart unit `ms`, written like the console (850 ms,
+4.3 s). When the person sees a different figure, the assistant reads the page and the data again before it answers.
 
 **The voice follows data protection.** The browser's online voice (Google's: the spoken text goes to the browser
 vendor's speech service, only in voice mode) is used only when the assistant's data protection and that of every application the person can see

@@ -752,3 +752,7 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .mascot{display:block;position:relative}
 .mascot.live canvas{position:absolute;inset:0}
 @media (max-width:640px){.assistant-panel{inset:0;width:auto;border-radius:0;border:0}}
+/* the assistant points at what it talks about (show_on_page) */
+.assistant-spot{outline:2px solid var(--vi);outline-offset:4px;animation:spot 2.4s ease-out}
+@keyframes spot{0%,60%{box-shadow:0 0 0 6px var(--vis)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.assistant-spot{animation:none}}

@@ -10,6 +10,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- The console assistant sees the page and moves it: `read_page` reads the figures and names the person sees,
+  `show_on_page` scrolls to a text and highlights it, or scrolls by a screen.
+- `client_tools.chart_from_tools`: an agent's charts show only numbers its tools returned in the same turn; a chart
+  written from memory is refused and the model reads the data again. The console assistant has it on.
+- The chart unit `ms`: a duration, written like the console (850 ms, 4.3 s).
 - The console assistant is the platform's, not one application's: one conversation across the whole console, a
   delegation token valid on every application the person can see (each admin MCP tool names its `application`, the
   new `list_applications` lists them), and each message tells it the page the person is on.

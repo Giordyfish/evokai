@@ -8,7 +8,7 @@ from evokai.audio.speech.replies import is_echo, spoken_decision, spoken_option
 from evokai.audio.speech.speakable import SentenceSplitter, speakable
 from evokai.i18n import speech_rules
 from evokai.sessions.history import INTERRUPTED, Stored, repair, window
-from evokai.tools.visuals import OTHER_LABEL, to_ask, to_chart, to_diagram
+from evokai.tools.visuals import OTHER_LABEL, numbers_in, to_ask, to_chart, to_diagram, ungrounded
 
 
 def test_sentences_come_out_as_soon_as_they_end_and_numbers_do_not_split() -> None:
@@ -228,3 +228,26 @@ def test_history_repair_and_window() -> None:
         10_000,
     )
     assert win[0].content[0] == {"text": "a"}
+
+
+def test_a_duration_is_its_own_unit_and_a_chart_is_checked_against_the_tools() -> None:
+    kpi = to_chart({
+        "type": "kpi",
+        "title": "Uso",
+        "items": [
+            {"label": "Turni", "value": 11},
+            {"label": "Prima parola", "value": 4338, "unit": "ms"},
+            {"label": "Quota", "value": 33.3, "unit": "pct", "delta": 7},
+        ],
+    })
+    assert kpi
+    assert [it["unit"] for it in kpi["items"]] == ["count", "ms", "pct"]
+    seen = numbers_in(
+        '{"turns": 11, "medianFirstTokenMs": 4338, "share": 33.3333, "at": "2026-11-25"}'
+    )
+    # Rounded as the chart writes it is still the tool's number; a delta is not a figure.
+    assert ungrounded(kpi, seen) == []
+    assert ungrounded(kpi, numbers_in('{"turns": 11, "medianFirstTokenMs": 7762}')) == [4338, 33.3]
+    bars = to_chart({"type": "column", "title": "Mesi", "points": [{"label": "Ott", "value": 3}]})
+    assert bars
+    assert ungrounded(bars, set()) == [3]
