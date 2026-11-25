@@ -327,7 +327,7 @@ export function Shell({ route }: { route: Route }) {
         </main>
       </div>
       {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
-      <AssistantLauncher app={app} state={assistant} dark={dark} />
+      <AssistantLauncher state={assistant} dark={dark} />
     </div>
   )
 }

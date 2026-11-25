@@ -1,6 +1,7 @@
 /**
  * The playground: talk to an agent as a test subject and inspect every event of the turn. It mints a real session
- * token with the console login and runs real turns (they are priced and recorded under the test subject).
+ * token with the console login and runs real turns (they are priced and recorded under the test subject). The console
+ * assistant can drive it (`assistant/drive.ts`): it opens it on an agent, types its message here and reads the answer.
  */
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -13,6 +14,7 @@ import { Empty, Fx, HAT, Mage, Motes, oneshot, toast } from '../magic'
 import { setTitle, useConsole, useLoad } from '../state'
 import { Btn, Hero, Panel, Seg, Switch, Tag } from '../ui'
 import { ParamsForm } from './ModuleParams'
+import { type PlaygroundReply, registerPlayground } from '../assistant/drive'
 import { num, t } from '../i18n'
 
 type Item =
@@ -139,10 +141,20 @@ function Visual({ v }: { v: { chart?: Chart; diagram?: Diagram } }) {
   return null
 }
 
+/** How long the assistant waits for an agent's answer before it reads what came so far (its tool waits up to 120 s). */
+const DRIVE_MS = 100_000
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 export function Playground({ q }: { q: URLSearchParams }) {
   setTitle(t('page.playground'))
   const c = useConsole()
   const [appSlug, setAppSlug] = useState(q.get('app') ?? c.apps[0]?.slug ?? '')
+  // The address can change while the page is open (the assistant opens another application here).
+  const wanted = q.get('app')
+  useEffect(() => {
+    if (wanted) setAppSlug(wanted)
+  }, [wanted])
   const app = c.apps.find((a) => a.slug === appSlug) ?? c.apps[0]
   if (!app)
     return (
@@ -165,6 +177,9 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
   const prompts = useLoad(() => api.admin.prompts.list().catch(() => [] as PromptVersion[]), [app.id])
   const browserAgents = (agents.data ?? []).filter((a: AgentDef) => (a.channels ?? ['browser']).includes('browser'))
   const [agent, setAgent] = useState(agentName ?? '')
+  useEffect(() => {
+    if (agentName) setAgent(agentName)
+  }, [agentName])
   const current = browserAgents.find((a) => a.name === agent) ?? browserAgents[0]
   const [subject, setSubject] = useState('playground:console')
   const [tags, setTags] = useState('playground')
@@ -183,6 +198,10 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
   const history = useRef<HistoryMessage[]>([])
   const abort = useRef<AbortController | null>(null)
   const thread = useRef<HTMLDivElement>(null)
+  /** The assistant is typing here (its `playground` tool). */
+  const [driven, setDriven] = useState(false)
+  /** What the turn in flight has said so far, for the assistant when its time runs out. */
+  const live = useRef<PlaygroundReply | null>(null)
 
   useEffect(() => () => abort.current?.abort(), [])
   useEffect(() => {
@@ -224,9 +243,11 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
     return next
   }
 
-  const run = async (body: Record<string, unknown>, shown: Item | null) => {
-    if (!current || busy) return
+  const run = async (body: Record<string, unknown>, shown: Item | null): Promise<PlaygroundReply | null> => {
+    if (!current || busy) return null
     setBusy(true)
+    const reply: PlaygroundReply = { application: app.slug, agent: current.name, answer: '', tools: [] }
+    live.current = reply
     const t0 = performance.now()
     setEvents([])
     let list: Item[] = [...items.filter((x) => x.kind !== 'think'), ...(shown ? [shown] : []), { kind: 'think' }]
@@ -271,6 +292,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         const unthink = (l: Item[]) => l.filter((x) => x.kind !== 'think')
         switch (e.type) {
           case 'text': {
+            reply.answer += String(e.delta)
             push((l) => {
               const last = l[l.length - 1]
               if (last?.kind === 'ai') return [...l.slice(0, -1), { ...last, text: last.text + String(e.delta), cites }]
@@ -293,6 +315,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
           }
           case 'tool': {
             const name = String(e.name)
+            if (e.status === 'start') reply.tools.push(name)
             if (e.status === 'start') push((l) => [...unthink(l), { kind: 'tool', name, status: 'start', t0: at }, { kind: 'think' }])
             else
               push((l) =>
@@ -301,12 +324,14 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             break
           }
           case 'confirm':
+            reply.waiting = 'confirm'
             push((l) => [
               ...unthink(l),
               { kind: 'confirm', actionId: String(e.actionId), items: (e.items as string[]) ?? [], state: 'open' },
             ])
             break
           case 'ask':
+            reply.waiting = 'ask'
             push((l) => [...unthink(l), { kind: 'ask', question: String(e.question), options: (e.options as string[]) ?? [] }])
             break
           case 'navigate':
@@ -316,6 +341,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             setUsage(t('pg.usage', { day: (e.dayPct as number | null) ?? t('fmt.none'), month: (e.monthPct as number | null) ?? t('fmt.none') }))
             break
           case 'error':
+            reply.error = String(e.message)
             push((l) => [...unthink(l), { kind: 'note', text: String(e.message), tone: 'bad' }])
             break
           case 'done':
@@ -324,15 +350,52 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         }
       }
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError'))
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        reply.error = describe(err)
         push((l) => [...l.filter((x) => x.kind !== 'think'), { kind: 'note', text: describe(err), tone: 'bad' }])
+      }
     } finally {
       push((l) => l.filter((x) => x.kind !== 'think'))
       setBusy(false)
       abort.current = null
       void c.reloadApps()
     }
+    return reply
   }
+
+  // The assistant drives the playground while it shows this agent: it types its message in the composer, sends it,
+  // and gets the agent's answer back (or what came so far, when its time runs out: the turn goes on here).
+  const latest = useRef({ run, busy, reset })
+  latest.current = { run, busy, reset }
+  const offered = browserAgents.map((a) => a.name).join(',')
+  useEffect(() => {
+    if (!current) return
+    return registerPlayground({
+      application: app.slug,
+      agent: current.name,
+      agents: offered ? offered.split(',') : [],
+      send: async (message, fresh) => {
+        if (latest.current.busy) throw new Error('The playground is still answering the last message: wait for it, then send again.')
+        if (fresh) {
+          latest.current.reset()
+          await pause(80)
+        }
+        setDriven(true)
+        const steps = Math.min(message.length, 40)
+        for (let i = 1; i <= steps; i++) {
+          setText(message.slice(0, Math.ceil((message.length * i) / steps)))
+          await pause(18)
+        }
+        await pause(150)
+        setText('')
+        const done = latest.current.run({ text: message }, { kind: 'user', text: message })
+        const late = pause(DRIVE_MS).then(() => (live.current ? { ...live.current, stillAnswering: true } : null))
+        const out = await Promise.race([done, late])
+        if (!out) throw new Error('The playground could not send the message.')
+        return out
+      },
+    })
+  }, [app.slug, current?.name, offered])
 
   const send = (e?: Event) => {
     e?.preventDefault()
@@ -475,6 +538,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             </option>
           ))}
         </select>
+        {driven ? <Tag tone="gold">{t('pg.byAssistant')}</Tag> : null}
         {current ? <Tag tone="ok">{t('pg.live', { version: (current as AgentDef & { version: string }).version.slice(0, 7) })}</Tag> : null}
         <input class="in mono" style="width:190px" value={subject} onChange={(e) => setSubject(e.currentTarget.value)} aria-label={t('pg.subject')} />
         <input class="in mono" style="width:120px" value={tags} onInput={(e) => setTags(e.currentTarget.value)} aria-label={t('pg.tags')} />

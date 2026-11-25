@@ -2,6 +2,10 @@
 # builds the real tools from Evokai's OpenAPI and answers their requests from here, by method and
 # path template. Anything not recorded answers {"items": []} for a read and {"ok": true} for a
 # change (changes never run in evals: they stop at their confirmation).
+applications:
+  - slug: bookshop
+    name: Bookshop
+    role: owner
 responses:
   GET /v1/admin/application:
     id: app-recorded

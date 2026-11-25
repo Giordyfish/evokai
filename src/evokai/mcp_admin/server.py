@@ -11,6 +11,9 @@
   made anyway is refused by the route (403).
 - Requests without a valid bearer (an admin key, or the console assistant's delegation token) are
   refused before they reach the MCP server (401).
+- Every tool takes an optional ``application`` (a slug): the console assistant's token is valid on
+  every application its login can see and names one on each call; it goes to the route as the
+  ``X-Evokai-Application`` header. ``list_applications`` lists them. An admin key acts on its own.
 
 The server is served at ``{base}/mcp/admin`` (Streamable HTTP, stateless, JSON responses). Its
 tools are built on the first request, so starting the service does not pay for the OpenAPI.
@@ -19,6 +22,7 @@ tools are built on the first request, so starting the service does not pay for t
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import re
 from collections.abc import AsyncGenerator, Generator, Sequence
@@ -40,7 +44,7 @@ from starlette.types import Receive, Scope, Send
 from evokai.assistant import delegation
 from evokai.core.errors import AppError, Unauthorized
 from evokai.identity.auth import bearer
-from evokai.identity.models import AppPrincipal
+from evokai.identity.console import APPLICATION_HEADER
 from evokai.identity.roles import at_least, required
 from evokai.mcp_admin.tools import ADMIN_TOOLS, ToolSpec, by_route
 from evokai.mcp_admin.via import VIA_HEADER, via_value
@@ -53,8 +57,20 @@ if TYPE_CHECKING:
     from evokai.services import Services
 
 INSTRUCTIONS = (
-    "Evokai's admin API for one application, with the caller's own rights. Read before you "
-    "change; every change is checked and audited by Evokai like a direct call."
+    "Evokai's admin API, with the caller's own rights. Every tool acts on one application: name "
+    "it with application (its slug; list_applications lists them). Read before you change; every "
+    "change is checked and audited by Evokai like a direct call."
+)
+
+APPLICATION_ARG = "application"
+APPLICATION_SCHEMA: dict[str, Any] = {
+    "type": "string",
+    "maxLength": 120,
+    "description": "The slug of the application this call acts on (list_applications lists "
+    "them). An admin key acts on its own application and may leave it out.",
+}
+_application: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "evokai_admin_mcp_application", default=None
 )
 
 
@@ -70,15 +86,38 @@ class ForwardAuth(httpx.Auth):
         incoming = get_http_headers(include_all=True)
         if value := incoming.get("authorization"):
             request.headers["Authorization"] = value
+        if application := _application.get():
+            request.headers[APPLICATION_HEADER] = application
         request.headers[VIA_HEADER] = via_value()
         yield request
 
 
-async def caller(svc: Services, authorization: str | None) -> AppPrincipal:
-    """Who is calling the MCP server: an admin key, or a console delegation token.
+class _Application(Middleware):
+    """Takes a call's ``application`` out of its arguments: the route receives it as a header."""
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, Any],
+    ) -> Any:
+        args = dict(context.message.arguments or {})
+        named = args.pop(APPLICATION_ARG, None)
+        mark = _application.set(str(named) if named else None)
+        try:
+            message = context.message.model_copy(update={"arguments": args})
+            return await call_next(context.copy(message=message))
+        finally:
+            _application.reset(mark)
+
+
+async def caller_role(svc: Services, authorization: str | None) -> str:
+    """The role of who calls the MCP server.
+
+    An admin key's, or the highest a console delegation token acts with on any application (every
+    call is checked again on the one it names).
 
     Returns:
-        The principal.
+        The role.
 
     Raises:
         Unauthorized: No bearer, or an invalid one.
@@ -87,8 +126,8 @@ async def caller(svc: Services, authorization: str | None) -> AppPrincipal:
     if not token:
         raise Unauthorized()
     if delegation.is_delegation(token):
-        return await delegation.principal(svc, token)
-    return await svc.auth.application(token, admin=True)
+        return await delegation.listing_role(svc, token)
+    return (await svc.auth.application(token, admin=True)).role
 
 
 def _template(path: str) -> re.Pattern[str]:
@@ -128,7 +167,7 @@ class _RoleFilter(Middleware):
     ) -> Sequence[Tool]:
         tools = await call_next(context)
         try:
-            who = await caller(
+            role = await caller_role(
                 self.owner.services, get_http_headers(include_all=True).get("authorization")
             )
         except AppError:
@@ -136,9 +175,40 @@ class _RoleFilter(Middleware):
         return [
             t
             for t in tools
-            if (spec := self.owner.specs.get(t.name)) is not None
-            and at_least(who.role, required(spec.method, spec.path))
+            if t.name == LIST_APPLICATIONS
+            or (
+                (spec := self.owner.specs.get(t.name)) is not None
+                and at_least(role, required(spec.method, spec.path))
+            )
         ]
+
+
+LIST_APPLICATIONS = "list_applications"
+
+
+def add_list_applications(server: FastMCP, answer: Any) -> None:
+    """The ``list_applications`` tool: the applications the caller may act on, by slug.
+
+    Args:
+        server: The MCP server.
+        answer: ``async (authorization) -> list`` of ``{slug, name, role}``.
+    """
+
+    async def list_applications() -> dict[str, Any]:
+        """List the applications.
+
+        Returns:
+            items.
+        """
+        return {"items": await answer(get_http_headers(include_all=True).get("authorization"))}
+
+    server.tool(
+        list_applications,
+        name=LIST_APPLICATIONS,
+        description="The applications you may act on, with your role on each. Name one by its "
+        "slug as application on every other tool.",
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
 
 
 def build_admin_mcp(app: FastAPI, settings: Settings) -> FastMCP:
@@ -193,18 +263,20 @@ def admin_provider(
             if reads
             else ToolAnnotations(readOnlyHint=False, destructiveHint=True)
         )
+        schema = dict(tool.parameters)
+        properties = dict(schema.get("properties") or {})
         if t.fields is not None:
             params = {p.name for p in route.parameters} | {
                 f"{p.name}__{p.location}" for p in route.parameters
             }
             keep = params | set(t.fields)
-            schema = dict(tool.parameters)
-            schema["properties"] = {
-                k: v for k, v in (schema.get("properties") or {}).items() if k in keep
-            }
+            properties = {k: v for k, v in properties.items() if k in keep}
             schema["required"] = [r for r in schema.get("required") or [] if r in keep]
             schema["additionalProperties"] = False
-            tool.parameters = schema
+        if APPLICATION_ARG in properties:
+            raise RuntimeError(f"admin MCP: {t.name} already has a parameter {APPLICATION_ARG}")
+        schema["properties"] = {APPLICATION_ARG: APPLICATION_SCHEMA, **properties}
+        tool.parameters = schema
 
     client = httpx.AsyncClient(
         transport=transport or httpx.ASGITransport(app=app),
@@ -231,6 +303,16 @@ def admin_provider(
 
 
 RECORDED = Path(__file__).resolve().parents[1] / "assistant" / "evals" / "recorded.yaml"
+
+
+async def _recorded_applications(_authorization: str | None) -> list[dict[str, Any]]:  # ruff: ignore[unused-async] (an answer is awaited)
+    """The recorded applications (``applications`` of the recorded answers).
+
+    Returns:
+        Them.
+    """
+    data = yaml.safe_load(RECORDED.read_text(encoding="utf-8")) or {}
+    return list(data.get("applications") or [])
 
 
 def recorded_transport(base: str, path: Path = RECORDED) -> httpx.MockTransport:
@@ -270,6 +352,8 @@ class AdminMcp:
         self.specs: dict[str, ToolSpec] = {t.name: t for t in ADMIN_TOOLS}
         self.server = FastMCP("evokai-admin", instructions=INSTRUCTIONS)
         self.server.add_middleware(_RoleFilter(self))
+        self.server.add_middleware(_Application())
+        add_list_applications(self.server, self._applications)
         self.http = self.server.http_app(
             path=self.path,
             stateless_http=True,
@@ -278,6 +362,8 @@ class AdminMcp:
         )
         # The same tools answered from recorded responses, for the assistant's evals only.
         self.recorded = FastMCP("evokai-admin", instructions=INSTRUCTIONS)
+        self.recorded.add_middleware(_Application())
+        add_list_applications(self.recorded, _recorded_applications)
         self.recorded_http = self.recorded.http_app(
             path=self.path,
             stateless_http=True,
@@ -296,6 +382,14 @@ class AdminMcp:
             Services.
         """
         return self.app.state.services
+
+    async def _applications(self, authorization: str | None) -> list[dict[str, Any]]:
+        token = bearer(authorization) or ""
+        if delegation.is_delegation(token):
+            return await delegation.applications(self.services, token)
+        who = await self.services.auth.application(token, admin=True)
+        app = await self.services.store.applications.get(who.application_id)
+        return [{"slug": app.slug, "name": app.name, "role": who.role}] if app else []
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None]:
@@ -334,7 +428,7 @@ class AdminMcp:
             await self.recorded_http(scope, receive, send)
             return
         try:
-            await caller(self.services, headers.get("authorization"))
+            await caller_role(self.services, headers.get("authorization"))
         except AppError as e:
             response = JSONResponse({"error": e.code, "message": e.message}, status_code=e.status)
             await response(scope, receive, send)

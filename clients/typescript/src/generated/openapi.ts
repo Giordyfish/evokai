@@ -3013,11 +3013,12 @@ export interface paths {
         put?: never;
         /**
          * Assistant Session
-         * @description A session token for the console assistant, acting on the selected application.
+         * @description A session token for the console assistant, the platform's: it acts on every application.
          *
-         *     It needs a console login (the cookie, its header and the application it acts on): its
-         *     forwarded credential is a delegation token for that application with the login's role, which
-         *     the admin MCP server checks against the live login on every call. The session belongs to the
+         *     It needs a console login (the cookie and its header): its forwarded credential is a delegation
+         *     token valid on every application the login can see, with the login's highest role; the admin
+         *     MCP server's tools name the application of each call, and Evokai checks the live login's role
+         *     on that application every time. The session belongs to the
          *     assistant's system application, for the subject ``console:<login>``, with browser speech.
          *
          *     Returns:

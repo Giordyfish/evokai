@@ -60,12 +60,41 @@ agents:
       diagram: false
       ask: true
       memory: false
+      custom:
+        - name: playground
+          wait: true
+          description: >-
+            Talk to an agent in the console's playground, in front of the person: it opens the playground on the
+            application and agent, types the message there and sends it, and returns the agent's answer (its text,
+            the tools it used, and whether it now waits for a confirmation or a choice, which the person gives in
+            the playground). One message per call; the conversation continues on the next call.
+          parameters:
+            type: object
+            properties:
+              application:
+                type: string
+                maxLength: 120
+                description: The application's slug (list_applications).
+              agent:
+                type: string
+                maxLength: 120
+                description: The agent's name.
+              message:
+                type: string
+                minLength: 1
+                maxLength: 4000
+                description: What to say to the agent.
+              new:
+                type: boolean
+                description: Start a new conversation instead of continuing the one open in the playground.
+            required: [application, agent, message]
+            additionalProperties: false
     suggestions:
-      - "What does this application have?"
+      - "What do my applications have?"
       - "Which agents use the most of the cap?"
       - "How do I connect an MCP server?"
     suggestions_by_locale:
       it:
-        - "Cosa contiene questa applicazione?"
+        - "Cosa contengono le mie applicazioni?"
         - "Quali agenti usano di più il tetto di spesa?"
         - "Come collego un server MCP?"

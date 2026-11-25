@@ -1115,6 +1115,7 @@ export const it: Messages = {
   'pg.confirmChange': 'Conferma una modifica',
   'pg.confirm': 'Conferma',
   'pg.cancelled': 'Annullato',
+  'pg.byAssistant': "Qui scrive l'assistente",
   'pg.newConvo': 'Nuova conversazione',
   'pg.with': 'con {name}',
   'pg.application': 'Applicazione',

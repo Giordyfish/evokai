@@ -59,7 +59,7 @@ async def test_session_needs_a_console_login(env: Env) -> None:
     assert (await env.client.post(URL)).status_code == 401
 
 
-async def test_session_is_scoped_to_the_selected_application(env: Env) -> None:
+async def test_session_acts_on_every_application_the_login_sees(env: Env) -> None:
     system_id = await _system(env)
     user_id = await _console_as(env, {"test": "viewer"})
     r = await env.client.post(URL, headers=_on(env.app_id))
@@ -84,19 +84,31 @@ async def test_session_is_scoped_to_the_selected_application(env: Env) -> None:
         algorithms=["HS256"],
         audience=AUDIENCE,
     )
-    assert granted["app"] == env.app_id and granted["role"] == "viewer"
-    # The forwarded credential acts on the selected application only, with the viewer's role.
-    r = await env.client.get(
-        "/agent/v1/admin/application", headers={"Authorization": f"Bearer {delegation}"}
-    )
-    assert r.json()["id"] == env.app_id
+    # The platform's assistant: valid on every application the login sees, with its highest role.
+    assert granted["app"] == "*" and granted["role"] == "viewer"
+    bearer = {"Authorization": f"Bearer {delegation}"}
+    # Each request names its application, by slug or id; none named is a clear 400.
+    r = await env.client.get("/agent/v1/admin/application", headers=bearer)
+    assert r.status_code == 400 and r.json()["error"] == "application_required"
+    for named in ("test", env.app_id):
+        r = await env.client.get(
+            "/agent/v1/admin/application", headers={**bearer, "X-Evokai-Application": named}
+        )
+        assert r.status_code == 200 and r.json()["id"] == env.app_id
+    # With the viewer's role there.
     r = await env.client.patch(
         "/agent/v1/admin/application",
         json={"name": "x"},
-        headers={"Authorization": f"Bearer {delegation}"},
+        headers={**bearer, "X-Evokai-Application": "test"},
     )
     assert r.status_code == 403
-    # Another application the login cannot see is refused.
+    # An application the login cannot see is refused, as is an unknown one.
+    other = await env.svc.store.applications.create("other", "Other")
+    for named in ("other", other.id, "nope"):
+        r = await env.client.get(
+            "/agent/v1/admin/application", headers={**bearer, "X-Evokai-Application": named}
+        )
+        assert r.status_code == 401, named
     r = await env.client.post(URL, headers=_on(system_id))
     assert r.status_code == 404
 

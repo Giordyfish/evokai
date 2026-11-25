@@ -277,5 +277,5 @@ async def test_the_assistant_speaks_the_console_language_and_suggests_in_it(env:
     italian = await _suggestions(env.svc, app_id, "assistant", _language(app, conv))
     english = await _suggestions(env.svc, app_id, "assistant", _language(app, None))
     assert italian and italian != english
-    assert any("applicazione" in q for q in italian)
-    assert any("application" in q for q in english)
+    assert any("applicazioni" in q for q in italian)
+    assert any("applications" in q for q in english)

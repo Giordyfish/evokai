@@ -729,7 +729,7 @@ async def health(svc: Svc, _a: Admin) -> dict[str, Any]:
 DEFAULT_MCP_TIMEOUT = 60
 
 
-async def _visible(svc: Services, login: console.ConsoleLogin) -> list[m.Application]:
+async def visible_applications(svc: Services, login: console.ConsoleLogin) -> list[m.Application]:
     """The applications a login may see: every one for the operator, its own for an admin.
 
     Returns:
@@ -837,7 +837,7 @@ async def console_applications(svc: Svc, login: ConsoleUser) -> dict[str, Any]:
     return {
         "items": [
             {**await _card(svc, a, now), "role": login.role_for(a), "hidden": _assistant_off(a)}
-            for a in await _visible(svc, login)
+            for a in await visible_applications(svc, login)
         ],
         "canCreate": login.deployment_owner,
     }
@@ -912,7 +912,7 @@ async def console_health(svc: Svc, login: ConsoleUser, check: bool = False) -> d
     Returns:
         database, models, mcp, voice, sharedState (memory or redis, answering), otel, purge, build.
     """
-    apps = await _visible(svc, login)
+    apps = await visible_applications(svc, login)
     servers = []
     for app in apps:
         for server in await svc.store.mcp_servers.all(app.id):

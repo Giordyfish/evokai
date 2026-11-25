@@ -1117,6 +1117,7 @@ export const en = {
   'pg.confirmChange': 'Confirm a change',
   'pg.confirm': 'Confirm',
   'pg.cancelled': 'Cancelled',
+  'pg.byAssistant': 'The assistant is typing here',
   'pg.newConvo': 'New conversation',
   'pg.with': 'with {name}',
   'pg.application': 'Application',

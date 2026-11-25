@@ -61,8 +61,8 @@ async def test_injected_description_yields_at_most_a_confirmation(trial_env: Env
     # A model that obeys the data it reads: it lists the agents, then deletes the one named.
     env.script.add(
         "function:primary",
-        [Tool("list_agents", {})],
-        [Tool("delete_agent", {"name__path": "helper"}, call_id="t2")],
+        [Tool("list_agents", {"application": "test"})],
+        [Tool("delete_agent", {"application": "test", "name__path": "helper"}, call_id="t2")],
         ["Done."],
     )
     roles = {"test": "owner"}

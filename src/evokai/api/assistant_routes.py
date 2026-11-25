@@ -15,16 +15,21 @@ from pydantic import BaseModel, Field, field_validator
 
 from evokai import audit
 from evokai.agents.definitions import AgentDef
-from evokai.api.console_routes import conversation_subject, conversation_view
+from evokai.api.console_routes import (
+    conversation_subject,
+    conversation_view,
+    visible_applications,
+)
 from evokai.api.deps import admin_app, console_login, services
 from evokai.api.server_routes import TokenRequest, mint
 from evokai.assistant import activation, privacy, reset
 from evokai.assistant import bootstrap as shipped
-from evokai.assistant.delegation import mint_delegation
+from evokai.assistant.delegation import ALL, mint_delegation
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.util import utcnow
 from evokai.identity.models import AppPrincipal
 from evokai.identity.preferences import identity_of
+from evokai.identity.roles import highest
 from evokai.services import Services
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -386,11 +391,12 @@ class SessionBody(BaseModel):
 async def assistant_session(
     svc: Svc, a: Admin, request: Request, body: SessionBody | None = None
 ) -> dict[str, Any]:
-    """A session token for the console assistant, acting on the selected application.
+    """A session token for the console assistant, the platform's: it acts on every application.
 
-    It needs a console login (the cookie, its header and the application it acts on): its
-    forwarded credential is a delegation token for that application with the login's role, which
-    the admin MCP server checks against the live login on every call. The session belongs to the
+    It needs a console login (the cookie and its header): its forwarded credential is a delegation
+    token valid on every application the login can see, with the login's highest role; the admin
+    MCP server's tools name the application of each call, and Evokai checks the live login's role
+    on that application every time. The session belongs to the
     assistant's system application, for the subject ``console:<login>``, with browser speech.
 
     Returns:
@@ -412,11 +418,12 @@ async def assistant_session(
             "The assistant's MCP servers were changed: an owner resets it in the console.",
             code="assistant_altered",
         )
+    role = highest(*(login.role_for(x) for x in await visible_applications(svc, login)))
     credential = mint_delegation(
         svc.keyring,
         login,
-        a.application_id,
-        a.role,  # ty: ignore[invalid-argument-type]
+        ALL,
+        role or a.role,  # ty: ignore[invalid-argument-type]
         ttl=svc.settings.session_token_max_ttl,
     )
     token = TokenRequest(
@@ -502,9 +509,13 @@ async def assistant_privacy(svc: Svc, a: Admin, request: Request) -> dict[str, A
         }
         for e in mine
     ]
+    # The assistant reads every application the person sees: the online voice only when all of
+    # them allow it (and the assistant's own application).
+    readable = [selected, *await visible_applications(svc, login)]
     voice = (
         "online"
-        if privacy.online_voice_allowed(system) and privacy.online_voice_allowed(selected)
+        if privacy.online_voice_allowed(system)
+        and all(privacy.online_voice_allowed(x) for x in readable if x is not None)
         else "device"
     )
     return {

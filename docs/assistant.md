@@ -1,7 +1,8 @@
 # The console assistant
 
 Evokai ships its own assistant, built into the admin console. It answers questions about the deployment (with
-Evokai's documentation as a skill) and operates the application the person is looking at: it reads its agents,
+Evokai's documentation as a skill) and operates every application the person can see (it is the platform's, not one
+application's): it reads their agents,
 prompts, skills, MCP servers, grants, evals and usage, and proposes changes that the person confirms in the chat.
 The mascot, Evokai's own, is its face.
 
@@ -28,12 +29,15 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   team results, traces and the audit log are not part of the definition and stay. None of these routes is a tool of
   the admin MCP server, and the assistant itself is refused on all of them.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
-  `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only), `ask` and
+  `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only), `playground` (below), `ask` and
   `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
   handoffs or subagents. The guard's injection detection and spotlighting are enforced.
 - **Its rights are the person's.** Opening the panel calls `POST /v1/console/assistant/session` with the console
-  login. Evokai mints a **delegation token** for the selected application (`evk_cdt_`, its own issuer and the
-  `evokai-admin-mcp` audience, valid on that application only) and a session token for the assistant that forwards it.
+  login. Evokai mints a **delegation token** valid on every application the login can see (`evk_cdt_`, its own issuer
+  and the `evokai-admin-mcp` audience, `app: "*"`, with the login's highest role); each admin tool names the
+  application of the call (`application`, a slug; `list_applications` lists them with the role on each), which
+  reaches the admin API as the `X-Evokai-Application` header, and a request naming none is refused
+  (`400 application_required`) and a session token for the assistant that forwards it.
   The admin API re-checks the token against the live login on every call: a revoked admin key or a disabled single
   sign-on user ends it at once, and the role used is the lower of the token's and the login's current role. A viewer's
   assistant only reads; an operator's cannot change the owner's settings. Even used directly, the token opens only
@@ -155,9 +159,9 @@ mascot as its orb (`slot="orb"`, see the UI components' README, "Your own orb").
 There is no button: the mascot is the launcher. A click (or Ctrl/Cmd+J) opens the chat and the mascot moves to the
 panel's header as the orb does; in voice mode, to the middle of the panel; minimized, the conversation goes on in the
 mascot at the bottom right with the bubble beside it and mute, restore and end above it on hover or focus. While the assistant is not active (or not available to the person) there is no
-launcher: it is activated from the Assistant page. The chat acts on the application the person is looking at; on a
-page without one, on the last application they opened, else the first one they can see other than the assistant's
-own, and a new conversation says which. Until the first-use notice is read, opening the chat shows the notice, and
+launcher: it is activated from the Assistant page. There is one conversation for the whole console: it stays the same
+from page to page and application to application. Each message tells the assistant the page the person is on (its
+console path and title, never its text), so "this application" is the one in view. Until the first-use notice is read, opening the chat shows the notice, and
 voice cannot be started from the launcher.
 
 The mascot is the only one on screen: the sidebar's header shows Evokai's logo while the assistant is active, whatever
@@ -178,8 +182,15 @@ conversation's state the component exposes to slotted content:
 
 The live states are drawn with WebGL; the console's "still" mascot preference and reduced motion are respected.
 
+**It drives the playground.** When the person wants to try or talk to an agent, the assistant does it in the
+playground, in front of them: its client tool `playground` (`{application, agent, message, new?}`, it waits for the
+console's answer) opens the playground on that application and agent, types the message in the composer, sends it,
+and returns the agent's answer, the tools it used, and whether it now waits for a confirmation or a choice (the person
+gives those in the playground). The assistant keeps the conversation going one message per call; after 100 seconds it
+gets what the agent said so far and the turn goes on in the playground. `try_agent` stays for a check nobody watches.
+
 **The voice follows data protection.** The browser's online voice (Google's: the spoken text goes to the browser
-vendor's speech service, only in voice mode) is used only when both the selected application's and the assistant's
+vendor's speech service, only in voice mode) is used only when the assistant's data protection and that of every application the person can see
 [data protection](data-protection.md) allow processors outside the EU: no profile at all, or a profile whose
 residency includes `us` or `global` (or the country `US`), whose jurisdiction rule includes `US`, with no retention
 rule, and whose browser declaration does not turn online voices off. Otherwise the voice stays on the device: a voice
