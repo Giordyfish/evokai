@@ -1,6 +1,8 @@
 """Console delegation tokens: the assistant acts with the rights of the person behind the console.
 
-A delegation token is minted for one console login and one application. It is a signed token with
+A delegation token is minted for one console login and one application, or for every application
+the login can see (``ALL``: the console assistant, which names the application on each request with
+the ``X-Evokai-Application`` header, by id or slug). It is a signed token with
 its own issuer and audience (``evokai-admin-mcp``), so it never passes as a session token, a worker
 token or a console cookie, and it carries the ``evk_cdt_`` prefix so a log reader knows what it is.
 
@@ -20,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import jwt
 
-from evokai.core.errors import Unauthorized
+from evokai.core.errors import BadRequest, Unauthorized
 from evokai.core.security import Keyring
 from evokai.identity.console import ConsoleLogin
 from evokai.identity.models import AppPrincipal
@@ -34,6 +36,8 @@ ISSUER = "evokai-delegation"
 AUDIENCE = "evokai-admin-mcp"
 DEFAULT_TTL = 900
 """Seconds a delegation token lives (a console assistant session)."""
+ALL = "*"
+"""The ``app`` claim of a token valid on every application the login can see, one per request."""
 RECORDED = "recorded"
 """The kind of the token of the assistant's evals: the recorded admin MCP server, no application."""
 
@@ -73,7 +77,7 @@ def mint_delegation(
     Args:
         keyring: Signing keys.
         login: The console login the assistant acts for.
-        application_id: The only application the token is valid on.
+        application_id: The only application the token is valid on, or ``ALL``.
         role: The login's role on it now (the role used is re-checked on every request).
         ttl: Lifetime in seconds.
 
@@ -96,6 +100,7 @@ def mint_delegation(
         claims["uid"] = login.user_id or ""
     elif login.kind == "adm":
         claims["kid"] = login.key_id or ""
+        claims["home"] = login.application_id or ""
     return PREFIX + jwt.encode(claims, keyring.signing_key, algorithm="HS256")
 
 
@@ -172,8 +177,35 @@ async def _live_role(svc: Services, claims: dict[str, Any], app: Any) -> str | N
     return None
 
 
-async def principal(svc: Services, token: str) -> AppPrincipal:
+async def _named(svc: Services, name: str | None) -> Any:
+    """The application a request of an ``ALL`` token names, by id or slug.
+
+    Returns:
+        The application.
+
+    Raises:
+        BadRequest: No application named (``application_required``).
+        Unauthorized: An unknown or inactive application.
+    """
+    if not name:
+        raise BadRequest(
+            "Name the application: pass its slug as application (list_applications lists them).",
+            code="application_required",
+        )
+    app = await svc.store.applications.get(name) or await svc.store.applications.by_slug(name)
+    if app is None or app.status != "active":
+        raise Unauthorized(f"No active application {name[:60]}.", code="application")
+    return app
+
+
+async def principal(svc: Services, token: str, application: str | None = None) -> AppPrincipal:
     """The principal of a delegation token, checked against the live login.
+
+    Args:
+        svc: Services.
+        token: The delegation token.
+        application: For a token valid on every application (``ALL``), the one this request acts
+            on (id or slug); a token for one application ignores it.
 
     Returns:
         An admin principal acting as ``assistant``, with the lower of the claimed and live role.
@@ -183,7 +215,10 @@ async def principal(svc: Services, token: str) -> AppPrincipal:
             behind it ended or lost the application.
     """
     claims = _claims(svc.keyring, token)
-    app = await svc.store.applications.get(str(claims["app"]))
+    if claims["app"] == ALL:
+        app = await _named(svc, application)
+    else:
+        app = await svc.store.applications.get(str(claims["app"]))
     if app is None or app.status != "active":
         raise Unauthorized("Application not active.", code="application")
     live = await _live_role(svc, claims, app)
@@ -191,6 +226,7 @@ async def principal(svc: Services, token: str) -> AppPrincipal:
     if live is None or claimed not in RANK:
         raise Unauthorized("The console login of this delegation ended.", code="delegation")
     role = min(live, claimed, key=RANK.__getitem__)
+    home = str(claims.get("home") or (claims["app"] if claims["app"] != ALL else ""))
     return AppPrincipal(
         application_id=app.id,
         kind="adm",
@@ -199,7 +235,74 @@ async def principal(svc: Services, token: str) -> AppPrincipal:
         role=role,
         actor=f"assistant:{claims.get('act') or claims['kind']}"[:200],
         via="assistant",
-        subject=login_subject(
-            str(claims["kind"]), claims.get("uid"), claims.get("kid"), str(claims["app"])
-        ),
+        subject=login_subject(str(claims["kind"]), claims.get("uid"), claims.get("kid"), home),
     )
+
+
+async def applications(svc: Services, token: str) -> list[dict[str, Any]]:
+    """The applications a delegation token may act on now, with the role it acts with on each.
+
+    Returns:
+        ``[{slug, name, role}]`` by name; the assistant's own application is marked ``system``.
+        An expired or forged token, or one whose login ended, is refused (``Unauthorized``).
+    """
+    claims = _claims(svc.keyring, token)
+    if claims["app"] == ALL:
+        rows = await svc.store.applications.all()
+    else:
+        one = await svc.store.applications.get(str(claims["app"]))
+        rows = [one] if one else []
+    claimed = str(claims["role"])
+    out = []
+    for app in rows:
+        if app.status != "active":
+            continue
+        live = await _live_role(svc, claims, app)
+        if live is None or claimed not in RANK:
+            continue
+        item: dict[str, Any] = {
+            "slug": app.slug,
+            "name": app.name,
+            "role": min(live, claimed, key=RANK.__getitem__),
+        }
+        if app.system:
+            item["system"] = True
+        out.append(item)
+    if not out and claims["kind"] != "op":
+        await _alive(svc, claims)
+    return sorted(out, key=lambda a: str(a["name"]).lower())
+
+
+async def _alive(svc: Services, claims: dict[str, Any]) -> None:
+    """Refuse a token whose login ended (when no application tells it).
+
+    Raises:
+        Unauthorized: The login ended.
+    """
+    kind = claims["kind"]
+    if kind == "sso" and await svc.auth.user_active(str(claims.get("uid") or "")):
+        return
+    if kind == "adm" and await svc.auth.key_alive(
+        str(claims.get("kid") or ""), str(claims.get("home") or "")
+    ):
+        return
+    raise Unauthorized("The console login of this delegation ended.", code="delegation")
+
+
+async def listing_role(svc: Services, token: str) -> str:
+    """The highest role a delegation token acts with on any application (what ``tools/list`` shows).
+
+    Every call is checked again on the application it names.
+
+    Returns:
+        The role.
+
+    Raises:
+        Unauthorized: Expired, forged, or the login behind it ended or sees no application.
+    """
+    roles = [a["role"] for a in await applications(svc, token)]
+    if not roles:
+        raise Unauthorized(
+            "The console login of this delegation sees no application.", code="delegation"
+        )
+    return max(roles, key=RANK.__getitem__)

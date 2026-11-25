@@ -10,6 +10,12 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- The console assistant is the platform's, not one application's: one conversation across the whole console, a
+  delegation token valid on every application the person can see (each admin MCP tool names its `application`, the
+  new `list_applications` lists them), and each message tells it the page the person is on.
+- The console assistant drives the playground: its `playground` client tool opens the playground on an application
+  and agent, types the message there in front of the person and returns the agent's answer, so it can carry on the
+  conversation.
 - An on/off switch for the console assistant on the Assistant page (`POST /v1/admin/assistant/switch`, owner): off,
   the console shows neither the mage nor the assistant's application and its sessions are refused; the model is kept,
   so switching it on again needs no new choice. `GET /v1/console/applications` marks that application `hidden`.

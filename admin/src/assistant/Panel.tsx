@@ -14,7 +14,8 @@ import { defineElements, type EvokaiChatElement } from '@ui/elements'
 import { ORB_MAX } from '@ui/travel'
 import type { ConsoleApplication } from '@client/core/types'
 import { adminJson, baseUrl, describe } from '../api'
-import { SKIN, targetApp } from './launcher'
+import { drivePlayground } from './drive'
+import { pageContext, SKIN, sessionApp } from './launcher'
 import { assistantActive, type AssistantState } from './choice'
 import { type AssistantPrivacy, type LocalVoice, needsNotice, noticeLines, viewedLine, voiceKind, voiceOptions, voiceText } from './privacy'
 import { tokenFor } from './session'
@@ -23,9 +24,6 @@ import { LiveMascot } from '../mascot/LiveMascot'
 import { mascotFor, type MascotView } from '../mascot/state'
 import { go, useConsole } from '../state'
 import { Btn, Icon } from '../ui'
-
-/** The last application the person opened in this tab: the assistant keeps acting on it on pages without one. */
-let lastApp: string | null = null
 
 interface Mood {
   now: ChatState
@@ -116,13 +114,12 @@ function useSlot(chat: EvokaiChatElement | null, name: string, cls: string): HTM
 }
 
 /**
- * The assistant's launcher and chat, for the application the person is looking at (on a page without one: the last
- * one they opened, else the first they can see). Nothing at all while the assistant is not active for them.
+ * The assistant's launcher and chat: the platform's assistant, one conversation across the whole console, told which
+ * page the person is on. Nothing at all while the assistant is not active for them.
  */
-export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplication | null; state: AssistantState | null; dark: boolean }) {
+export function AssistantLauncher({ state, dark }: { state: AssistantState | null; dark: boolean }) {
   const c = useConsole()
-  if (app) lastApp = app.id
-  const target = targetApp(app, lastApp, c.apps, state?.applicationId)
+  const target = sessionApp<ConsoleApplication>(c.apps, state?.applicationId)
   const active = assistantActive(state) && !!target
   const [privacy, setPrivacy] = useState<{ app: string; p: AssistantPrivacy; voices: LocalVoice[] } | null>(null)
   const [notice, setNotice] = useState(false)
@@ -140,7 +137,7 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
   const live = useRef({ privacy, notice })
   live.current = { privacy, notice }
 
-  // What the person is told about the assistant, for the application it acts on (the voice depends on it).
+  // What the person is told about the assistant (the voice depends on every application they see).
   useEffect(() => {
     if (!active || !target) return
     let on = true
@@ -161,7 +158,10 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
     defineElements()
     const el = document.createElement('evokai-chat')
     el.setAttribute('base-url', baseUrl)
-    el.setAttribute('page-context', 'off')
+    // The page the person is on (its console path and title, never its text): "this application" is the one in it.
+    el.getPage = () => pageContext(location.hash, document.title)
+    // The playground in front of the person: the assistant types there and reads the agent's answer.
+    el.tools = { playground: (args) => drivePlayground(args, go) }
     el.skin = SKIN
     const onState = (e: Event) => {
       const { state: now, previous } = (e as CustomEvent<{ state: ChatState; previous: ChatState }>).detail
@@ -199,14 +199,14 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
     }
   }, [ready])
 
-  // The application it acts on: a new token source, its own remembered conversation and its voice. The storage key
-  // changes last, so the chat starts its new session with all three.
+  // The token source (the console login of one application the person sees), the one remembered conversation and the
+  // voice. The storage key is set last, so the chat starts its session with all three.
   const lang = locale()
   useEffect(() => {
     if (!chat || !privacy) return
     chat.getToken = tokenFor(privacy.app)
     chat.voiceOptions = voiceOptions(voiceKind(privacy.p.voice, privacy.voices, lang))
-    chat.setAttribute('storage-key', `evokai-console-assistant:${privacy.app}`)
+    chat.setAttribute('storage-key', 'evokai-console-assistant')
     // Draw again once the new controller exists: the mascot follows its voice.
     setTimeout(() => setSwaps((n) => n + 1), 0)
   }, [chat, privacy?.app, privacy?.p.voice])

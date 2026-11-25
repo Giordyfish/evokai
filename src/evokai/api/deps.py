@@ -100,7 +100,7 @@ async def _delegated(request: Request, token: str) -> AppPrincipal:
         BadRequest: A body that is not a JSON object.
     """
     svc = services(request)
-    who = await delegation.principal(svc, token)
+    who = await delegation.principal(svc, token, request.headers.get(console.APPLICATION_HEADER))
     authorize(request, who.role, svc.settings.base_path)
     spec = by_route().get((request.method.upper(), route_of(request, svc.settings.base_path)))
     if spec is None:

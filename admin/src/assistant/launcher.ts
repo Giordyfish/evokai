@@ -1,6 +1,6 @@
 /**
- * What the console decides about the assistant's launcher, with no drawing: how the chat looks in the console and
- * which application the assistant acts on.
+ * What the console decides about the assistant's launcher, with no drawing: how the chat looks in the console, which
+ * login opens its session and what it is told about the page.
  */
 import { ORB_MAX } from '@ui/travel'
 
@@ -19,10 +19,14 @@ export const SKIN = `
 `
 
 /**
- * The application the assistant acts on: the one the person is looking at, else the last one they opened, else the
- * first one they can see that is not the assistant's own.
+ * The application whose console login opens the assistant's session. The assistant is the platform's: its tools name
+ * the application of each call, so this only has to be one the person can see (the first that is not its own).
  */
-export function targetApp<A extends { id: string }>(selected: A | null, last: string | null, apps: A[], systemId: string | undefined): A | null {
-  if (selected) return selected
-  return apps.find((a) => a.id === last) ?? apps.find((a) => a.id !== systemId) ?? apps[0] ?? null
+export function sessionApp<A extends { id: string }>(apps: A[], systemId: string | undefined): A | null {
+  return apps.find((a) => a.id !== systemId) ?? apps[0] ?? null
+}
+
+/** What the assistant is told about the page the person is on: its console path and title, never its text. */
+export function pageContext(hash: string, title: string): { path: string; title: string } {
+  return { path: hash.replace(/^#/, '') || '/', title }
 }
