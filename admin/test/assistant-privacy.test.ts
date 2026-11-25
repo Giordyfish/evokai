@@ -50,10 +50,11 @@ describe('the voice follows data protection', () => {
     expect(voiceOptions('system').ttsOptions).toEqual({ piper: false, browser: { pitch: 1.3, rate: 1.05, allowOnlineVoices: false } })
     expect(voiceOptions('piper').ttsOptions).toEqual({ piper: { voice: 'it_IT-serena-high', pitchShift: 1.15 }, browser: { allowOnlineVoices: false } })
   })
-  it('says which voice is in use', () => {
-    expect(voiceText('online')).toMatch(/Google/)
-    expect(voiceText('piper')).toMatch(/browser/)
+  it('speaks up only about the online voice, the one that leaves the device', () => {
     setLocale('it')
-    expect(voiceText('system')).toMatch(/dispositivo/)
+    expect(voiceText('online')).toMatch(/Google/)
+    expect(voiceText('online')).not.toMatch(/applicazione/)
+    expect(voiceText('piper')).toBeNull()
+    expect(voiceText('system')).toBeNull()
   })
 })

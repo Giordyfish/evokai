@@ -252,7 +252,7 @@ export function AssistantLauncher({ app, state, dark }: { app: ConsoleApplicatio
   return (
     <>
       {chat ? <Mascot chat={chat} slot={orbSlot} view={view} onClipEnd={ended} /> : null}
-      {chat && privacy ? <About chat={chat} app={c.apps.find((a) => a.id === privacy.app)?.name ?? ''} privacy={privacy.p} voices={privacy.voices} /> : null}
+      {chat && privacy ? <About chat={chat} privacy={privacy.p} voices={privacy.voices} /> : null}
       {notice && privacy ? <Notice privacy={privacy.p} error={error} onAccept={() => void accept()} onClose={closeNotice} /> : null}
     </>
   )
@@ -266,14 +266,14 @@ function Mascot(p: { chat: EvokaiChatElement; slot: HTMLDivElement; view: Mascot
   return null
 }
 
-/** Above the suggestions of a new conversation: the application it acts on, the voice in use, who viewed what. */
-function About(p: { chat: EvokaiChatElement; app: string; privacy: AssistantPrivacy; voices: LocalVoice[] }) {
+/** Above the suggestions of a new conversation: a line when the voice leaves the device, who viewed what. */
+function About(p: { chat: EvokaiChatElement; privacy: AssistantPrivacy; voices: LocalVoice[] }) {
   const slot = useSlot(p.chat, 'empty', 'assistant-about')
   useEffect(() => {
+    const voice = voiceText(voiceKind(p.privacy.voice, p.voices, locale()))
     render(
       <>
-        {p.app ? <p class="acting">{t('assistant.actingOn', { app: p.app })}</p> : null}
-        <p>{voiceText(voiceKind(p.privacy.voice, p.voices, locale()))}</p>
+        {voice ? <p>{voice}</p> : null}
         {p.privacy.inspections.map((i) => (
           <p key={i.at + i.conversationId} class="viewed">
             {viewedLine(i)}
