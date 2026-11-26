@@ -8,8 +8,10 @@ from __future__ import annotations
 import ssl
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -80,6 +82,28 @@ def postgres_tls(url: str, settings: Settings) -> tuple[str, ssl.SSLContext | bo
     return clean, ctx
 
 
+SQLITE_BUSY_SECONDS = 30
+"""How long a SQLite write waits for the one in progress before it fails."""
+
+
+def _sqlite_pragmas(conn: Any, _record: Any) -> None:
+    """Every SQLite connection: write-ahead log, so a read never waits for a write.
+
+    In SQLite's default journal mode a read waits while another connection commits, and gives up
+    with "database is locked" after the busy timeout: under concurrent turns (a red team run, a
+    busy single-node deployment) a page that reads while results are written failed. With the
+    write-ahead log readers and the one writer go on together; writers still take turns, each
+    waiting up to ``SQLITE_BUSY_SECONDS``. An in-memory database keeps its own mode.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_SECONDS * 1000}")
+    finally:
+        cur.close()
+
+
 class Database:
     """The async engine and session factory."""
 
@@ -103,9 +127,13 @@ class Database:
             connect_args["server_settings"] = server_settings
         if url.startswith("sqlite"):
             kwargs = {}
+            # How long a write waits for another one before "database is locked" (seconds).
+            connect_args["timeout"] = SQLITE_BUSY_SECONDS
         if settings.database_schema:
             kwargs["execution_options"] = {"schema_translate_map": {None: settings.database_schema}}
         self.engine: AsyncEngine = create_async_engine(url, connect_args=connect_args, **kwargs)
+        if url.startswith("sqlite"):
+            event.listen(self.engine.sync_engine, "connect", _sqlite_pragmas)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
 
     @asynccontextmanager
