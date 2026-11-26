@@ -307,6 +307,7 @@ export function Policy({
       ) : null}
       {error ? <p class="hint" style="color:var(--s-bad);margin-bottom:12px">{error}</p> : null}
       <Panel
+        tour="sec-controls"
         title={t('sec.controls')}
         actions={
           <span style="display:flex;gap:8px;align-items:center">
@@ -577,7 +578,7 @@ export function Events({ app }: { app: PolicyOwner }) {
         const top = summary.byRule.slice(0, 8)
         const max = Math.max(1, ...top.map((r) => r.count))
         return (
-          <div class="grid g2" style="margin-top:16px">
+          <div class="grid g2" style="margin-top:16px" data-tour="sec-events">
             <Panel title={t('sec.byRule')} actions={<Tag>{tn('sec.nEvents', summary.total)}</Tag>}>
               {top.length ? (
                 <table class="tbl">

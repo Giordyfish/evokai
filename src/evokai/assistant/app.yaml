@@ -118,6 +118,29 @@ agents:
                 type: string
                 enum: [up, down, top, bottom]
             additionalProperties: false
+        - name: start_tour
+          wait: true
+          description: >-
+            Start one of the console's guided tours in front of the person: it dims the page except the place each
+            step points at and shows a card with Back, Next and Exit. Tours: first-steps (applications, creating
+            one, an agent, the playground), security (system policy, an application's modes, versions, policy
+            tests, events), usage-traces (usage, forecast, traces), gateway (gateways for Claude Code and Codex:
+            creating one, people and their keys, policy, usage, events, connecting the tools, the notice). It
+            resumes where the person left it unless
+            restart is true. Returns the tour's steps (title and page) and the step it starts at, or an error
+            listing the tour ids.
+          parameters:
+            type: object
+            properties:
+              tour:
+                type: string
+                maxLength: 40
+                description: The tour's id, e.g. first-steps.
+              restart:
+                type: boolean
+                description: Start again from the first step.
+            required: [tour]
+            additionalProperties: false
     suggestions:
       - "What do my applications have?"
       - "Which agents use the most of the cap?"

@@ -155,7 +155,7 @@ export function AppUsage({ app }: { app: ConsoleApplication }) {
     <>
       <Hero title={t('tab.usage')} sub={t('usage.sub')} actions={<Btn onClick={exportCsv}>{t('usage.export')}</Btn>} />
       <Forecast app={app} />
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px" data-tour="usage-views">
         <Seg options={VIEWS} labels={viewLabels()} value={view} onChange={setView} />
         <select class="in" style="width:auto;height:36px" value={tag} onChange={(e) => setTag(e.currentTarget.value)} aria-label={t('usage.tag')}>
           <option value="">{t('usage.allTags')}</option>
@@ -362,7 +362,7 @@ export function AllUsage() {
     <>
       <Hero title={t('page.usage')} sub={t('usage.allSub')} actions={<Btn onClick={exportCsv}>{t('usage.export')}</Btn>} />
       {!c.apps.length ? (
-        <Panel>
+        <Panel tour="usage-all">
           <Empty k="ember">
             <b>{t('apps.empty')}</b>
           </Empty>
@@ -376,7 +376,7 @@ export function AllUsage() {
             const top = [...d].sort((a, b) => (b.days.application.monthPct ?? 0) - (a.days.application.monthPct ?? 0))[0]
             return (
               <>
-                <div class="grid g2" style="margin-bottom:16px">
+                <div class="grid g2" style="margin-bottom:16px" data-tour="usage-all">
                   {d.map(({ app, days }) => (
                     <Panel key={app.id}>
                       <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onClick={() => go(appHref(app.slug, 'usage'))}>

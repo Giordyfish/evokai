@@ -41,12 +41,14 @@ export function Traces({ app, id, q }: { app: ConsoleApplication; id: string | n
         title={t('tab.traces')}
         sub={t('tr.sub')}
         actions={
-          <Seg
-            options={['turns', 'versions'] as const}
-            value={view}
-            labels={{ turns: t('tr.viewTurns'), versions: t('tr.viewVersions') }}
-            onChange={(v) => go(v === 'versions' ? href(app, { view: 'versions', agent: q.get('agent') ?? undefined } as TraceQuery) : href(app, {}))}
-          />
+          <span data-tour="traces-views">
+            <Seg
+              options={['turns', 'versions'] as const}
+              value={view}
+              labels={{ turns: t('tr.viewTurns'), versions: t('tr.viewVersions') }}
+              onChange={(v) => go(v === 'versions' ? href(app, { view: 'versions', agent: q.get('agent') ?? undefined } as TraceQuery) : href(app, {}))}
+            />
+          </span>
         }
       />
       {view === 'versions' ? <Versions app={app} q={q} /> : <TraceList app={app} q={q} />}
@@ -84,7 +86,7 @@ function TraceList({ app, q }: { app: ConsoleApplication; q: URLSearchParams }) 
   const dateIn = (v: string | Date | undefined) => (typeof v === 'string' ? v.slice(0, 10) : '')
   return (
     <div class="grid" style="gap:16px">
-      <Panel title={t('tr.filters')} actions={Object.keys(query).length ? <Btn sm kind="ghost" onClick={() => go(href(app, {}))}>{t('tr.clear')}</Btn> : undefined}>
+      <Panel tour="traces-filters" title={t('tr.filters')} actions={Object.keys(query).length ? <Btn sm kind="ghost" onClick={() => go(href(app, {}))}>{t('tr.clear')}</Btn> : undefined}>
         <div class="grid g3" style="gap:0 14px">
           <Field label={t('tr.agent')}>
             <select class="in" value={query.agent ?? ''} onChange={(e) => set({ agent: e.currentTarget.value || undefined, version: undefined })}>
@@ -160,7 +162,7 @@ function TraceList({ app, q }: { app: ConsoleApplication; q: URLSearchParams }) 
         {(page) => {
           const items = [...page.items, ...more]
           return (
-            <Panel cls="flat">
+            <Panel cls="flat" tour="traces-list">
               {items.length ? (
                 <div class="wx">
                   <table class="tbl">

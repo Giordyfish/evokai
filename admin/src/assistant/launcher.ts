@@ -26,7 +26,11 @@ export function sessionApp<A extends { id: string }>(apps: A[], systemId: string
   return apps.find((a) => a.id !== systemId) ?? apps[0] ?? null
 }
 
-/** What the assistant is told about the page the person is on: its console path and title, never its text. */
-export function pageContext(hash: string, title: string): { path: string; title: string } {
-  return { path: hash.replace(/^#/, '') || '/', title }
+/**
+ * What the assistant is told about the page the person is on: its console path and title, never its text. While a
+ * guided tour runs, `tour` (its line, src/tours) is the context's text: the tour, the step and what the step says.
+ */
+export function pageContext(hash: string, title: string, tour?: string | null): { path: string; title: string; text?: string } {
+  const page = { path: hash.replace(/^#/, '') || '/', title }
+  return tour ? { ...page, text: tour } : page
 }

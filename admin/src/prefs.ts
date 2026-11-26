@@ -25,6 +25,8 @@ export const DEFAULTS: Prefs = {
   contrast: 'system',
   focusAlways: false,
   underlineLinks: false,
+  tours: {},
+  tourInvite: 'show',
 }
 
 /** The choices of each field: the same allow-list as the service. */
@@ -38,9 +40,32 @@ export const CHOICES = {
   mascot: ['on', 'still', 'hidden'],
   textSize: [100, 112, 125],
   contrast: ['system', 'more', 'normal'],
+  tourInvite: ['show', 'dismissed'],
 } as const satisfies { [K in keyof Prefs]?: readonly Prefs[K][] }
 
 const FLAGS = ['focusAlways', 'underlineLinks'] as const
+
+/** The service's limits on the guided tours' progress: an id, a step from 0 to 99 and when, at most 20 tours. */
+const TOUR_ID = /^[a-z][a-z0-9-]{1,39}$/
+const MAX_TOURS = 20
+export type TourProgress = { step: number; at: number }
+
+const isProgress = (v: unknown): v is TourProgress => {
+  if (!v || typeof v !== 'object') return false
+  const { step, at } = v as Record<string, unknown>
+  return Number.isInteger(step) && (step as number) >= 0 && (step as number) <= 99 && Number.isInteger(at) && (at as number) >= 0 && (at as number) <= 1e13
+}
+
+/** Tour progress from anything: only valid ids and progress, at most `MAX_TOURS`, sorted by id (compared as JSON). */
+export function sanitizeTours(x: unknown): Record<string, TourProgress> {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return {}
+  const out: Record<string, TourProgress> = {}
+  for (const [k, v] of Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (Object.keys(out).length >= MAX_TOURS) break
+    if (TOUR_ID.test(k) && isProgress(v)) out[k] = { step: v.step, at: v.at }
+  }
+  return out
+}
 
 /** Preferences from anything (a cached copy, an older version): every field that is not one of its choices is the default. */
 export function sanitize(x: unknown): Prefs {
@@ -48,6 +73,7 @@ export function sanitize(x: unknown): Prefs {
   const out: Record<string, unknown> = { ...DEFAULTS }
   for (const [k, allowed] of Object.entries(CHOICES)) if ((allowed as readonly unknown[]).includes(o[k])) out[k] = o[k]
   for (const k of FLAGS) if (typeof o[k] === 'boolean') out[k] = o[k]
+  out.tours = sanitizeTours(o.tours)
   // Version 1's `on` mascot was the default, not a choice: since version 2 the default is the logo.
   if (o.version !== 2 && out.mascot === 'on') out.mascot = 'hidden'
   return out as unknown as Prefs

@@ -41,7 +41,7 @@ function GatewayList() {
         {({ items, canCreate }) => (
           <>
             {items.length ? (
-              <Panel cls="flat">
+              <Panel cls="flat" tour="gw-list">
                 <div class="wx">
                   <table class="tbl">
                     <thead>
@@ -79,7 +79,7 @@ function GatewayList() {
                 </div>
               </Panel>
             ) : (
-              <Panel>
+              <Panel tour="gw-list">
                 <Empty k="ember">
                   <b>{t('gw.empty')}</b>
                   <br />
@@ -133,7 +133,7 @@ function CreateGateway() {
     }
   }
   return (
-    <Panel title={t('gw.create')} style="margin-top:16px">
+    <Panel title={t('gw.create')} style="margin-top:16px" tour="gw-create">
       <p class="hint">{t('gw.createSub')}</p>
       <div class="grid g2">
         <Field label={t('gw.name')} id="gw-name">
@@ -263,7 +263,7 @@ function People({ g }: { g: Gateway }) {
     }
   }
   return (
-    <>
+    <div data-tour="gw-people">
       <p class="hint">{t('gw.peopleSub')}</p>
       {canEdit ? (
         <Panel title={t('gw.addPerson')}>
@@ -380,7 +380,7 @@ function People({ g }: { g: Gateway }) {
           )
         }
       </Loads>
-    </>
+    </div>
   )
 }
 
@@ -537,7 +537,7 @@ function Usage({ g }: { g: Gateway }) {
   const [days, setDays] = useState<(typeof DAYS)[number]>('30')
   const load = useLoad(() => gateways.usage(g.id, Number(days)), [g.id, days])
   return (
-    <>
+    <div data-tour="gw-usage">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
         <p class="hint" style="margin:0">
           {t('gw.usageSub')}
@@ -556,7 +556,7 @@ function Usage({ g }: { g: Gateway }) {
       <Loads load={load} what={t('what.gatewayUsage')}>
         {(u) => <UsageTables u={u} />}
       </Loads>
-    </>
+    </div>
   )
 }
 
@@ -707,7 +707,7 @@ function Snippet({ title, hint, text, prose }: { title: string; hint: string; te
 
 function Connect({ g }: { g: Gateway }) {
   return (
-    <>
+    <div data-tour="gw-connect">
       <p class="hint">{t('gw.connectSub')}</p>
       <div class="grid g2">
         <Snippet title={t('gw.snip.managed')} hint={t('gw.snip.managedHint')} text={claudeManaged()} />
@@ -720,7 +720,7 @@ function Connect({ g }: { g: Gateway }) {
           <Snippet title={t('gw.snip.codexKey')} hint={t('gw.snip.codexKeyHint')} text={codexShell()} />
         </div>
       ) : null}
-    </>
+    </div>
   )
 }
 
@@ -752,10 +752,10 @@ function Notice({ g }: { g: Gateway }) {
       {(view) => {
         const text = noticeText(g, view.eventTtlDays ?? view.defaultEventTtlDays ?? null)
         return (
-          <>
+          <div data-tour="gw-notice">
             <p class="hint">{t('gw.noticeSub')}</p>
             <Snippet prose title={t('gw.tab.notice')} hint={t('gw.noticeHint')} text={text} />
-          </>
+          </div>
         )
       }}
     </Loads>

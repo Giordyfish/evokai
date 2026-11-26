@@ -4268,6 +4268,25 @@
             "title": "Timeformat",
             "type": "string"
           },
+          "tourInvite": {
+            "default": "show",
+            "enum": [
+              "show",
+              "dismissed"
+            ],
+            "title": "Tourinvite",
+            "type": "string"
+          },
+          "tours": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[a-z][a-z0-9-]{1,39}$": {
+                "$ref": "#/components/schemas/TourProgress"
+              }
+            },
+            "title": "Tours",
+            "type": "object"
+          },
           "underlineLinks": {
             "default": false,
             "title": "Underlinelinks",
@@ -6567,6 +6586,30 @@
           "toolUse"
         ],
         "title": "ToolUseBlock",
+        "type": "object"
+      },
+      "TourProgress": {
+        "additionalProperties": false,
+        "description": "Where one guided tour stopped, and when (so the most recent copy wins on resume).",
+        "properties": {
+          "at": {
+            "maximum": 10000000000000.0,
+            "minimum": 0.0,
+            "title": "At",
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 99.0,
+            "minimum": 0.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "at"
+        ],
+        "title": "TourProgress",
         "type": "object"
       },
       "Transcript": {

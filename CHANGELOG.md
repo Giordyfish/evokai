@@ -10,6 +10,14 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- Guided tours in the console: `first-steps` (applications, an agent, the playground), `security` (system policy, an
+  application's modes, versions, policy tests, events), `usage-traces` (usage, forecast, traces) and `gateway`
+  (gateways, people and keys, policy, usage, events, connecting Claude Code and Codex, the notice). A spotlight on
+  each step's place with a card (Back, Next, Exit, progress), full keyboard support, reduced motion, steps whose place
+  never appears are skipped, and each tour resumes where the person left it (console preferences `tours`, the most recent copy wins). A
+  **Guides** menu in the top bar and an invite to the first tour on a first sign-in (`tourInvite`). The console
+  assistant starts a tour with its new `start_tour` client tool and is told the tour and step on screen.
+
 - Gateways for coding tools ([docs/gateway.md](docs/gateway.md)): Claude Code passes through Evokai with each person's
   own claude.ai seat, under the organisation's controls. A gateway is stored as an application row
   (`applications.kind = "gateway"`, migration 0036) but is never an application: its own console section

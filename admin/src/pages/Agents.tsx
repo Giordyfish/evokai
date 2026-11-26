@@ -18,7 +18,7 @@ export function Agents({ app }: { app: ConsoleApplication }) {
     return { agents, calls: new Map(usage.rows.map((r) => [r.agent ?? '', r.calls])) }
   }, [app.id])
   const add = (
-    <Btn kind="pri" href={appHref(app.slug, 'agents', 'new')}>
+    <Btn kind="pri" href={appHref(app.slug, 'agents', 'new')} tour="agents-new">
       {t('agents.new')}
     </Btn>
   )
@@ -28,7 +28,7 @@ export function Agents({ app }: { app: ConsoleApplication }) {
       <Loads load={load} what={t('what.agents')}>
         {({ agents, calls }) =>
           !agents.length ? (
-            <Panel>
+            <Panel tour="agents-list">
               <Empty action={add}>
                 <b>{t('ov.noAgents')}</b>
                 <br />
@@ -36,7 +36,7 @@ export function Agents({ app }: { app: ConsoleApplication }) {
               </Empty>
             </Panel>
           ) : (
-            <Panel cls="flat">
+            <Panel cls="flat" tour="agents-list">
               <div class="wx">
                 <table class="tbl">
                   <thead>

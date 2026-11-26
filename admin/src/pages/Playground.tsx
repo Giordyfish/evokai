@@ -580,7 +580,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
           </Btn>
         }
       />
-      <div class="pgbar">
+      <div class="pgbar" data-tour="pg-pick">
         <select class="in" value={app.slug} onChange={(e) => onApp(e.currentTarget.value)} aria-label={t('pg.application')}>
           {c.apps.map((a) => (
             <option key={a.id} value={a.slug}>
@@ -659,7 +659,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             )}
             {rendered}
           </div>
-          <form class="composer" onSubmit={send}>
+          <form class="composer" onSubmit={send} data-tour="pg-composer">
             <input value={text} onInput={(e) => setText(e.currentTarget.value)} placeholder={t('pg.ask')} aria-label={t('pg.message')} disabled={!current} />
             <Btn kind="pri" type="submit" busy={busy ? t('pg.running') : false} flame disabled={!current}>
               {t('pg.send')}
@@ -667,6 +667,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
           </form>
         </Panel>
         <Panel
+          tour="pg-events"
           title={t('pg.events')}
           actions={<Seg options={['waterfall', 'raw'] as const} labels={{ waterfall: t('pg.waterfall'), raw: t('pg.raw') }} value={view} onChange={setView} />}
         >

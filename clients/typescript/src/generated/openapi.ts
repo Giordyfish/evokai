@@ -6907,6 +6907,16 @@ export interface components {
              */
             timeFormat?: "auto" | "24h" | "12h";
             /**
+             * Tourinvite
+             * @default show
+             * @enum {string}
+             */
+            tourInvite?: "show" | "dismissed";
+            /** Tours */
+            tours?: {
+                [key: string]: components["schemas"]["TourProgress"];
+            };
+            /**
              * Underlinelinks
              * @default false
              */
@@ -7746,6 +7756,16 @@ export interface components {
          */
         ToolUseBlock: {
             toolUse: components["schemas"]["ToolUse"];
+        };
+        /**
+         * TourProgress
+         * @description Where one guided tour stopped, and when (so the most recent copy wins on resume).
+         */
+        TourProgress: {
+            /** At */
+            at: number;
+            /** Step */
+            step: number;
         };
         /**
          * Transcript
