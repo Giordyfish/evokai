@@ -594,14 +594,23 @@ async def test_slugs_are_shared_and_only_owners_create_gateways(gate: Gate) -> N
     ],
 )
 def test_the_scanner_is_linear_on_one_megabyte(unit: str) -> None:
-    text = (unit * (1_000_000 // len(unit) + 1))[:1_000_000]
     deny = ["weapons", "(?i)bomb(s)?", "foo(?=bar)"]
-    started = time.perf_counter()
-    scan.find_secrets(text)
-    scan.find_pii(text)
-    scan.find_pii(text, limit=checks.PII_LIMIT)
-    scan.denied_topic(text, deny)
-    assert time.perf_counter() - started < 3.0
+
+    def cpu_seconds(size: int) -> float:
+        text = (unit * (size // len(unit) + 1))[:size]
+        started = time.process_time()
+        scan.find_secrets(text)
+        scan.find_pii(text)
+        scan.find_pii(text, limit=checks.PII_LIMIT)
+        scan.denied_topic(text, deny)
+        return time.process_time() - started
+
+    cpu_seconds(10_000)  # patterns compiled, caches warm
+    small, big = cpu_seconds(125_000), cpu_seconds(1_000_000)
+    # Eight times the text: linear costs about 8 times as much, a quadratic scan 64 times. The
+    # process's own CPU time, compared with itself, does not depend on how loaded the runner is
+    # (a wall-clock bound of 3 s failed on CI at 5.5 s).
+    assert big < 24 * small + 0.05, (small, big)
 
 
 def test_the_scanner_finds_what_the_guard_finds() -> None:
