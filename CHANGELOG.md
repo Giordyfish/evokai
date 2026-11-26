@@ -122,6 +122,24 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   `.d.ts` with each tool's arguments and results, the custom client tools' arguments and the `output_schema`.
 - Clients: `ReasoningEvent`, `ToolEvent.id`, `ToolEvent.args`, the `reasoning` part and the new tool statuses (TypeScript
   and Python); the web component's `reasoning` and `tool-args` parts.
+- Tuned catalogue voices ([voice](docs/voice.md#catalogue-voices)): `PUT /v1/admin/voices/{provider}/{voice_id}` takes
+  `settings`, an engine-neutral `model` and `speed` plus the engine's own options under its name (`elevenlabs`:
+  `stability`, `similarityBoost`, `style`, `speakerBoost`; `openai`: `instructions`), checked per engine (400
+  `settings` for anything it does not take). Server speech and WebRTC voice sessions speak a catalogue voice with
+  them, and speech tags follow the voice's model; a voice without settings speaks as before. Migration 0037 adds
+  `evokai_voices.settings`.
+- Server speech in the session's language: `POST /v1/session/speech` takes an optional `language` (BCP 47 or ISO
+  639-1), else the session's locale, reports it in `start`, and passes it to the engines whose model takes one.
+- Continuity across segments: the `say` segments of one turn follow each other on engines that can (the earlier
+  segments by the engine's own reference, else their text, and the next segment's text), so an answer spoken segment
+  by segment keeps a natural prosody. A text follows the speech it names in `after` (the `speechId` that `start`
+  now carries). What a conversation spoke is kept in the instance's memory for two hours, never stored.
+- Character times: `"characters": true` on `POST /v1/session/speech` streams `chars` events (`{at, times: [[startMs,
+  endMs], ...]}` per code point of `spoken`, `[-1, -1]` where the engine reported none) from engines that report them
+  (`elevenlabs`, `fake`), for lip sync, karaoke subtitles or typewriter captions. Speech tags never shift the offsets.
+- Clients: `language`, `after` and `characters` on `session.speak` and `session.speechEvents`, `speechId` and
+  `timings.chars` (TypeScript), the `char` event of `TimedSpeechPlayer`; `language=`, `after=`, `characters=`,
+  `Speech.speech_id` and `Speech.chars` (Python), and `VoiceBody.settings`.
 
 ### Fixed
 

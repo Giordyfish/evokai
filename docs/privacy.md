@@ -148,7 +148,9 @@ Who else may process personal data, depending on how the deployment is configure
   answers' text, to the browser's speech service, only where the device has no voice for the language) and
   `allowOnlineRecognition` (the user's audio, to the browser's recogniser, only where there is no on-device one:
   Safari and every iOS browser send it to Apple). On-device always comes first; an application that turns either on
-  lists that vendor among its sub-processors.
+  lists that vendor among its sub-processors. Server speech keeps, per conversation, the engine's request ids and
+  the text it spoke in the instance's memory for two hours, never in the database
+  ([continuity](voice.md#continuity-across-segments)).
 - **The database host** (for example Amazon RDS) and the compute that runs the containers (for example an Amazon
   EC2 instance).
 - **Observability**: only when OpenTelemetry is enabled (`EVOKAI_OTEL_ENABLED`), to the configured exporter (an

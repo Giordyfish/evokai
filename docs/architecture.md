@@ -426,7 +426,9 @@ A session declares its **voice engine** (token claim, else the application defau
   says so. STT and TTS are pluggable (registered names or `module:factory`); EU-hosted providers
   plug in without touching the pipeline. Connections stay bound to their session. The engines are
   the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
-  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming).
+  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming). A voice of
+  the deployment's catalogue speaks with its own [settings](voice.md#catalogue-voices) (model, speed,
+  the engine's options) in both, so an operator tunes it once for every application.
 
 ## Module map (`src/evokai`)
 
