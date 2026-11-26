@@ -336,7 +336,8 @@ class GatewayService:
         rate = policy.settings.abuse.requests_per_minute if policy.settings.abuse else None
         if not policy.on("abuse.rate") or not rate:
             return None
-        minute = int(time.time() // 60)
+        now = self.svc.guard.clock()  # the guard's windows: one clock for every rate (tests pin it)
+        minute = int(now // 60)
         n = await self.svc.shared.incr(f"gw:rate:{person.key_id}:{minute}", 120)
         if n <= rate:
             return None
@@ -357,7 +358,7 @@ class GatewayService:
             "rate_limit",
             f"Evokai gateway: more than {rate} requests in a minute from you (abuse.rate). "
             "Wait a moment.",
-            retry_after=max(1, 60 - int(time.time()) % 60),
+            retry_after=max(1, 60 - int(now) % 60),
         )
 
     async def _caps(

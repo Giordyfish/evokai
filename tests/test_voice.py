@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -14,10 +15,12 @@ from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
     InterruptionFrame,
+    SystemFrame,
     TTSAudioRawFrame,
     UserStoppedSpeakingFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.processors.frameworks.rtvi.frames import RTVIServerMessageFrame
 from pipecat.tests.utils import SleepFrame, run_test
 
@@ -40,8 +43,45 @@ def _utterance() -> list[Frame]:
     ]
 
 
+@dataclass
+class Until(SystemFrame):
+    """Hold the frames that follow until ``event`` is set (instead of guessing a pause)."""
+
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+class _Hold(FrameProcessor):
+    """First in the test pipeline: an ``Until`` frame stops what follows until its event."""
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, Until):
+            await asyncio.wait_for(frame.event.wait(), START_TIMEOUT)
+            return
+        await self.push_frame(frame, direction)
+
+
+class _Done(FrameProcessor):
+    """Last in the test pipeline: sets ``first`` when the agent reports its first finished turn."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.first = asyncio.Event()
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, RTVIServerMessageFrame) and frame.data["evokai"]["type"] == "done":
+            self.first.set()
+        await self.push_frame(frame, direction)
+
+
 async def _voice(
-    env: Env, phrases: list[str], frames: list[Frame], *, tts: FakeTTS | None = None
+    env: Env,
+    phrases: list[str],
+    frames: list[Frame],
+    *,
+    tts: FakeTTS | None = None,
+    done: _Done | None = None,
 ) -> tuple[list[dict[str, Any]], FakeTTS, list[Frame], str]:
     tok = await env.token()
     principal = await env.svc.auth.session(tok["token"])
@@ -49,7 +89,8 @@ async def _voice(
     chain = agent_chain(env.svc, principal, stt=FakeSTT(phrases), tts=tts, external=False)
     # Pipecat gives the pipeline 1 s to start; on a loaded CI runner (parallel workers, Postgres)
     # it can take longer, and the test failed before the voice turn even began.
-    down, _ = await run_test(Pipeline(chain), frames_to_send=frames, start_timeout=START_TIMEOUT)
+    pipeline = Pipeline([_Hold(), *chain, done or _Done()])
+    down, _ = await run_test(pipeline, frames_to_send=frames, start_timeout=START_TIMEOUT)
     events = [f.data["evokai"] for f in down if isinstance(f, RTVIServerMessageFrame)]
     return events, tts, list(down), tok["token"]
 
@@ -91,9 +132,10 @@ async def test_the_server_voice_speaks_numbers_in_words_and_shows_digits(env: En
 
 async def test_a_spoken_yes_confirms_the_pending_change(env: Env) -> None:
     env.script.add("function:primary", [Tool("order_refund", {})], ["Fatto: rimborsati."])
-    events, tts, _, _ = await _voice(
-        env, ["Classify the rows", "yes, go ahead"], _utterance() + _utterance()
-    )
+    # The "yes" comes once the first turn has asked: earlier, it would supersede that turn.
+    done = _Done()
+    frames = [*_utterance(), Until(done.first), *_utterance()]
+    events, tts, _, _ = await _voice(env, ["Classify the rows", "yes, go ahead"], frames, done=done)
 
     reasons = [e["reason"] for e in events if e["type"] == "done"]
     assert reasons == ["confirm", "end_turn"]
@@ -104,9 +146,10 @@ async def test_a_spoken_yes_confirms_the_pending_change(env: Env) -> None:
 async def test_speaking_over_the_agent_cancels_its_turn(env: Env) -> None:
     env.script.gate = asyncio.Event()
     env.script.add("function:primary", ["Sto guardando i dati del mese. ", "WAIT", "Ecco."])
-    # The agent holds at its WAIT (the gate never opens) until the person talks over it, so the
-    # interruption can come late: a short pause raced a slow runner, where no turn had started.
-    frames = [*_utterance()[:-1], SleepFrame(2.0), InterruptionFrame(), SleepFrame(TURN_TIME)]
+    # The agent holds at its WAIT (the gate never opens) and the person talks over it once it is
+    # there: a fixed pause raced slow runners, where the interruption came before the turn began.
+    # The end of the session waits for the cancelled turn, so nothing follows the interruption.
+    frames = [*_utterance()[:-1], Until(env.script.waiting), InterruptionFrame()]
     events, tts, _, _ = await _voice(env, ["Riassumi il mese"], frames)
 
     done = [e for e in events if e["type"] == "done"]

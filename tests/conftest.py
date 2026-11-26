@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import sys
+import time
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -362,6 +363,10 @@ async def make_env(
     factory = script.model if models == "scripted" else models
     catalog = ModelCatalog(settings.model_allow, settings.aws_region, factory=factory)
     svc = build_services(settings, http=http, catalog=catalog)
+    # Rate windows are cut on the wall clock's minute (hour): a test that counts requests up to a
+    # limit failed when its requests straddled a boundary. The test stays in the minute it began.
+    start = time.time()
+    svc.guard.clock = svc.auth.clock = lambda: start
     if schema:
         async with svc.db.engine.begin() as c:
             await c.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
@@ -416,13 +421,29 @@ async def _cancel_hard(tasks: list[asyncio.Task[Any]], seconds: float) -> set[as
     Returns:
         The tasks still running.
     """
+    return await _cancel_until_quiet(lambda: {t for t in tasks if not t.done()}, seconds)
+
+
+async def _cancel_until_quiet(
+    running: Callable[[], set[asyncio.Task[Any]]], seconds: float
+) -> set[asyncio.Task[Any]]:
+    """Cancel what ``running`` finds, again and again, until it finds nothing or time runs out.
+
+    ``running`` is asked again after each round, so a task started by another's cancellation (a
+    cleanup that runs in a task of its own, ``asyncio.shield``, SQLAlchemy closing a connection)
+    is cancelled too, instead of being left for the event loop's closing to wait on.
+
+    Returns:
+        The tasks still running.
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + seconds
-    pending = {t for t in tasks if not t.done()}
+    pending = running()
     while pending and loop.time() < deadline:
         for t in pending:
             t.cancel()
-        _, pending = await asyncio.wait(pending, timeout=min(0.5, max(0.0, deadline - loop.time())))
+        await asyncio.wait(pending, timeout=min(0.5, max(0.0, deadline - loop.time())))
+        pending = running()
     return pending
 
 
@@ -431,19 +452,24 @@ async def _no_task_outlives_its_test(request: pytest.FixtureRequest) -> AsyncIte
     """After a test and its fixtures, the tasks it left running are cancelled, hard, within seconds.
 
     A task that kept ignoring its cancellation used to hang the event loop's closing for good: the
-    suite stopped at its 20 minute limit and no test was named (seen once in CI). The task is
-    now cancelled until it ends; one that still runs is named at once on stderr, before the loop
-    closes, and fails its test. ``EVOKAI_TEST_LEAKS=report`` prints every task a test left behind.
+    suite stopped at its 20 minute limit and no test was named (seen in CI). The task is now
+    cancelled until it ends, and so is every task its cancellation starts; one that still runs is
+    named at once on stderr, before the loop closes, and fails its test.
+    ``EVOKAI_TEST_LEAKS=report`` prints every task a test left behind.
     """
     before = set(asyncio.all_tasks())
     yield
     me = asyncio.current_task()
-    left = [t for t in asyncio.all_tasks() if t is not me and t not in before and not t.done()]
+
+    def running() -> set[asyncio.Task[Any]]:
+        return {t for t in asyncio.all_tasks() if t is not me and t not in before and not t.done()}
+
+    left = running()
     if not left:
         return
     if os.environ.get("EVOKAI_TEST_LEAKS") == "report":
         print(f"\nLEFT RUNNING by {request.node.nodeid}:\n  " + "\n  ".join(map(_describe, left)))
-    stuck = await _cancel_hard(left, LEAK_WAIT_SECONDS)
+    stuck = await _cancel_until_quiet(running, LEAK_WAIT_SECONDS)
     if stuck:
         text = (
             f"{request.node.nodeid}: {len(stuck)} task(s) still running after "
@@ -451,6 +477,50 @@ async def _no_task_outlives_its_test(request: pytest.FixtureRequest) -> AsyncIte
         )
         print(text, file=sys.__stderr__, flush=True)
         pytest.fail(text, pytrace=False)
+
+
+CLOSE_WAIT_SECONDS = 30.0
+"""How long the closing of a test's event loop waits for the tasks it cancels."""
+
+
+def _bounded_loop_close() -> None:
+    """Make the closing of an event loop wait for its cancelled tasks a bounded time, naming them.
+
+    ``asyncio.Runner.close`` (pytest-asyncio closes every test's loop with it) cancels the tasks
+    still there once and then waits for them without a limit: a task that swallows that one
+    cancellation held the whole run until its 20 minute limit, and the faulthandler's dump showed
+    only ``_cancel_all_tasks``, never which task. The guard above leaves nothing for that wait in
+    the cases known; this is the net for the others: past ``CLOSE_WAIT_SECONDS`` the tasks are
+    named on stderr and the test's teardown fails, so the run goes on.
+    """
+    import asyncio.runners as runners
+
+    original = getattr(runners, "_cancel_all_tasks", None)
+    if original is None or getattr(original, "evokai_bounded", False):
+        return
+
+    def cancel_all(loop: asyncio.AbstractEventLoop) -> None:
+        tasks = asyncio.all_tasks(loop)
+        if tasks:
+            for t in tasks:
+                t.cancel()
+            _, pending = loop.run_until_complete(asyncio.wait(tasks, timeout=CLOSE_WAIT_SECONDS))
+            if pending:
+                text = (
+                    f"{len(pending)} task(s) ignored the event loop's closing for "
+                    f"{CLOSE_WAIT_SECONDS:.0f} s:\n  " + "\n  ".join(map(_describe, pending))
+                )
+                print(text, file=sys.__stderr__, flush=True)
+                pytest.fail(text, pytrace=False)
+        original(loop)  # what is left: nothing pending, the exceptions reported as asyncio does
+
+    cancel_all.evokai_bounded = True  # ty: ignore[missing-attribute]
+    runners._cancel_all_tasks = cancel_all  # ty: ignore[missing-attribute]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    del config
+    _bounded_loop_close()
 
 
 @pytest.fixture

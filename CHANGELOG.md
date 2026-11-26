@@ -129,6 +129,14 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   application's slug, a hash route (`#/apps/x`) is the same page, and a refused path tells the model the format.
 - With the assistant on, the Mascot preference offers animated or still (the assistant's mage); removing the mage is
   switching the assistant off.
+- Tests: the service suite no longer hangs at the end of a test until the CI's 20 minute limit. The leak guard now
+  also cancels the tasks that a cancellation starts (a cleanup in a task of its own, as `asyncio.shield` and
+  SQLAlchemy's close make), which the closing of the test's event loop then cancelled once and waited on for good; that
+  closing now waits 30 seconds at most and names the task that ignored it.
+- Tests: the tests that failed on slow CI runners no longer depend on timing. The voice barge-in and the spoken
+  confirmation wait for the agent's state instead of a pause, the classifier timeouts use a classifier that never
+  answers instead of a wall-clock bound, and the rate limit tests pin the clock the windows are cut on (a request
+  rate test failed when its requests straddled a minute).
 
 ### Changed
 
