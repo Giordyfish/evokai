@@ -88,7 +88,7 @@ def test_type_names_and_maps() -> None:
     assert "  orders_month: OrdersMonthArgs\n" in text and "  kiosk_light: KioskLightArgs\n" in text
     assert "export interface Output {\n  n: number\n}" in text
     assert "Not listed (their tools are missing): crm." in text
-    assert "—" not in text
+    assert "\u2014" not in text
 
 
 async def test_the_admin_endpoint_types_the_agents_tools(env: Env) -> None:

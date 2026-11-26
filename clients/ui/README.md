@@ -178,7 +178,10 @@ application's business figures, never Evokai's costs), `voiceOptions` (microphon
 `tools` answers the agent's [custom client tools](https://giordyfish.github.io/evokai/client-tools/); `toolRenderers`
 draws a tool's activity with your own element instead of the default line (server, MCP and client tools alike;
 `ui_chart` and `ui_diagram` replace the built-in visuals). A card gets only what the events carry: a client tool's
-arguments and the result your handler returned, a server tool's name and status. Return `null` to keep the default.
+arguments and the result your handler returned, a server tool's name and status (and its arguments as the model
+writes them, for an agent with `show_tool_args`: `status` is then `args`, `waiting` or `skipped` until it runs).
+Return `null` to keep the default. `evokai types --agent <name>` writes the arguments' and results' TypeScript
+types of an agent's tools ([streaming](https://giordyfish.github.io/evokai/streaming/)).
 
 ```js
 chat.tools = { kiosk_light: ({ on }) => lights.set(on) }
@@ -331,7 +334,9 @@ and `data-layer`), `aurora`, `header`, `avatar` (a logo), `title`, `tagline`, `u
 `menu-item` (with `memory-menu-item` or `connections-menu-item`), `history`, `history-item`,
 `messages`, `starters`, `starter`, `message` (with `user-message` or `assistant-message`), `user-bubble`, `answers`,
 `answer-chip`, `markdown`, `citation` (a `[n]` marker, in superscript), `sources` (the list under an answer) and
-`source` (one entry, with `data-index`), `tool`, `navigation`, `error`, `chart`, `card` (with `ask-card`,
+`source` (one entry, with `data-index`), `tool` (with `data-status`) and `tool-args` (the arguments an agent with
+`show_tool_args` shows), `reasoning` (the collapsed reasoning of an agent with `show_reasoning`), `navigation`,
+`error`, `chart`, `card` (with `ask-card`,
 `confirm-card` or `connect-card`, whose button is `connect-button`), `confirm-reason` (why an item waits, when an
 ask rule asked), `edit-message` (the button that edits the last question while it can be rewritten), `editing` (the
 notice while it is being edited),

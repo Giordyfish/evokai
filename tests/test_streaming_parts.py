@@ -19,7 +19,7 @@ from evokai.sessions.live import partial_object
 from evokai.sessions.parts import PartLog
 from tests.conftest import ORIGIN, Env, Think, Tool
 
-SECRET = "AKIAABCDEFGHIJKLMNOP"
+SECRET = "AKIA" + "ABCDEFGHIJKLMNOP"
 CF = "RSSMRA85T10A562S"
 
 

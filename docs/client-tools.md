@@ -101,9 +101,10 @@ A page can draw any tool's activity itself, not only its client tools: `session.
 TypeScript client calls `render({name, status, callId?, args?, result?, error?})` when the tool starts and ends, and
 `<evokai-chat>` takes `toolRenderers` (`{name: (part) => HTMLElement | null}`) to show that element in the chat instead
 of the default line (`null` keeps it; `ui_chart` and `ui_diagram` replace the built-in visuals). A part carries only
-what the session's events already carry: a server or MCP tool's name and status (never its arguments or output), a
-client tool's arguments and the result your own handler returned, a chart or a diagram. Nothing more leaves the
-service.
+what the session's events already carry: a server or MCP tool's name and status (never its output, and its
+arguments only for an agent with [`show_tool_args`](streaming.md)), a client tool's arguments and the result your
+own handler returned, a chart or a diagram. Nothing more leaves the service. `evokai types` gives the
+[TypeScript types](streaming.md#typescript-types-of-an-agents-tools) of each tool's arguments and results.
 
 ## Security
 

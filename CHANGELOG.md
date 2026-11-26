@@ -52,6 +52,20 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   clients and embedded panels keep working: they skip the new `text` and `tool` events of a stored message.
 - Python client: `StoredMessage.turn_id` and `StoredMessage.shown` (what a message showed, in order, older messages
   included); `ClientToolEvent.status`.
+- The model's reasoning while it works (`show_reasoning`, off by default): `reasoning` events through the output
+  checks, stored as a part and shown collapsed after a reload, in the chat panel and the playground; for Anthropic and
+  Bedrock Claude, OpenAI reasoning models (a summary is asked for), Gemini and OpenAI-compatible servers that return
+  reasoning ([streaming](docs/streaming.md)).
+- Tool arguments as the model writes them (`show_tool_args`, off by default, a change of what reaches a browser):
+  `tool` events with `status: "args"`, the call's `id` and the arguments parsed so far, through the output checks; a
+  call that did not run ends `waiting` (a confirmation follows) or `skipped`. Every `tool` event of a call now carries
+  its `id`.
+- A structured answer fills in over the streaming APIs: `evokai.output` chunks on the OpenAI-compatible API and
+  `artifact-update` frames on A2A `message/stream`, each the object so far, before the validated answer.
+- TypeScript types of an agent's tools: `GET /v1/admin/agents/{name}/types` and `evokai types --agent <name>` write a
+  `.d.ts` with each tool's arguments and results, the custom client tools' arguments and the `output_schema`.
+- Clients: `ReasoningEvent`, `ToolEvent.id`, `ToolEvent.args`, the `reasoning` part and the new tool statuses (TypeScript
+  and Python); the web component's `reasoning` and `tool-args` parts.
 
 ### Fixed
 
@@ -60,6 +74,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   The chat panel reloads the stored copy after every turn, so this could show without a reload.
 - With `pii.history` enforced, the charts, questions and confirmations stored with a message are masked like its text
   (they were masked only in the replay events).
+- The reasoning of a step that called tools is sent back to the model with its calls, as the providers require
+  (Anthropic thinking with its signature, OpenAI encrypted reasoning): every later request of the turn rebuilt the
+  history without it. A confirmation carries the reasoning of the calls that waited (Evokai storage, kept server side).
 - The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
   named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
 - The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
