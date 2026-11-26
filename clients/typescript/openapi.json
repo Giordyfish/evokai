@@ -2831,7 +2831,7 @@
         "type": "object"
       },
       "HistoryMessage": {
-        "description": "One message of a conversation, as the application stores it and sends it back.\n\n``content`` is what the model sees; ``text`` and ``events`` are what the user saw (the text,\nand the charts, schemas, questions and confirmations shown with it).",
+        "description": "One message of a conversation, as the application stores it and sends it back.\n\n``content`` is what the model sees; ``text`` and ``events`` are what the user saw: the text,\nand every event shown with it in the order it was shown (``evokai.sessions.parts``: the text\nagain, tools, charts, questions, confirmations, citations, errors). Keep them as Evokai returns\nthem.",
         "properties": {
           "content": {
             "items": {
@@ -2862,7 +2862,7 @@
               "additionalProperties": true,
               "type": "object"
             },
-            "maxItems": 100,
+            "maxItems": 500,
             "title": "Events",
             "type": "array"
           },

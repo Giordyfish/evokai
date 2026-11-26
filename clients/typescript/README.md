@@ -276,7 +276,7 @@ session.subscribe((state) => render(state.messages, state.busy, state.pendingCon
 // Or raw events.
 session.on('navigate', (e) => router.go(e.path))
 
-await session.loadConversation() // resumes a turn still running
+await session.loadConversation() // the same parts, in the same order, as live (one message per turn); resumes a running turn
 const done = await session.chat({ text: 'How many orders shipped this week?' }) // streams; resolves with the `done` event
 await session.chat({ text: 'Is this invoice right?', files: [file] }) // File or Blob, when info().attachments allows
 const image = await session.attachment(id) // a question's image (ChatMessage.attachments), as a Blob

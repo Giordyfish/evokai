@@ -116,14 +116,16 @@ Block = Annotated[
 class HistoryMessage(BaseModel):
     """One message of a conversation, as the application stores it and sends it back.
 
-    ``content`` is what the model sees; ``text`` and ``events`` are what the user saw (the text,
-    and the charts, schemas, questions and confirmations shown with it).
+    ``content`` is what the model sees; ``text`` and ``events`` are what the user saw: the text,
+    and every event shown with it in the order it was shown (``evokai.sessions.parts``: the text
+    again, tools, charts, questions, confirmations, citations, errors). Keep them as Evokai returns
+    them.
     """
 
     role: Literal["user", "assistant"]
     content: list[Block] = Field(default_factory=list, max_length=200)
     text: str = Field(default="", max_length=100_000)
-    events: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    events: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
     interrupted: bool = False
 
 

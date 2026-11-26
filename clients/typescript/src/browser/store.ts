@@ -226,6 +226,58 @@ const withCitation = (list: Citation[], c: Citation): Citation[] =>
 
 const addCitation = (c: Citation) => (m: ChatMessage): ChatMessage => ({ ...m, citations: withCitation(m.citations ?? [], c) })
 
+/**
+ * What a shown event does to its message, or null for an event that draws nothing. Live events and the stored events
+ * of a reloaded conversation go through it alike, so a reload shows what was shown live.
+ */
+function partUpdate(e: EvokaiEvent): ((m: ChatMessage) => ChatMessage) | null {
+  switch (e.type) {
+    case 'text':
+      return (m) => {
+        const last = m.parts[m.parts.length - 1]
+        if (last?.kind === 'text') return { ...m, parts: [...m.parts.slice(0, -1), { kind: 'text', text: last.text + e.delta }] }
+        return { ...m, parts: [...m.parts, { kind: 'text', text: e.delta }] }
+      }
+    case 'tool':
+      return (m) => {
+        const idx = m.parts.findIndex((p) => p.kind === 'tool' && p.name === e.name && p.status === 'start')
+        if (e.status !== 'start' && idx >= 0) {
+          const parts = [...m.parts]
+          parts[idx] = { kind: 'tool', name: e.name, status: e.status }
+          return { ...m, parts }
+        }
+        return { ...m, parts: [...m.parts, { kind: 'tool', name: e.name, status: e.status }] }
+      }
+    case 'client_tool':
+      // A stored call says how it ended; a live one that waits runs until the page answers.
+      return addPart({ kind: 'tool', name: e.name, status: e.status ?? (e.wait ? 'start' : 'done'), client: true, callId: e.callId, args: e.args })
+    case 'chart':
+      return addPart({ kind: 'chart', chart: e.chart })
+    case 'diagram':
+      return addPart({ kind: 'diagram', diagram: e.diagram })
+    case 'navigate':
+      return addPart({ kind: 'navigate', path: String(e.path) })
+    case 'connect':
+      return addPart({ kind: 'connect', provider: String(e.provider), title: String(e.title) })
+    case 'ask':
+      return addPart(askPart(e))
+    case 'confirm':
+      return addPart({
+        kind: 'confirm',
+        actionId: String(e.actionId),
+        items: Array.isArray(e.items) ? e.items.map(String) : [],
+        state: 'open',
+        ...(Array.isArray(e.why) ? { why: e.why } : {}),
+      })
+    case 'citation':
+      return addCitation(citationOf(e as unknown as Record<string, unknown>))
+    case 'error':
+      return addPart({ kind: 'error', code: e.code, message: e.message })
+    default:
+      return null
+  }
+}
+
 function applyEvent(state: SessionState, e: EvokaiEvent): SessionState {
   const turnId = e.turnId ?? null
   switch (e.type) {
@@ -239,59 +291,27 @@ function applyEvent(state: SessionState, e: EvokaiEvent): SessionState {
       }
       return s
     }
-    case 'text':
-      return withTurnMessage(state, turnId, (m) => {
-        const last = m.parts[m.parts.length - 1]
-        if (last?.kind === 'text') return { ...m, parts: [...m.parts.slice(0, -1), { kind: 'text', text: last.text + e.delta }] }
-        return { ...m, parts: [...m.parts, { kind: 'text', text: e.delta }] }
-      })
-    case 'tool':
-      return withTurnMessage(state, turnId, (m) => {
-        const idx = m.parts.findIndex((p) => p.kind === 'tool' && p.name === e.name && p.status === 'start')
-        if (e.status !== 'start' && idx >= 0) {
-          const parts = [...m.parts]
-          parts[idx] = { kind: 'tool', name: e.name, status: e.status }
-          return { ...m, parts }
-        }
-        return { ...m, parts: [...m.parts, { kind: 'tool', name: e.name, status: e.status }] }
-      })
-    case 'client_tool':
-      return withTurnMessage(
-        state,
-        turnId,
-        addPart({ kind: 'tool', name: e.name, status: e.wait ? 'start' : 'done', client: true, callId: e.callId, args: e.args }),
-      )
-    case 'chart':
-      return withTurnMessage(state, turnId, addPart({ kind: 'chart', chart: e.chart }))
-    case 'diagram':
-      return withTurnMessage(state, turnId, addPart({ kind: 'diagram', diagram: e.diagram }))
-    case 'navigate':
-      return withTurnMessage(state, turnId, addPart({ kind: 'navigate', path: e.path }))
-    case 'connect':
-      return withTurnMessage(state, turnId, addPart({ kind: 'connect', provider: e.provider, title: e.title }))
     case 'ask': {
       const s = withTurnMessage(state, turnId, addPart(askPart(e)))
       return { ...s, openAsk: { askId: e.askId, question: e.question, options: e.options, multiple: e.multiple, other: e.other } }
     }
     case 'confirm': {
       const why = Array.isArray(e.why) ? { why: e.why } : {}
-      const s = withTurnMessage(state, turnId, addPart({ kind: 'confirm', actionId: e.actionId, items: e.items, state: 'open', ...why }))
+      const s = withTurnMessage(state, turnId, partUpdate(e) as (m: ChatMessage) => ChatMessage)
       return { ...s, pendingConfirm: { actionId: e.actionId, items: e.items, ...why } }
     }
     case 'rewritten':
       return applyRewritten(state, e)
-    case 'citation':
-      return withTurnMessage(state, turnId, addCitation(citationOf(e as unknown as Record<string, unknown>)))
     case 'usage':
       return { ...state, usage: usageOf(e) }
-    case 'error':
-      return withTurnMessage(state, turnId, addPart({ kind: 'error', code: e.code, message: e.message }))
     case 'speech':
       return { ...state, speech: { enabled: e.enabled, ...(e.message ? { message: e.message } : {}) } }
     case 'done':
       return applyDone(state, e)
-    default:
-      return state
+    default: {
+      const update = partUpdate(e)
+      return update ? withTurnMessage(state, turnId, update) : state
+    }
   }
 }
 
@@ -387,57 +407,68 @@ function applyDone(state: SessionState, e: DoneEvent): SessionState {
   }
 }
 
-/** Messages as the service stored them → messages with parts (confirmation outcomes and answered questions). */
+/**
+ * Messages as the service stored them → messages with parts, as they were shown live: a turn's assistant messages make
+ * one message, whose parts are its stored events applied in order (the same updates as live events). A message stored
+ * before ordered parts shows its text, then its events. Confirmations take their outcome, questions their answer.
+ */
 export function fromStored(stored: StoredMessage[], pending: PendingConfirmation | null): ChatMessage[] {
   const out: ChatMessage[] = []
   let lastConfirm: Extract<Part, { kind: 'confirm' }> | null = null
-  // Citations come with the search (a message without text): they belong to the answer that follows it.
-  let carried: Citation[] = []
+  /** The assistant message being built: the next assistant message of the same turn joins it. */
+  let open: ChatMessage | null = null
+  const close = () => {
+    if (open && open.parts.length) out.push(open)
+    open = null
+  }
   for (const m of stored) {
     const events = Array.isArray(m.events) ? m.events : []
-    if (m.role === 'assistant') {
-      for (const e of events) {
-        if (e.type === 'citation') carried = withCitation(carried, citationOf(e as unknown as Record<string, unknown>))
-      }
+    const turnId = typeof m.turnId === 'string' && m.turnId ? m.turnId : undefined
+    if (m.role === 'user') {
+      const decided = events.find((e) => e.type === 'confirmed')
+      if (decided && decided.type === 'confirmed' && lastConfirm) lastConfirm.state = decided.approve ? 'approved' : 'rejected'
+      // A question or a decision starts another turn; a tool's result (no text) is part of the same one.
+      if (m.text || m.attachments?.length || decided) close()
+      if (!m.text) continue
+      out.push({
+        id: m.id || localId(),
+        role: 'user',
+        parts: [{ kind: 'text', text: m.text }],
+        ...(turnId ? { turnId } : {}),
+        ...(m.id ? { messageId: m.id } : {}),
+        ...(m.rewritable !== undefined ? { rewritable: m.rewritable } : {}),
+        ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+        feedback: m.feedback ?? null,
+        ...(m.interrupted ? { interrupted: true } : {}),
+      })
+      continue
     }
-    const decided = events.find((e) => e.type === 'confirmed')
-    if (decided && decided.type === 'confirmed' && lastConfirm) lastConfirm.state = decided.approve ? 'approved' : 'rejected'
-    const parts: Part[] = []
-    if (m.text) parts.push({ kind: 'text', text: m.text })
+    const current = open as ChatMessage | null
+    let msg: ChatMessage
+    if (current && !(current.turnId && turnId && current.turnId !== turnId)) msg = current
+    else {
+      close()
+      msg = { id: m.id || localId(), role: 'assistant', parts: [], ...(turnId ? { turnId } : {}), feedback: null }
+    }
+    // Before ordered parts, the text was not among the events: it goes first.
+    if (m.text && !events.some((e) => e.type === 'text')) msg = { ...msg, parts: [...msg.parts, { kind: 'text', text: m.text }] }
     for (const e of events) {
-      if (e.type === 'chart') parts.push({ kind: 'chart', chart: e.chart })
-      else if (e.type === 'diagram') parts.push({ kind: 'diagram', diagram: e.diagram })
-      else if (e.type === 'ask') parts.push(askPart(e))
-      else if (e.type === 'navigate') parts.push({ kind: 'navigate', path: String(e.path) })
-      else if (e.type === 'connect') parts.push({ kind: 'connect', provider: String(e.provider), title: String(e.title) })
-      else if (e.type === 'confirm') {
-        const c: Extract<Part, { kind: 'confirm' }> = {
-          kind: 'confirm',
-          actionId: String(e.actionId),
-          items: Array.isArray(e.items) ? e.items.map(String) : [],
-          state: pending?.actionId === e.actionId ? 'open' : 'closed',
-          ...(Array.isArray(e.why) ? { why: e.why } : {}),
-        }
-        parts.push(c)
+      const update = partUpdate(e)
+      if (!update) continue
+      msg = update(msg)
+      if (e.type === 'confirm') {
+        const c = msg.parts[msg.parts.length - 1] as Extract<Part, { kind: 'confirm' }>
+        c.state = pending?.actionId === c.actionId ? 'open' : 'closed'
         lastConfirm = c
       }
     }
-    if (!parts.length) continue
-    const cites = m.role === 'assistant' && carried.length ? carried : null
-    if (cites) carried = []
-    out.push({
-      id: m.id || localId(),
-      role: m.role,
-      parts,
-      ...(cites ? { citations: cites } : {}),
-      ...(m.id ? { messageId: m.id } : {}),
-      ...(m.role === 'user' && m.rewritable !== undefined ? { rewritable: m.rewritable } : {}),
-      ...(m.role === 'assistant' && m.regenerable ? { regenerable: true } : {}),
-      ...(m.role === 'user' && m.attachments?.length ? { attachments: m.attachments } : {}),
-      feedback: m.feedback ?? null,
-      ...(m.interrupted ? { interrupted: true } : {}),
-    })
+    // Thumbs go on the turn's last message with text (the one the service would regenerate).
+    if (m.id && (m.text || !msg.messageId)) msg = { ...msg, messageId: m.id, feedback: m.feedback ?? msg.feedback ?? null }
+    if (m.regenerable) msg = { ...msg, regenerable: true }
+    if (m.interrupted) msg = { ...msg, interrupted: true }
+    open = msg
   }
+  close()
   // A question is answered by the user message that follows it; its text is the chosen labels joined by ", ".
   out.forEach((m, i) =>
     m.parts.forEach((p) => {

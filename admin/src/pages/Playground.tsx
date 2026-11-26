@@ -85,7 +85,8 @@ function label(e: Record<string, unknown>): string {
   }
 }
 
-function Visual({ v }: { v: { chart?: Chart; diagram?: Diagram } }) {
+/** A chart or a diagram as the console draws it (the playground, a conversation under review). */
+export function Visual({ v }: { v: { chart?: Chart; diagram?: Diagram } }) {
   if (v.chart?.type === 'kpi')
     return (
       <div class="kpis">

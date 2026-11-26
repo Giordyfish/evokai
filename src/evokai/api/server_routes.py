@@ -449,10 +449,12 @@ async def conversation(
         "messages": [
             {
                 "id": x.id,
+                "turnId": x.turn_id,
                 "role": x.role,
                 "text": x.text,
                 "events": x.events or [],
                 "feedback": x.feedback,
+                "interrupted": x.interrupted,
             }
             for x in msgs
             if x.text or x.events

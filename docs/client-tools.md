@@ -78,6 +78,11 @@ its session and turn and answers once (404 `unknown_call` afterwards, from anoth
 wait lives in the task that runs the turn, like a turn's cancellation: keep a browser session on one task (sticky
 sessions, see [deployment](deployment.md)).
 
+The call is kept with the answer as it was sent (name, `callId`, `args`), and for a tool that waits with how it ended:
+`"status": "done"` when the client answered, `"error"` when it sent an error or never answered. A reloaded conversation
+shows its card in the same place ([what a reload shows](architecture.md#what-a-reload-shows)); the result the client
+sent is not kept with it.
+
 With the TypeScript client, `handleTool` does all of it:
 
 ```ts
