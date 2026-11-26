@@ -22,6 +22,10 @@ The image installs it in both flavours.
 |---|---|---|---|
 | Chat models | Amazon Bedrock | Azure OpenAI, the Foundry models sold by Azure (`azure:`), Claude in Microsoft Foundry (`anthropic-foundry:`) | Ollama, vLLM, LM Studio, any OpenAI-compatible server |
 | Embeddings | Titan Text Embeddings v2 on Bedrock | Azure OpenAI embeddings (`azure:`) | any OpenAI-compatible server (Ollama, vLLM, Text Embeddings Inference) |
+| Vector search | pgvector on PostgreSQL, or the portable index | pgvector on Azure Database for PostgreSQL (allow the `vector` extension) | pgvector, or the portable index |
+| Scanned documents (OCR) | none (Textract is not in `eu-north-1`) | Document Intelligence `prebuilt-layout` | docling-serve |
+| Reranking | none | Cohere Rerank sold by Azure in Foundry | vLLM, Infinity (Cohere v2 rerank API) |
+| Files (attachments, knowledge documents) | in the database | in the database | in the database |
 | Injection and moderation classifiers | Bedrock Guardrails | Content Safety Prompt Shields and text analysis | Llama Prompt Guard 2 (in process), Llama Guard |
 | Credentials | the task role (the default AWS chain) | the managed identity (`DefaultAzureCredential`) | keys in the environment |
 
@@ -100,6 +104,22 @@ Sources: [deploy and use Claude in Foundry](https://learn.microsoft.com/en-us/az
 
 `azure:<embedding deployment>` (for example `text-embedding-3-large`) on an `api: azure` endpoint, keyless the same
 way; self-hosted servers through `api: openai-compatible` ([knowledge bases](knowledge.md#embeddings)).
+
+## Knowledge bases
+
+- **Vector search** needs no Azure AI Search: Azure Database for PostgreSQL flexible server runs pgvector once
+  `vector` is in the server parameter `azure.extensions`; Evokai then uses it as on any Postgres.
+- **Scanned PDFs**: `EVOKAI_DOCUMENT_READER=azure` with `EVOKAI_DOCUMENT_INTELLIGENCE_ENDPOINT` (keyless: the
+  **Cognitive Services User** role on the resource), or `docling` for a docling-serve of your own
+  ([formats](knowledge.md#formats)).
+- **Reranking**: `EVOKAI_RERANK_MODEL` on a catalog endpoint ([reranking](knowledge.md#reranking)).
+- **Files** never go to Blob Storage: attachments and knowledge documents are kept in the database, encrypted at rest
+  with it, so there is nothing to configure.
+
+Sources: [Analyze Document](https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/analyze-document?view=rest-aiservices-v4.0%20(2024-11-30)),
+[Document Intelligence data, privacy and security](https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/document-intelligence/data-privacy-security),
+[pgvector on Azure Database for PostgreSQL](https://learn.microsoft.com/en-us/azure/postgresql/extensions/how-to-use-pgvector),
+[docling-serve usage](https://github.com/docling-project/docling-serve/blob/main/docs/usage.md).
 
 ## Guard classifiers
 

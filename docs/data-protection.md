@@ -30,7 +30,8 @@ browser.
 
 `processors` describes what Evokai calls besides chat models: guard classifiers (Bedrock Guardrails, Azure Prompt
 Shields and Content Safety, Google Model Armor, OpenAI and Mistral moderation, the local Prompt Guard, a self-hosted
-Llama Guard), the AgentCore code sandbox, server speech, the OAuth connections and the observability exporter.
+Llama Guard), the document readers of scanned PDFs (Azure Document Intelligence, a self-hosted docling-serve), the
+AgentCore code sandbox, server speech, the OAuth connections and the observability exporter.
 
 ### Coverage
 

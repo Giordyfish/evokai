@@ -3,8 +3,9 @@
 Formats: PDF (its text layer, with ``pypdf``), Word (``.docx``), PowerPoint (``.pptx``), HTML,
 Markdown, plain text and CSV. Office files are zip archives of XML read with the standard library.
 
-There is no OCR: a PDF without a text layer (a scan) fails with a clear reason. A local OCR engine
-can be added later as another extractor without changing the rest of the pipeline.
+There is no OCR here: a PDF without a text layer (a scan) raises :class:`NoTextLayer`, and a
+deployment with a document reader (``evokai.knowledge.readers``: Azure Document Intelligence or a
+self-hosted docling-serve) reads it there instead; without one it fails with a clear reason.
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ BlockKind = Literal["heading", "text", "table"]
 
 class Unreadable(ValueError):
     """A document whose text cannot be read; the message says why, for whoever uploaded it."""
+
+
+class NoTextLayer(Unreadable):
+    """A PDF without a text layer (a scan): only text recognition (OCR) can read it."""
 
 
 @dataclass
@@ -271,7 +276,7 @@ def _pdf(data: bytes) -> Extracted:
     except PdfReadError as e:
         raise Unreadable("the PDF is damaged") from e
     if chars < max(20, 10 * n):
-        raise Unreadable(
+        raise NoTextLayer(
             "the PDF has no text layer (a scan?): text recognition (OCR) is not available"
         )
     return Extracted(blocks, title, n)

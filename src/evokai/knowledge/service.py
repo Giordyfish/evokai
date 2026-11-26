@@ -29,14 +29,25 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
+import httpx
+
 from evokai.core.errors import BadRequest, Conflict
 from evokai.core.util import new_id, utcnow
 from evokai.db import models as m
 from evokai.db.repositories import Who
 from evokai.knowledge.chunking import ChunkSettings, chunk
 from evokai.knowledge.embeddings import EmbeddingCatalog
-from evokai.knowledge.extract import MIME_OF, Unreadable, detect, extract
+from evokai.knowledge.extract import (
+    MIME_OF,
+    Extracted,
+    NoTextLayer,
+    Unreadable,
+    detect,
+    extract,
+)
 from evokai.knowledge.fetch import Fetcher, FetchRefused
+from evokai.knowledge.readers import reader_from_settings
+from evokai.knowledge.rerank import Reranker
 from evokai.knowledge.search import (
     RetrievalSettings,
     fuse,
@@ -169,6 +180,8 @@ class KnowledgeService:
         self.catalog = catalog or EmbeddingCatalog(s.embedding_allow, s.aws_region)
         self.max_bytes = s.knowledge_max_file_mb * 1_000_000
         self.fetcher = Fetcher(svc.http, s.knowledge_fetch_allow, self.max_bytes)
+        self.reader = reader_from_settings(s, svc.http)
+        self.reranker = Reranker.from_settings(s)
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.queued: set[str] = set()
         self.workers: list[asyncio.Task[None]] = []
@@ -495,6 +508,35 @@ class KnowledgeService:
             raise Unreadable("the original file is gone")
         return doc.source, doc.mime, data
 
+    async def _extract(
+        self, app: m.Application, name: str, mime: str | None, data: bytes
+    ) -> Extracted:
+        """Read a document locally; a scan goes to the deployment's reader when the profile allows.
+
+        Returns:
+            Its blocks and pages.
+
+        Raises:
+            NoTextLayer: A scan and no reader.
+            Unreadable: Neither can read it (the reason says why).
+        """
+        try:
+            return extract(name, mime, data)
+        except NoTextLayer:
+            if self.reader is None:
+                raise
+            from evokai.protection import processor_allows
+
+            if not processor_allows(app, self.reader.processor):
+                raise Unreadable(
+                    "the PDF has no text layer (a scan?) and the application's data protection "
+                    f"profile does not allow text recognition by {self.reader.processor}"
+                ) from None
+            try:
+                return await self.reader.read(name, mime, data)
+            except httpx.HTTPError as e:
+                raise Unreadable(f"text recognition is unreachable ({type(e).__name__})") from e
+
     async def process(self, document_id: str) -> None:
         """Ingest one document: read, cut, embed, store. Any failure is the document's reason.
 
@@ -522,7 +564,7 @@ class KnowledgeService:
                     ),
                     data,
                 )
-            extracted = extract(name, mime, data)
+            extracted = await self._extract(app, name, mime, data)
             parts = chunk(extracted, ChunkSettings.model_validate(kb.chunking or {}))
             if not parts:
                 raise Unreadable("the document has no text")
@@ -693,6 +735,11 @@ class KnowledgeService:
             c: s for c, s in fused.items() if c in tranks or sims.get(c, 0.0) >= settings.min_score
         }
         ranked = sorted(fused, key=lambda c: fused[c], reverse=True)
+        reranked = await self._rerank(app, query, ranked[: settings.candidates], settings)
+        if reranked:
+            # The reranker's scores replace the fused ones; MMR and the order follow them.
+            fused = reranked
+            ranked = sorted(reranked, key=lambda c: reranked[c], reverse=True)
         if settings.mmr and len(ranked) > k:
             vectors = await index.vectors(ranked[: settings.candidates])
             picked = mmr(ranked[: settings.candidates], fused, vectors, k, settings.mmr_lambda)
@@ -712,13 +759,36 @@ class KnowledgeService:
                     chunk=c,
                     document=docs[c.document_id],
                     kb=kb_of[c.kb_id],
-                    score=relevance(fused[cid], n_lists),
+                    score=round(fused[cid], 4) if reranked else relevance(fused[cid], n_lists),
                     similarity=round(sims[cid], 4) if cid in sims else None,
                     vector_rank=vranks.get(cid),
                     text_rank=tranks.get(cid),
                 )
             )
         return out
+
+    async def _rerank(
+        self,
+        app: m.Application,
+        query: str,
+        candidates: list[str],
+        settings: RetrievalSettings,
+    ) -> dict[str, float]:
+        """The reranker's scores of the candidates, when the base asks and the profile allows.
+
+        Returns:
+            Scores by chunk id; empty when there is no reranking (the fused order stays).
+        """
+        if not settings.rerank or self.reranker is None or len(candidates) < 2:
+            return {}
+        from evokai.protection import model_verdict
+
+        if not model_verdict(app, self.reranker.model, self.svc.settings.aws_region).allowed:
+            return {}
+        rows = {c.id: c for c in await self.repo.chunks(candidates)}
+        ids = [c for c in candidates if c in rows]
+        scores = await self.reranker.rerank(self.svc.http, query, [rows[c].text for c in ids])
+        return dict(zip(ids, scores, strict=True)) if scores is not None else {}
 
     # ── links and citations ──────────────────────────────────────────────────────────────────────
 

@@ -283,6 +283,7 @@ function Settings({ form, set, list, isNew }: { form: Form; set: (p: Partial<For
         <div class="flags" style="margin-bottom:14px">
           <Switch label={t('kb.hybrid')} on={form.hybrid} onChange={(v) => set({ hybrid: v })} />
           <Switch label={t('kb.mmr')} on={form.mmr} onChange={(v) => set({ mmr: v })} />
+          <Switch label={t('kb.rerank')} on={form.rerank} onChange={(v) => set({ rerank: v })} />
         </div>
         <Field label={t('kb.access')} id="kb-access" hint={t('kb.accessHint')}>
           <input id="kb-access" class="in mono" value={form.access} onInput={(e) => set({ access: e.currentTarget.value })} />

@@ -4476,6 +4476,11 @@
             "title": "Mmr Lambda",
             "type": "number"
           },
+          "rerank": {
+            "default": false,
+            "title": "Rerank",
+            "type": "boolean"
+          },
           "top_k": {
             "default": 5,
             "maximum": 20.0,

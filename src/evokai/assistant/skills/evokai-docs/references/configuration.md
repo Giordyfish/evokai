@@ -68,6 +68,10 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PROMPT_GUARD_TIMEOUT_MS` | `3000` | After this no further 512-token window of a text starts; the windows scored count |
 | `EVOKAI_EMBEDDING_ALLOW` | `["bedrock:amazon.titan-embed-text-v2:0","test:*"]` | Embedding models knowledge bases may use (the data residency applies on top) ([knowledge](knowledge.md)) |
 | `EVOKAI_EMBEDDING_MODEL` | `bedrock:amazon.titan-embed-text-v2:0` | The embedding model of a new knowledge base |
+| `EVOKAI_DOCUMENT_READER` | `none` | Who reads a scanned PDF with text recognition: `azure` (Document Intelligence) or `docling` (a docling-serve of your own), when the application's profile allows it ([knowledge](knowledge.md#formats)) |
+| `EVOKAI_DOCUMENT_INTELLIGENCE_ENDPOINT`, `_KEY`, `_MODEL` | unset, unset, `prebuilt-layout` | The Document Intelligence resource; without the key, a Microsoft Entra ID token of the managed identity |
+| `EVOKAI_DOCLING_URL`, `EVOKAI_DOCLING_KEY` | unset | The docling-serve and its `X-Api-Key` |
+| `EVOKAI_RERANK_MODEL` | unset | A reranker (`provider:model`, Cohere v2 rerank API) connected by its provider catalog endpoint, for bases with `retrieval.rerank` ([reranking](knowledge.md#reranking)) |
 | `EVOKAI_ATTACHMENTS_REQUEST_MB` | `50` | Largest total of the files attached to one chat message; the body limit of `POST /v1/session/chat` follows it for a session whose application is granted attachments and whose agent has them on, 2 MB otherwise ([attachments](attachments.md)) |
 | `EVOKAI_KNOWLEDGE_MAX_FILE_MB` | `20` | Largest knowledge document (upload, address or connector file) |
 | `EVOKAI_KNOWLEDGE_FETCH_ALLOW` | `[]` | Domains documents may be fetched from by address (with their subdomains); empty: off |
