@@ -40,6 +40,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_VOICE_SMART_TURN` | `true` | End of turn by Smart Turn v3 (else VAD silence) |
 | `EVOKAI_VOICE_ICE_SERVERS` | `[]` | STUN/TURN URLs for WebRTC |
 | `EVOKAI_OTEL_ENABLED` | `false` | OpenTelemetry: request spans, metrics and every turn's trace with the GenAI conventions (exporters read `OTEL_*`; [traces](#traces-and-opentelemetry)) |
+| `EVOKAI_OTEL_EXPORTER` | `otlp` | `azure-monitor`: traces and metrics to Application Insights (`APPLICATIONINSIGHTS_CONNECTION_STRING`, Entra ID with `APPLICATIONINSIGHTS_AUTHENTICATION_STRING`; the `azure` extra) instead of OTLP ([Azure](azure.md#monitoring)) |
 | `EVOKAI_REDIS_URL` | none | Redis or Valkey (`redis://host:6379/1`, `rediss://` for TLS) for the state every instance must share: rate windows, running turns, tool rates, sign-outs, console sign-in codes and failed sign-ins ([shared limits](#shared-limits-across-instances)). Unset: each instance keeps them in its own memory |
 | `EVOKAI_REDIS_PREFIX` | `evokai:` | Put before every key, so several deployments can share one Redis |
 | `EVOKAI_ADMIN_UI_ENABLED` | `true` | Serve the admin console at `{EVOKAI_BASE_PATH}/admin/` |
@@ -93,6 +94,8 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_WORKFLOW_HOOK_TOLERANCE` | `300` | Seconds an inbound workflow webhook's timestamp may differ from now |
 | `EVOKAI_CODE_ENABLED` | `false` | Offer `code_run` (Amazon Bedrock AgentCore Code Interpreter) to agents that ask for it, in applications granted `code` ([code](code.md)) |
 | `EVOKAI_CODE_REGION` | `EVOKAI_AWS_REGION` | Where the code sandbox runs; EU regions only |
+| `EVOKAI_CODE_SANDBOX` | `agentcore` | `azure`: an Azure Container Apps dynamic sessions pool instead of AgentCore ([code](code.md#azure-container-apps-sessions)) |
+| `EVOKAI_CODE_SESSION_POOL_ENDPOINT` | none | That pool's management endpoint, in a European Azure region |
 | `EVOKAI_CODE_INTERPRETER_ID` | `aws.codeinterpreter.v1` | The AWS-managed interpreter (no internet) or a custom one |
 | `EVOKAI_CODE_TIMEOUT_SECONDS` | `60` | What one `code_run` call may take; past it the sandbox session is stopped |
 | `EVOKAI_CODE_USD_PER_SECOND` | `0.00003` | Estimated cost of a sandbox second, recorded for the caps (never shown) |
@@ -470,6 +473,9 @@ EVOKAI_SSO='{
 EVOKAI_SSO_CLIENT_SECRET=...            # confidential clients; public clients rely on PKCE alone
 EVOKAI_PUBLIC_URL=http://localhost:8788/evokai   # the redirect URI is {EVOKAI_PUBLIC_URL}/v1/console/sso/callback
 ```
+
+With Microsoft Entra ID, see [Azure](azure.md#console-sign-in-with-microsoft-entra-id): its ID tokens carry no `amr`,
+so `require_mfa` must stay off there (enforce MFA with Conditional Access).
 
 Register `{EVOKAI_PUBLIC_URL}/v1/console/sso/callback` (or `redirect_uri`) at the provider; the Access page shows
 it. Rules match a value of the role claim (`claim`) or the e-mail (`email`, a pattern), and give a role over

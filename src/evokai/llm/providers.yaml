@@ -2668,6 +2668,42 @@ processors:
     what the deployment declares here (place, entity).'
   sources:
   - https://github.com/docling-project/docling-serve/blob/main/docs/usage.md
+- id: azure-container-apps-sessions
+  kind: sandbox
+  title: Azure Container Apps dynamic sessions (Python code interpreter session pool)
+  provider: azure
+  api: 'POST {poolManagementEndpoint}/executions?api-version=2025-10-02-preview&identifier={id} with {properties:{codeInputType:
+    inline, executionType: synchronous, code}}; answer {properties:{status, stdout, stderr, executionResult, executionTimeInMilliseconds}};
+    DELETE {poolManagementEndpoint}/session?api-version=2025-02-02-preview&identifier={id}. Bearer token with audience
+    https://dynamicsessions.io (Azure ContainerApps Session Executor role).'
+  place:
+    from_deployment_region: true
+  checked: '2026-11-26'
+  notes: 'code_run and skill_run with EVOKAI_CODE_SANDBOX=azure, in the region of EVOKAI_CODE_SESSION_POOL_ENDPOINT
+    (only European regions accepted). Each session is isolated by a Hyper-V boundary; Evokai uses a new session identifier
+    per call and deletes the session afterwards. Network egress is the pool''s setting (create it with egress disabled).
+    Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/azure/container-apps/sessions-code-interpreter
+  - https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-nodejs
+  unknowns:
+  - 'terms: the Container Apps sessions data terms were not read; the azure provider''s are shown'
+  - 'prices: session billing (per session duration) was not read; EVOKAI_CODE_USD_PER_SECOND is the deployment''s
+    estimate'
+- id: azure-monitor
+  kind: observability
+  title: Azure Monitor Application Insights (OpenTelemetry exporter, EVOKAI_OTEL_EXPORTER=azure-monitor)
+  provider: azure
+  place:
+    from_deployment_region: true
+  checked: '2026-11-26'
+  notes: 'Deployment-wide traces and metrics to the Application Insights resource of APPLICATIONINSIGHTS_CONNECTION_STRING
+    (its IngestionEndpoint names the region); Entra ID with APPLICATIONINSIGHTS_AUTHENTICATION_STRING. Subjects as keyed
+    hashes and content only as tracing_content allows, as for any exporter. Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/python/api/overview/azure/monitor-opentelemetry-exporter-readme
+  unknowns:
+  - 'terms: Application Insights retention is the workspace''s setting; the azure provider''s terms are shown'
 - id: observability-exporter
   kind: observability
   title: OpenTelemetry exporter (OTEL_*)

@@ -380,6 +380,14 @@ class Settings(BaseSettings):
     """``EVOKAI_CODE_ENABLED``: offer the ``code_run`` tool (Amazon Bedrock AgentCore Code
     Interpreter) to agents that ask for it, when their application is granted ``code``. Off by
     default."""
+    code_sandbox: Literal["agentcore", "azure"] = "agentcore"
+    """``EVOKAI_CODE_SANDBOX``: where ``code_run`` runs: Amazon Bedrock AgentCore Code Interpreter,
+    or an Azure Container Apps dynamic sessions pool (``EVOKAI_CODE_SESSION_POOL_ENDPOINT``)."""
+    code_session_pool_endpoint: str | None = None
+    """``EVOKAI_CODE_SESSION_POOL_ENDPOINT``: the Python code interpreter session pool's
+    ``poolManagementEndpoint`` (``https://<region>.dynamicsessions.io/subscriptions/.../
+    sessionPools/<name>``), in a European region; the managed identity needs the Azure
+    ContainerApps Session Executor role on it."""
     code_region: str | None = None
     """``EVOKAI_CODE_REGION``: where the code interpreter runs (default ``EVOKAI_AWS_REGION``). Only
     EU regions are accepted: any other region leaves the tool unavailable."""
@@ -428,6 +436,10 @@ class Settings(BaseSettings):
     """``EVOKAI_SUBAGENT_TIMEOUT_SECONDS``: what one subagent call may take."""
 
     # Observability
+    otel_exporter: Literal["otlp", "azure-monitor"] = "otlp"
+    """``EVOKAI_OTEL_EXPORTER``: where OpenTelemetry goes: OTLP (``OTEL_EXPORTER_OTLP_*``, a
+    collector of the deployment's own) or Azure Monitor Application Insights
+    (``APPLICATIONINSIGHTS_CONNECTION_STRING``, the ``azure`` extra)."""
     otel_enabled: bool = False
     """OpenTelemetry traces, metrics and logs. Off by default; exporters read OTEL_* variables."""
     service_name: str = "evokai"
