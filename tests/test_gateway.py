@@ -768,3 +768,18 @@ async def test_a_broken_provider_stream_ends_the_tools_without_a_clean_end(gate:
     await gate.env.svc.gateway.idle()
     (row,) = await gate.env.svc.store.gateway.recent(gate.id)
     assert (row.outcome, row.input_tokens) == ("failed", 142)
+
+
+async def test_a_record_that_never_finishes_does_not_hold_the_shutdown(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evokai.gateway import service as gateway_service
+
+    monkeypatch.setattr(gateway_service, "CLOSE_WAIT", 0.2)
+    gw = env.svc.gateway
+    stuck = asyncio.Event()
+    gw._later(stuck.wait())
+    t0 = time.monotonic()
+    await gw.close()
+    assert time.monotonic() - t0 < 2
+    assert not gw._writes

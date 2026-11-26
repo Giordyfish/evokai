@@ -37,6 +37,9 @@ from evokai.identity.models import GatewayPerson
 
 log = logging.getLogger("evokai.gateway")
 
+CLOSE_WAIT = 10.0
+"""Seconds the shutdown waits for records still being written."""
+
 CHATGPT = "chatgpt"
 """The upstream of a Codex request made with a ChatGPT login (provider ``openai``)."""
 CHATGPT_CLAIM = "https://api.openai.com/auth"
@@ -85,14 +88,37 @@ class GatewayService:
         self._writes.add(task)
         task.add_done_callback(self._writes.discard)
 
-    async def idle(self) -> None:
-        """Wait for the records still being written."""
+    async def idle(self, timeout: float | None = None) -> bool:
+        """Wait for the records still being written.
+
+        Args:
+            timeout: Give up after this many seconds (None: wait as long as it takes).
+
+        Returns:
+            True when every record was written, False when some were still pending at the timeout.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
         while self._writes:
-            await asyncio.gather(*list(self._writes), return_exceptions=True)
+            left = None if deadline is None else deadline - time.monotonic()
+            if left is not None and left <= 0:
+                return False
+            _, pending = await asyncio.wait(list(self._writes), timeout=left)
+            if pending and deadline is not None and time.monotonic() >= deadline:
+                return False
+        return True
 
     async def close(self) -> None:
-        """Finish the records being written and release the connections."""
-        await self.idle()
+        """Finish the records being written and release the connections.
+
+        It waits at most ``CLOSE_WAIT`` seconds: a write that hangs (a database that does not
+        answer) must not hold the shutdown, so what is still pending is cancelled and logged.
+        """
+        if not await self.idle(CLOSE_WAIT):
+            pending = list(self._writes)
+            log.warning("gateway_records_dropped", extra={"count": len(pending)})
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
         await self.client.aclose()
 
     async def gateway(self, gateway_id: str) -> m.Application | None:
