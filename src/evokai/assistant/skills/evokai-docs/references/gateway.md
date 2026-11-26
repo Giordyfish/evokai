@@ -6,6 +6,11 @@ unchanged: the person's login, every header and the body go through as they came
 byte. Before forwarding, the gateway checks who is asking and what they send; it records one row per request (tokens,
 timings, outcome), never the content.
 
+!!! note "Preview"
+    The gateway is a preview in 0.3.0. Its doors follow the providers' protocols as they are today: the Codex door
+    forwards a ChatGPT login to ChatGPT's own backend (not a public API, and the provider's terms apply), and the
+    Anthropic door's 451 relies on how Claude Code treats it today. Try it with a few people before rolling it out.
+
 A gateway is not an application. It has people, a policy, usage and events, and nothing else: no agents, knowledge,
 workflows or channels. It is never listed among applications, and no application key or session token reaches it.
 Each group of people ("Development", "Consultants") is one gateway with its own people and policy; a person belongs to

@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
 ### Added
 
 - `GET /v1/admin/voices/{provider}/{voice_id}` reads a catalogue voice back with its `settings`. A synthesis whose
@@ -244,6 +246,20 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   /v1/admin/application/reset/preview`) returns: read the preview, then send its `plan` with the typed slug (400
   without it, `409 plan_changed` when the preview is out of date). The console does this.
 
+### Upgrading
+
+- **Operators sign in again.** Operator-key logins, sign-in codes and delegations now carry a fingerprint of the key
+  and end when the key changes; the ones issued by 0.2.x end at the upgrade.
+- `POST /v1/admin/application/reset` needs the preview's `plan` (see **Changed**); scripts that call it read the
+  preview first.
+- Migrations `0035` to `0037` are additive (policy versions and tests, gateways, voice settings): nothing dropped or
+  rewritten. Every application gets version 1 of its policy.
+- SQLite deployments get two files next to the database, `-wal` and `-shm`: back up the three together.
+- The gateway for coding tools is a **preview**: its doors follow the providers' current protocols (the Codex door
+  forwards a ChatGPT login to ChatGPT's own backend, which is not a public API), and the 451 on the Anthropic door
+  relies on Claude Code's current handling. The Azure pieces are not verified against a live Azure account.
+- Clients: `@evokai/evokai-ui` and `@evokai/evokai-client` 0.2.x keep working against 0.3.0 (the stored message parts
+  are extra events they skip); update them to show reasoning, tool arguments and replayed tool cards.
 
 ## [0.2.2] - 2026-11-24
 
