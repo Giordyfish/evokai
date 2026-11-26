@@ -377,7 +377,7 @@ async def test_a_secret_is_recorded_by_default_and_refused_when_enforced(gate: G
     assert e.snippet == "" and e.subject == "ada@example.com"
     await gate.policy({"modes": {"input.secrets": "enforce"}})
     r = await gate.send(message(f"my key is {SECRET}"))
-    assert r.status_code == 400
+    assert r.status_code == 451
     assert r.headers["x-should-retry"] == "false"
     err = r.json()
     assert err["type"] == "error" and err["error"]["type"] == "invalid_request_error"
@@ -385,7 +385,7 @@ async def test_a_secret_is_recorded_by_default_and_refused_when_enforced(gate: G
     assert len(gate.up.calls) == 1
     assert {x.action for x in await gate.events()} == {"logged", "blocked"}
     # The tool sends the same refused request again: one more request, no new event.
-    assert (await gate.send(message(f"my key is {SECRET}"))).status_code == 400
+    assert (await gate.send(message(f"my key is {SECRET}"))).status_code == 451
     assert len(await gate.events()) == 2
     rows = await gate.env.svc.store.gateway.recent(gate.id)
     assert (rows[0].outcome, rows[0].control) == ("blocked", "input.secrets")
@@ -409,7 +409,7 @@ async def test_only_the_new_text_is_checked(gate: Gate) -> None:
     assert (await gate.send(body)).status_code == 200
     result: dict[str, Any] = body["messages"][2]["content"][0]
     result["content"] = [{"type": "text", "text": f"key={SECRET}"}]
-    assert (await gate.send(body)).status_code == 400
+    assert (await gate.send(body)).status_code == 451
 
 
 def test_the_new_text_of_each_provider() -> None:
@@ -441,12 +441,12 @@ async def test_personal_data_scope_and_size_block_when_enforced(gate: Gate) -> N
         "input": {"max_chars": 50},
     })
     r = await gate.send(message("write to mario.rossi@example.com"))
-    assert r.status_code == 400 and "pii.model" in r.json()["error"]["message"]
+    assert r.status_code == 451 and "pii.model" in r.json()["error"]["message"]
     assert "mario" not in r.json()["error"]["message"]
     r = await gate.send(message("about weapons"))
-    assert r.status_code == 400 and "scope" in r.json()["error"]["message"]
+    assert r.status_code == 451 and "scope" in r.json()["error"]["message"]
     r = await gate.send(message("x" * 51))
-    assert r.status_code == 400 and "input.size" in r.json()["error"]["message"]
+    assert r.status_code == 451 and "input.size" in r.json()["error"]["message"]
     assert gate.up.calls == []
     assert (await gate.send(message("fine"))).status_code == 200
 
@@ -454,13 +454,13 @@ async def test_personal_data_scope_and_size_block_when_enforced(gate: Gate) -> N
 async def test_provider_and_model_must_be_allowed(env: Env) -> None:
     gate = await _gateway(env, Upstream(), allowed_models=["claude-sonnet-*"])
     r = await gate.send(message("hi", model="claude-opus-4-8"))
-    assert r.status_code == 400 and r.json()["error"]["type"] == "invalid_request_error"
+    assert r.status_code == 451 and r.json()["error"]["type"] == "invalid_request_error"
     assert "claude-opus-4-8" in r.json()["error"]["message"]
     assert (await gate.send(message("hi"))).status_code == 200
     r = await env.client.patch(f"{GW}/{gate.id}", json={"providers": ["openai"]}, headers=OP)
     assert r.status_code == 200
     r = await gate.send(message("hi"))
-    assert r.status_code == 400 and "Anthropic is not enabled" in r.json()["error"]["message"]
+    assert r.status_code == 451 and "Anthropic is not enabled" in r.json()["error"]["message"]
     assert [e.control for e in await gate.events()] == ["gateway.provider", "gateway.model"]
 
 
@@ -486,7 +486,7 @@ async def test_data_protection_and_system_floors_apply(gate: Gate) -> None:
     )
     assert r.status_code == 200, r.text
     r = await gate.send(message("hi"))
-    assert r.status_code == 400
+    assert r.status_code == 451
     assert "data protection" in r.json()["error"]["message"]
     await gate.env.client.patch(f"{GW}/{gate.id}", json={"data_protection": {}}, headers=OP)
     assert (await gate.send(message("hi"))).status_code == 200
@@ -498,7 +498,7 @@ async def test_data_protection_and_system_floors_apply(gate: Gate) -> None:
     )
     assert r.status_code == 200, r.text
     gate.env.svc.gateway.forget(gate.id)
-    assert (await gate.send(message(f"k {SECRET}"))).status_code == 400
+    assert (await gate.send(message(f"k {SECRET}"))).status_code == 451
 
 
 async def test_a_gateway_policy_has_versions_and_gateway_tests(gate: Gate) -> None:
@@ -789,6 +789,17 @@ async def test_a_record_that_never_finishes_does_not_hold_the_shutdown(
     gw._later(stuck.wait())
     assert await gw.close() == 1  # dropped and logged, the shutdown goes on
     assert not gw._writes
+
+
+async def test_a_policy_refusal_is_not_retried_by_the_tools(env: Env) -> None:
+    # Claude Code resends a 400 several times and reads a 401 or 403 as a login problem: the
+    # Anthropic door refuses with 451 and says not to retry. Codex sends a 400 once.
+    gate = await _gateway(env, Upstream())
+    await gate.policy({"modes": {"input.secrets": "enforce"}})
+    r = await gate.send(message(f"my key is {SECRET}"))
+    assert r.status_code == 451
+    assert r.headers["x-should-retry"] == "false"
+    assert r.json()["type"] == "error" and "input.secrets" in r.json()["error"]["message"]
 
 
 async def test_a_finished_record_not_yet_out_of_the_set_does_not_hold_the_wait(env: Env) -> None:

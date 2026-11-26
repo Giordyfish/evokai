@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import dataclasses
 import hashlib
 import json
 import logging
@@ -186,7 +187,7 @@ class GatewayService:
         if events := await self._first_seen(person, found):
             self._later(self.svc.guard.store_events(events))
         if found.block is not None:
-            b = found.block
+            b = refusal_for(provider, found.block)
             if not count:
                 await self._record(
                     gw,
@@ -562,6 +563,28 @@ def _key_message(provider: str, code: str) -> str:
         "Evokai gateway: no valid gateway key. Send your personal key in the x-evokai-key header "
         f"({how}); ask your administrator for one if you have none, or if yours was revoked."
     )
+
+
+POLICY_STATUS_ANTHROPIC = 451
+"""The status of a policy refusal on the Anthropic door.
+
+Claude Code resends a request refused with 400 or 422 several times, stripping features it
+suspects the gateway rejects (measured 2026-11-26 with Claude Code 2.1.332: 8 attempts, even with
+``x-should-retry: false`` or ``retry-after``), and it prefixes a 401 or 403 with "Failed to
+authenticate". With 451 (refused for legal or policy reasons) it sends the request once and shows
+the message as it is. Codex sends a 400 once, so the OpenAI door keeps it.
+"""
+
+
+def refusal_for(provider: str, b: Block) -> Block:
+    """The block as the provider's tool should receive it (a policy refusal is not retried).
+
+    Returns:
+        The block, with the Anthropic door's policy status where it applies.
+    """
+    if provider == ANTHROPIC and b.status not in (401, 429):
+        return dataclasses.replace(b, status=POLICY_STATUS_ANTHROPIC)
+    return b
 
 
 def _refusal_headers(provider: str, b: Block) -> dict[str, str]:
