@@ -1226,6 +1226,9 @@ class VoiceBody(SnakeModel):
     name: str
     gender: str | None = None
     region: str | None = None
+    settings: dict[str, Any] | None = None
+    """How the engine speaks with this voice: ``model``, ``speed`` and the engine's own options
+    under its name (``{"elevenlabs": {"stability": 0.4}}``); sent as written."""
 
 
 class BugReport(WireModel):

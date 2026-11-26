@@ -64,6 +64,7 @@ from evokai.models import (
     SubjectExport,
     UsageReport,
     UsageSummary,
+    VoiceBody,
     VoiceInfo,
 )
 from tests.support import ADMIN_KEY, BASE, SERVER_KEY
@@ -940,6 +941,26 @@ CASES = [
         "PUT",
         "/v1/admin/voices/polly/Bianca",
         body={"language": "it-IT", "name": "Bianca"},
+        admin=True,
+    ),
+    Case(
+        "admin.voices.put with settings",
+        lambda c: c.admin.voices.put(
+            "elevenlabs",
+            "elena",
+            VoiceBody(
+                language="it-IT",
+                name="Elena",
+                settings={"speed": 1.05, "elevenlabs": {"similarityBoost": 0.8}},
+            ),
+        ),
+        "PUT",
+        "/v1/admin/voices/elevenlabs/elena",
+        body={
+            "language": "it-IT",
+            "name": "Elena",
+            "settings": {"speed": 1.05, "elevenlabs": {"similarityBoost": 0.8}},
+        },
         admin=True,
     ),
     Case(

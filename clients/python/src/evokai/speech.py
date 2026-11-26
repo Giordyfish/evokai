@@ -2,7 +2,8 @@
 
 ``speak`` asks ``POST /v1/session/speech`` for a text or one ``say`` segment and collects its
 event stream into a :class:`Speech`: the audio (16-bit mono PCM or Ogg Opus) and its timings
-(words, the segment's cues as marks, visemes). ``transcribe`` sends a recording to
+(words, character times when asked, the segment's cues as marks, visemes). ``transcribe`` sends a
+recording to
 ``POST /v1/session/transcribe``.
 """
 
@@ -31,6 +32,10 @@ def speech_body(
     index: int | None,
     format: SpeechFormat,
     sample_rate: int,
+    *,
+    language: str | None = None,
+    after: list[str] | None = None,
+    characters: bool = False,
 ) -> dict[str, Any]:
     """The request body of a speech call.
 
@@ -47,6 +52,12 @@ def speech_body(
         body["text"] = text
     else:
         body.update(turnId=turn_id, index=index)
+    if language:
+        body["language"] = language
+    if after:
+        body["after"] = list(after)
+    if characters:
+        body["characters"] = True
     return body
 
 
@@ -62,10 +73,17 @@ class Speech:
     """What is shown (the subtitle)."""
     spoken: str = ""
     """What the voice says (numbers in words)."""
+    language: str | None = None
+    """The language it is spoken in."""
+    speech_id: str | None = None
+    """This speech, for ``after`` in a later call of the conversation."""
     chunks: list[bytes] = field(default_factory=list, repr=False)
     """The audio as it arrived (``audio`` joins it)."""
     words: list[dict[str, Any]] = field(default_factory=list)
     """``{text, at, length, start}``: offset and length in ``spoken``, start in ms."""
+    chars: list[tuple[int, int]] = field(default_factory=list)
+    """``(start_ms, end_ms)`` per code point of ``spoken`` (``(-1, -1)`` where unknown); empty
+    unless asked with ``characters=True`` and the engine reports them."""
     marks: list[dict[str, Any]] = field(default_factory=list)
     """The segment's cues: ``{name, arg?, at, time}``."""
     visemes: list[dict[str, Any]] = field(default_factory=list)
@@ -102,10 +120,17 @@ def collect(messages: Iterable[SseMessage], speech: Speech | None = None) -> Spe
             out.engine, out.voice = data["engine"], data.get("voice")
             out.format, out.sample_rate = data["format"], data["sampleRate"]
             out.text, out.spoken = data["text"], data["spoken"]
+            out.language, out.speech_id = data.get("language"), data.get("speechId")
         elif msg.event == "audio":
             out.chunks.append(base64.b64decode(data["data"]))
         elif msg.event == "word":
             out.words.append(data)
+        elif msg.event == "chars":
+            at = int(data["at"])
+            times = [(int(a), int(b)) for a, b in data["times"]]
+            if len(out.chars) < at:
+                out.chars.extend([(-1, -1)] * (at - len(out.chars)))
+            out.chars[at : at + len(times)] = times
         elif msg.event == "mark":
             out.marks.append(data)
         elif msg.event == "viseme":

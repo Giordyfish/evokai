@@ -2012,6 +2012,17 @@ class VoiceRepository(_Repo):
             await s.execute(sa.delete(v).where(v.provider == provider, v.voice_id == voice_id))
             s.add(v(id=new_id(), provider=provider, voice_id=voice_id, **fields))
 
+    async def get(self, provider: str, voice_id: str) -> m.VoiceRecord | None:
+        """One voice of the catalogue.
+
+        Returns:
+            The record, or None.
+        """
+        async with self.db.session() as s:
+            v = m.VoiceRecord
+            q = sa.select(v).where(v.provider == provider, v.voice_id == voice_id)
+            return (await s.execute(q)).scalars().first()
+
     async def all(self, language: str | None = None) -> list[m.VoiceRecord]:
         """Voices, optionally for one language.
 

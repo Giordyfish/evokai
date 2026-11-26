@@ -16,6 +16,7 @@ export type { FetchLike } from '../core/http'
 export { markupPattern, stripMarkup } from '../core/markup'
 export { speak, speechEvents, transcribe, transcribeSocketUrl } from './speech-server'
 export type {
+  CharTimings,
   MarkTiming,
   SpeakInput,
   SpeechDone,
@@ -28,7 +29,7 @@ export type {
   WordTiming,
 } from './speech-server'
 export { TimedSpeechPlayer } from './tts/player'
-export type { PlaybackContext, PlayerEvents, TimedSpeechPlayerOptions } from './tts/player'
+export type { CharTiming, PlaybackContext, PlayerEvents, TimedSpeechPlayerOptions } from './tts/player'
 export { ServerTts } from './tts/server'
 export type { ServerTtsOptions } from './tts/server'
 export { MicrophonePcm, ServerStt, toPcm16 } from './stt/server'

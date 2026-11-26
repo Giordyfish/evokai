@@ -22,13 +22,13 @@ protection checks.
 
 | Engine | Speech (`tts`) | Recognition (`stt`) | Install | Credentials and settings |
 |---|---|---|---|---|
-| `elevenlabs` | HTTP with timestamps: word times; speech tags with an `eleven_v3` model | Scribe, one utterance at a time; Scribe realtime for streaming | nothing more | `ELEVENLABS_API_KEY`, `EVOKAI_ELEVENLABS_TTS_MODEL` (default `eleven_flash_v2_5`), `EVOKAI_ELEVENLABS_VOICE`, `EVOKAI_ELEVENLABS_URL` (the EU residency host) |
+| `elevenlabs` | HTTP with timestamps: word and character times; speech tags with an `eleven_v3` or `eleven_v4` model | Scribe, one utterance at a time; Scribe realtime for streaming | nothing more | `ELEVENLABS_API_KEY`, `EVOKAI_ELEVENLABS_TTS_MODEL` (default `eleven_flash_v2_5`), `EVOKAI_ELEVENLABS_VOICE`, `EVOKAI_ELEVENLABS_URL` (the EU residency host) |
 | `openai` | `gpt-4o-mini-tts` (word times estimated) | transcription models; realtime transcription for streaming | nothing more | `OPENAI_API_KEY`, `EVOKAI_OPENAI_TTS_MODEL`, `EVOKAI_OPENAI_STT_MODEL`, `EVOKAI_OPENAI_SPEECH_URL` |
 | `azure` | Speech SDK: word boundaries and visemes | real-time recognition | `pipecat-ai[azure]` | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` |
 | `piper` | a Piper server of your own (times estimated) | | `pipecat-ai[piper]`, and a `piper-tts[http]` server | `EVOKAI_PIPER_URL` |
 | `kokoro` | in process (times estimated) | | `pipecat-ai[kokoro]` | |
 | `whisper` | | faster-whisper in process | `pipecat-ai[whisper]` | `EVOKAI_WHISPER_MODEL` |
-| `fake` | silence with word times and visemes | scripted phrases | | tests and local runs |
+| `fake` | silence with word and character times and visemes | scripted phrases | | tests and local runs |
 
 Any other Pipecat service is an engine too: give `module:factory` as its name. The deployment's default engines are
 `EVOKAI_VOICE_TTS` and `EVOKAI_VOICE_STT`; `EVOKAI_VOICE_TTS_ENGINES` and `EVOKAI_VOICE_STT_ENGINES` (JSON lists) add
@@ -38,8 +38,7 @@ ElevenLabs price is that of its Flash model: a deployment on `eleven_v3` (for sp
 `EVOKAI_PROVIDERS_FILE`, or the caps count half of what is spent.
 
 Each request builds its engine anew: in-process engines (`kokoro`, `whisper`) load their model every time, so they
-suit a few sessions; for more, run the model as a server of its own (Piper's HTTP server) or use a hosted engine. Each
-segment is synthesised on its own, without the text around it as context.
+suit a few sessions; for more, run the model as a server of its own (Piper's HTTP server) or use a hosted engine.
 
 ## Choosing, granting, paying
 
@@ -54,6 +53,22 @@ segment is synthesised on its own, without the text around it as context.
   and the caps apply before each request (429 `limit`). Browsers only ever see shares of the caps.
 - The text is made speakable and its personal identifiers redacted exactly as a `say` segment is.
 
+## Catalogue voices
+
+An owner tunes a catalogue voice once (`PUT /v1/admin/voices/{provider}/{voice_id}`, the provider being its engine)
+and every application speaking with it sounds the same, in server speech and WebRTC sessions; `GET` on the same path
+reads it back with its settings. Its `settings` are an
+engine-neutral core and the engine's own options under its name (`{"speed": 1.05, "elevenlabs": {"style": 0.2}}`):
+
+- `model`: the engine's model for this voice instead of the deployment's (`elevenlabs`, `openai`).
+- `speed`: 1 is the voice's own pace (`elevenlabs` 0.7 to 1.2, `openai` 0.25 to 4).
+- `elevenlabs`: `stability`, `similarityBoost`, `style` (0 to 1), `speakerBoost`.
+- `openai`: `instructions` (tone, pace, accent; up to 4,000 characters).
+
+Anything the engine does not take is refused (400 `settings`). At synthesis the session's voice is looked up for the
+session's engine and its settings apply; speech tags follow its model (a voice on `eleven_v3` performs them). A voice
+without settings speaks with the engine's defaults. `GET /v1/voices` never shows settings.
+
 ## Synthesis
 
 ```http
@@ -67,21 +82,45 @@ Content-Type: application/json
 The body names a `say` segment of this conversation (`turnId`, `index`; 404 for any other) or a `text` (up to
 `EVOKAI_SPEECH_MAX_CHARS`, 2,000 by default; Markdown and [inline markup](markup.md) are handled as in an answer).
 `format` is `pcm` (16-bit little-endian mono at `sampleRate`: 16000, 22050, 24000, 44100 or 48000) or `opus` (Ogg Opus at
-48 kHz). The answer is a stream of Server-Sent Events, chosen because both clients already read them and a browser
-can start playing before the engine has finished:
+48 kHz). `language` (BCP 47 or ISO 639-1, default the session's) goes to the engines whose model takes one. `after`
+and `characters` are explained [below](#continuity-across-segments). The answer is a stream of Server-Sent Events,
+chosen because both clients already read them and a browser can start playing before the engine has finished:
 
 | Event | Data |
 |---|---|
-| `start` | `engine`, `voice`, `format`, `sampleRate`, `channels`, `text` (the subtitle), `spoken` (what is said) |
+| `start` | `engine`, `voice`, `format`, `sampleRate`, `channels`, `text` (the subtitle), `spoken` (what is said), `language`, `speechId` (this speech, for `after`) |
 | `audio` | `data` (base64), `ms` (where the chunk starts; null for the last Opus pages) |
 | `word` | `text`, `at` and `length` (characters of `spoken`), `start` (ms) |
+| `chars` | `at`, `times`: `[startMs, endMs]` per code point of `spoken` from `at` (only when asked with `characters`) |
 | `mark` | a cue of the segment: `name`, `arg`, `at`, `time` (ms): it fires with the first word at or after it |
 | `viseme` | `id` (the engine's viseme id), `time` (ms), from engines that give them |
 | `done` | `durationMs`, `characters`, `estimated` (the engine gave no word times: they are spread by the text's length) |
 | `error` | `code`, `message` |
 
-A word ends where the next one starts (the last at `durationMs`); per-character times follow from `at` and `length`.
-A segment whose engine performs speech tags (`tts_caps`, an ElevenLabs v3 model) is spoken in its `tagged` form.
+A word ends where the next one starts (the last at `durationMs`). A segment whose engine performs speech tags
+(`tts_caps`, an ElevenLabs v3 or v4 model, the voice's own or the deployment's) is spoken in its `tagged` form.
+
+### Continuity across segments
+
+Spoken one request at a time, the segments of an answer would each start and end like a whole utterance. On engines
+that can follow earlier speech, Evokai keeps the voice going:
+
+- **A `say` segment** follows the earlier segments of its turn (the engine's references of the latest three, else
+  their text up to 1,000 characters) and is told the next segment's text when it is already there.
+- **A text** follows the speech it names: `"after": ["<speechId>", ...]` (from `start`, oldest first, at most 8).
+  Unknown ids and those of another conversation are ignored.
+
+References stay in the instance's memory for two hours, never stored, and serve only the same engine, voice and
+model; else the earlier text stands in. An engine that refuses a reference before any audio (one it no longer
+knows) is asked once more without it, following the earlier text. Other engines and `eleven_v3` ignore this. What is
+counted does not change.
+
+### Character times
+
+With `"characters": true`, engines that report character alignment (`elevenlabs`, `fake`) add `chars` events, for lip
+sync, karaoke subtitles or typewriter captions: `times[i]` is `[startMs, endMs]` of code point `at + i` of `spoken`,
+`[-1, -1]` where the engine reported none. Each event continues the last; together they cover `spoken`. Speech tags
+of the `tagged` form never take a place. Other engines send no `chars`.
 
 ## Transcription
 
@@ -121,14 +160,15 @@ variants.
 
 ## Clients
 
-- **TypeScript:** `session.speak({turnId, index})` resolves with the audio and its timings; `session.speechEvents(...)`
-  streams them; `TimedSpeechPlayer` plays PCM with Web Audio and emits `word`, `mark` and `viseme` as they are heard;
+- **TypeScript:** `session.speak({turnId, index})` resolves with the audio and its timings;
+  `session.speechEvents(...)` streams them; both take `language`, `after`, `characters`; `TimedSpeechPlayer` plays PCM with Web Audio and emits `word`, `char`, `mark` and `viseme` as they are heard;
   `ServerTts` and `ServerStt` are a speech engine and a recogniser for the browser voice engine, which picks them when
   the token chose server engines (`session.speech`); `session.transcribe(blob)` transcribes a recording.
 - **`<evokai-chat>`:** voice mode uses server speech and recognition when the token chose them; browser speech stays
   the default.
 - **Python:** `session.speak(text=...)` or `session.speak(turn_id=..., index=...)` returns a `Speech` (audio, words,
-  marks, visemes); `session.transcribe(audio, content_type="audio/wav")` returns the text.
+  marks, visemes, `speech_id`, `chars`);
+  `session.transcribe(audio, content_type="audio/wav")` returns the text.
 
 ## Tests
 
