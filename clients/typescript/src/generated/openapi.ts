@@ -5687,8 +5687,10 @@ export interface components {
          * HistoryMessage
          * @description One message of a conversation, as the application stores it and sends it back.
          *
-         *     ``content`` is what the model sees; ``text`` and ``events`` are what the user saw (the text,
-         *     and the charts, schemas, questions and confirmations shown with it).
+         *     ``content`` is what the model sees; ``text`` and ``events`` are what the user saw: the text,
+         *     and every event shown with it in the order it was shown (``evokai.sessions.parts``: the text
+         *     again, tools, charts, questions, confirmations, citations, errors). Keep them as Evokai returns
+         *     them.
          */
         HistoryMessage: {
             /** Content */

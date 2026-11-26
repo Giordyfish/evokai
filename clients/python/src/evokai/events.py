@@ -136,6 +136,9 @@ class ClientToolEvent(BaseEvent):
     name: str
     args: dict[str, Any] = Field(default_factory=dict)
     wait: bool = False
+    status: Literal["done", "error"] | None = None
+    """Stored messages only: how a call that waited ended (the page answered, or failed or never
+    answered)."""
 
 
 class ConnectEvent(BaseEvent):
@@ -370,9 +373,18 @@ Events = Annotated[list[Event], BeforeValidator(parse_events)]
 
 
 class StoredMessage(WireModel):
-    """A stored message of a conversation, with the events the user saw."""
+    """A stored message of a conversation, with the events the user saw.
+
+    Since services with ordered parts, ``events`` is everything the person was shown with the
+    message, in the order it was shown (``text`` with the deltas joined, ``tool`` with its last
+    status, charts, questions, citations, errors...); a message stored before has its text apart
+    and no ``text`` event. :attr:`shown` reads both the same way.
+    """
 
     id: str
+    turn_id: str | None = None
+    """The turn that stored it (absent from older services): a turn's assistant messages make one
+    answer."""
     role: Literal["user", "assistant"]
     text: str = ""
     events: Events = Field(default_factory=list)
@@ -383,6 +395,18 @@ class StoredMessage(WireModel):
     """User messages: the last question, which can still be rewritten (``session.rewrite``)."""
     attachments: list[dict[str, Any]] = Field(default_factory=list)
     """User messages: the files attached (id, name, mediaType, size)."""
+
+    @property
+    def shown(self) -> list[Event]:
+        """What the person was shown with this message, in order.
+
+        Returns:
+            The events; for a message stored before ordered parts, a ``text`` event with its text
+            first.
+        """
+        if not self.text or any(isinstance(e, TextEvent) for e in self.events):
+            return list(self.events)
+        return [TextEvent(delta=self.text), *self.events]
 
 
 class ConversationDetail(WireModel):

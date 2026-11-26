@@ -178,6 +178,8 @@ export interface ClientToolEvent extends EventMeta {
   name: string
   args: Record<string, unknown>
   wait: boolean
+  /** Stored messages only: how a call that waited ended (the page answered, or failed or never answered). */
+  status?: 'done' | 'error'
 }
 /** The i18n key of why a call waits for the person (`confirmReasonText` turns it into a sentence). */
 export type ConfirmReasonKey = 'confirm.why.writes' | 'confirm.why.rule' | 'confirm.why.policy'
@@ -413,8 +415,16 @@ export interface AttachmentRef {
   url?: string
 }
 
+/**
+ * A stored message. `events` is what the person was shown with it: since services with ordered parts, every event that
+ * drew something (`text` with the deltas joined, `tool` with its last status, `client_tool`, `chart`, `diagram`, `ask`,
+ * `navigate`, `connect`, `confirm`, `citation`, `handoff`, `error`) in the order it was shown, so `fromStored` rebuilds
+ * the conversation as it looked live. Older messages have no `text` event: their `text` goes before their events.
+ */
 export interface StoredMessage {
   id: string
+  /** The turn that stored it (absent from older services): a turn's assistant messages are shown as one. */
+  turnId?: string | null
   role: 'user' | 'assistant'
   text: string
   events: EvokaiEvent[]

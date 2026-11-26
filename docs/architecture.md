@@ -206,6 +206,28 @@ conversation (`storageMode`), and the conversation keeps it for good (older conv
 History is windowed and repaired before each model call (no dangling tool calls; an interrupted
 answer is kept and marked as interrupted).
 
+### What a reload shows
+
+A stored message keeps what the person was shown with it as ordered parts (`evokai.sessions.parts`): its `events` are
+every event that drew something, in the order it was shown, with consecutive `text` deltas joined, a tool's `start`
+and end as one `tool` event with its last status, a `client_tool` that waited with `status` (`done` or `error`), and
+`chart`, `diagram`, `ask`, `navigate`, `connect`, `confirm`, `citation`, `handoff` and `error` as they were sent. Each
+assistant message of a turn (one per model step) takes what was shown since the previous one; what comes after the
+last one (the tool-call cap's sentence, an error) joins it. `GET /v1/session/conversation` and
+`GET /v1/conversations/{id}` give each message its `turnId`, and the clients apply the events of a turn's messages in
+order, through the same code as the live stream: a reload shows the same tool cards, charts, questions, confirmations,
+citations and errors, in the same place, as one answer per turn. External storage returns the same events in
+`done.messages`, and the application sends them back with its history.
+
+Only what a browser was sent is kept: never a tool's arguments or result, never what a page answered to a client tool
+(the page has it; the model reads it in the message's `content`), never usage or speech segments. With `pii.history`
+enforced the stored parts are masked like the stored text. They live in the message's row, so the conversation's time
+to live, its deletion, the privacy export and the erasure cover them.
+
+A message stored before ordered parts has no `text` event: its `text` goes first, then its events (the charts,
+questions, confirmations and citations kept then; tools were not). An older client reads the new messages as before:
+it skips the event types it did not store, `text` and `tool` among them, and shows the text and the rest.
+
 ## Rewriting the last question
 
 A person may edit their last message and send it again: `POST /v1/session/chat` with `{text, rewrite: {messageId?}}`
@@ -279,7 +301,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET | `/v1/session` | session | conversation, agent, usage shares, memories and the memory state |
 | GET, PATCH, DELETE | `/v1/session/memories[/{id}]` | session | what the agents remember about the person: list, rewrite, delete |
 | POST | `/v1/session/memory-consent` | session | the person's answer (a no deletes what was remembered) |
-| GET | `/v1/session/conversation` | session | messages, open confirmation, last seq, running turn |
+| GET | `/v1/session/conversation` | session | messages (with their `turnId` and [ordered parts](#what-a-reload-shows)), open confirmation, last seq, running turn |
 | POST | `/v1/session/chat` | session | a turn: `{text?, confirm?, rewrite?, page?, mode: text\|voice, history?, endOfSpeechAt?}` → SSE (or JSON); `rewrite` replaces the last question ([below](#rewriting-the-last-question)) |
 | POST | `/v1/session/regenerate` | session | regenerate the last answer: `{page?, mode?, history?}` → SSE (or JSON), 409 `not_regenerable` ([regenerating](#regenerating-the-last-answer)) |
 | POST | `/v1/session/tool-results` | session | answer a waiting custom client tool: `{callId, result \| error}` ([client tools](client-tools.md)) |

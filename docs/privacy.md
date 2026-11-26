@@ -12,7 +12,7 @@ application uses e-mail addresses as subjects, those are personal data in every 
 | Data | Table | When | Kept | Personal data |
 |---|---|---|---|---|
 | Conversations: title, agent and version, storage mode, consent record, kiosk exit code (hashed) | `evokai_sessions` | Evokai storage mode | `conversation_ttl_days` after the last message (else until deleted) | subject, title (first words of the first message) |
-| Messages: what the model saw and what the user saw, events shown | `evokai_messages`, `evokai_threads` | Evokai storage mode | as the conversation | everything the user and the tools wrote (masked with `pii.history`) |
+| Messages: what the model saw and what the user saw, events shown (in order: the text, the names of the tools that ran and their outcome, charts, questions, confirmations, citations, errors; never a tool's arguments or result) | `evokai_messages`, `evokai_threads` | Evokai storage mode | as the conversation | everything the user and the tools wrote (masked with `pii.history`) |
 | Attachments: the files a person attached to a chat message (images without their metadata), with name, type, size and hash | `evokai_attachments` | Evokai storage mode, an agent that takes attachments ([attachments](attachments.md)) | as the conversation | whatever the files hold |
 | Replay events (the stream as sent) | `evokai_events` | Evokai storage mode | as the conversation | as the messages |
 | Turns: mode, outcome, timings | `evokai_turns` | always | as the conversation | subject |

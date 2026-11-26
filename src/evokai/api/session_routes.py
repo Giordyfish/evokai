@@ -197,6 +197,7 @@ async def conversation(svc: Svc, s: Sess) -> dict[str, Any]:
         "messages": [
             {
                 "id": x.id,
+                "turnId": x.turn_id,
                 "role": x.role,
                 "text": x.text,
                 "events": x.events or [],

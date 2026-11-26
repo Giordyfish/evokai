@@ -25,8 +25,24 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   the console shows neither the mage nor the assistant's application and its sessions are refused; the model is kept,
   so switching it on again needs no new choice. `GET /v1/console/applications` marks that application `hidden`.
 
+- Messages as ordered parts: a stored answer keeps what the person was shown, in order (its text, the tools that ran
+  with their outcome, client tools, charts, diagrams, questions, confirmations, citations, errors), and a reloaded
+  conversation shows the same cards in the same place, one answer per turn, in the chat panel, the console assistant
+  and the console's conversation review. `GET /v1/session/conversation` and `GET /v1/conversations/{id}` give each
+  message its `turnId`; a stored `client_tool` that waited says how it ended (`status`). Never a tool's arguments or
+  result; masked with `pii.history`; covered by the privacy export and erasure
+  ([what a reload shows](docs/architecture.md#what-a-reload-shows)). Messages stored before load as they did, and older
+  clients and embedded panels keep working: they skip the new `text` and `tool` events of a stored message.
+- Python client: `StoredMessage.turn_id` and `StoredMessage.shown` (what a message showed, in order, older messages
+  included); `ClientToolEvent.status`.
+
 ### Fixed
 
+- A reloaded conversation lost its tool cards, its errors and the tool-call cap's sentence, split each answer into one
+  message per model step, and showed a chart or a question after the whole answer's text instead of where it appeared.
+  The chat panel reloads the stored copy after every turn, so this could show without a reload.
+- With `pii.history` enforced, the charts, questions and confirmations stored with a message are masked like its text
+  (they were masked only in the replay events).
 - The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
   named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
 - The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every

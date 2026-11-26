@@ -204,6 +204,37 @@ describe('<evokai-chat>', () => {
     expect($$('[part~="tool"]').map((x) => x.textContent)).toEqual(['stock_report'])
   })
 
+  test('a reloaded conversation shows the tool cards, charts and sources in the order they were shown live', async () => {
+    const citation = { type: 'citation', index: 1, kb: 'kb', documentId: 'd', title: 'Returns policy', location: { charStart: 0, charEnd: 9 }, snippet: 's', url: null }
+    const stored = [
+      { id: 'u1', turnId: 't', role: 'user', text: 'How did October go?', events: [], feedback: null },
+      { id: 'a1', turnId: 't', role: 'assistant', text: 'Let me check. ', events: [{ type: 'text', delta: 'Let me check. ' }, { type: 'tool', name: 'orders_month', status: 'done' }], feedback: null },
+      { id: 'a2', turnId: 't', role: 'assistant', text: '24 orders [1].', events: [{ type: 'text', delta: '24 orders [1].' }, citation, { type: 'chart', chart: CHART }], feedback: null },
+    ]
+    localStorage.setItem('evokai.conversation', 'c1')
+    const evokai = fakeEvokai([])
+    const el = document.createElement('evokai-chat') as EvokaiChatElement
+    el.fetcher = async (input, init) => {
+      if (String(input).endsWith('/v1/session/conversation')) {
+        return new Response(JSON.stringify({ messages: stored, pending: null, lastSeq: 9, runningTurnId: null }), { headers: { 'Content-Type': 'application/json' } })
+      }
+      return evokai.fetch(input, init)
+    }
+    el.setAttribute('base-url', 'https://agents.test/agent')
+    el.setAttribute('token-url', '/api/agent/token')
+    document.body.append(el)
+    await tick()
+    const $ = (sel: string) => el.shadowRoot!.querySelector<HTMLElement>(sel)
+    el.open()
+    await until(() => $('figure'))
+    const answer = el.shadowRoot!.querySelectorAll('.msg.assistant')
+    expect(answer.length).toBe(1)
+    const order = [...answer[0]!.querySelectorAll<HTMLElement>('.md, .tool, figure')].map((x) => (x.matches('.tool') ? 'tool' : x.matches('figure') ? 'chart' : 'text'))
+    expect(order).toEqual(['text', 'tool', 'text', 'chart'])
+    expect($('.tool')!.textContent).toBe('orders_month')
+    expect(answer[0]!.textContent).toContain('Returns policy')
+  })
+
   test('a tool card is drawn again only when its part changes, not on every token', async () => {
     const deltas = Array.from({ length: 12 }, (_, i) => ({ type: 'text' as const, delta: `w${i} ` }))
     const { el, $ } = await mounted([[{ type: 'tool', name: 'orders_month', status: 'done' }, ...deltas]])

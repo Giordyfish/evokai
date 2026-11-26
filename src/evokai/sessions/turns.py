@@ -135,6 +135,7 @@ from evokai.sessions.history import (
     window,
 )
 from evokai.sessions.limits import EVAL_LIMIT, cap_state, eval_cap_usd, limit_message
+from evokai.sessions.parts import PartLog
 from evokai.sessions.rewrite import Plan
 from evokai.sessions.threads import (
     EvokaiThreads,
@@ -244,6 +245,10 @@ class TurnRun:
     """The message's attachments, checked and prepared (``evokai.attachments``)."""
     dropped: bool = False
     """A rewrite deleted the question it replaces (Evokai storage)."""
+    parts: PartLog = field(default_factory=PartLog)
+    """What the person was shown and no stored message holds yet (``evokai.sessions.parts``)."""
+    last_answer: tuple[ThreadMessage, str | None] | None = None
+    """The turn's last stored assistant message and its id: what is shown after it goes there."""
 
 
 class _Cancelled(Exception):
@@ -821,6 +826,7 @@ class TurnEngine:
         voice_span: dict[str, Span | None] = {"span": None}
 
         def emit(event: dict[str, Any]) -> dict[str, Any]:
+            run.parts.add(event)
             return run.channel.publish(event, run.turn_id)
 
         def say(text: str, *, filler: bool = False, last: bool = False) -> None:
@@ -884,6 +890,12 @@ class TurnEngine:
             })
         finally:
             await self._drop_unkept(run, inp)
+            try:
+                await self._keep_shown(run)
+            except Exception as e:
+                log.warning(
+                    "shown_not_kept", extra={"turnId": run.turn_id, "error": error_class(e)}
+                )
             # The turn is over: its capability workers' call tokens stop working.
             await self.mcp.end_run(run.turn_id)
             run.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -1905,7 +1917,6 @@ class TurnEngine:
                                     role="assistant",
                                     content=[{"text": answer}, *_acted(rs)],
                                     text=answer,
-                                    events=rs.events or None,
                                 )
                                 run.reason = "guard"
                                 return
@@ -1917,7 +1928,6 @@ class TurnEngine:
                                         role="assistant",
                                         content=blocks,
                                         text=rs.text,
-                                        events=rs.events or None,
                                     )
                                 run.reason = "end_turn"
                                 return
@@ -1983,7 +1993,6 @@ class TurnEngine:
                                     role="assistant",
                                     content=assistant,
                                     text=rs.text,
-                                    events=rs.events or None,
                                 )
                             await self._add(run, role="user", content=got)
                             # A question shown to the user ends the turn, like a confirmation: the
@@ -2009,9 +2018,7 @@ class TurnEngine:
             if isinstance(stop.detail, dict) and stop.detail.get("store"):
                 # A capability ended the turn on something it showed (ask_user's next question):
                 # it is kept as the turn's answer, so the next message answers it.
-                await self._add(
-                    run, role="assistant", content=stop.detail["store"], events=rs.events or None
-                )
+                await self._add(run, role="assistant", content=stop.detail["store"])
         except _Cancelled:
             if rs.attempt is not None and rs.attempt.span is not None:
                 rs.trace.end(rs.attempt.span, status="cancelled", outputTokens=None)
@@ -2067,9 +2074,7 @@ class TurnEngine:
             )
         )
         if assistant:
-            await self._add(
-                run, role="assistant", content=assistant, text=rs.text, events=rs.events
-            )
+            await self._add(run, role="assistant", content=assistant, text=rs.text)
         run.reason = "confirm"
 
     def _turn_tools(
@@ -2455,6 +2460,7 @@ class TurnEngine:
             # The result comes from the browser: data the person controls, never instructions.
             text = clip(await guard.tool_result(name, text), limit)
             rs.ok[cid] = ok
+            run.parts.settle(cid, ok)
             span = trace.event(
                 "tool",
                 f"client_tool_result {name}",
@@ -2479,6 +2485,7 @@ class TurnEngine:
         def timed_out(cids: list[str]) -> None:
             for cid in cids:
                 rs.ok[cid] = False
+                run.parts.settle(cid, ok=False)
                 name = called.get(cid, "client")
                 trace.event(
                     "tool",
@@ -2842,17 +2849,11 @@ class TurnEngine:
         emit: Any,
     ) -> None:
         """Search before the first model step and keep it in the conversation as a tool call."""
-        events: list[dict[str, Any]] = []
-
-        def show(e: dict[str, Any]) -> None:
-            events.append(e)
-            emit(e)
-
         call_id = f"kb_{run.turn_id.replace('-', '')[:16]}"
         args = {"query": text[:2_000]}
-        r = await self._race(run, self._knowledge_search(run, inp, kbs, args, guard, emit, show))
+        r = await self._race(run, self._knowledge_search(run, inp, kbs, args, guard, emit, emit))
         use = {"toolUse": {"id": call_id, "name": KNOWLEDGE_TOOL, "input": args}}
-        await self._add(run, role="assistant", content=[use], events=events or None)
+        await self._add(run, role="assistant", content=[use])
         await self._add(run, role="user", content=[_result(call_id, KNOWLEDGE_TOOL, r.ok, r.text)])
 
     async def _handoff_targets(self, run: TurnRun) -> dict[str, AgentDef]:
@@ -3034,18 +3035,59 @@ class TurnEngine:
     ) -> str | None:
         """Append a message to the conversation, wherever the application keeps it.
 
+        An assistant message keeps what the person was shown since the previous one, in order
+        (``evokai.sessions.parts``); ``events`` is for a user message (the decision on a
+        confirmation).
+
         Returns:
             The message id, where the store assigns one.
         """
         assert run.threads is not None  # ruff: ignore[assert] (set by open())
+        if role == "assistant":
+            events = run.parts.take(interrupted=interrupted) or None
         if run.storage == "evokai":
             stored, kept = self._guard(run).for_storage(content, text)
             if role == "user" and (stored != content or kept != text):
                 # Identifiers were masked: the question cannot be asked again as it was.
                 stored = [*stored, {rewrite.MASKED: True}]
             content, text = stored, kept
+            events = self._stored_parts(run, events)
         msg = ThreadMessage(role, content, text, events, interrupted=interrupted)
-        return await run.threads.add(msg, run.turn_id)
+        msg_id = await run.threads.add(msg, run.turn_id)
+        if role == "assistant":
+            run.last_answer = (msg, msg_id)
+        return msg_id
+
+    def _stored_parts(self, run: TurnRun, events: list[Any] | None) -> list[Any] | None:
+        """What is stored of a message's parts.
+
+        Masked like its text when ``pii.history`` is enforced.
+
+        Returns:
+            The parts to store.
+        """
+        guard = self._guard(run)
+        if not events or not guard.policy.enforced("pii.history"):
+            return events
+        return [guard.persisted(e) for e in events]
+
+    async def _keep_shown(self, run: TurnRun) -> None:
+        """Keep what the turn showed after its last stored answer with that answer.
+
+        An error, the tool-call cap's sentence: a turn that stored no answer keeps nothing of it.
+        """
+        if not run.parts.pending or run.last_answer is None:
+            return
+        msg, msg_id = run.last_answer
+        # The turn is over: a call still marked as running was cut off.
+        more = run.parts.take(interrupted=True)
+        if run.storage == "evokai":
+            more = self._stored_parts(run, more) or []
+            if msg_id is None:
+                return
+            await self.store.messages.append_events(run.who, msg_id, more)
+        # External storage: the message is returned to the application with them.
+        msg.events = [*(msg.events or []), *more]
 
     def _threads(
         self, storage: str, who: Who, session_id: str, thread_id: str, inp: TurnInput

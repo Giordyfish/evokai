@@ -1207,6 +1207,20 @@ class MessageRepository(_Repo):
             rows = (await s.execute(q)).scalars().all()
         return list(reversed(rows))
 
+    async def append_events(self, w: Who, message_id: str, events: list[Any]) -> None:
+        """Add what was shown after a message was stored to its parts (``sessions.parts``)."""
+        if not events:
+            return
+        async with self.db.session() as s:
+            q = sa.select(m.Message).where(
+                m.Message.id == message_id,
+                m.Message.application_id == w.application_id,
+                m.Message.subject == w.subject,
+            )
+            row = (await s.execute(q)).scalar_one_or_none()
+            if row is not None:
+                row.events = [*(row.events or []), *events]
+
     async def set_feedback(self, w: Who, message_id: str, value: int | None) -> bool:
         """Thumbs up/down on a message.
 
