@@ -116,6 +116,10 @@ async def bootstrap(
         )
         if k in spec
     }
+    if spec.get("stt_filter") is not None:
+        if not isinstance(spec["stt_filter"], bool):
+            raise ConfigError("bootstrap: stt_filter must be true or false")
+        in_defaults["stt_filter"] = spec["stt_filter"]
     if spec.get("markup") is not None:
         try:
             markup = MarkupDef.model_validate(spec["markup"])

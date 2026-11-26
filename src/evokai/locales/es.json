@@ -42,6 +42,19 @@
     "channel.notAvailable": "El asistente no está disponible en este canal."
   },
   "speech": {
+    "hallucinations": [
+      "subtítulos realizados por la comunidad de amara.org",
+      "subtítulos por la comunidad de amara.org",
+      "subtitulado por *",
+      "gracias por ver el video",
+      "gracias por ver el vídeo",
+      "gracias por ver",
+      "suscríbete",
+      "suscríbete al canal",
+      "no olvides suscribirte",
+      "nos vemos en el próximo video",
+      "nos vemos en el próximo vídeo"
+    ],
     "redactions": {
       "taxCode": "el número de identificación fiscal",
       "iban": "el IBAN",

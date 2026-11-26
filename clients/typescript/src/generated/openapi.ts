@@ -4862,6 +4862,11 @@ export interface paths {
          * Transcribe
          * @description Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.
          *
+         *     ``hint`` lists names and terms the person is likely to say (product names, people, jargon),
+         *     separated by commas, for the engines that take a vocabulary; the others ignore it. Phrases
+         *     recognisers make up from silence are left out of the text unless the application turned the
+         *     filter off.
+         *
          *     Returns:
          *         The text, the audio's length and the engine.
          *
@@ -5496,6 +5501,8 @@ export interface components {
             security_event_ttl_days?: number | null;
             /** Storage Mode */
             storage_mode?: ("evokai" | "external") | null;
+            /** Stt Filter */
+            stt_filter?: boolean | null;
             /** Subject Daily Usd */
             subject_daily_usd?: number | null;
             /** Subject Monthly Usd */
@@ -14844,6 +14851,7 @@ export interface operations {
         parameters: {
             query?: {
                 language?: string | null;
+                hint?: string | null;
             };
             header?: never;
             path?: never;

@@ -42,6 +42,16 @@
     "channel.notAvailable": "Asistentul nu este disponibil pe acest canal."
   },
   "speech": {
+    "hallucinations": [
+      "subtitrare realizată de comunitatea amara.org",
+      "subtitrarea realizată de *",
+      "mulțumesc pentru vizionare",
+      "vă mulțumesc pentru vizionare",
+      "abonați-vă",
+      "abonați-vă la canal",
+      "nu uitați să vă abonați",
+      "ne vedem în următorul videoclip"
+    ],
     "redactions": {
       "taxCode": "codul fiscal",
       "iban": "IBAN-ul",

@@ -558,6 +558,7 @@ application:
   conversation_ttl_days: 7
   storage_mode: evokai
   voice_engine: browser
+  stt_filter: true              # drop the phrases recognisers make up from silence (docs/voice.md)
   locale: en
   timezone: Europe/Dublin
   messages: {limit.app: "..."}
