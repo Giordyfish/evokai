@@ -8,6 +8,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- The deployment's bare address (`/`) and the API's base (`/agent`) redirect to the console when it is on, instead of
+  answering 404.
+
 ### Fixed
 
 - Releases publish the `evokai` alias on PyPI again: since the release reuses the CI run, its "Gates" job is skipped
