@@ -165,6 +165,50 @@ async def test_mint_monitor_mode_mints_and_records(env: Env) -> None:
     assert e["control"] == "input.injection" and e["action"] == "logged"
     assert e["details"] == {"module": "persona", "parameter": "name"}
     assert not e.get("snippet")
+    # The same value sent again for the conversation was scanned when it came: no second event.
+    cid = r.json()["conversationId"]
+    same = {"persona": {"on": True, "params": {"name": INJECTION[:40]}}}
+    r = await _mint(env, conversationId=cid, modules=same)
+    assert r.status_code == 200, r.text
+    assert len(await _events(env)) == 1
+
+
+async def test_a_classifier_event_of_a_module_value_keeps_its_reason(env: Env) -> None:
+    from tests.test_guard_classifiers import FakeClassifier
+
+    await _setup(env)
+    env.svc.guard.classifiers.register(FakeClassifier(fail=RuntimeError("boom")))
+    r = await env.client.put(
+        "/agent/v1/admin/security",
+        json={"injection": {"classifier": "bedrock_guardrails"}},
+        headers=_adm(env),
+    )
+    assert r.status_code == 200, r.text
+    r = await _mint(env, modules={"persona": {"on": True, "params": {"name": "Ada"}}})
+    assert r.status_code == 200, r.text
+    (e,) = await _events(env, rule="classifier_unavailable")
+    assert e["details"] == {
+        "classifier": "bedrock_guardrails",
+        "reason": "boom",  # why the value was not classified (it was lost)
+        "module": "persona",
+        "parameter": "name",
+    }
+    assert "Ada" not in str(e)
+
+
+async def test_a_refused_mint_scans_nothing(env: Env) -> None:
+    import sqlalchemy as sa
+
+    from evokai.db import models as m
+
+    await _setup(env)
+    cid = (await _mint(env)).json()["conversationId"]
+    async with env.svc.store.db.session() as s:
+        await s.execute(sa.update(m.Session).where(m.Session.id == cid).values(status="closed"))
+    bad = {"persona": {"on": True, "params": {"name": INJECTION[:40]}}}
+    r = await _mint(env, conversationId=cid, modules=bad)
+    assert (r.status_code, r.json()["error"]) == (409, "closed")
+    assert await _events(env) == []  # refused first, so nothing scanned nor recorded
 
 
 async def test_continue_without_modules_keeps_choice(env: Env) -> None:
@@ -182,6 +226,12 @@ async def test_continue_without_modules_keeps_choice(env: Env) -> None:
     after = await _options(env, cid)
     assert after is not None and after["locale"] == "en"
     assert after["modules"] == before["modules"]
+    # "" goes back to the application's locale (the playground's «Application locale»).
+    r = await _mint(env, conversationId=cid, locale="")
+    assert r.status_code == 200, r.text
+    cleared = await _options(env, cid)
+    assert cleared is not None and cleared["locale"] is None
+    assert cleared["modules"] == before["modules"]
 
 
 async def test_continue_with_modules_replaces_choice(env: Env) -> None:

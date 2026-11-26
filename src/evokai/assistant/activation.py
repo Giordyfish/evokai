@@ -499,16 +499,18 @@ async def _trial(
         }
         with contextlib.suppress(Exception):
             await asyncio.shield(store.evals.finish_run(run.id, status, summary))
-        if status == "done":
-            with contextlib.suppress(Exception):
-                await asyncio.shield(_record(svc, app_id, model, numbers))
+        # The recorded server's token goes whatever the outcome (a failed, capped or interrupted
+        # try kept it); a try still running holds its own copy, read when it started.
+        with contextlib.suppress(Exception):
+            await asyncio.shield(_record(svc, app_id, model, numbers if status == "done" else None))
 
 
-async def _record(svc: Services, app_id: str, model: str, numbers: dict[str, Any]) -> None:
+async def _record(svc: Services, app_id: str, model: str, numbers: dict[str, Any] | None) -> None:
     app = await svc.store.applications.get(app_id)
     if app is None:
         return
     defaults = dict(app.defaults or {})
-    defaults[MEASURED_KEY] = {**(defaults.get(MEASURED_KEY) or {}), model: numbers}
+    if numbers is not None:
+        defaults[MEASURED_KEY] = {**(defaults.get(MEASURED_KEY) or {}), model: numbers}
     defaults.pop("eval_credential", None)
     await svc.store.applications.update(app_id, defaults=defaults)

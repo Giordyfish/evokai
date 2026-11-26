@@ -2953,6 +2953,7 @@ export const en = {
   "reset.noPreview": "No preview",
   "reset.doneToast": "Reset done",
   "reset.notReset": "Not reset",
+  "reset.planChanged": "Something changed since the preview: here is the new one. Check it, then reset again.",
   "reset.kind.agent": "Agent",
   "reset.kind.mcp_server": "MCP server",
   "reset.kind.skill": "Skill",

@@ -1147,7 +1147,12 @@ async def put_prompt(
         a,
         "prompt.put",
         target=f"{name} v{version}",
-        after={"text": body.text, "parameters": parameters},
+        after={
+            "text": body.text,
+            "parameters": parameters,
+            "description": description,
+            "data": data,  # a module's data table shapes its text as much as the text does
+        },
     )
     return {"version": version}
 

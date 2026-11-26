@@ -257,7 +257,8 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
       tags: tags.split(/[\s,]+/).filter(Boolean),
       ...(prev ? { conversationId: prev.conversationId } : {}),
       ...(Object.keys(choices).length ? { modules: choices } : {}),
-      ...(locale ? { locale } : {}),
+      // Always sent: "" (the application's locale) clears what this conversation chose before.
+      locale,
     })
     optionsChanged.current = false
     token.current = next

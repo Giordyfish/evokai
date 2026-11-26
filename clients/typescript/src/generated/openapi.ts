@@ -600,7 +600,8 @@ export interface paths {
          *
          *     Raises:
          *         BadRequest: The typed slug is not the application's (400 ``confirm``).
-         *         Conflict: A system application this version of Evokai does not ship.
+         *         Conflict: A system application this version of Evokai does not ship, or what the reset
+         *             would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).
          */
         post: operations["reset_application_agent_v1_admin_application_reset_post"];
         delete?: never;
@@ -621,10 +622,10 @@ export interface paths {
          * @description Everything a reset of the system application deletes or restores (owner).
          *
          *     Each deleted item carries its definition without secrets (``item``), for the owner to keep
-         *     before resetting.
+         *     before resetting. ``plan`` fingerprints the items: the reset takes it back.
          *
          *     Returns:
-         *         slug and items (kind, name, action: ``delete`` or ``restore``, item).
+         *         slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.
          *
          *     Raises:
          *         Conflict: A system application this version of Evokai does not ship.
@@ -3571,7 +3572,8 @@ export interface paths {
          *         deployment's facts the console needs (model allow-list, voice enabled).
          *
          *     Raises:
-         *         Unauthorized: Not logged in, the login's key was revoked or its user disabled.
+         *         Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
+         *             operator key changed.
          */
         get: operations["me_agent_v1_console_me_get"];
         put?: never;
@@ -7012,6 +7014,16 @@ export interface components {
             page?: components["schemas"]["PageContext"] | null;
         };
         /**
+         * Reset
+         * @description The typed slug and the plan of the preview the person saw.
+         */
+        Reset: {
+            /** Confirm */
+            confirm: string;
+            /** Plan */
+            plan: string;
+        };
+        /**
          * Residency
          * @description Where an application's data lives and where its models may run.
          */
@@ -8771,7 +8783,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Unlock"];
+                "application/json": components["schemas"]["Reset"];
             };
         };
         responses: {

@@ -842,7 +842,9 @@ class TurnGuard:
         return content.origin_hosts(self.origins) + list((links.allow if links else None) or [])
 
     def prompt_shingles(self) -> set[str]:
-        """Shingles of the agent's instructions (not of its skills, which it may quote).
+        """Shingles of the agent's instructions and prompt modules (not of its skills).
+
+        Skills are left out: the agent may quote them.
 
         Returns:
             The shingles.
@@ -850,6 +852,17 @@ class TurnGuard:
         if self._shingles is None:
             self._shingles = output.shingles(self.instructions)
         return self._shingles
+
+    def add_prompt_text(self, *texts: str) -> None:
+        """Add text the system prompt carries beside the instructions, for the leak check.
+
+        The session's prompt modules go in as written: their values, which the person gave, are
+        not the prompt's own.
+        """
+        extra = [t for t in texts if t and t.strip()]
+        if extra:
+            self.instructions = "\n\n".join([self.instructions, *extra])
+            self._shingles = None
 
     def after_output(self, f: output.OutputFilter) -> None:
         """Record what the output checks found in a finished step."""

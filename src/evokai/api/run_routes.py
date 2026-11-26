@@ -63,7 +63,8 @@ class RunRequest(BaseModel):
     """Prompt modules of the agent to switch on or off and fill for this run, as in a session
     token (``POST /v1/session-tokens``), with the same checks."""
     locale: str | None = Field(default=None, max_length=35)
-    """The run's language, a BCP 47 tag with a shipped pack (400 ``unknown_locale`` without)."""
+    """The run's language, a BCP 47 tag with a shipped pack (400 ``unknown_locale`` without);
+    omitted or ``""``: the application's locale."""
     clientTools: list[ClientToolDef] = Field(default_factory=list, max_length=MAX_CLIENT_TOOLS + 1)
     """Custom client tools for this run (``docs/client-tools.md``), granted by ``client:session``.
     Nobody can answer mid-run, so none may wait (400 ``client_tool_wait``): their calls come back
@@ -119,7 +120,7 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
     await _check_client_tools(svc, application, agent, body.clientTools)
     options = None
     if body.modules is not None or body.locale is not None:
-        if body.locale is not None and pack_language(body.locale) is None:
+        if body.locale and pack_language(body.locale) is None:
             raise BadRequest(
                 f"No language pack for the locale {body.locale}.", code="unknown_locale"
             )
@@ -136,7 +137,7 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
         )
         for module, values in cleaned.items():
             modules[module]["params"] = {**modules[module]["params"], **values}
-        options = {"modules": modules, "locale": body.locale}
+        options = {"modules": modules, "locale": body.locale or None}
     text = body.input if isinstance(body.input, str) else None
     messages = None if isinstance(body.input, str) else [x.model_dump() for x in body.input]
     result = await AgentRunner(svc.engine).run(

@@ -226,7 +226,7 @@ async def test_admin_mcp_cannot_read_others_conversations(env: Env) -> None:
     r = await env.client.get("/agent/v1/admin/traces", headers=bearer)
     assert [t["id"] for t in r.json()["items"]] == [ids["b_trace"]]
     # An owner's delegation reads no more: the assistant never lists other people's conversations.
-    owner = ConsoleLogin("op", None, int(time.time()) + 3600)
+    owner = env.operator_login()
     token = mint_delegation(env.svc.keyring, owner, ids["app"], "owner")
     r = await env.client.get(
         "/agent/v1/admin/conversations", headers={"Authorization": f"Bearer {token}"}

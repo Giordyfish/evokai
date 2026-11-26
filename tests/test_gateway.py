@@ -19,7 +19,6 @@ from evokai.assistant import delegation
 from evokai.core.security import generate_key
 from evokai.gateway import checks, scan
 from evokai.gateway.relay import Relay, Usage
-from evokai.identity import console
 from tests.conftest import Env
 
 OPERATOR_KEY = "evk_op_gateway_tests_operator_key_0123456789"  # gitleaks:allow
@@ -542,7 +541,7 @@ async def test_gateways_are_never_applications(gate: Gate) -> None:
     ):
         assert (await env.client.get(path, headers=pick)).status_code == 200, path
     # The console assistant and the admin MCP server's list_applications never see it.
-    login = console.ConsoleLogin("op", None, int(time.time()) + 600)
+    login = env.operator_login(600)
     token = delegation.mint_delegation(env.svc.keyring, login, delegation.ALL, "owner")
     names = [a["slug"] for a in await delegation.applications(env.svc, token)]
     assert "development" not in names and "test" in names

@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, model_validator
 from evokai import audit
 from evokai.agents.definitions import AgentDef
 from evokai.agents.skills import SkillError, parse_skill_text
-from evokai.api.deps import admin_app, console_login, operator, services
+from evokai.api.deps import admin_app, console_login, login_alive, operator, services
 from evokai.api.grants_routes import grant_view
 from evokai.api.trace_routes import note_view
 from evokai.api.trace_routes import summary as trace_summary
@@ -146,7 +146,8 @@ async def _resolve(key: str, svc: Services) -> console.ConsoleLogin:
     expires = int(time.time()) + svc.settings.console_session_ttl
     try:
         if console.is_operator_key(key, svc.settings.operator_key):
-            return console.ConsoleLogin("op", None, expires)
+            mark = console.operator_fingerprint(svc.keyring, svc.settings.operator_key)
+            return console.ConsoleLogin("op", None, expires, mark)
         app = await svc.auth.application(key, admin=True)
         return console.ConsoleLogin("adm", app.application_id, expires, app.key_id)
     except AppError as e:
@@ -168,11 +169,7 @@ async def login(body: Login, request: Request, response: Response, svc: Svc) -> 
     await _throttle(request, svc)
     if body.code is not None:
         held = _login_of(await svc.shared.take(_code_key(body.code)))
-        alive = held is not None and (
-            held.kind != "adm"
-            or not held.key_id
-            or await svc.auth.key_alive(held.key_id, held.application_id or "")
-        )
+        alive = held is not None and await login_alive(svc, held)
         if held is None or not alive:
             await _failed(request, svc)
             await audit.record(request, None, "console.login_failed", target="code")
@@ -243,7 +240,8 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
         deployment's facts the console needs (model allow-list, voice enabled).
 
     Raises:
-        Unauthorized: Not logged in, the login's key was revoked or its user disabled.
+        Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
+            operator key changed.
     """
     value = request.cookies.get(console.COOKIE)
     if not value:
@@ -251,6 +249,8 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
     who = console.read(svc.keyring, value)
     if who.kind == "sso" and not await svc.auth.user_active(who.user_id or ""):
         raise Unauthorized("This console user was disabled.", code="console")
+    if who.kind == "op" and not await login_alive(svc, who):
+        raise Unauthorized("The operator key of this login changed.", code="console")
     prefix = None
     if who.kind == "adm" and who.key_id:
         key = await svc.store.applications.key(who.key_id)
@@ -261,7 +261,7 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
         "kind": who.kind,
         "applicationId": who.application_id,
         "expiresAt": who.expires_at,
-        "keyId": who.key_id,
+        "keyId": who.key_id if who.kind == "adm" else None,
         "keyPrefix": prefix,
         "email": who.email,
         "name": who.name,

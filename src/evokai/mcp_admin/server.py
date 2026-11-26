@@ -22,6 +22,7 @@ tools are built on the first request, so starting the service does not pay for t
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import json
 import re
@@ -33,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import yaml
 from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.dependencies import get_http_headers, get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, RouteMap
 from fastmcp.tools import Tool
@@ -47,7 +48,7 @@ from evokai.identity.auth import bearer
 from evokai.identity.console import APPLICATION_HEADER
 from evokai.identity.roles import at_least, required
 from evokai.mcp_admin.tools import ADMIN_TOOLS, ToolSpec, by_route
-from evokai.mcp_admin.via import VIA_HEADER, via_value
+from evokai.mcp_admin.via import CLIENT_HEADER, VIA_HEADER, via_value
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -75,7 +76,7 @@ _application: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 
 
 class ForwardAuth(httpx.Auth):
-    """Carries the MCP caller's ``Authorization`` onto the in-process request, and marks it."""
+    """Carries the MCP caller's ``Authorization`` and address onto the in-process request."""
 
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response]:
         """Set the headers.
@@ -89,6 +90,10 @@ class ForwardAuth(httpx.Auth):
         if application := _application.get():
             request.headers[APPLICATION_HEADER] = application
         request.headers[VIA_HEADER] = via_value()
+        with contextlib.suppress(RuntimeError):
+            caller = get_http_request().client
+            if caller is not None:
+                request.headers[CLIENT_HEADER] = caller.host
         yield request
 
 

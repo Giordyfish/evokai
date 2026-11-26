@@ -52,7 +52,7 @@ async def test_session_needs_a_console_login(env: Env) -> None:
     await _system(env)
     r = await env.client.post(URL, headers={"Authorization": f"Bearer {env.admin_key}"})
     assert r.status_code == 403 and r.json()["error"] == "console_required"
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
     r = await env.client.post(URL, headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403

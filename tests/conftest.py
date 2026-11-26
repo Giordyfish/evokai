@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import sys
+import time
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ from evokai.main import create_app
 from evokai.services import Services, build_services
 
 ORIGIN = "http://app.test"
+OPERATOR_KEY = "evk_op_conftest_operator_key_0123456789"  # gitleaks:allow
 MCP_URL = "http://app.test/mcp"
 
 
@@ -288,6 +290,19 @@ class Env:
         )
         assert r.status_code == 200, r.text
         return r.json()
+
+    def operator_login(self, seconds: int = 3600) -> Any:
+        """A console login made with the operator key (configured here if it is not).
+
+        Returns:
+            The ``ConsoleLogin``, bound to the operator key as a real login is.
+        """
+        from evokai.identity import console
+
+        settings = self.svc.settings
+        settings.operator_key = settings.operator_key or OPERATOR_KEY
+        mark = console.operator_fingerprint(self.svc.keyring, settings.operator_key)
+        return console.ConsoleLogin("op", None, int(time.time()) + seconds, mark)
 
     async def chat(self, token: str, **body: Any) -> list[dict[str, Any]]:
         r = await self.client.post(
