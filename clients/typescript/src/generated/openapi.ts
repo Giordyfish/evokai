@@ -2829,7 +2829,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Voice
+         * @description A voice of the deployment's catalog, with how its engine speaks with it (``settings``).
+         *
+         *     Returns:
+         *         provider, voiceId, language, name, gender, region, settings (null when the engine's
+         *         defaults apply).
+         *
+         *     Raises:
+         *         NotFound: No such voice.
+         */
+        get: operations["get_voice_agent_v1_admin_voices__provider___voice_id__get"];
         /**
          * Put Voice
          * @description Add or replace a voice in the deployment's catalog (owner).
@@ -12038,6 +12049,40 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_voice_agent_v1_admin_voices__provider___voice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                voice_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

@@ -1265,6 +1265,31 @@ async def put_voice(
     return {"ok": True}
 
 
+@router.get("/voices/{provider}/{voice_id}")
+async def get_voice(provider: str, voice_id: str, svc: Svc, _a: Admin) -> dict[str, Any]:
+    """A voice of the deployment's catalog, with how its engine speaks with it (``settings``).
+
+    Returns:
+        provider, voiceId, language, name, gender, region, settings (null when the engine's
+        defaults apply).
+
+    Raises:
+        NotFound: No such voice.
+    """
+    v = await svc.store.voices.get(provider, voice_id)
+    if v is None:
+        raise NotFound("No such voice.")
+    return {
+        "provider": v.provider,
+        "voiceId": v.voice_id,
+        "language": v.language,
+        "name": v.name,
+        "gender": v.gender,
+        "region": v.region,
+        "settings": v.settings,
+    }
+
+
 @router.get("/bug-reports")
 async def bug_reports(svc: Svc, a: Admin) -> dict[str, Any]:
     """Recent problem reports.

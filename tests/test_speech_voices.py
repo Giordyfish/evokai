@@ -569,3 +569,48 @@ async def test_an_elevenlabs_voice_on_a_tag_model_speaks_tags_without_shifting_t
         )
         body = eleven.requests[-1]["json"]
         assert body["previous_request_ids"] == ["el-2"] and "previous_text" not in body
+
+
+async def test_an_admin_reads_a_catalogue_voice_with_its_settings(senv: Env) -> None:
+    tuned = {"model": "eleven_flash_v2_5", "speed": 1.1, "elevenlabs": {"stability": 0.4}}
+    assert (await _put_voice(senv, "elevenlabs", "elena", tuned)).is_success
+    admin = {"Authorization": f"Bearer {senv.admin_key}"}
+    r = await senv.client.get("/agent/v1/admin/voices/elevenlabs/elena", headers=admin)
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["voiceId"] == "elena" and got["name"] == "Elena"
+    assert got["settings"]["model"] == "eleven_flash_v2_5"
+    assert got["settings"]["elevenlabs"] == {"stability": pytest.approx(0.4)}
+    r = await senv.client.get("/agent/v1/admin/voices/elevenlabs/nobody", headers=admin)
+    assert r.status_code == 404
+
+
+async def test_a_refused_reference_is_dropped_and_the_earlier_text_followed(
+    senv: Env, eleven: FakeElevenLabs
+) -> None:
+    app = _app(senv, voice_tts="elevenlabs")
+    tok = (await senv.token())["token"]
+    post = eleven.post
+
+    def refuse_references(url: str, *, json: dict[str, Any], **kwargs: Any) -> _Request:
+        if "previous_request_ids" in json:
+            eleven.requests.append({"url": url, "json": json, **kwargs})
+            return _Request(_Response(400, {}, [b'{"detail": "unknown request id"}\n']))
+        return post(url, json=json, **kwargs)
+
+    async with _client(app) as c:
+        r = await c.post("/agent/v1/session/speech", json={"text": "First."}, headers=_h(tok))
+        first = _events(r.text)[0][1]
+        eleven.post = refuse_references  # type: ignore[method-assign]
+        r = await c.post(
+            "/agent/v1/session/speech",
+            json={"text": "Second.", "after": [first["speechId"]]},
+            headers=_h(tok),
+        )
+        assert r.status_code == 200, r.text
+        ev = _events(r.text)
+        assert "error" not in [n for n, _ in ev]
+        assert any(n == "audio" for n, _ in ev) and ev[-1][0] == "done"
+        refused, retried = eleven.requests[-2]["json"], eleven.requests[-1]["json"]
+        assert refused["previous_request_ids"] == ["el-1"]
+        assert "previous_request_ids" not in retried and retried["previous_text"] == first["spoken"]

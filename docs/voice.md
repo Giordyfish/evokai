@@ -56,7 +56,8 @@ suit a few sessions; for more, run the model as a server of its own (Piper's HTT
 ## Catalogue voices
 
 An owner tunes a catalogue voice once (`PUT /v1/admin/voices/{provider}/{voice_id}`, the provider being its engine)
-and every application speaking with it sounds the same, in server speech and WebRTC sessions. Its `settings` are an
+and every application speaking with it sounds the same, in server speech and WebRTC sessions; `GET` on the same path
+reads it back with its settings. Its `settings` are an
 engine-neutral core and the engine's own options under its name (`{"speed": 1.05, "elevenlabs": {"style": 0.2}}`):
 
 - `model`: the engine's model for this voice instead of the deployment's (`elevenlabs`, `openai`).
@@ -110,7 +111,9 @@ that can follow earlier speech, Evokai keeps the voice going:
   Unknown ids and those of another conversation are ignored.
 
 References stay in the instance's memory for two hours, never stored, and serve only the same engine, voice and
-model; else the earlier text stands in. Other engines and `eleven_v3` ignore this. What is counted does not change.
+model; else the earlier text stands in. An engine that refuses a reference before any audio (one it no longer
+knows) is asked once more without it, following the earlier text. Other engines and `eleven_v3` ignore this. What is
+counted does not change.
 
 ### Character times
 

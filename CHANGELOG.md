@@ -10,6 +10,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- `GET /v1/admin/voices/{provider}/{voice_id}` reads a catalogue voice back with its `settings`. A synthesis whose
+  engine refuses a reference to earlier speech before any audio is tried once more without it, following the earlier
+  text.
 - Guided tours in the console: `first-steps` (applications, an agent, the playground), `security` (system policy, an
   application's modes, versions, policy tests, events), `usage-traces` (usage, forecast, traces) and `gateway`
   (gateways, people and keys, policy, usage, events, connecting Claude Code and Codex, the notice). A spotlight on

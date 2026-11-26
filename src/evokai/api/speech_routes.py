@@ -271,7 +271,14 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
         failed = False
         asked = False
         ref: str | None = None
-        if said.strip():
+        # A synthesis that follows earlier speech by reference is tried again once without the
+        # references when the engine refuses it before any audio (a reference it no longer
+        # knows, say): the voice then follows the earlier text instead.
+        tries = [refs, []] if refs else [refs]
+        for attempt, follow_refs in enumerate(tries):
+            if not said.strip():
+                break
+            last = attempt == len(tries) - 1
             try:
                 own = {"settings": settings} if settings else {}
                 service = make_tts(
@@ -287,10 +294,12 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
                 )
                 return
             follow = getattr(service, "follow", None)
-            if callable(follow) and (refs or before or next_text):
-                follow(refs, before, next_text)
+            if callable(follow) and (follow_refs or before or next_text):
+                follow(follow_refs, before, next_text)
             encoder = OpusEncoder(body.sampleRate) if body.format == "opus" else None
             asked = True
+            failed = False
+            sent = False
             try:
                 async for p in synthesize(
                     service,
@@ -304,21 +313,25 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
                         samples += len(p.audio) // 2
                         data = encoder.push(p.audio) if encoder else p.audio
                         if data:
+                            sent = True
                             yield _sse("audio", {"data": base64.b64encode(data).decode(), "ms": ms})
                     elif p.kind == "word" and caps.words:
                         for kind, event in aligner.add(p.word, p.ms):
+                            sent = True
                             yield _sse(kind, event)
                     elif p.kind == "chars" and chars is not None:
                         event = chars.add(p.chars, p.starts, p.ends)
                         if event is not None:
+                            sent = True
                             yield _sse("chars", event)
                     elif p.kind == "viseme":
+                        sent = True
                         yield _sse("viseme", {"id": p.viseme, "time": round(p.ms)})
                     elif p.kind == "error":
                         failed = True
                         break
                 ref = getattr(service, "speech_ref", None)
-                if encoder:
+                if encoder and not (failed and not sent and not last):
                     tail = encoder.close()
                     if tail:
                         yield _sse("audio", {"data": base64.b64encode(tail).decode(), "ms": None})
@@ -332,6 +345,9 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
                         _record(svc, s, sess, agent, "tts", engine, characters=len(said),
                                 cost_micro_usd=round(usd * 1e6))
                     )  # fmt: skip
+            if not failed or sent or last:
+                break
+            log.info("speech_retry_without_references", extra={"engine": engine})
         duration = round(samples / body.sampleRate * 1000)
         if failed:
             yield _sse("error", {"code": "tts_failed", "message": "The speech engine failed."})

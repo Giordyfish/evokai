@@ -13535,6 +13535,58 @@
       }
     },
     "/agent/v1/admin/voices/{provider}/{voice_id}": {
+      "get": {
+        "description": "A voice of the deployment's catalog, with how its engine speaks with it (``settings``).\n\nReturns:\n    provider, voiceId, language, name, gender, region, settings (null when the engine's\n    defaults apply).\n\nRaises:\n    NotFound: No such voice.",
+        "operationId": "get_voice_agent_v1_admin_voices__provider___voice_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Voice Agent V1 Admin Voices  Provider   Voice Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Voice",
+        "tags": [
+          "admin"
+        ]
+      },
       "put": {
         "description": "Add or replace a voice in the deployment's catalog (owner).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: Settings its engine does not take.",
         "operationId": "put_voice_agent_v1_admin_voices__provider___voice_id__put",
