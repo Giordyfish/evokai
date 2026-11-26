@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json
 import os
 import sys
@@ -390,9 +391,57 @@ async def make_env(
     finally:
         policies.set_system(0, None)
         await client.aclose()
+        hung = await _gateway_writes_hung(svc)
         await svc.close()
         if schema:
             await _drop_schema(settings, schema)
+        if hung:
+            # The gateway's close drops (cancels and logs) records still pending after its wait:
+            # in a test that is a bug to find, never a record silently lost.
+            print(hung, file=sys.__stderr__, flush=True)
+            pytest.fail(hung, pytrace=False)
+
+
+async def _gateway_writes_hung(svc: Services) -> str | None:
+    """What the gateway is still writing at the end of a test, if it does not finish in time.
+
+    Returns:
+        None when every record was written; else the pending writes with where they wait and,
+        on Postgres, the sessions and the locks nobody was granted.
+    """
+    gw = svc.gateway
+    if gw is None or not gw._writes or await gw.idle(GATEWAY_WAIT_SECONDS):
+        return None
+    lines = [
+        f"{os.environ.get('PYTEST_CURRENT_TEST', '?')}: {len(gw._writes)} gateway record(s) still "
+        f"being written after {GATEWAY_WAIT_SECONDS:.0f} s (the service's close drops them):"
+    ]
+    for t in gw._writes:
+        buf = io.StringIO()
+        t.print_stack(file=buf)
+        lines += [f"  {_describe(t)}", buf.getvalue()]
+    if svc.db.engine.dialect.name == "postgresql":
+        try:
+            async with svc.db.engine.connect() as c:
+                for row in await c.execute(sa.text(PG_SESSIONS)):
+                    lines.append(f"  session {tuple(row)}")
+                for row in await c.execute(sa.text(PG_WAITING_LOCKS)):
+                    lines.append(f"  waiting lock {tuple(row)}")
+        except Exception as e:  # the diagnosis must not hide the failure
+            lines.append(f"  (no pg_stat_activity: {type(e).__name__})")
+    return "\n".join(lines)
+
+
+GATEWAY_WAIT_SECONDS = 8.0
+"""How long the end of a test waits for the gateway's records (its close waits 10 s)."""
+PG_SESSIONS = (
+    "select pid, state, wait_event_type, wait_event, now() - xact_start, left(query, 160) "
+    "from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()"
+)
+PG_WAITING_LOCKS = (
+    "select pid, locktype, mode, relation::regclass::text, transactionid::text "
+    "from pg_locks where not granted"
+)
 
 
 LEAK_WAIT_SECONDS = 5.0

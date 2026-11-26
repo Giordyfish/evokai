@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from tests.conftest import _cancel_hard
+from tests.conftest import Env, _cancel_hard
 
 
 async def test_a_task_that_swallows_one_cancellation_is_cancelled_again_and_ends() -> None:
@@ -98,3 +98,22 @@ def test_the_loops_closing_names_a_task_that_ignores_it(monkeypatch: pytest.Monk
     with pytest.raises(pytest.fail.Exception, match="deaf-task"):
         runner.close()  # without the bound, this waited for the task (forever, for a deaf one)
     left[0]._log_destroy_pending = False  # ty: ignore[missing-attribute]  # expected, not a leak
+
+
+async def test_a_gateway_record_that_never_ends_is_named_at_the_end_of_the_test(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tests.conftest as conftest
+
+    monkeypatch.setattr(conftest, "GATEWAY_WAIT_SECONDS", 0.2)
+    assert await conftest._gateway_writes_hung(env.svc) is None
+    stuck = asyncio.Event()
+
+    async def write_that_never_ends() -> None:
+        await stuck.wait()
+
+    env.svc.gateway._later(write_that_never_ends())
+    found = await conftest._gateway_writes_hung(env.svc)
+    assert found is not None and "write_that_never_ends" in found
+    stuck.set()  # done: the real teardown finds nothing pending
+    await env.svc.gateway.idle(5)
