@@ -86,7 +86,7 @@ A segment whose engine performs speech tags (`tts_caps`, an ElevenLabs v3 model)
 ## Transcription
 
 ```http
-POST /v1/session/transcribe?language=it-IT&hint=Evokai,%20Pipecat
+POST /v1/session/transcribe?language=it-IT
 Content-Type: audio/webm
 
 <the recording>
@@ -94,9 +94,8 @@ Content-Type: audio/webm
 
 WAV, WebM, Ogg, MP3 or M4A, up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB, else 413 `too_large` or `audio_too_large`) and
 `EVOKAI_TRANSCRIBE_MAX_SECONDS` (120, else 400 `audio_too_long`); anything else is 400 `audio_invalid`. The answer is
-`{text, durationMs, engine}`. `language` defaults to the session's; `hint` is an optional
-[vocabulary hint](#vocabulary-hints), and phrases recognisers [make up from silence](#made-up-phrases) are left out
-of `text`.
+`{text, durationMs, engine}`. `language` defaults to the session's; `hint` is a
+[vocabulary hint](#vocabulary-hints).
 
 ## Streaming recognition
 
@@ -106,19 +105,16 @@ once with a code, so a browser sees why: 4400 (a token in the query string), 440
 the application does not allow, or speech not granted), 4409 (the session already has a socket), 4429 (too many
 requests with this token, or a cap reached), 4500 (the engine is not available). Then:
 
-1. the client sends `{"type": "start", "sampleRate": 16000, "language"?: "it-IT", "hint"?: "Evokai, Pipecat",
-   "vad"?: {"confidence", "startSecs", "stopSecs", "minVolume"} | false}` (8000 or 16000 Hz; voice activity detection
-   is Silero's, with these parameters, unless `vad` is `false`; a `hint` has at most 500 characters);
+1. the client sends `{"type": "start", "sampleRate": 16000, "language"?: "it-IT", "hint"?, "vad"?: {"confidence",
+   "startSecs", "stopSecs", "minVolume"} | false}` (8000 or 16000 Hz; Silero's voice activity detection, or none);
 2. the server answers `{"type": "ready"}`;
-3. the client sends 16-bit mono PCM as binary messages, and `{"type": "commit"}` whenever it decides an utterance
-   ended; the server sends `{"type": "speech_start", "ms"}` and `{"type": "speech_end", "ms"}` as the voice activity
-   detection hears them, `{"type": "interim", "text"}` and `{"type": "final", "text"}`, and `{"type": "warning",
-   "code", "message"}` for a commit it ignored;
+3. the client sends 16-bit mono PCM as binary messages and any `{"type": "commit"}`; the server sends
+   `{"type": "speech_start", "ms"}`, `{"type": "speech_end", "ms"}`, `{"type": "interim", "text"}`,
+   `{"type": "final", "text"}` and `{"type": "warning", "code", "message"}`;
 4. the client sends `{"type": "stop"}`; the server ends the open utterance, sends what is left,
    `{"type": "end", "durationMs"}`, and closes.
 
-A malformed `start` (another sample rate, a `hint` too long) ends with `{"type": "error", "code": "start"}` and close
-code 4400.
+A malformed `start` ends with `{"type": "error", "code": "start"}` and close code 4400.
 
 A stream with more audio than `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` (300), or open 10 seconds longer, ends with
 `{"type": "error", "code": "too_long"}` and close code 4408; one with no audio for
@@ -130,69 +126,39 @@ variants.
 
 ### Speech start and end
 
-With voice activity detection on (the default), the socket tells the client where the person started and stopped
-speaking: `speech_start` and `speech_end`, with `ms`, the position in the audio received so far. The detector confirms
-speech `startSecs` after it began and silence `stopSecs` after it ended; `ms` is where it began and ended, not when it
-was confirmed. A page uses them for a listening indicator, to stop the assistant's voice as soon as the person speaks
-over it (barge-in) rather than when the first words are transcribed, or to time its own turn taking. `speech_end`
-comes before the `final` of that utterance.
+With voice activity detection on, `speech_start` and `speech_end` carry `ms`, where speech began or ended in the audio
+received: for a listening indicator and barge-in before any word is transcribed. `speech_end` precedes its `final`.
 
 ### Utterances decided by the client
 
-An engine transcribes an utterance when it ends: a segmented engine (`whisper`, and `openai` or `elevenlabs` one
-utterance at a time) sends what it buffered, a realtime engine with commits (`openai-realtime`,
-`elevenlabs-realtime`) commits what it streamed. By default the voice activity detection decides where an utterance
-ends. A client that knows better decides itself:
-
-- **Push-to-talk:** `{"vad": false}` in `start`, audio while the button is held, `commit` when it is released.
-- **A kiosk or a device with its own voice detection:** `{"vad": false}`, and a `commit` where its detector ends a
-  phrase; no second detector runs on the server.
-- **A noisy room**, where silence never comes and the detector would keep the utterance open: keep detection for
-  `speech_start`, and `commit` on a timer or a gesture.
-
-`commit` ends the current utterance at once, with detection on or off, and the server sends that utterance's `final`
-when the engine heard something. With detection on and the person still speaking, the next utterance starts right
-after the commit, so no words are lost; the detector's own end of speech then ends that one. Without detection an
-utterance starts with the first audio after the last one ended. A commit with less new audio than the engine needs
-(100 ms with any engine; 300 ms with `elevenlabs-realtime`, `SttCaps.commit_ms`) is not passed to the engine: the
-server sends `{"type": "warning", "code": "commit_too_short"}` and the socket goes on. A commit that the engine
-answers with nothing (silence, or a [made-up phrase](#made-up-phrases)) gets no `final`: a client that waits for one
-gives up after a while. `stop` ends the open utterance like a commit (quietly when it is too short) and, with a realtime
-engine, waits up to 5 seconds for its `final` before it closes.
+`commit` ends the current utterance now, with detection on or off, and the engine sends its `final` (none when it heard
+nothing); with the person still speaking, the next one starts at once. With `"vad": false` only commits and `stop` end
+utterances: push-to-talk, a kiosk with its own voice detection. In a noisy room, where silence never comes, keep
+detection and commit on a timer or a gesture. A commit with less new audio than the engine takes (`SttCaps.commit_ms`:
+100 ms, 300 ms for `elevenlabs-realtime`) is not passed on: the socket sends a `warning` `commit_too_short` and goes on.
+`stop` ends the open utterance and waits up to 5 seconds for a realtime engine's last `final`.
 
 ### Vocabulary hints
 
-`hint` (on `start`, or as a query parameter of `POST /v1/session/transcribe`) lists names and terms the person is
-likely to say and the engine would otherwise misspell: product names, people and places, the jargon of a trade. Write
-them separated by commas, at most 500 characters. Engines that take a vocabulary use it: `openai` and
-`openai-realtime` as their prompt (models that accept one), `whisper` as its initial prompt, `elevenlabs` and
-`elevenlabs-realtime` as key terms (split at commas, semicolons and new lines; at most 50 terms, each under 50
-characters). The others ignore it. A factory of your own (`module:factory`) receives `hint` only when the client sent
-one.
+`hint` lists names and terms the engine would misspell (products, people, jargon), comma-separated, at most 500
+characters: the prompt of the `openai` engines, the initial prompt of `whisper`, key terms of the `elevenlabs` engines
+(at most 50, each under 50 characters). Other engines ignore it; a `module:factory` gets it only when one was sent.
 
 ### Made-up phrases
 
-Recognisers trained on subtitled video, the Whisper family above all, answer silence, a breath or background noise with
-the credits and sign-offs that closed their training clips: «Thanks for watching», «Subtitles by the Amara.org
-community», «Sottotitoli creati dalla comunità Amara.org», «Untertitel im Auftrag des ZDF». Evokai drops a transcript
-that is one of them, on the socket (`final` and `interim`) and from `POST /v1/session/transcribe`. Each language pack
-lists the phrases known in its language (`speech.hallucinations` in `evokai/locales/<code>.json`), and the English ones
-apply in every language; a transcript that is only a sound annotation (`[Music]`, `(applause)`) or punctuation is
-dropped too. A phrase is compared with the whole transcript, case and punctuation aside (`*` in a pattern stands for any
-text), so «Thanks for watching the kids tonight» is kept. Every drop is logged (`stt_phrase_dropped`, with the engine
-and the count, never the text) and counted in the `evokai.stt.dropped_phrases` metric when OpenTelemetry is on.
-
-The filter is on by default. An application that wants every transcript as the engine gave it sets
-`stt_filter: false` (`PATCH /v1/admin/application`, or in its configuration file).
+Recognisers trained on subtitled video answer silence or noise with the credits of their training clips («Thanks for
+watching», «Subtitles by the Amara.org community»). A transcript that is wholly a phrase of its language pack
+(`speech.hallucinations`, English ones in every language, `*` any text), a lone `[Music]` or punctuation is dropped
+from both endpoints, logged (`stt_phrase_dropped`) and counted (`evokai.stt.dropped_phrases`). The application setting
+`stt_filter: false` turns this off.
 
 ## Clients
 
 - **TypeScript:** `session.speak({turnId, index})` resolves with the audio and its timings; `session.speechEvents(...)`
   streams them; `TimedSpeechPlayer` plays PCM with Web Audio and emits `word`, `mark` and `viseme` as they are heard;
   `ServerTts` and `ServerStt` are a speech engine and a recogniser for the browser voice engine, which picks them when
-  the token chose server engines (`session.speech`); `ServerStt` takes `vad: false` and a `hint`, emits `speechstart`
-  and `speechend` (with `ms`) and `warning`, and `commit()` ends the current utterance; `session.transcribe(blob,
-  {hint})` transcribes a recording.
+  the token chose server engines (`session.speech`); `ServerStt` takes `vad: false` and `hint`, has `commit()` and
+  emits `speechstart`/`speechend` (`{ms}`) and `warning`; `session.transcribe(blob, {hint})` transcribes a recording.
 - **`<evokai-chat>`:** voice mode uses server speech and recognition when the token chose them; browser speech stays
   the default.
 - **Python:** `session.speak(text=...)` or `session.speak(turn_id=..., index=...)` returns a `Speech` (audio, words,
@@ -202,6 +168,4 @@ The filter is on by default. An application that wants every transcript as the e
 
 Tests never call a paid engine: the `fake` engines cover the routes, and recorded HTTP cassettes cover the real
 ones once recorded with `scripts/record-cassettes.sh speech` (it needs `ELEVENLABS_API_KEY` and `OPENAI_API_KEY`, makes
-a few calls with tiny texts and replays them offline). Until then those tests are skipped and say so. The streaming
-socket's commits (one transcribed, one too short, the last one at `stop`) are tested through the real realtime
-adapters of `openai-realtime` and `elevenlabs-realtime`, with their connection answered in the test.
+a few calls with tiny texts and replays them offline). Until then those tests are skipped and say so.
