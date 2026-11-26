@@ -9,7 +9,7 @@ import { useMemo, useState } from 'preact/hooks'
 import type { Gateway, GatewayProvider, GatewayUsage } from '@client/core/types'
 import { describe, forApp } from '../api'
 import { ago, copy, day } from '../format'
-import { claudeManaged, claudeShell, claudeUser, gateways, GW_TABS, gwHref, type GwTab, PROVIDERS, TOOL } from '../gateway'
+import { claudeManaged, claudeShell, claudeUser, codexConfig, codexShell, gateways, GW_TABS, gwHref, type GwTab, PROVIDERS, TOOL } from '../gateway'
 import { Empty, sparkle, toast } from '../magic'
 import { appPolicy } from '../policy'
 import { go, setTitle, useConsole, useLoad } from '../state'
@@ -219,7 +219,7 @@ function GatewayView({ g, tab, reload }: { g: Gateway; tab: GwTab; reload: () =>
         {tab === 'policy' ? <GatewayPolicy g={g} owner={owner} reload={reload} /> : null}
         {tab === 'usage' ? <Usage g={g} /> : null}
         {tab === 'events' ? <Events app={owner} /> : null}
-        {tab === 'connect' ? <Connect /> : null}
+        {tab === 'connect' ? <Connect g={g} /> : null}
         {tab === 'notice' ? <Notice g={g} /> : null}
       </div>
     </>
@@ -705,7 +705,7 @@ function Snippet({ title, hint, text, prose }: { title: string; hint: string; te
   )
 }
 
-function Connect() {
+function Connect({ g }: { g: Gateway }) {
   return (
     <>
       <p class="hint">{t('gw.connectSub')}</p>
@@ -714,6 +714,12 @@ function Connect() {
         <Snippet title={t('gw.snip.user')} hint={t('gw.snip.userHint')} text={claudeUser()} />
       </div>
       <Snippet title={t('gw.snip.shell')} hint={t('gw.snip.shellHint')} text={claudeShell()} />
+      {g.providers.includes('openai') ? (
+        <div class="grid g2" style="margin-top:16px">
+          <Snippet title={t('gw.snip.codex')} hint={t('gw.snip.codexHint')} text={codexConfig()} />
+          <Snippet title={t('gw.snip.codexKey')} hint={t('gw.snip.codexKeyHint')} text={codexShell()} />
+        </div>
+      ) : null}
     </>
   )
 }

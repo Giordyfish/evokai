@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import gzip
 import json
@@ -291,7 +292,13 @@ def test_usage_survives_any_chunking() -> None:
     z.finish()
     assert (z.input_tokens, z.output_tokens, z.bytes) == (142, 7, len(packed))
     assert Usage("anthropic", "text/event-stream", "br").off
-    assert u.complete
+    # No content type (ChatGPT's Codex backend): told from the first bytes.
+    o = Usage("openai", "")
+    for c in RESPONSES_SSE:
+        o.feed(c)
+    o.finish()
+    assert (o.input_tokens, o.output_tokens, o.cache_read) == (900, 12, 800)
+    assert o.complete and u.complete
 
 
 # Keys
@@ -629,6 +636,120 @@ def test_roles_on_a_gateway() -> None:
     assert required("PATCH", "/v1/admin/gateways/{gateway_id}") == "owner"
 
 
+# The OpenAI Responses door (Codex)
+
+RESPONSES_SSE = (
+    b'event: response.created\ndata: {"type":"response.created","response":{"id":"r1"}}\n\n',
+    b"event: response.output_text.delta\n"
+    b'data: {"type":"response.output_text.delta","delta":"ok"}\n\n',
+    b'event: response.completed\ndata: {"type":"response.completed","response":{"id":"r1",'
+    b'"usage":{"input_tokens":900,"input_tokens_details":{"cached_tokens":800},'
+    b'"output_tokens":12}}}\n\n',
+)
+OPENAI_DOOR = "/agent/gw/openai/v1/responses"
+
+
+def chatgpt_token() -> str:
+    def part(d: dict[str, Any]) -> str:
+        return base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+
+    claims = {"https://api.openai.com/auth": {"chatgpt_account_id": "acc-1"}}
+    return f"{part({'alg': 'RS256'})}.{part(claims)}.signature"
+
+
+def responses(text: str) -> dict[str, Any]:
+    return {
+        "model": "gpt-5.5-codex",
+        "instructions": "You are Codex.",
+        "stream": True,
+        "input": [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
+        ],
+    }
+
+
+async def _codex(env: Env) -> Gate:
+    gate = await _gateway(env, Upstream(), providers=["anthropic", "openai"])
+    gate.up.headers = {"content-type": "text/event-stream"}
+    gate.up.chunks = RESPONSES_SSE
+    return gate
+
+
+async def test_a_chatgpt_login_goes_to_the_codex_backend_and_a_key_to_the_api(env: Env) -> None:
+    gate = await _codex(env)
+    headers = {
+        "x-evokai-key": gate.key,
+        "authorization": f"Bearer {chatgpt_token()}",
+        "chatgpt-account-id": "acc-1",
+        "originator": "codex_exec",
+        "session_id": "s-1",
+        "content-type": "application/json",
+    }
+    body = json.dumps(responses("hello")).encode()
+    r = await env.client.post(OPENAI_DOOR, content=body, headers=headers)
+    assert (r.status_code, r.content) == (200, b"".join(RESPONSES_SSE))
+    req = gate.up.calls[0]
+    assert str(req.url) == "https://chatgpt.com/backend-api/codex/responses"
+    assert gate.up.bodies[0] == body
+    assert (req.headers["chatgpt-account-id"], req.headers["originator"]) == ("acc-1", "codex_exec")
+    assert req.headers["session_id"] == "s-1" and "x-evokai-key" not in req.headers
+    headers["authorization"] = "Bearer sk-proj-test"
+    assert (await env.client.post(OPENAI_DOOR, content=body, headers=headers)).status_code == 200
+    assert str(gate.up.calls[1].url) == "https://api.openai.com/v1/responses"
+    rows = await env.svc.store.gateway.recent(gate.id)
+    assert {(x.provider, x.input_tokens, x.output_tokens, x.cache_read_tokens) for x in rows} == {
+        ("openai", 900, 12, 800)
+    }
+    # Another kind of token is refused before anything is sent; so is a missing key.
+    headers["authorization"] = "Bearer something-else"
+    r = await env.client.post(OPENAI_DOOR, content=body, headers=headers)
+    assert r.status_code == 401 and r.json()["error"]["type"] == "authentication_error"
+    del headers["x-evokai-key"]
+    r = await env.client.post(OPENAI_DOOR, content=body, headers=headers)
+    assert r.status_code == 401 and "x-evokai-key" in r.json()["error"]["message"]
+    assert len(gate.up.calls) == 2
+
+
+async def test_codex_refusals_use_openais_error_shape(env: Env) -> None:
+    gate = await _codex(env)
+    await gate.policy({"modes": {"input.secrets": "enforce"}})
+    headers = {
+        "x-evokai-key": gate.key,
+        "authorization": f"Bearer {chatgpt_token()}",
+        "content-type": "application/json",
+    }
+    body = responses("run it")
+    body["input"] += [
+        {"type": "function_call", "call_id": "c", "name": "shell", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c", "output": f"AWS_KEY={SECRET}"},
+    ]
+    r = await env.client.post(OPENAI_DOOR, json=body, headers=headers)
+    assert r.status_code == 400
+    err = r.json()["error"]
+    assert err["type"] == "invalid_request_error" and "input.secrets" in err["message"]
+    r = await env.client.patch(f"{GW}/{gate.id}", json={"providers": ["anthropic"]}, headers=OP)
+    r = await env.client.post(OPENAI_DOOR, json=responses("hi"), headers=headers)
+    assert r.status_code == 400 and "OpenAI is not enabled" in r.json()["error"]["message"]
+    assert gate.up.calls == []
+
+
+async def test_codex_lists_the_models_of_its_upstream(env: Env) -> None:
+    gate = await _codex(env)
+    gate.up.headers = {"content-type": "application/json"}
+    gate.up.chunks = (b'{"models":[]}',)
+    headers = {"x-evokai-key": gate.key, "authorization": f"Bearer {chatgpt_token()}"}
+    r = await env.client.get("/agent/gw/openai/v1/models?client_version=1", headers=headers)
+    assert (r.status_code, r.content) == (200, b'{"models":[]}')
+    req = gate.up.calls[0]
+    assert req.method == "GET"
+    assert str(req.url) == "https://chatgpt.com/backend-api/codex/models?client_version=1"
+    assert "x-evokai-key" not in req.headers
+    del headers["x-evokai-key"]
+    r = await env.client.get("/agent/gw/openai/v1/models", headers=headers)
+    assert r.status_code == 401 and len(gate.up.calls) == 1
+    assert await env.svc.store.gateway.recent(gate.id) == []
+
+
 async def test_a_broken_provider_stream_ends_the_tools_without_a_clean_end(gate: Gate) -> None:
     async def broken() -> AsyncIterator[bytes]:
         yield SSE[0]
@@ -646,3 +767,18 @@ async def test_a_broken_provider_stream_ends_the_tools_without_a_clean_end(gate:
     await gate.env.svc.gateway.idle()
     (row,) = await gate.env.svc.store.gateway.recent(gate.id)
     assert (row.outcome, row.input_tokens) == ("failed", 142)
+
+
+async def test_a_record_that_never_finishes_does_not_hold_the_shutdown(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evokai.gateway import service as gateway_service
+
+    monkeypatch.setattr(gateway_service, "CLOSE_WAIT", 0.2)
+    gw = env.svc.gateway
+    stuck = asyncio.Event()
+    gw._later(stuck.wait())
+    t0 = time.monotonic()
+    await gw.close()
+    assert time.monotonic() - t0 < 2
+    assert not gw._writes
