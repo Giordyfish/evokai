@@ -182,6 +182,18 @@ async def test_the_console_can_be_turned_off(env: Env, enabled: bool) -> None:
         transport=httpx.ASGITransport(app=app), base_url="http://evokai"
     ) as c:
         assert (await c.get("/agent/admin")).status_code == 404
+        assert (await c.get("/")).status_code == 404
+
+
+async def test_the_bare_address_opens_the_console(env: Env) -> None:
+    app = create_app(env.svc.settings.model_copy(update={"admin_ui_enabled": True}), env.svc)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://evokai"
+    ) as c:
+        for path in ("/", "/agent", "/agent/"):
+            r = await c.get(path)
+            assert (r.status_code, r.headers["location"]) == (307, "/agent/admin/"), path
+        assert (await c.get("/agent/health")).status_code == 200
 
 
 async def test_a_console_login_ends_when_its_key_is_revoked(env: Env) -> None:
