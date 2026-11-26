@@ -397,10 +397,18 @@ function Shown({ m }: { m: StoredMessage }) {
     switch (e.type) {
       case 'text':
         return <span key={i}>{e.delta}</span>
+      case 'reasoning':
+        return (
+          <details key={i} class="pgreason">
+            <summary>{t('cv.reasoning')}</summary>
+            <div>{e.delta}</div>
+          </details>
+        )
       case 'tool':
         return (
           <div key={i}>
             <Tag tone={e.status === 'error' ? 'bad' : undefined}>{t(`cv.tool.${e.status}`, { name: e.name })}</Tag>
+            {e.args ? <code class="toolargs">{JSON.stringify(e.args)}</code> : null}
           </div>
         )
       case 'client_tool': {
