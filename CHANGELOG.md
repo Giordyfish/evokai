@@ -20,6 +20,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   and token caps, and runs `input.size`, `input.secrets`, `pii.model` and `scope` on the new text only, with linear-time
   matching (RE2), blocking or recording, never masking. One row per request: tokens, timings, outcome, never content
   or amounts.
+- Codex through a gateway: `POST /gw/openai/v1/responses` forwards the OpenAI Responses API unchanged, to ChatGPT's
+  Codex backend for a ChatGPT login's token or to the OpenAI API for an API key (`sk-...`), with the same controls and
+  usage read from `response.completed`; `GET /gw/openai/v1/models` passes Codex's model list through. The Connect
+  page has the Codex snippets.
 - Azure without keys (the optional `azure` extra, in both images): every Azure connection without a configured key
   uses a Microsoft Entra ID token of the managed identity (`DefaultAzureCredential`, `evokai.core.azure`). Azure
   OpenAI endpoints take the `/openai/v1` base URL without an `api_version` (the Foundry models sold by Azure too), and
