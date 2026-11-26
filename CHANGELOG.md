@@ -192,6 +192,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Changed
 
+- A skill may now hold 1,000,000 bytes in all (SKILL.md and its files), twice the old 500,000: the built-in
+  assistant's documentation skill had grown to the old limit, and skills only load one page at a time, so a larger
+  skill costs nothing per turn.
 - The ™ sign is gone from the console, the README and the NOTICE files; the name, logo and mascot stay trademarks as
   the NOTICE says.
 - `POST /v1/admin/application/reset` needs `plan`, the fingerprint its preview (`GET
