@@ -8,6 +8,12 @@ uv run evokai migrate               # SQLite ./evokai.db by default
 EVOKAI_CONFIG_FILE=config/bookshop.yaml uv run evokai serve   # http://localhost:8787/agent/health
 ```
 
+SQLite runs with a write-ahead log (`journal_mode=WAL`, `synchronous=NORMAL`) and waits up to 30 seconds for a write
+in progress (`busy_timeout`): a read never waits for a write, and concurrent writes take turns instead of failing with
+"database is locked". The database file then has two companions, `evokai.db-wal` and `evokai.db-shm`: back up the
+three together, or stop Evokai first. Keep it on a local disk (the write-ahead log does not work on network file
+systems); for more than one instance use Postgres.
+
 With Docker, two compose files:
 
 - `docker-compose.yml`, the [quick start](quickstart.md): Evokai and its own Postgres, keys generated on the first
