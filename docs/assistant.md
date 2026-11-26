@@ -24,8 +24,9 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   keys, other MCP servers) answers `409 system_app`.
 - **Nothing survives a reset.** `GET /v1/admin/application/reset/preview` lists every item the reset deletes or
   restores, by kind and name (the application's settings with the values the reset sets back), each deleted item with its definition (never a secret) for the owner to keep; the
-  console offers it as a JSON download. `POST /v1/admin/application/reset` `{confirm: <slug>}` deletes exactly those
-  items, applies the shipped definition again and locks it. Conversations (they follow their retention), eval and red
+  console offers it as a JSON download, and its `plan` fingerprints them. `POST /v1/admin/application/reset`
+  `{confirm: <slug>, plan}` deletes exactly those items (`409 plan_changed` when anything was added or changed since
+  the preview: look at it again), applies the shipped definition again and locks it. Conversations (they follow their retention), eval and red
   team results, traces and the audit log are not part of the definition and stay. None of these routes is a tool of
   the admin MCP server, and the assistant itself is refused on all of them.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
@@ -150,7 +151,7 @@ measured requirements above: a model recommended only by the estimate opens the 
 | `POST /v1/console/assistant/session` `{conversationId?}` | a console login on an application |
 | `GET /v1/console/assistant/privacy`, `POST` `{version}` | a console login: the notice, the voice in use, inspections of one's conversations |
 | `POST /v1/admin/assistant/conversations/{id}/inspect` `{reason}` | an owner of the assistant's application |
-| `GET /v1/admin/application/reset/preview`, `POST /v1/admin/application/reset` `{confirm}` | an owner of the assistant's application |
+| `GET /v1/admin/application/reset/preview`, `POST /v1/admin/application/reset` `{confirm, plan}` | an owner of the assistant's application |
 
 ## The panel and the mascot
 

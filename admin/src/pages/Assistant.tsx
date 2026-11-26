@@ -10,7 +10,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { adminJson, describe } from '../api'
 import { assistantChanged } from '../assistant/active'
 import { activateBody, type AssistantState, badge, canActivate, type Candidate, needsSecondDisclaimer, requirementLines, trialRunning } from '../assistant/choice'
-import { deleted, kindText, type ResetPreview, resetExport, slugTyped } from '../assistant/reset'
+import { deleted, kindText, planChanged, type ResetPreview, resetExport, slugTyped } from '../assistant/reset'
 import { fitBadge, fitReasons } from '../fit'
 import { download } from '../format'
 import { num, t, tn } from '../i18n'
@@ -64,9 +64,19 @@ function SystemApp({ state, onChanged }: { state: AssistantState; onChanged: () 
   const loadPreview = () => run(async () => setPreview(await adminJson<ResetPreview>(app, 'GET', '/v1/admin/application/reset/preview')), t('reset.noPreview'))
   const reset = () =>
     run(async () => {
-      await adminJson(app, 'POST', '/v1/admin/application/reset', {
-        confirm: typed.trim(),
-      })
+      if (!preview) return
+      try {
+        await adminJson(app, 'POST', '/v1/admin/application/reset', {
+          confirm: typed.trim(),
+          plan: preview.plan,
+        })
+      } catch (e) {
+        // Something was added or changed since the preview: show the new one, delete nothing unseen.
+        if (!planChanged(e)) throw e
+        setPreview(await adminJson<ResetPreview>(app, 'GET', '/v1/admin/application/reset/preview'))
+        toast(t('reset.planChanged'), slug, null)
+        return
+      }
       toast(t('reset.doneToast'), slug, null)
       setTyped('')
       setPreview(null)

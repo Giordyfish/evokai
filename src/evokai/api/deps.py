@@ -157,15 +157,33 @@ async def console_login(request: Request) -> console.ConsoleLogin:
         raise Forbidden("Invalid console request.", code="console_header")
     svc = services(request)
     login = console.read(svc.keyring, value)
-    if (
-        login.kind == "adm"
-        and login.key_id
-        and not await svc.auth.key_alive(login.key_id, login.application_id or "")
-    ):
-        raise Unauthorized("The key of this login was revoked.", code="console")
-    if login.kind == "sso" and not await svc.auth.user_active(login.user_id or ""):
-        raise Unauthorized("This console user was disabled.", code="console")
+    if not await login_alive(svc, login):
+        reason = {
+            "adm": "The key of this login was revoked.",
+            "sso": "This console user was disabled.",
+        }.get(login.kind, "The operator key of this login changed.")
+        raise Unauthorized(reason, code="console")
     return login
+
+
+async def login_alive(svc: Services, login: console.ConsoleLogin) -> bool:
+    """Whether the credential behind a console login still stands.
+
+    An admin key login ends with the key's revocation, a single sign-on login when the user is
+    disabled, and an operator key login when the operator key is changed or removed.
+
+    Returns:
+        True while it stands.
+    """
+    if login.kind == "adm":
+        return not login.key_id or await svc.auth.key_alive(
+            login.key_id, login.application_id or ""
+        )
+    if login.kind == "sso":
+        return await svc.auth.user_active(login.user_id or "")
+    if login.kind == "op":
+        return console.operator_current(svc.keyring, svc.settings.operator_key, login.key_id)
+    return False
 
 
 async def server_app(request: Request) -> AppPrincipal:

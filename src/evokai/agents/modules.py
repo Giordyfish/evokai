@@ -95,7 +95,21 @@ def _label_map(*args: Any, options: HelperOptions) -> str:
     value, table = args[0], args[1]
     words = (options.data.get("root") or {}).get(LABEL_TABLES, {}).get(str(table), {})
     items = value if isinstance(value, list) else [value]
-    return ", ".join(words.get(str(v), str(v)) for v in items)
+    return ", ".join(words.get(_as_printed(v), words.get(str(v), _as_printed(v))) for v in items)
+
+
+def _as_printed(value: Any) -> str:
+    """A value as a template prints it: booleans are ``true`` and ``false``.
+
+    That is how a ``confirm_values`` table names them (Python says ``True``, which matched no
+    table written by hand).
+
+    Returns:
+        The text.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 LABELS = HandlebarsEnvironment(auto_escape=False, max_output_size=2000, strict=True)
@@ -668,7 +682,7 @@ async def resolve_modules(
     """
     chosen: dict[str, Any] = dict((options or {}).get("modules") or {})
     out: list[RenderedModule] = []
-    pinned = False
+    pins: dict[str, tuple[dict[str, Any], int]] = {}
     for ref in agent.modules:
         stored = chosen.get(ref.name)
         entry = entry_of(ref, stored)
@@ -687,22 +701,24 @@ async def resolve_modules(
                 log.warning("prompt module left out, parameters do not fit: %s", ref.name)
                 continue
         if ref.version is None and (stored or {}).get("version") != row.version:
-            chosen[ref.name] = {
-                **(stored or {"on": ref.on, "params": ref.params}),
-                "version": row.version,
-            }
-            pinned = True
+            pins[ref.name] = (dict(stored or {"on": ref.on, "params": ref.params}), row.version)
         free = tuple(n for n, _v in free_text_items(row.parameters or {}, params))
         out.append(
             RenderedModule(
                 ref.name, row.version, row.text, params, row.data, free, row.template_syntax
             )
         )
-    if pinned and session is not None:
-        updated = {"modules": chosen, "locale": (options or {}).get("locale")}
-        await store.sessions.set_prompt_options(session.id, updated)
-        session.prompt_options = updated
+    if pins and session is not None:
+        # Merged into the choice as stored now, not written over it: a mint during this turn
+        # (new values, another locale) is kept.
+        updated = await store.sessions.pin_module_versions(session.id, pins)
+        if updated is not None:
+            session.prompt_options = updated
     return out
+
+
+CLASSIFIER_RULES = frozenset({"classifier_unavailable", "classifier_capped"})
+"""Guard events about the classifier itself: their details say why, never what was checked."""
 
 
 async def scan_module_texts(
@@ -751,7 +767,13 @@ async def scan_module_texts(
                 decision = await turn.check_input(value)
                 for row in turn.events[seen:]:
                     row["snippet"] = ""
-                    row["details"] = {"module": module, "parameter": param}
+                    # Never the value; a classifier's own event keeps why it could not judge.
+                    own = (row.get("details") or {}) if row.get("rule") in CLASSIFIER_RULES else {}
+                    row["details"] = {
+                        **{k: own[k] for k in ("classifier", "reason", "limit") if k in own},
+                        "module": module,
+                        "parameter": param,
+                    }
                 if decision.blocked:
                     refused = (module, param)
                     break

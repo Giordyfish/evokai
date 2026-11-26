@@ -141,6 +141,28 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The reasoning of a step that called tools is sent back to the model with its calls, as the providers require
   (Anthropic thinking with its signature, OpenAI encrypted reasoning): every later request of the turn rebuilt the
   history without it. A confirmation carries the reasoning of the calls that waited (Evokai storage, kept server side).
+- A console login made with the operator key, its one-time sign-in code and the console assistant's delegation made
+  from it end when the operator key is changed or removed (they lasted until they expired). The login holds a keyed
+  fingerprint of the key; operators sign in again after this release.
+- A reset of the assistant's application deletes only what its preview showed: the preview's `plan` goes back with
+  the reset, and anything added or changed meanwhile answers `409 plan_changed` and the console shows the new preview.
+- A failed, capped or interrupted try of a model for the assistant no longer leaves the recorded server's credential
+  in the application's settings, and a finished try stores its numbers before it shows as done (the Assistant page
+  could find it done without them).
+- Audit entries made through the admin MCP server record the address of the MCP server's caller, not 127.0.0.1.
+- The guard's system prompt leak check covers the session's prompt modules, not only the instructions.
+- A version pinned at a turn's start no longer overwrites a choice of modules or a locale minted during the turn.
+- A session token that sends again a free-text module value the conversation already holds is not scanned again (one
+  guard event and one classification per value), and a mint refused for a closed conversation or its storage mode
+  scans nothing. A classifier's own event on a module value keeps its reason.
+- `locale: ""` on a session token clears the conversation's locale; the playground's "Application locale" sends it,
+  so switching back works.
+- The `prompt.put` audit entry holds the prompt's description and data table.
+- `{{map field "table"}}` in confirm labels finds a boolean under `true` and `false`, as the label prints it.
+- On a narrow screen the console assistant's launcher no longer covers the open sidebar drawer.
+- fastmcp is pinned below 3.5: the admin MCP server reads a private attribute of its OpenAPI provider.
+- A reset of the assistant's application revokes people's OAuth connections at the provider before deleting them, as
+  a disconnect or an erasure does: deleting the rows alone left the tokens valid at the provider.
 - The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
   named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
 - The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
@@ -154,6 +176,10 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 - The ™ sign is gone from the console, the README and the NOTICE files; the name, logo and mascot stay trademarks as
   the NOTICE says.
+- `POST /v1/admin/application/reset` needs `plan`, the fingerprint its preview (`GET
+  /v1/admin/application/reset/preview`) returns: read the preview, then send its `plan` with the typed slug (400
+  without it, `409 plan_changed` when the preview is out of date). The console does this.
+
 
 ## [0.2.2] - 2026-11-24
 

@@ -178,7 +178,7 @@ async def test_activate_needs_owner(env: Env) -> None:
     r = await env.client.post(url, json=body, headers={"Authorization": f"Bearer {env.admin_key}"})
     assert r.status_code == 403 and r.json()["error"] == "system_app"
     # Nor does the assistant itself.
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, app_id, "owner")
     r = await env.client.post(url, json=body, headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403 and r.json()["error"] == "assistant_route"
@@ -290,6 +290,30 @@ async def test_try_runs_suite_against_fake_mcp_and_records_numbers(trial_env: En
         )
     ).json()
     assert after == before
+
+
+async def test_a_failed_try_does_not_leave_its_credential(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evokai.assistant.activation import start_trial
+
+    app_id = await _system(env)
+
+    async def broken(*_a: Any, **_k: Any) -> Any:  # ruff: ignore[unused-async]
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(env.svc.evals, "run_case", broken)
+    app = await env.svc.store.applications.get(app_id)
+    assert app is not None
+    run = await start_trial(env.svc, app, "function:primary", "owner")
+    held = await env.svc.store.applications.get(app_id)
+    assert held is not None and (held.defaults or {}).get("eval_credential")
+    await asyncio.gather(*env.svc.evals.tasks)
+    done = await env.svc.store.evals.run(app_id, run.id)
+    assert done is not None and done.status == "failed"
+    after = await env.svc.store.applications.get(app_id)
+    assert after is not None and "eval_credential" not in (after.defaults or {})
+    assert MEASURED_KEY not in (after.defaults or {})  # nothing measured
 
 
 AMOUNT = re.compile(r"usd|cost|amount|price|spend|spent|\$", re.IGNORECASE)

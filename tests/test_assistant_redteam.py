@@ -117,7 +117,7 @@ def test_assistant_attacks_run_only_on_system_applications() -> None:
 
 
 async def test_assistant_never_changes_an_agents_security_policy(env: Env) -> None:
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
     admin = {"Authorization": f"Bearer {env.admin_key}"}
     agent = (await env.client.get("/agent/v1/admin/agents", headers=admin)).json()["items"][0]

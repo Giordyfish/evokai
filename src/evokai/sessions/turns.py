@@ -1142,6 +1142,7 @@ class TurnEngine:
             self.store, run.app.id, agent, run.session.prompt_options, session=run.session
         )
         modules = protected(modules, guard.protect_text)
+        guard.add_prompt_text(*(m.text for m in modules))  # the leak check covers them too
         if modules and guard.trace is not None:
             # Which modules at which versions; never their parameters.
             guard.trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})

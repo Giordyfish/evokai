@@ -9,6 +9,7 @@ token or a console cookie, and it carries the ``evk_cdt_`` prefix so a log reade
 It is checked again on every use, against the live login behind it:
 
 - an admin key login ends with the key's revocation;
+- an operator key login ends when the operator key is changed or removed;
 - a single sign-on login ends when the user is disabled, and its role follows the user's roles of
   the latest sign-in;
 - the role used is the lower of the token's claim and the login's role now, never above.
@@ -25,7 +26,7 @@ import jwt
 from evokai.core.errors import BadRequest, Unauthorized
 from evokai.core.security import Keyring
 from evokai.db.repositories import APPLICATION
-from evokai.identity.console import ConsoleLogin
+from evokai.identity.console import ConsoleLogin, operator_current
 from evokai.identity.models import AppPrincipal
 from evokai.identity.roles import RANK, Role, highest
 
@@ -102,6 +103,8 @@ def mint_delegation(
     elif login.kind == "adm":
         claims["kid"] = login.key_id or ""
         claims["home"] = login.application_id or ""
+    elif login.kind == "op":
+        claims["kid"] = login.key_id or ""  # the operator key's fingerprint
     return PREFIX + jwt.encode(claims, keyring.signing_key, algorithm="HS256")
 
 
@@ -164,7 +167,8 @@ async def _live_role(svc: Services, claims: dict[str, Any], app: Any) -> str | N
     """
     kind = claims["kind"]
     if kind == "op":
-        return "owner"
+        current = operator_current(svc.keyring, svc.settings.operator_key, claims.get("kid"))
+        return "owner" if current else None
     if kind == "adm":
         kid = str(claims.get("kid") or "")
         return "owner" if kid and await svc.auth.key_alive(kid, app.id) else None
