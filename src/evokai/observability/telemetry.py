@@ -112,6 +112,7 @@ def setup_telemetry(app: Any, *, enabled: bool, service_name: str, exporter: str
     meter = metrics.get_meter("evokai")
     _meter_instruments["turn_latency"] = meter.create_histogram("evokai.turn.latency_ms", unit="ms")
     _meter_instruments["model_cost"] = meter.create_counter("evokai.model.cost_micro_usd")
+    _meter_instruments["stt_dropped"] = meter.create_counter("evokai.stt.dropped_phrases")
     log.info("otel_enabled", extra={"exporter": exporter})
     return True
 

@@ -42,6 +42,7 @@ APPLICATION_FIELDS = (
     "allowed_models",
     "conversation_ttl_days",
     "voice_engine",
+    "stt_filter",
     "locale",
     "timezone",
     "messages",

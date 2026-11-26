@@ -149,6 +149,9 @@ class AppPatch(BaseModel):
     markup: MarkupDef | None = None
     """Inline markup the agents may write: ``cue`` (``{wave}``, delivered as marks on the
     spoken segments) and ``speech`` (``[laughs]``, for expressive voices); null removes it."""
+    stt_filter: bool | None = None
+    """Drop the phrases speech recognisers make up from silence or noise («Thanks for watching»,
+    subtitle credits) from transcripts: true (the default) or false."""
 
 
 EVAL_KEYS = ("eval_monthly_usd", "eval_judge_model", "eval_on_save", "eval_credential")
@@ -176,6 +179,7 @@ DEFAULT_KEYS = frozenset({
     "messages",
     "tracing_content",
     "markup",
+    "stt_filter",
 })
 """Application settings kept in its defaults."""
 
@@ -263,6 +267,7 @@ async def get_application(svc: Svc, a: Admin) -> dict[str, Any]:
         "hasEvalCredential": bool((app.defaults or {}).get("eval_credential")),
         "tracing_content": (app.defaults or {}).get("tracing_content", "masked"),
         "markup": (app.defaults or {}).get("markup"),
+        "stt_filter": (app.defaults or {}).get("stt_filter", True),
         "memory_mode": (app.defaults or {}).get("memory_mode", "on"),
         "memory_ttl_days": (app.defaults or {}).get("memory_ttl_days"),
         "redteam_gate": (app.defaults or {}).get("redteam_gate", "off"),

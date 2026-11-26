@@ -973,6 +973,17 @@
             ],
             "title": "Storage Mode"
           },
+          "stt_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt Filter"
+          },
           "subject_daily_usd": {
             "anyOf": [
               {
@@ -17475,7 +17486,7 @@
     },
     "/agent/v1/session/transcribe": {
       "post": {
-        "description": "Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.\n\nReturns:\n    The text, the audio's length and the engine.\n\nRaises:\n    AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).\n    BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.",
+        "description": "Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.\n\n``hint`` lists names and terms the person is likely to say (product names, people, jargon),\nseparated by commas, for the engines that take a vocabulary; the others ignore it. Phrases\nrecognisers make up from silence are left out of the text unless the application turned the\nfilter off.\n\nReturns:\n    The text, the audio's length and the engine.\n\nRaises:\n    AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).\n    BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.",
         "operationId": "transcribe_agent_v1_session_transcribe_post",
         "parameters": [
           {
@@ -17493,6 +17504,23 @@
                 }
               ],
               "title": "Language"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hint"
             }
           }
         ],

@@ -42,6 +42,24 @@
     "channel.notAvailable": "The assistant is not available on this channel."
   },
   "speech": {
+    "hallucinations": [
+      "thanks for watching",
+      "thank you for watching",
+      "thank you so much for watching",
+      "thanks for watching and see you next time",
+      "thank you for watching and see you next time",
+      "please subscribe",
+      "please subscribe to my channel",
+      "please like and subscribe",
+      "like and subscribe",
+      "don't forget to like and subscribe",
+      "subscribe to my channel",
+      "see you in the next video",
+      "i'll see you in the next video",
+      "subtitles by the amara.org community",
+      "subtitles by *",
+      "*amara.org*"
+    ],
     "redactions": {
       "taxCode": "the tax code",
       "iban": "the IBAN",

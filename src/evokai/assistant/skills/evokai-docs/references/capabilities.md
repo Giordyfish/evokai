@@ -69,7 +69,7 @@ service:
 The full image installs every harness extra (`evokai[harness]`); the lite image, the default, installs the extras
 under 30 MB (`evokai[harness-lite]`): a capability the lite image leaves out (pixeltable, the ML prompt-injection
 defender, playwright, boxlite, smol, temporal, ipython, daytona) shows `installed: false` with «not in the lite image»
-([deployment](deployment.md#two-images-lite-and-full)). Neither image has two extras:
+([deployment](deployment.md#images-lite-lite-with-voice-full)). No image has two extras:
 
 - `browser-use`: it does not resolve in Evokai's lock: browser-use 0.13.10 to 0.13.14 pin `pydantic-settings==2.15.0`
   (and 0.13.6 to 0.13.10 `anthropic==0.76.0`), and Evokai needs `pydantic-settings>=2.16.3`. It drives a browser on

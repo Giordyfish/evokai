@@ -42,6 +42,17 @@
     "channel.notAvailable": "Der Assistent ist auf diesem Kanal nicht verfügbar."
   },
   "speech": {
+    "hallucinations": [
+      "untertitel der amara.org-community",
+      "untertitel im auftrag des zdf*",
+      "untertitelung im auftrag des zdf*",
+      "untertitel von *",
+      "vielen dank fürs zuschauen",
+      "danke fürs zuschauen",
+      "abonniert den kanal",
+      "vergesst nicht, den kanal zu abonnieren",
+      "wir sehen uns im nächsten video"
+    ],
     "redactions": {
       "taxCode": "die Steuernummer",
       "iban": "die IBAN",

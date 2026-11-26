@@ -110,6 +110,7 @@ export type { ChooseTtsOptions, DeviceClass } from './tts/device'
 export { Emitter } from './voice/types'
 export type {
   BargeInOptions,
+  SpeechMark,
   SpokenSegment,
   SttEngine,
   SttEvents,

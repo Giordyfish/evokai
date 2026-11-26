@@ -7,6 +7,10 @@
 - ``POST /v1/session/transcribe`` transcribes an audio file sent as the request body.
 - ``WS /v1/session/transcribe/stream`` transcribes the microphone as it speaks.
 
+Both take a vocabulary ``hint`` (names and terms the person is likely to say) for the engines that
+use one, and drop the phrases recognisers make up from silence (``evokai.audio.speech
+.hallucinations``) unless the application turned that off (``stt_filter: false``).
+
 The engines are the session's (token ``speech``), else the deployment's defaults; the application's
 grants and data protection profile apply, and so do its caps: characters synthesised and seconds
 transcribed are recorded as usage at the catalog's prices (browsers only ever see shares).
@@ -45,8 +49,9 @@ from evokai.core.errors import AppError, BadRequest, NotFound
 from evokai.core.util import utcnow
 from evokai.grants import grants_of
 from evokai.guard import identifiers
-from evokai.i18n import locale_of, speech_rules
+from evokai.i18n import locale_of, pack_language, speech_rules
 from evokai.identity.models import SessionPrincipal
+from evokai.observability import telemetry
 from evokai.services import Services
 from evokai.sessions.limits import cap_state, limit_message
 
@@ -91,6 +96,24 @@ class Transcript(BaseModel):
     text: str
     durationMs: int
     engine: str
+
+
+HINT_MAX_CHARS = 500
+"""The longest vocabulary hint (``hint``) a transcription takes."""
+
+
+def _filters(app: Any) -> bool:
+    """Whether the application drops made-up phrases from transcripts (``stt_filter``, on).
+
+    Returns:
+        True unless the application set ``stt_filter: false``.
+    """
+    return (app.defaults or {}).get("stt_filter") is not False
+
+
+def _dropped(engine: str, where: str, count: int = 1) -> None:
+    log.info("stt_phrase_dropped", extra={"engine": engine, "where": where, "count": count})
+    telemetry.record("stt_dropped", count, engine=engine, where=where)
 
 
 async def _context(svc: Services, s: SessionPrincipal) -> tuple[Any, Any, Any, Any]:
@@ -385,8 +408,14 @@ async def transcribe(
     svc: Svc,
     s: Sess,
     language: Annotated[str | None, Query(max_length=35)] = None,
+    hint: Annotated[str | None, Query(max_length=HINT_MAX_CHARS)] = None,
 ) -> Transcript:
     """Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.
+
+    ``hint`` lists names and terms the person is likely to say (product names, people, jargon),
+    separated by commas, for the engines that take a vocabulary; the others ignore it. Phrases
+    recognisers make up from silence are left out of the text unless the application turned the
+    filter off.
 
     Returns:
         The text, the audio's length and the engine.
@@ -438,11 +467,20 @@ async def transcribe(
     usd = speech_usd(f"stt:{engine}", audio_ms=ms)
     await _cap(svc, app, s, sess, usd)
     lang = language or pack_tag(locale_of(app, sess))
-    service = make_stt(engine, language=lang, sample_rate=16_000)
+    extra = {"hint": hint.strip()} if hint and hint.strip() else {}
+    service = make_stt(engine, language=lang, sample_rate=16_000, **extra)
     heard = await run(service, pcm, sample_rate=16_000, segmented=stt_caps(engine).segmented)
     await _record(svc, s, sess, agent, "stt", engine, audio_ms=ms, cost_micro_usd=round(usd * 1e6))
     if heard.error and not heard.finals:
         raise AppError("The speech-to-text engine failed.", code="stt_failed", status=502)
+    if _filters(app):
+        from evokai.audio.speech.hallucinations import made_up
+
+        locale = pack_language(lang) or locale_of(app, sess)
+        kept = [t for t in heard.finals if not made_up(t, locale)]
+        if len(kept) < len(heard.finals):
+            _dropped(engine, "transcribe", len(heard.finals) - len(kept))
+            heard.finals = kept
     return Transcript(text=heard.text, durationMs=ms, engine=engine)
 
 
@@ -521,10 +559,12 @@ async def transcribe_stream(ws: WebSocket) -> None:
 
     Authenticated by the session token in the subprotocol (``evokai.v1`` and
     ``evokai.token.<token>``), never in the query string; one socket per session. The client
-    sends ``{"type": "start", "sampleRate": 16000, "language"?, "vad"?: {"confidence",
-    "startSecs", "stopSecs", "minVolume"}}``, then binary 16-bit mono PCM, then
-    ``{"type": "stop"}``; the server answers ``ready``, ``interim`` and ``final`` (``text``),
-    ``end`` (``durationMs``) and ``error`` (``code``, ``message``).
+    sends ``{"type": "start", "sampleRate": 16000, "language"?, "hint"?, "vad"?: {"confidence",
+    "startSecs", "stopSecs", "minVolume"} | false}``, then binary 16-bit mono PCM, any number of
+    ``{"type": "commit"}`` (the current utterance ends now), then ``{"type": "stop"}``; the
+    server answers ``ready``, ``speech_start`` and ``speech_end`` (``ms``, with voice activity
+    detection), ``interim`` and ``final`` (``text``), ``warning`` and ``error`` (``code``,
+    ``message``) and ``end`` (``durationMs``).
     """
     svc: Services = ws.app.state.services
     st = svc.settings
@@ -553,10 +593,25 @@ async def transcribe_stream(ws: WebSocket) -> None:
         svc.speech_streams.discard(key)
 
 
+def _vad_analyzer(rate: int, params: Any) -> Any:
+    """The voice activity detector of a socket (Silero; replaced in tests).
+
+    Returns:
+        The analyzer.
+    """
+    from pipecat.audio.vad.silero import SileroVADAnalyzer
+
+    return SileroVADAnalyzer(sample_rate=rate, params=params)
+
+
+STOP_DRAIN_SECONDS = 5.0
+"""After ``stop`` ends an open utterance on a realtime engine with commits, how long the socket
+waits for its ``final`` before it closes the engine."""
+
+
 async def _stream(
     svc: Services, ws: WebSocket, s: SessionPrincipal, app: Any, sess: Any, agent: Any, engine: str
 ) -> None:
-    from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.audio.vad.vad_analyzer import VADParams
     from pipecat.frames.frames import (
         EndFrame,
@@ -566,16 +621,19 @@ async def _stream(
         TranscriptionFrame,
     )
     from pipecat.processors.audio.vad_processor import VADProcessor
-    from pipecat.processors.frame_processor import FrameDirection
+    from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+    from evokai.audio.speech.hallucinations import made_up
     from evokai.audio.voice.oneshot import Catch, run_pipeline
     from evokai.audio.voice.providers import close_service, make_stt, stt_caps
+    from evokai.audio.voice.utterances import CommitFrame, Utterances
 
     st = svc.settings
     try:
         start = json.loads(await asyncio.wait_for(ws.receive_text(), 10))
         rate = int(start.get("sampleRate") or 16_000)
-        vad = {k: float(v) for k, v in (start.get("vad") or {}).items()}
+        detect = start.get("vad") is not False
+        vad = {k: float(v) for k, v in ((start.get("vad") if detect else None) or {}).items()}
         params = VADParams(
             confidence=vad.get("confidence", 0.7),
             start_secs=vad.get("startSecs", 0.2),
@@ -583,22 +641,28 @@ async def _stream(
             min_volume=vad.get("minVolume", 0.6),
         )
         language = str(start.get("language") or "")[:35] or pack_tag(locale_of(app, sess))
+        hint = start.get("hint")
+        if hint is not None and (not isinstance(hint, str) or len(hint) > HINT_MAX_CHARS):
+            raise ValueError("hint")
         if start.get("type") != "start" or rate not in STREAM_RATES:
             raise ValueError("start")
     except (TimeoutError, ValueError, TypeError, AttributeError):
         await ws.send_json({
             "type": "error",
             "code": "start",
-            "message": "Send a start message first (sampleRate 8000 or 16000).",
+            "message": "Send a start message first (sampleRate 8000 or 16000, a hint of at most "
+            f"{HINT_MAX_CHARS} characters).",
         })
         await ws.close(code=4400)
         return
     usd_per_ms = speech_usd(f"stt:{engine}", audio_ms=1000) / 1000
     cap_ms = st.transcribe_stream_max_seconds * 1000
     caps = stt_caps(engine)
+    streaming = caps.realtime or engine
+    extra = {"hint": hint.strip()} if hint and hint.strip() else {}
     try:
         await _cap(svc, app, s, sess, usd_per_ms * cap_ms)
-        service = make_stt(caps.realtime or engine, language=language, sample_rate=rate)
+        service = make_stt(streaming, language=language, sample_rate=rate, **extra)
     except AppError as e:
         await ws.send_json({"type": "error", "code": e.code, "message": e.message})
         await ws.close(code=4429 if e.code == "limit" else 4500)
@@ -613,22 +677,41 @@ async def _stream(
         await ws.close(code=4500)
         return
     out: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    filtering = _filters(app)
+    locale = pack_language(language) or locale_of(app, sess)
+    heard = asyncio.Event()
+    dropped = 0
 
     def put(frame: Frame, direction: FrameDirection) -> None:
+        nonlocal dropped
         if direction != FrameDirection.DOWNSTREAM:
             return
-        if isinstance(frame, TranscriptionFrame):
-            out.put_nowait({"type": "final", "text": frame.text})
-        elif isinstance(frame, InterimTranscriptionFrame):
-            out.put_nowait({"type": "interim", "text": frame.text})
+        final = isinstance(frame, TranscriptionFrame)
+        if not final and not isinstance(frame, InterimTranscriptionFrame):
+            return
+        if final:
+            heard.set()
+        if filtering and made_up(frame.text, locale):
+            if final:
+                dropped += 1
+            return
+        out.put_nowait({"type": "final" if final else "interim", "text": frame.text})
 
     async def send() -> None:
         while (msg := await out.get()) is not None:
             with contextlib.suppress(Exception):
                 await ws.send_json(msg)
 
-    vad_processor = VADProcessor(vad_analyzer=SileroVADAnalyzer(sample_rate=rate, params=params))
-    worker, task = await run_pipeline([vad_processor, service, Catch(put)], rate)
+    utterances = Utterances(
+        sample_rate=rate,
+        detector=detect,
+        commit_ms=stt_caps(streaming).commit_ms,
+        emit=out.put_nowait,
+    )
+    processors: list[FrameProcessor] = [utterances, service, Catch(put)]
+    if detect:
+        processors.insert(0, VADProcessor(vad_analyzer=_vad_analyzer(rate, params)))
+    worker, task = await run_pipeline(processors, rate)
     sender = asyncio.create_task(send())
     received = 0
     ended: str | None = None
@@ -667,8 +750,12 @@ async def _stream(
             elif msg.get("text"):
                 with contextlib.suppress(ValueError):
                     sent = json.loads(msg["text"])
-                    if isinstance(sent, dict) and sent.get("type") == "stop":
+                    kind = sent.get("type") if isinstance(sent, dict) else None
+                    if kind == "stop":
+                        await _close_utterance(worker, CommitFrame, heard, stt_caps(streaming))
                         break
+                    if kind == "commit":
+                        await worker.queue_frame(CommitFrame())
     finally:
         await worker.queue_frame(EndFrame())
         with contextlib.suppress(Exception):
@@ -679,6 +766,8 @@ async def _stream(
         out.put_nowait(None)
         with contextlib.suppress(Exception):
             await sender
+        if dropped:
+            _dropped(engine, "stream", dropped)
         ms = round(received / 2 / rate * 1000)
         if ms:
             await asyncio.shield(
@@ -693,3 +782,21 @@ async def _stream(
             return
         await ws.send_json({"type": "end", "durationMs": round(received / 2 / rate * 1000)})
         await ws.close()
+
+
+async def _close_utterance(worker: Any, commit: Any, heard: asyncio.Event, caps: Any) -> None:
+    """``stop``: end the open utterance, so the engine transcribes what is left.
+
+    A segmented engine transcribes it before it stops; a realtime engine with commits answers
+    over its own connection, so its ``final`` is waited for (``STOP_DRAIN_SECONDS`` at most).
+    """
+    done: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+    await worker.queue_frame(commit(closing=True, done=done))
+    try:
+        ended = await asyncio.wait_for(done, STOP_DRAIN_SECONDS)
+    except TimeoutError:
+        return
+    if ended and caps.commit_ms:
+        heard.clear()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(heard.wait(), STOP_DRAIN_SECONDS)

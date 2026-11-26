@@ -42,6 +42,18 @@
     "channel.notAvailable": "L’assistant n’est pas disponible sur ce canal."
   },
   "speech": {
+    "hallucinations": [
+      "sous-titres réalisés par la communauté d'amara.org",
+      "sous-titrage société radio-canada",
+      "sous-titrage st' 501",
+      "sous-titres par *",
+      "merci d'avoir regardé",
+      "merci d'avoir regardé cette vidéo",
+      "abonnez-vous",
+      "abonnez-vous à la chaîne",
+      "n'oubliez pas de vous abonner",
+      "à bientôt pour une nouvelle vidéo"
+    ],
     "redactions": {
       "taxCode": "le numéro fiscal",
       "iban": "l’IBAN",

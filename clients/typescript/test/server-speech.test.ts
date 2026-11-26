@@ -90,6 +90,8 @@ describe('server speech', () => {
     const r = await transcribe(s, new Uint8Array([1, 2]), { language: 'it-IT', contentType: 'audio/wav' })
     expect(r.text).toBe('hello')
     expect(calls[0]?.url).toBe('http://evokai.test/agent/v1/session/transcribe?language=it-IT')
+    await transcribe(s, new Uint8Array([1, 2]), { hint: 'Evokai, Pipecat' })
+    expect(calls[1]?.url).toBe('http://evokai.test/agent/v1/session/transcribe?hint=Evokai%2C+Pipecat')
     expect(transcribeSocketUrl(s)).toBe('ws://evokai.test/agent/v1/session/transcribe/stream')
   })
 })
@@ -227,6 +229,34 @@ describe('ServerStt', () => {
     expect(finals).toEqual(['ciao'])
     stt.stop()
     expect(JSON.parse(String(s.sent.at(-1)))).toEqual({ type: 'stop' })
+  })
+
+  test('client-decided utterances: no detection, a hint, commits, speech marks and warnings', async () => {
+    let socket: FakeSocket | null = null
+    const stt = new ServerStt({
+      session: session([]),
+      vad: false,
+      hint: 'Evokai, Pipecat',
+      socket: (url, protocols) => (socket = new FakeSocket(url, protocols)),
+      source: { start: async () => undefined, stop: () => undefined },
+    })
+    const got: unknown[] = []
+    stt.on('speechstart', (m) => got.push(['start', m]))
+    stt.on('speechend', (m) => got.push(['end', m]))
+    stt.on('warning', (w) => got.push(['warning', w.code]))
+    stt.on('final', (t) => got.push(['final', t]))
+    await stt.start({ continuous: true })
+    const s = socket as unknown as FakeSocket
+    expect(JSON.parse(String(s.sent[0]))).toEqual({ type: 'start', sampleRate: 16000, vad: false, hint: 'Evokai, Pipecat' })
+    stt.commit()
+    expect(JSON.parse(String(s.sent.at(-1)))).toEqual({ type: 'commit' })
+    s.onmessage?.({ data: JSON.stringify({ type: 'speech_start', ms: 120 }) })
+    s.onmessage?.({ data: JSON.stringify({ type: 'speech_end', ms: 900 }) })
+    s.onmessage?.({ data: JSON.stringify({ type: 'final', text: 'ciao' }) })
+    s.onmessage?.({ data: JSON.stringify({ type: 'warning', code: 'commit_too_short', message: 'ignored' }) })
+    expect(got).toEqual([['start', { ms: 120 }], ['end', { ms: 900 }], ['final', 'ciao'], ['warning', 'commit_too_short']])
+    expect(stt.running).toBe(true)
+    stt.abort()
   })
 
   test('toPcm16 downsamples and clips', () => {

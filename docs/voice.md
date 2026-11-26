@@ -133,7 +133,8 @@ Content-Type: audio/webm
 
 WAV, WebM, Ogg, MP3 or M4A, up to `EVOKAI_TRANSCRIBE_MAX_BYTES` (10 MB, else 413 `too_large` or `audio_too_large`) and
 `EVOKAI_TRANSCRIBE_MAX_SECONDS` (120, else 400 `audio_too_long`); anything else is 400 `audio_invalid`. The answer is
-`{text, durationMs, engine}`. `language` defaults to the session's.
+`{text, durationMs, engine}`. `language` defaults to the session's; `hint` is a
+[vocabulary hint](#vocabulary-hints).
 
 ## Streaming recognition
 
@@ -143,12 +144,16 @@ once with a code, so a browser sees why: 4400 (a token in the query string), 440
 the application does not allow, or speech not granted), 4409 (the session already has a socket), 4429 (too many
 requests with this token, or a cap reached), 4500 (the engine is not available). Then:
 
-1. the client sends `{"type": "start", "sampleRate": 16000, "language"?: "it-IT", "vad"?: {"confidence", "startSecs",
-   "stopSecs", "minVolume"}}` (8000 or 16000 Hz; voice activity detection is Silero's, with these parameters);
+1. the client sends `{"type": "start", "sampleRate": 16000, "language"?: "it-IT", "hint"?, "vad"?: {"confidence",
+   "startSecs", "stopSecs", "minVolume"} | false}` (8000 or 16000 Hz; Silero's voice activity detection, or none);
 2. the server answers `{"type": "ready"}`;
-3. the client sends 16-bit mono PCM as binary messages; the server sends `{"type": "interim", "text"}` and
-   `{"type": "final", "text"}`;
-4. the client sends `{"type": "stop"}`; the server sends what is left, `{"type": "end", "durationMs"}`, and closes.
+3. the client sends 16-bit mono PCM as binary messages and any `{"type": "commit"}`; the server sends
+   `{"type": "speech_start", "ms"}`, `{"type": "speech_end", "ms"}`, `{"type": "interim", "text"}`,
+   `{"type": "final", "text"}` and `{"type": "warning", "code", "message"}`;
+4. the client sends `{"type": "stop"}`; the server ends the open utterance, sends what is left,
+   `{"type": "end", "durationMs"}`, and closes.
+
+A malformed `start` ends with `{"type": "error", "code": "start"}` and close code 4400.
 
 A stream with more audio than `EVOKAI_TRANSCRIBE_STREAM_MAX_SECONDS` (300), or open 10 seconds longer, ends with
 `{"type": "error", "code": "too_long"}` and close code 4408; one with no audio for
@@ -158,17 +163,46 @@ A synthesis that takes longer than `EVOKAI_SPEECH_TIMEOUT_SECONDS` (60) ends wit
 A recording is decoded only up to its maximum length. Engines that transcribe whole utterances (`elevenlabs`, `openai`) stream through their realtime
 variants.
 
+### Speech start and end
+
+With voice activity detection on, `speech_start` and `speech_end` carry `ms`, where speech began or ended in the audio
+received: for a listening indicator and barge-in before any word is transcribed. `speech_end` precedes its `final`.
+
+### Utterances decided by the client
+
+`commit` ends the current utterance now, with detection on or off, and the engine sends its `final` (none when it heard
+nothing); with the person still speaking, the next one starts at once. With `"vad": false` only commits and `stop` end
+utterances: push-to-talk, a kiosk with its own voice detection. In a noisy room, where silence never comes, keep
+detection and commit on a timer or a gesture. A commit with less new audio than the engine takes (`SttCaps.commit_ms`:
+100 ms, 300 ms for `elevenlabs-realtime`) is not passed on: the socket sends a `warning` `commit_too_short` and goes on.
+`stop` ends the open utterance and waits up to 5 seconds for a realtime engine's last `final`.
+
+### Vocabulary hints
+
+`hint` lists names and terms the engine would misspell (products, people, jargon), comma-separated, at most 500
+characters: the prompt of the `openai` engines, the initial prompt of `whisper`, key terms of the `elevenlabs` engines
+(at most 50, each under 50 characters). Other engines ignore it; a `module:factory` gets it only when one was sent.
+
+### Made-up phrases
+
+Recognisers trained on subtitled video answer silence or noise with the credits of their training clips («Thanks for
+watching», «Subtitles by the Amara.org community»). A transcript that is wholly a phrase of its language pack
+(`speech.hallucinations`, English ones in every language, `*` any text), a lone `[Music]` or punctuation is dropped
+from both endpoints, logged (`stt_phrase_dropped`) and counted (`evokai.stt.dropped_phrases`). The application setting
+`stt_filter: false` turns this off.
+
 ## Clients
 
 - **TypeScript:** `session.speak({turnId, index})` resolves with the audio and its timings;
   `session.speechEvents(...)` streams them; both take `language`, `after`, `characters`; `TimedSpeechPlayer` plays PCM with Web Audio and emits `word`, `char`, `mark` and `viseme` as they are heard;
   `ServerTts` and `ServerStt` are a speech engine and a recogniser for the browser voice engine, which picks them when
-  the token chose server engines (`session.speech`); `session.transcribe(blob)` transcribes a recording.
+  the token chose server engines (`session.speech`); `ServerStt` takes `vad: false` and `hint`, has `commit()` and
+  emits `speechstart`/`speechend` (`{ms}`) and `warning`; `session.transcribe(blob, {hint})` transcribes a recording.
 - **`<evokai-chat>`:** voice mode uses server speech and recognition when the token chose them; browser speech stays
   the default.
 - **Python:** `session.speak(text=...)` or `session.speak(turn_id=..., index=...)` returns a `Speech` (audio, words,
   marks, visemes, `speech_id`, `chars`);
-  `session.transcribe(audio, content_type="audio/wav")` returns the text.
+  `session.transcribe(audio, content_type="audio/wav", hint="...")` returns the text.
 
 ## Tests
 

@@ -113,15 +113,24 @@ export interface VoiceCommonOptions {
 
 export type SttSupport = 'ready' | 'downloadable' | 'unsupported'
 
+/** Where speech started or ended, in milliseconds of the audio sent so far (recognisers that know it). */
+export interface SpeechMark {
+  ms: number
+}
+
 export interface SttEvents {
   /** Partial transcript of the current phrase. */
   interim: string
   /** A final phrase. */
   final: string
-  /** The recogniser heard speech start. */
-  speechstart: null
+  /** The recogniser heard speech start (barge-in, a listening indicator). */
+  speechstart: SpeechMark | null
+  /** The recogniser heard speech end; the phrase's `final` follows. */
+  speechend: SpeechMark | null
   /** The recogniser stopped (continuous engines restart themselves while running). */
   end: null
+  /** Something was ignored and recognition goes on (`commit_too_short`). */
+  warning: VoiceError
   error: VoiceError
 }
 

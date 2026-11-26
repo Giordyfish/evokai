@@ -314,7 +314,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | POST | `/v1/session/exit`, `/v1/session/bug-reports` | session | kiosk exit, bug report |
 | POST/PATCH | `/v1/session/voice/offer` | session | server voice: WebRTC offer / ICE candidates (only when enabled) |
 | POST | `/v1/session/speech`, `/v1/session/transcribe` | session | [server speech](voice.md): a text or a `say` segment as audio and timings (SSE); a recording transcribed (only when enabled) |
-| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled) |
+| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled): transcripts, where speech starts and ends, utterances ended by voice activity detection or by the client (`commit`) |
 | POST | `/v1/session/agui` | session | a turn as an [AG-UI](ag-ui.md) run: `RunAgentInput` in, AG-UI events out (SSE); confirmations and questions are interrupts |
 | POST | `/v1/openai/chat/completions` | server key or session | [OpenAI-compatible](openai-compatible.md) Chat Completions: model = agent, server-run semantics, streaming |
 | GET | `/v1/openai/models` | server key or session | the agents the caller can use, as OpenAI models |
@@ -428,7 +428,9 @@ A session declares its **voice engine** (token claim, else the application defau
   the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
   same as for [server speech](voice.md) (synthesis with timings, transcription, streaming). A voice of
   the deployment's catalogue speaks with its own [settings](voice.md#catalogue-voices) (model, speed,
-  the engine's options) in both, so an operator tunes it once for every application.
+  the engine's options) in both, so an operator tunes it once for every application. Server
+  recognition takes a vocabulary hint and drops the phrases recognisers make up from silence; its
+  streaming socket reports where speech starts and ends and lets the client end utterances itself.
 
 ## Module map (`src/evokai`)
 
@@ -446,8 +448,8 @@ A session declares its **voice engine** (token claim, else the application defau
 | `tools` | client tools (charts, diagrams, ask, memory, skills) and confirmation labels |
 | `sessions` | turns and server runs (drivers of the engine), storage modes, events and replay, cancellation, limits |
 | `engine` | turns and runs on pydantic-ai's `Agent`: the guarded toolset, the per-request capability (history view, caps, fallback, caching, traces, usage), Code Mode, compaction, subagents ([pydantic-ai agent](pydantic-ai-agent.md)) |
-| `audio/speech` | speakable text, splitter, redaction, spoken replies |
-| `audio/voice` | Pipecat agent processor, speech providers, WebRTC voice server |
+| `audio/speech` | speakable text, splitter, redaction, spoken replies, made-up phrases of recognisers |
+| `audio/voice` | Pipecat agent processor, speech providers, utterances of the streaming socket, WebRTC voice server |
 | `api` | session, server, admin, grants, console and voice routes; the open standards (`agui_routes`, `openai_routes`, `a2a_routes`); the console's static files |
 | `grants` | capability grants: defaults, overrides, enforcement helpers |
 | `privacy` | a subject's export and erase, session revocations, data residency ([privacy](privacy.md)) |

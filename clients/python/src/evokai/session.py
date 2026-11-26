@@ -880,7 +880,12 @@ class EvokaiSession(_SessionBase):
         return finished(out)
 
     def transcribe(
-        self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
+        self,
+        audio: bytes,
+        *,
+        content_type: str = "audio/wav",
+        language: str | None = None,
+        hint: str | None = None,
     ) -> Transcript:
         """Transcribe a recording (WAV, WebM, Ogg, MP3, M4A) with the session's engine.
 
@@ -888,12 +893,14 @@ class EvokaiSession(_SessionBase):
             audio: The file's bytes.
             content_type: Its media type.
             language: A BCP 47 language (default: the session's).
+            hint: Names and terms the person is likely to say (product names, people, jargon),
+                comma-separated, at most 500 characters; engines without a vocabulary ignore it.
 
         Returns:
             The text, the audio's length and the engine.
         """
         data = self._transport.send_bytes(
-            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language}
+            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language, "hint": hint}
         )
         return Transcript.model_validate(data)
 
@@ -1301,7 +1308,12 @@ class AsyncEvokaiSession(_SessionBase):
         return finished(out)
 
     async def transcribe(
-        self, audio: bytes, *, content_type: str = "audio/wav", language: str | None = None
+        self,
+        audio: bytes,
+        *,
+        content_type: str = "audio/wav",
+        language: str | None = None,
+        hint: str | None = None,
     ) -> Transcript:
         """Transcribe a recording (WAV, WebM, Ogg, MP3, M4A) with the session's engine.
 
@@ -1309,11 +1321,13 @@ class AsyncEvokaiSession(_SessionBase):
             audio: The file's bytes.
             content_type: Its media type.
             language: A BCP 47 language (default: the session's).
+            hint: Names and terms the person is likely to say (product names, people, jargon),
+                comma-separated, at most 500 characters; engines without a vocabulary ignore it.
 
         Returns:
             The text, the audio's length and the engine.
         """
         data = await self._transport.send_bytes(
-            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language}
+            TRANSCRIBE_PATH, audio, content_type, self.token, {"language": language, "hint": hint}
         )
         return Transcript.model_validate(data)

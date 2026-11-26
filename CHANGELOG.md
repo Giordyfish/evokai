@@ -143,6 +143,28 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - Clients: `language`, `after` and `characters` on `session.speak` and `session.speechEvents`, `speechId` and
   `timings.chars` (TypeScript), the `char` event of `TimedSpeechPlayer`; `language=`, `after=`, `characters=`,
   `Speech.speech_id` and `Speech.chars` (Python), and `VoiceBody.settings`.
+- Speech start and end on the streaming recognition socket ([docs/voice.md](docs/voice.md#speech-start-and-end)):
+  `{"type": "speech_start", "ms"}` and `{"type": "speech_end", "ms"}` as the voice activity detection hears them, `ms`
+  being where speech began or ended in the audio received. For listening indicators and barge-in without waiting for
+  the first words. `ServerStt` emits `speechstart` and `speechend` with `{ms}`.
+- Utterances decided by the client ([docs/voice.md](docs/voice.md#utterances-decided-by-the-client)): `start` takes
+  `"vad": false` (no voice activity detection on the server), and `{"type": "commit"}` ends the current utterance now,
+  with detection on or off, so the engine transcribes it and the server sends its `final`. For push-to-talk, devices
+  with their own voice detection, and noisy rooms. A commit with too little new audio for the engine is ignored with
+  `{"type": "warning", "code": "commit_too_short"}`; `stop` ends the open utterance and, with a realtime engine, waits
+  for its last words. `ServerStt` takes `vad: false`, has `commit()` and emits `warning`.
+- Vocabulary hints ([docs/voice.md](docs/voice.md#vocabulary-hints)): `hint` (names and terms, at most 500
+  characters) on `POST /v1/session/transcribe` (query) and on the socket's `start`, given to the engines that take a
+  vocabulary (OpenAI and Whisper as a prompt, ElevenLabs as key terms). TypeScript `transcribe(..., {hint})` and
+  `ServerStt({hint})`, Python `session.transcribe(..., hint=...)`.
+- Made-up phrases dropped from transcripts ([docs/voice.md](docs/voice.md#made-up-phrases)): the stock credits and
+  sign-offs recognisers produce on silence or noise («Thanks for watching», subtitle credits) are listed per language
+  pack (`speech.hallucinations`, all seven languages) and dropped from the socket's `final` and `interim` and from
+  `POST /v1/session/transcribe`, with each drop logged and counted (`evokai.stt.dropped_phrases`). On by default; the
+  application setting `stt_filter: false` keeps every transcript as the engine gave it.
+- Release images with the voice stack: every release also publishes `<version>-voice` (lite with the voice stack), and
+  the `full` image now carries it too, so server speech runs from a released image; each image's smoke test checks
+  `voice=yes` or `voice=no` as built ([docs/deployment.md](docs/deployment.md#images-lite-lite-with-voice-full)).
 
 ### Fixed
 

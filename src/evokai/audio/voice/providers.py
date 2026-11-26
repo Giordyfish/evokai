@@ -12,7 +12,9 @@ the engine's own settings from ``EVOKAI_*`` variables (docs/voice.md).
 
 Every factory takes ``voice`` (the session's voice, else the engine's default), ``sample_rate``,
 ``language`` (BCP 47) and, for speech, ``settings`` (the catalogue voice's settings, already
-checked by ``check_voice_settings``), and ignores what it does not use.
+checked by ``check_voice_settings``), and ignores what it does not use. A recognition factory is
+also given ``hint`` when the client sent one: names and terms the person is likely to say, which
+engines that take a vocabulary use (OpenAI and Whisper as a prompt, ElevenLabs as key terms).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from __future__ import annotations
 import functools
 import importlib
 import os
+import re
 import weakref
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
@@ -68,6 +71,9 @@ class SttCaps:
     """It transcribes whole utterances (it needs voice activity detection to cut them)."""
     realtime: str | None = None
     """The engine streaming uses instead (``WS /v1/session/transcribe/stream``), if another."""
+    commit_ms: int = 0
+    """It transcribes what it was sent when an utterance ends (a realtime engine with commits),
+    and needs at least this much audio since the last one; 0 for engines that do not commit."""
 
 
 def voice_model(engine: str, settings: Mapping[str, Any] | None) -> str | None:
@@ -90,9 +96,10 @@ class FakeSTT(STTService):
 
         Args:
             phrases: What the user will have said, in order.
-            **kwargs: Passed to STTService (``language`` and ``voice`` are ignored).
+            **kwargs: Passed to STTService (``language`` is ignored, ``hint`` kept for tests).
         """
         kwargs.pop("language", None)
+        self.hint: str | None = kwargs.pop("hint", None)
         super().__init__(**kwargs)
         self.phrases = list(phrases or [])
 
@@ -232,6 +239,20 @@ def _language(tag: str | None) -> Any:
         except ValueError:
             continue
     return None
+
+
+KEYTERMS_MAX = 50
+"""The most key terms a hint gives an engine that takes a list (each under 50 characters)."""
+
+
+def key_terms(hint: str | None) -> list[str]:
+    """A hint as a list of terms: split at commas, semicolons and new lines.
+
+    Returns:
+        The terms, in order, without repeats; those of 50 characters or more are left out.
+    """
+    terms = [t.strip() for t in re.split(r"[,;\n]", hint or "")]
+    return list(dict.fromkeys(t for t in terms if t and len(t) < 50))[:KEYTERMS_MAX]
 
 
 def _http() -> Any:
@@ -495,8 +516,8 @@ def azure_stt(*, language: str | None = None, sample_rate: int | None = None, **
     )
 
 
-def elevenlabs_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
-    """ElevenLabs Scribe, one utterance at a time.
+def elevenlabs_stt(*, sample_rate: int | None = None, hint: str | None = None, **_: Any) -> Any:
+    """ElevenLabs Scribe, one utterance at a time (a hint becomes key terms).
 
     Returns:
         The service.
@@ -504,26 +525,43 @@ def elevenlabs_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
     from pipecat.services.elevenlabs.stt import ElevenLabsSTTService
 
     session = _http()
+    terms = key_terms(hint)
     service = ElevenLabsSTTService(
-        api_key=_env("ELEVENLABS_API_KEY"), aiohttp_session=session, sample_rate=sample_rate
+        api_key=_env("ELEVENLABS_API_KEY"),
+        aiohttp_session=session,
+        sample_rate=sample_rate,
+        settings=ElevenLabsSTTService.Settings(keyterms=terms) if terms else None,
     )
     _CLOSERS[service] = session.close
     return service
 
 
-def elevenlabs_realtime_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
-    """ElevenLabs Scribe realtime (streaming).
+def elevenlabs_realtime_stt(
+    *, sample_rate: int | None = None, hint: str | None = None, **_: Any
+) -> Any:
+    """ElevenLabs Scribe realtime (streaming; a hint becomes key terms).
 
     Returns:
         The service.
     """
     from pipecat.services.elevenlabs.stt import ElevenLabsRealtimeSTTService
 
-    return ElevenLabsRealtimeSTTService(api_key=_env("ELEVENLABS_API_KEY"), sample_rate=sample_rate)
+    terms = key_terms(hint)
+    return ElevenLabsRealtimeSTTService(
+        api_key=_env("ELEVENLABS_API_KEY"),
+        sample_rate=sample_rate,
+        settings=ElevenLabsRealtimeSTTService.Settings(keyterms=terms) if terms else None,
+    )
 
 
-def openai_stt(*, language: str | None = None, sample_rate: int | None = None, **_: Any) -> Any:
-    """OpenAI transcription, one utterance at a time.
+def openai_stt(
+    *,
+    language: str | None = None,
+    sample_rate: int | None = None,
+    hint: str | None = None,
+    **_: Any,
+) -> Any:
+    """OpenAI transcription, one utterance at a time (a hint is its prompt).
 
     Returns:
         The service.
@@ -536,14 +574,19 @@ def openai_stt(*, language: str | None = None, sample_rate: int | None = None, *
         settings=OpenAISTTService.Settings(
             model=os.environ.get("EVOKAI_OPENAI_STT_MODEL") or "gpt-4o-mini-transcribe",
             language=_language(language),
+            prompt=hint or None,
         ),
     )
 
 
 def openai_realtime_stt(
-    *, language: str | None = None, sample_rate: int | None = None, **_: Any
+    *,
+    language: str | None = None,
+    sample_rate: int | None = None,
+    hint: str | None = None,
+    **_: Any,
 ) -> Any:
-    """OpenAI realtime transcription (streaming).
+    """OpenAI realtime transcription (streaming; a hint is its prompt).
 
     Returns:
         The service.
@@ -556,12 +599,15 @@ def openai_realtime_stt(
         settings=OpenAIRealtimeSTTService.Settings(
             model=os.environ.get("EVOKAI_OPENAI_STT_MODEL") or "gpt-4o-mini-transcribe",
             language=_language(language),
+            prompt=hint or None,
         ),
     )
 
 
-def whisper_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
+def whisper_stt(*, sample_rate: int | None = None, hint: str | None = None, **_: Any) -> Any:
     """faster-whisper in this process (``pipecat-ai[whisper]``), one utterance at a time.
+
+    A hint is its initial prompt.
 
     Returns:
         The service.
@@ -569,7 +615,9 @@ def whisper_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
     from pipecat.services.whisper.stt import WhisperSTTService
 
     return WhisperSTTService(
-        model=os.environ.get("EVOKAI_WHISPER_MODEL") or "distil-medium.en", sample_rate=sample_rate
+        model=os.environ.get("EVOKAI_WHISPER_MODEL") or "distil-medium.en",
+        sample_rate=sample_rate,
+        settings=WhisperSTTService.Settings(initial_prompt=hint) if hint else None,
     )
 
 
@@ -600,8 +648,11 @@ STT_CAPS: dict[str, SttCaps] = {
     "elevenlabs": SttCaps(segmented=True, realtime="elevenlabs-realtime"),
     "openai": SttCaps(segmented=True, realtime="openai-realtime"),
     "whisper": SttCaps(segmented=True),
+    "elevenlabs-realtime": SttCaps(commit_ms=300),
+    "openai-realtime": SttCaps(commit_ms=100),
 }
-"""Engines not listed stream (they need no voice activity detection to cut utterances)."""
+"""Engines not listed stream (they need no voice activity detection to cut utterances, and
+transcribe as they hear)."""
 
 
 ELEVENLABS_TAG_MODELS = ("eleven_v3", "eleven_v4")
