@@ -67,6 +67,9 @@ describe('numbers and shares', () => {
   test('values are plain numbers: no currency is ever added', () => {
     expect(defaultFormat(1234.5, 'eur', 'en-US')).toBe('1,235')
     expect(defaultFormat(12.5, 'eur', 'en-US')).toBe('12.5')
+    // A duration: milliseconds below a second, seconds above, in the page's language.
+    expect(defaultFormat(850, 'ms', 'en-US')).toBe('850 ms')
+    expect(defaultFormat(4338, 'ms', 'it-IT')).toBe('4,3 s')
     expect(defaultFormat(1234, 'eur', 'it-IT')).toBe('1234')
     expect(defaultFormat(12.25, 'pct', 'en-US')).toBe('12.3%')
     expect(defaultFormat(3, 'count', 'en-US')).toBe('3')

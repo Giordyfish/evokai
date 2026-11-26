@@ -49,6 +49,7 @@ Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM09 Misinformat
 | `input.injection` | prompt injection and jailbreaks in the user's message | LLM01 | T6 intent breaking | monitor | the turn ends with an `error` (`guard`) before the model sees the text; nothing is stored |
 | `input.encoding` | zero-width characters, Cyrillic/Greek look-alikes, base64 payloads | LLM01 | T6 | monitor | invisible characters are removed from the input |
 | `input.size` | oversized inputs | LLM10 | T4 resource overload | monitor | refused (`guard` error; 413 for server runs) |
+| `input.secrets` | API keys, tokens, private keys, passwords and the deployment's own keys in the user's message (the detectors of `output.secrets`) | LLM02 | | monitor | the turn ends with an `error` (`guard`) before the model sees the text; nothing is stored |
 | `untrusted.spotlight` | indirect injection: tool output, page text, documents, e-mails read as instructions | LLM01 | T6, T2 tool misuse | **enforce** | content reaches the model between `<<untrusted:...>>` markers with a keyed boundary, and the system prompt says it is data |
 | `untrusted.injection` | instructions hidden in that content (knowledge passages included) | LLM01 | T6, T2 | monitor | instruction-like lines are replaced by `[removed by Evokai: instruction-like text]` |
 | `pii.model` | personal data sent to the model provider | LLM02 | T15 | monitor | identifiers become reversible tokens (tools and the user still get the real value) or masks |
@@ -69,6 +70,11 @@ Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM09 Misinformat
 | `abuse.rate` | floods of turns or runs per user | LLM10 | T4 | monitor | 429 `rate_limited` |
 | `abuse.concurrency` | many answers at once per user | LLM10 | T4 | monitor | 429 `too_busy` |
 | `abuse.length` | very long conversations | LLM10 | T4 | monitor | 429 `conversation_too_long` |
+
+`input.secrets` is in monitor by default: a person pasting a configuration with a key into a chat is often legitimate
+(asking for help with it), and refusing it would break existing agents; the event (never the secret itself: the event
+has no snippet) shows how often it happens before an owner, or the [system policy](#the-system-policy), enforces it.
+Gateways, where text leaves for a provider the organisation does not run, are where enforcing it matters most.
 
 Confirmation of tools that change data (`destructiveHint`, or not `readOnlyHint`) was already enforced by the turn
 engine before this layer and stays so: those calls never run without the user's yes, and server runs never get them.
@@ -249,9 +255,77 @@ control or setting), `GET /v1/admin/security/events` (filters `control` (a prefi
 (counts by rule, control, action, severity). An agent's own policy is the `security` field of its definition
 (`PUT /v1/admin/agents/{name}`); a definition without it keeps its version.
 
-Console: the **Security** page of an application: every control with its OWASP ids, the mode that applies and the
-application's choice; the settings as JSON; each agent's overrides (editable, saved as a new agent version); the
-events with filters, their counts by rule and a CSV export.
+Console: the **Security** page of an application: every control with its OWASP ids, the mode that applies (and the
+system policy's minimum, when it sets one) and the application's choice; the settings as JSON; each agent's overrides
+(editable, saved as a new agent version); the policy's versions and tests and a copy from another policy; the events
+with filters, their counts by rule and a CSV export.
+
+### The system policy
+
+One policy for the whole deployment (code: `evokai.policies`), with the same shape as an application's (`security`
+and `data_protection`). It can only make things stricter:
+
+- **Minimum modes.** Its `modes` give each control a minimum (`off < monitor < enforce`), its `mode` the minimum of
+  every control it does not name. The effective mode is the stricter of the minimum and the mode resolved as above
+  (agent, application, default). An application that turns `input.injection` off still has it enforced when the
+  system policy says `input.injection: enforce`; a minimum below the resolved mode changes nothing. The kill switch
+  (`EVOKAI_GUARD_ENABLED=false`) still turns everything off.
+- **A data protection profile** that every application's processors must meet **as well as** the application's own
+  ([data protection](data-protection.md#the-system-policys-profile)).
+- **Default settings** (personal data types, scope deny lists, limits, the classifier...). They are read before the
+  application's and the agent's: **defaults, not floors**. An application that sets its own `scope.deny` replaces the
+  system's list, it does not add to it. What must hold everywhere is a minimum mode, not a setting.
+
+Only the deployment's owners see and change it: the operator key, or a console login that owns every application
+(single sign-on role `owner` on `*`). That is the role that already creates applications and manages sign-in; an
+application's owner may not weaken or read rules meant for every application. Routes (deployment owners):
+`GET`/`PUT /v1/console/system-policy` (body `{security, data_protection, note, force}`), and the versions, diff,
+restore, copy and tests routes below under the same prefix. Console: **System policy** in the navigation. A save is in
+force on the instance that made it at once and on the others within 15 seconds (each reloads it). The system policy's
+profile cannot declare what browsers send (`browser`, 400 `system_browser`): that is each application's declaration.
+
+### Policy versions
+
+Every save of a policy, whatever the path (`PUT /v1/admin/security`, `data_protection` in `PATCH /v1/admin/application`,
+the config file at start, the console, a restore, a copy), writes an immutable version: its number, the content
+(`security` and `data_protection` together), who saved it (as the audit log names them; `config` for the config file),
+when, and an optional note. A save that changes nothing writes no version, so restarting with the same config file adds
+none. The current version is what applies; there is no pinning to an old one. A restore saves an old content again as a
+new version.
+
+| Route (an application's; the system policy's under `/v1/console/system-policy`) | |
+|---|---|
+| `GET /v1/admin/policy/versions` | the versions, newest first: `number`, `createdAt`, `createdBy`, `note` |
+| `GET /v1/admin/policy/versions/{number}` | one version with its `content` |
+| `GET /v1/admin/policy/diff?from=1&to=3` | `changes`: `{path, change, before, after}` per setting (`to` defaults to the current version; a path is a list of keys, lists compare whole) |
+| `POST /v1/admin/policy/versions/{number}/restore` | owner; `{note, force}` |
+| `POST /v1/admin/policy/copy` | owner; `{system: true}` or `{application: "<slug>"}`, plus `{note, force}`: copies that policy's content into this one as a new version |
+
+Copy takes only a policy the caller can see: the system policy for deployment owners, another application for a
+console login with a role on it. An admin key sees only its own application. `PUT /v1/admin/security` takes `note`
+and `force` as query parameters. Existing applications got version 1 (their policy at the upgrade) from the migration.
+
+### Policy tests
+
+A policy test is a text and the outcome the guard must give it: for the whole text (`outcome`) and/or per control
+(`controls`), each `allowed` (no control acts), `flagged` (a control records or changes the text, none refuses it) or
+`blocked` (a control refuses it). A test may name the controls the input checks run: `input.size`, `input.encoding`,
+`input.secrets`, `input.injection`, `scope`, and `untrusted.injection` when the policy treats the person's input as
+data; a [gateway](gateway.md)'s tests run the gateway's own checks, and may also name `pii.model`. They run those checks only, offline, with the effective policy (an application's: its own with the system
+policy's minimums and defaults; the system policy's: what an application that sets nothing gets): never a model and
+never a classifier (the injection classifier and `input.moderation` are not asked), so they cost nothing and store
+no event. A blocking control ends the checks as in a turn: the controls after it are not reached.
+
+They run on demand (`POST /v1/admin/policy/tests/run`, viewer) and before every save of the policy's security part: a
+save, restore or copy whose tests fail is refused with 409 `policy_tests_failed` and the `failures` (each with what it
+expected and what it got), unless the request says `force: true`. The config file applied at start is not held back
+by tests (it is the source of truth of a deployment); a change of `data_protection` alone does not run them (the input
+checks do not read it). A system policy save runs the system policy's own tests, not every application's.
+
+`GET`/`POST /v1/admin/policy/tests`, `PUT`/`DELETE /v1/admin/policy/tests/{id}` (owner): `{name, input, outcome?,
+controls?}`; names are unique per policy, and a policy has 200 tests at most (409 `too_many_tests`: every save
+runs them all). The console shows the tests next to the versions, runs them, and shows the
+failures of a refused save with a **Save anyway** button.
 
 ### Application identifiers
 
@@ -321,7 +395,7 @@ security:
 | `none` (the default) | rules only |
 | `bedrock_guardrails` | the prompt attack filter of Amazon Bedrock Guardrails, through `ApplyGuardrail` |
 | `prompt_guard` | Meta Llama Prompt Guard 2 86M, run on the service's own CPU |
-| `azure_prompt_shields` | Azure AI Content Safety Prompt Shields (`text:shieldPrompt`, API 2024-09-01): the person's message as the user prompt (jailbreaks), untrusted content as documents (indirect attacks); `EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT` and `_KEY`; billed per 1,000-character text record |
+| `azure_prompt_shields` | Azure AI Content Safety Prompt Shields (`text:shieldPrompt`, API 2024-09-01): the person's message as the user prompt (jailbreaks), untrusted content as documents (indirect attacks); `EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT` and `_KEY` (without a key, a Microsoft Entra ID token of the managed identity, [Azure](azure.md)); billed per 1,000-character text record |
 | `model_armor` | Google Model Armor `sanitizeUserPrompt` with a template whose prompt injection and jailbreak filter is on (`EVOKAI_MODEL_ARMOR_TEMPLATE`, the token from `EVOKAI_MODEL_ARMOR_TOKEN` or Application Default Credentials), at the template location's regional host |
 | `mistral_moderation` | the `jailbreaking` category of Mistral's moderation model (`/v1/moderations`, `MISTRAL_API_KEY`, `EVOKAI_MISTRAL_MODERATION_URL` for its EU endpoint); Mistral's guide documents the category, its API reference examples do not show it yet: without it the score is 0 |
 | `custom` | a third-party classifier loaded from `EVOKAI_GUARD_CLASSIFIER=module:factory` (an object with `async score(text) -> float`) |

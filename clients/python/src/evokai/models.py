@@ -1031,6 +1031,11 @@ class AgentDef(SnakeModel):
     ask_rules: list[AskRule] = Field(default_factory=list)
     """Calls that wait for the person's confirmation (read after the deployment's and the
     application's; they only add confirmations)."""
+    show_reasoning: bool = False
+    """Stream a summary of the model's reasoning to the browser (``reasoning`` events)."""
+    show_tool_args: bool = False
+    """Send the tools' arguments to the browser as the model writes them (``tool`` events with
+    ``status: "args"``)."""
 
 
 class AgentPutResult(WireModel):
@@ -1221,6 +1226,9 @@ class VoiceBody(SnakeModel):
     name: str
     gender: str | None = None
     region: str | None = None
+    settings: dict[str, Any] | None = None
+    """How the engine speaks with this voice: ``model``, ``speed`` and the engine's own options
+    under its name (``{"elevenlabs": {"stability": 0.4}}``); sent as written."""
 
 
 class BugReport(WireModel):

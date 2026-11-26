@@ -10,6 +10,7 @@ from starlette.requests import HTTPConnection
 from evokai.assistant import delegation
 from evokai.assistant.reset import own_write
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
+from evokai.db.repositories import GATEWAY
 from evokai.identity import console
 from evokai.identity.auth import bearer
 from evokai.identity.models import AppPrincipal, SessionPrincipal
@@ -68,6 +69,9 @@ async def _console(request: Request) -> AppPrincipal | None:
     role = login.role_for(app) if app is not None else None
     if app is None or role is None:
         raise NotFound("Unknown application.", code="unknown_application")
+    # A gateway answers only to its policy's routes; it is not an application anywhere else.
+    if app.kind == GATEWAY and not gateway_route(route_of(request, svc.settings.base_path)):
+        raise NotFound("Unknown application.", code="unknown_application")
     authorize(request, role, svc.settings.base_path)
     key_id = {"op": "operator", "sso": f"sso:{login.user_id}"}.get(login.kind) or login.key_id
     return AppPrincipal(
@@ -81,6 +85,25 @@ async def _console(request: Request) -> AppPrincipal | None:
             login.kind, login.user_id, login.key_id, login.application_id
         ),
     )
+
+
+GATEWAY_ROUTES: frozenset[str] = frozenset({
+    "/v1/admin/security",
+    "/v1/admin/security/events",
+    "/v1/admin/security/summary",
+    "/v1/admin/audit",
+})
+"""The application routes a gateway answers to (``X-Evokai-Application`` naming it), besides every
+``/v1/admin/policy/...`` route: its policy, its versions and tests, its events and its audit log."""
+
+
+def gateway_route(path: str) -> bool:
+    """Whether a console request may name a gateway (``evokai.gateway``) on this route.
+
+    Returns:
+        True for the routes of a gateway's policy, events and audit log.
+    """
+    return path in GATEWAY_ROUTES or path.startswith("/v1/admin/policy/")
 
 
 async def _delegated(request: Request, token: str) -> AppPrincipal:
@@ -100,7 +123,7 @@ async def _delegated(request: Request, token: str) -> AppPrincipal:
         BadRequest: A body that is not a JSON object.
     """
     svc = services(request)
-    who = await delegation.principal(svc, token)
+    who = await delegation.principal(svc, token, request.headers.get(console.APPLICATION_HEADER))
     authorize(request, who.role, svc.settings.base_path)
     spec = by_route().get((request.method.upper(), route_of(request, svc.settings.base_path)))
     if spec is None:
@@ -134,15 +157,33 @@ async def console_login(request: Request) -> console.ConsoleLogin:
         raise Forbidden("Invalid console request.", code="console_header")
     svc = services(request)
     login = console.read(svc.keyring, value)
-    if (
-        login.kind == "adm"
-        and login.key_id
-        and not await svc.auth.key_alive(login.key_id, login.application_id or "")
-    ):
-        raise Unauthorized("The key of this login was revoked.", code="console")
-    if login.kind == "sso" and not await svc.auth.user_active(login.user_id or ""):
-        raise Unauthorized("This console user was disabled.", code="console")
+    if not await login_alive(svc, login):
+        reason = {
+            "adm": "The key of this login was revoked.",
+            "sso": "This console user was disabled.",
+        }.get(login.kind, "The operator key of this login changed.")
+        raise Unauthorized(reason, code="console")
     return login
+
+
+async def login_alive(svc: Services, login: console.ConsoleLogin) -> bool:
+    """Whether the credential behind a console login still stands.
+
+    An admin key login ends with the key's revocation, a single sign-on login when the user is
+    disabled, and an operator key login when the operator key is changed or removed.
+
+    Returns:
+        True while it stands.
+    """
+    if login.kind == "adm":
+        return not login.key_id or await svc.auth.key_alive(
+            login.key_id, login.application_id or ""
+        )
+    if login.kind == "sso":
+        return await svc.auth.user_active(login.user_id or "")
+    if login.kind == "op":
+        return console.operator_current(svc.keyring, svc.settings.operator_key, login.key_id)
+    return False
 
 
 async def server_app(request: Request) -> AppPrincipal:
@@ -193,6 +234,7 @@ LOCK_EXEMPT: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/v1/admin/application/unlock"),
     ("POST", "/v1/admin/application/reset"),
     ("POST", "/v1/admin/assistant/activate"),
+    ("POST", "/v1/admin/assistant/switch"),
     ("POST", "/v1/admin/assistant/try"),
     ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
 })

@@ -53,6 +53,7 @@ from evokai.audio.voice.providers import (
     make_tts,
     stt_caps,
     tts_caps,
+    voice_model,
 )
 from evokai.core.errors import AppError, Forbidden, NotFound
 from evokai.i18n import locale_of
@@ -234,7 +235,11 @@ class VoiceServer:
         tts_name = c.speech_tts or settings.voice_tts
         language = locale_of(app, sess)
         stt = make_stt(stt_caps(stt_name).realtime or stt_name, language=language)
-        tts = make_tts(tts_name, voice=await self._voice(principal, sess), language=language)
+        voice = await self._voice(principal, sess)
+        record = await self.svc.store.voices.get(tts_name, voice) if voice else None
+        tuning = record.settings if record else None
+        own = {"settings": tuning} if tuning else {}
+        tts = make_tts(tts_name, voice=voice, language=language, **own)
         chain = agent_chain(
             self.svc,
             principal,
@@ -243,7 +248,7 @@ class VoiceServer:
             external=external,
             history=history,
             app=app,
-            speech_tags=tts_caps(tts_name).speech_tags,
+            speech_tags=tts_caps(tts_name, voice_model(tts_name, tuning)).speech_tags,
         )
         worker = PipelineWorker(
             Pipeline([

@@ -104,10 +104,23 @@ def enforce_settings(settings: dict[str, Any]) -> dict[str, Any]:
 def agent_settings(agent: Any) -> dict[str, Any]:
     """An agent's model settings with its temperature, if set.
 
+    An agent that shows its reasoning (``show_reasoning``) and turns reasoning on (``thinking`` or
+    ``openai_reasoning_effort``) asks OpenAI's reasoning models for a summary
+    (``openai_reasoning_summary: auto``) unless it chose one: without it they return none. Other
+    providers ignore the key; a model that does not reason is never sent it.
+
     Returns:
         Settings for :func:`request_settings`.
     """
     out = dict(agent.model_settings)
     if agent.temperature is not None:
         out["temperature"] = agent.temperature
+    reasons = out.get("thinking") not in (None, False) or out.get(
+        "openai_reasoning_effort"
+    ) not in (
+        None,
+        "none",
+    )
+    if getattr(agent, "show_reasoning", False) and reasons:
+        out.setdefault("openai_reasoning_summary", "auto")
     return out

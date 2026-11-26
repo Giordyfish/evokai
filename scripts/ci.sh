@@ -37,6 +37,8 @@ service() {
   # A test stuck for 2 minutes prints every thread's stack (which test, where), and the suite is stopped after 20:
   # a hang fails the gate with its cause in the log instead of holding the build until its own timeout.
   local pytest_hang=(-o faulthandler_timeout=120)
+  # The suite runs on every core (pytest-xdist): each test has its own database schema and settings.
+  pytest_hang+=(-n "${EVOKAI_TEST_WORKERS:-auto}")
   echo "== service: pytest (SQLite)"
   EVOKAI_TEST_DATABASE_URL= timeout --kill-after=30 1200 uv run --no-sync pytest -q "${pytest_hang[@]}"
   if [[ -n "${EVOKAI_TEST_DATABASE_URL:-}" ]]; then

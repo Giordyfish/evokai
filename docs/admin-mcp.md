@@ -15,8 +15,14 @@ https://HOST/agent/mcp/admin
 The tools are generated from Evokai's OpenAPI, restricted to an explicit allow-list
 (`src/evokai/mcp_admin/tools.py`): every exposed route is named there, and a route that is not listed is never a tool.
 
+Every route tool takes an optional `application` (a slug): an admin key acts on its own application and may leave it
+out; the console assistant's delegation token is valid on every application its login can see and names one on each
+call (it reaches the route as the `X-Evokai-Application` header). `list_applications` lists the applications the
+caller may act on, with the role on each.
+
 | Area | Tools |
 | --- | --- |
+| Applications | `list_applications` |
 | The application | `get_application`, `update_application` (a subset of the settings, below), `get_health`, `get_usage_summary` |
 | Agents | `list_agents`, `put_agent`, `delete_agent`, `list_agent_versions`, `get_agent_version_stats`, `switch_agent_model`, `get_model_recommendations` |
 | Evals and red team | `try_agent` (one message to an agent, read-only: nothing is kept, changes stop at their confirmation, paid from the eval budget), `list_eval_cases`, `put_eval_case`, `delete_eval_case`, `list_eval_runs`, `start_eval_run`, `get_eval_run`, `list_redteam_runs`, `start_redteam_run`, `get_redteam_run` |

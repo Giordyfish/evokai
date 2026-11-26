@@ -1,12 +1,13 @@
 # Releasing
 
 Work lands on `develop`; `main` holds what is released and changes only through a pull request from `develop` (or a
-`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then runs every gate
-(the CI workflow) and publishes:
+`hotfix/...` branch). A release is a tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` then makes sure every
+gate passed on that commit (it waits for the CI run of the push to `main` and reuses it; without one, it runs the CI
+workflow itself) and publishes:
 
 | What | Where | How |
 |---|---|---|
-| The service image, `lite` and `full`, linux/amd64 and linux/arm64 | `ghcr.io/giordyfish/evokai:X.Y.Z` (and `latest`), `ghcr.io/giordyfish/evokai:X.Y.Z-full` | `GITHUB_TOKEN`, signed keyless with cosign (`scripts/sign-image.sh`), with build provenance and an SBOM attestation |
+| The service image, linux/amd64 and linux/arm64: `lite`, `lite` with the voice stack, and `full` (with the voice stack) ([images](deployment.md#images-lite-lite-with-voice-full)) | `ghcr.io/giordyfish/evokai:X.Y.Z` (and `latest`), `ghcr.io/giordyfish/evokai:X.Y.Z-voice`, `ghcr.io/giordyfish/evokai:X.Y.Z-full` | `GITHUB_TOKEN`, each smoke-tested (`evokai selftest` must report its flavour and `voice=yes` or `voice=no` as built) and signed keyless with cosign (`scripts/sign-image.sh`), with build provenance and an SBOM attestation |
 | The Python client `evokai-client` | [PyPI](https://pypi.org/project/evokai-client/) | trusted publishing (OpenID Connect): no token in the repository |
 | `@evokai/evokai-client` and `@evokai/evokai-ui` | [npm](https://www.npmjs.com/org/evokai) | `npm publish --provenance` with the `NPM_TOKEN` secret |
 | The aliases `evokai` on PyPI (installs `evokai-client`) and `evokai` on npm (re-exports `@evokai/evokai-client`) | PyPI and npm | as above ([clients/aliases](../clients/aliases)) |

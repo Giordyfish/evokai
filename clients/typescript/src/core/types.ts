@@ -65,7 +65,8 @@ export type StorageMode = 'evokai' | 'external'
 
 // ── visuals ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Unit = 'eur' | 'count' | 'pct'
+/** `ms`: a duration in milliseconds (written in seconds from one second up). */
+export type Unit = 'eur' | 'count' | 'pct' | 'ms'
 export type ChartType = 'bar' | 'column' | 'line' | 'area' | 'donut' | 'stacked' | 'kpi'
 export interface Point { label: string; value: number }
 export interface Series { name: string; points: Point[] }
@@ -142,7 +143,27 @@ export interface MarkupView {
   cue?: { open: string; close: string }
   speech?: { open: string; close: string }
 }
-export interface ToolEvent extends EventMeta { type: 'tool'; name: string; status: 'start' | 'done' | 'error' }
+/**
+ * A tool call. `start`, then `done` or `error` when it runs. For an agent that shows its tools' arguments
+ * (`show_tool_args`), a call first comes with `status: 'args'` and the arguments written so far (`args`, the object
+ * parsed as far as it goes, through the output checks), then starts, or waits for the person's confirmation
+ * (`waiting`: a `confirm` event follows) or does not run (`skipped`). `id` (the call) ties a call's events together.
+ */
+export interface ToolEvent extends EventMeta {
+  type: 'tool'
+  name: string
+  status: ToolStatus
+  id?: string
+  args?: Record<string, unknown>
+  /** A provider's built-in tool (web search, code execution). */
+  builtin?: boolean
+}
+export type ToolStatus = 'start' | 'done' | 'error' | 'args' | 'waiting' | 'skipped'
+/**
+ * A piece of the model's reasoning while it works, for an agent that shows it (`show_reasoning`): a summary from most
+ * providers, through the output checks. Consecutive pieces make one block; show it collapsed.
+ */
+export interface ReasoningEvent extends EventMeta { type: 'reasoning'; delta: string }
 export interface ChartEvent extends EventMeta { type: 'chart'; chart: Chart }
 export interface DiagramEvent extends EventMeta { type: 'diagram'; diagram: Diagram }
 export interface AskEvent extends EventMeta {
@@ -160,12 +181,14 @@ export interface NavigateEvent extends EventMeta { type: 'navigate'; path: strin
  */
 /**
  * One tool's activity as a page draws it (`EvokaiSession.renderTool`, `<evokai-chat>` `toolRenderers`): only what the
- * events already carry. A server or MCP tool has its name and status (never its arguments or output); a client tool
- * also has its arguments and the result your own handler returned; `ui_chart` and `ui_diagram` have the visual.
+ * events already carry. A server or MCP tool has its name and status (never its output, and its arguments only for an
+ * agent that shows them, `show_tool_args`: then `status` may also be `args`, `waiting` or `skipped`, which mean it has
+ * not run); a client tool also has its arguments and the result your own handler returned; `ui_chart` and
+ * `ui_diagram` have the visual. `evokai types` gives the arguments' and results' types per tool.
  */
 export interface ToolPart {
   name: string
-  status: 'start' | 'done' | 'error'
+  status: ToolStatus
   callId?: string
   args?: Record<string, unknown>
   result?: unknown
@@ -177,6 +200,8 @@ export interface ClientToolEvent extends EventMeta {
   name: string
   args: Record<string, unknown>
   wait: boolean
+  /** Stored messages only: how a call that waited ended (the page answered, or failed or never answered). */
+  status?: 'done' | 'error'
 }
 /** The i18n key of why a call waits for the person (`confirmReasonText` turns it into a sentence). */
 export type ConfirmReasonKey = 'confirm.why.writes' | 'confirm.why.rule' | 'confirm.why.policy'
@@ -288,7 +313,7 @@ export type ConnectionProvider = 'microsoft365' | 'google' | 'github' | 'linear'
 export interface ConnectEvent extends EventMeta { type: 'connect'; provider: ConnectionProvider; title: string; server: string }
 
 export type EvokaiEvent =
-  | ConversationEvent | TextEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
+  | ConversationEvent | TextEvent | ReasoningEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
   | ConfirmEvent | ConfirmedEvent | UsageEvent | ErrorEvent | DoneEvent | SpeechEvent | CitationEvent | HandoffEvent
   | ConnectEvent | RewrittenEvent | ClientToolEvent
 
@@ -412,8 +437,16 @@ export interface AttachmentRef {
   url?: string
 }
 
+/**
+ * A stored message. `events` is what the person was shown with it: since services with ordered parts, every event that
+ * drew something (`text` with the deltas joined, `tool` with its last status, `client_tool`, `chart`, `diagram`, `ask`,
+ * `navigate`, `connect`, `confirm`, `citation`, `handoff`, `error`) in the order it was shown, so `fromStored` rebuilds
+ * the conversation as it looked live. Older messages have no `text` event: their `text` goes before their events.
+ */
 export interface StoredMessage {
   id: string
+  /** The turn that stored it (absent from older services): a turn's assistant messages are shown as one. */
+  turnId?: string | null
   role: 'user' | 'assistant'
   text: string
   events: EvokaiEvent[]
@@ -889,6 +922,16 @@ export interface ConsolePreferences {
   /** The focus outline on every focused control, also after a click. */
   focusAlways: boolean
   underlineLinks: boolean
+  /** Where each guided tour of the console stopped, and when, by tour id (at most 20). */
+  tours: Record<string, ConsoleTourProgress>
+  /** The invite to the first guided tour: shown until the person dismisses it or starts a tour. */
+  tourInvite: 'show' | 'dismissed'
+}
+/** Where one guided tour stopped: the step to resume at (0 the first, 0 to 99; the number of steps means finished). */
+export interface ConsoleTourProgress {
+  step: number
+  /** When, in milliseconds since the epoch: the most recent copy wins on resume. */
+  at: number
 }
 export interface ConsolePreferencesView {
   preferences: ConsolePreferences
@@ -1140,6 +1183,8 @@ export interface ConsoleApplication {
   grants: GrantSummary
   /** The role of this login on the application. */
   role?: ConsoleRole | null
+  /** The built-in assistant's application while the assistant is off: only its own page shows it. */
+  hidden?: boolean
 }
 export interface ConsoleHealth {
   database: { status: 'ok' | 'down'; error: string | null; latencyMs: number; dialect: string; schema: string | null; revision: string | null; head: string | null }
@@ -1251,8 +1296,13 @@ export interface SecurityView {
   enabled: boolean
   /** The application's policy as set. */
   policy: SecurityPolicy
-  /** What applies to the application (before agent overrides). */
-  effective: { modes: Record<string, SecurityMode>; settings: Record<string, unknown> }
+  /**
+   * What applies to the application (before agent overrides). `floors`: the deployment's system policy's minimum mode
+   * per control (only the controls it raises); the modes already include them.
+   */
+  effective: { modes: Record<string, SecurityMode>; settings: Record<string, unknown>; floors?: Record<string, SecurityMode> }
+  /** The number of the application's current policy version (security and data protection together). */
+  version?: number
   controls: SecurityControl[]
   /** Each agent's own policy and the modes that apply to it. */
   agents: Array<{ name: string; security: SecurityPolicy | null; modes: Record<string, SecurityMode> }>
@@ -1299,6 +1349,65 @@ export interface SecurityEvent {
   tool: string | null
   snippet: string
   details: Record<string, unknown>
+}
+/** A gateway for coding tools (`/v1/admin/gateways`): Claude Code and Codex with people's own seats. */
+export type GatewayProvider = 'anthropic' | 'openai'
+export interface Gateway {
+  id: string
+  slug: string
+  name: string
+  status: 'active' | 'disabled'
+  providers: GatewayProvider[]
+  /** Model names or globs; empty: every model of the enabled providers. */
+  allowedModels: string[]
+  /** Input and output tokens per person per day and per month (UTC), when capped. */
+  tokensPerDay: number | null
+  tokensPerMonth: number | null
+  createdAt: string
+  role?: ConsoleRole
+  /** People with an active key. */
+  people?: number
+  dataProtection?: Record<string, unknown> | null
+}
+/** A person of a gateway: their personal key (`evk_gw_...`), never its secret. */
+export interface GatewayPerson {
+  id: string
+  label: string
+  prefix: string
+  createdAt: string
+  lastUsedAt: string | null
+  revoked: boolean
+}
+/** Requests and tokens of a person or a model through a gateway (never an amount). */
+export interface GatewayTokens {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  blocked: number
+}
+export interface GatewayUsage {
+  days: number
+  people: Array<GatewayTokens & { keyId: string | null; person: string }>
+  models: Array<GatewayTokens & { provider: GatewayProvider; model: string }>
+  /** `forwarded`, `upstream_error`, `blocked`, `failed`, `cancelled` to their counts. */
+  outcomes: Record<string, number>
+  /** The latest requests: who, what, outcome, timings and sizes (no content). */
+  recent: Array<{
+    at: string
+    person: string
+    provider: GatewayProvider
+    model: string
+    outcome: string
+    control: string | null
+    status: number
+    inputTokens: number
+    outputTokens: number
+    requestBytes: number
+    firstByteMs: number | null
+    durationMs: number
+  }>
 }
 export interface SecurityEventQuery {
   from?: Date | string

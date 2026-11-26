@@ -1,8 +1,9 @@
 /**
  * Server speech (`POST /v1/session/speech`): a text or one `say` segment of the conversation, spoken by the
  * session's speech engine, as audio and timings. The response is a stream of events: `start` (format, sample rate,
- * the text and its spoken form), `audio` (base64 PCM or Ogg Opus), `word` (offset and length in the spoken text,
- * start in ms), `mark` (a cue of the segment, with its time), `viseme`, `done` (duration).
+ * the text and its spoken form, the language, the `speechId`), `audio` (base64 PCM or Ogg Opus), `word` (offset
+ * and length in the spoken text, start in ms), `chars` (character times, when asked for), `mark` (a cue of the
+ * segment, with its time), `viseme`, `done` (duration).
  */
 import { EvokaiError, type FetchLike } from '../core/http'
 import { readSse } from './sse'
@@ -16,6 +17,15 @@ export interface SpeakInput {
   /** `pcm` (16-bit little-endian mono, the default) or `opus` (Ogg Opus, 48 kHz). */
   format?: 'pcm' | 'opus'
   sampleRate?: 16000 | 22050 | 24000 | 44100 | 48000
+  /** The language spoken (BCP 47 or ISO 639-1); default the session's. */
+  language?: string
+  /**
+   * For a text: the `speechId`s (from `start`) of earlier speech of this conversation it follows, oldest first, so
+   * the voice carries on instead of starting anew. A `say` segment follows the earlier segments of its turn by itself.
+   */
+  after?: string[]
+  /** Also stream character times (`chars` events), from engines that report them. */
+  characters?: boolean
   signal?: AbortSignal
 }
 
@@ -29,6 +39,10 @@ export interface SpeechStart {
   text: string
   /** What the voice says (numbers in words). */
   spoken: string
+  /** The language it is spoken in. */
+  language?: string
+  /** This speech, for `after` in a later request of the conversation. */
+  speechId?: string
 }
 /** A word of the spoken text: `at` and `length` are characters of `spoken`, `start` milliseconds into the audio. */
 export interface WordTiming {
@@ -43,6 +57,14 @@ export interface MarkTiming {
   arg?: string
   at: number
   time: number
+}
+/**
+ * Character times: `times[i]` is `[startMs, endMs]` of code point `at + i` of `spoken`, or `[-1, -1]` for one the
+ * engine did not report. Successive events continue where the last one ended and together cover `spoken`.
+ */
+export interface CharTimings {
+  at: number
+  times: Array<[number, number]>
 }
 export interface VisemeTiming {
   id: number
@@ -59,6 +81,7 @@ export type SpeechStreamEvent =
   | ({ type: 'start' } & SpeechStart)
   | { type: 'audio'; data: Uint8Array; ms: number | null }
   | ({ type: 'word' } & WordTiming)
+  | ({ type: 'chars' } & CharTimings)
   | ({ type: 'mark' } & MarkTiming)
   | ({ type: 'viseme' } & VisemeTiming)
   | ({ type: 'done' } & SpeechDone)
@@ -67,6 +90,8 @@ export interface SpeechTimings {
   words: WordTiming[]
   marks: MarkTiming[]
   visemes: VisemeTiming[]
+  /** `[startMs, endMs]` per code point of `start.spoken` (`[-1, -1]` where unknown); empty unless `characters` was asked and the engine reports them. */
+  chars: Array<[number, number]>
 }
 
 export interface SpeechResult {
@@ -118,7 +143,14 @@ export async function* speechEvents(session: SpeechSession, input: SpeakInput): 
     const data = JSON.parse(msg.data) as Record<string, unknown>
     if (msg.event === 'error') throw new EvokaiError(502, String(data.code ?? 'tts_failed'), String(data.message ?? 'Speech failed'))
     if (msg.event === 'audio') yield { type: 'audio', data: fromBase64(String(data.data)), ms: (data.ms as number | null) ?? null }
-    else if (msg.event === 'start' || msg.event === 'word' || msg.event === 'mark' || msg.event === 'viseme' || msg.event === 'done') {
+    else if (
+      msg.event === 'start' ||
+      msg.event === 'word' ||
+      msg.event === 'chars' ||
+      msg.event === 'mark' ||
+      msg.event === 'viseme' ||
+      msg.event === 'done'
+    ) {
       yield { type: msg.event, ...data } as SpeechStreamEvent
     }
   }
@@ -129,11 +161,12 @@ export async function speak(session: SpeechSession, input: SpeakInput): Promise<
   let start: SpeechStart | null = null
   let done: SpeechDone | null = null
   const chunks: Uint8Array[] = []
-  const timings: SpeechTimings = { words: [], marks: [], visemes: [] }
+  const timings: SpeechTimings = { words: [], marks: [], visemes: [], chars: [] }
   for await (const e of speechEvents(session, input)) {
     if (e.type === 'start') start = strip(e)
     else if (e.type === 'audio') chunks.push(e.data)
     else if (e.type === 'word') timings.words.push(strip(e))
+    else if (e.type === 'chars') e.times.forEach((t, i) => (timings.chars[e.at + i] = t))
     else if (e.type === 'mark') timings.marks.push(strip(e))
     else if (e.type === 'viseme') timings.visemes.push(strip(e))
     else if (e.type === 'done') done = strip(e)
@@ -162,10 +195,13 @@ export function transcribeSocketUrl(session: Pick<SpeechSession, 'url'>): string
 export async function transcribe(
   session: SpeechSession,
   audio: Blob | Uint8Array,
-  opts: { language?: string; contentType?: string; signal?: AbortSignal } = {},
+  opts: { language?: string; hint?: string; contentType?: string; signal?: AbortSignal } = {},
 ): Promise<{ text: string; durationMs: number; engine: string }> {
   const type = opts.contentType ?? (audio instanceof Blob && audio.type ? audio.type : 'audio/wav')
-  const url = session.url('/v1/session/transcribe') + (opts.language ? `?language=${encodeURIComponent(opts.language)}` : '')
+  const query = new URLSearchParams()
+  if (opts.language) query.set('language', opts.language)
+  if (opts.hint) query.set('hint', opts.hint)
+  const url = session.url('/v1/session/transcribe') + (query.size ? `?${query}` : '')
   const send = async (force: boolean) =>
     session.fetchLike(url, {
       method: 'POST',

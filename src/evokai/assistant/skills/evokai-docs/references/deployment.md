@@ -8,6 +8,12 @@ uv run evokai migrate               # SQLite ./evokai.db by default
 EVOKAI_CONFIG_FILE=config/bookshop.yaml uv run evokai serve   # http://localhost:8787/agent/health
 ```
 
+SQLite runs with a write-ahead log (`journal_mode=WAL`, `synchronous=NORMAL`) and waits up to 30 seconds for a write
+in progress (`busy_timeout`): a read never waits for a write, and concurrent writes take turns instead of failing with
+"database is locked". The database file then has two companions, `evokai.db-wal` and `evokai.db-shm`: back up the
+three together, or stop Evokai first. Keep it on a local disk (the write-ahead log does not work on network file
+systems); for more than one instance use Postgres.
+
 With Docker, two compose files:
 
 - `docker-compose.yml`, the [quick start](quickstart.md): Evokai and its own Postgres, keys generated on the first
@@ -30,7 +36,8 @@ Production injects `EVOKAI_SIGNING_KEY`, `EVOKAI_ENCRYPTION_KEY` and `EVOKAI_OPE
 install without one sets `EVOKAI_STATE_DIR` to a persistent, private directory: on the first start (or
 `evokai init`) the three keys are generated into `keys.json` (mode 0600) and the operator key is printed once; later
 starts read them back. A key given in the environment always wins over the file. `evokai init
---rotate-operator-key` prints a new operator key (it applies from the next start).
+--rotate-operator-key` prints a new operator key (it applies from the next start, and then ends every console login
+and assistant delegation made with the old one).
 
 
 ## The admin console
@@ -64,6 +71,11 @@ already used code is a 401 (`login_code`) and counts as a failed attempt; the co
 form. Codes live in the shared state: with `EVOKAI_REDIS_URL` any instance redeems a code another issued; without it,
 in the memory of the instance that issued it, so with several tasks behind a load balancer the browser must reach the
 same one (the port-forward to one task does).
+
+## On Azure
+
+[Running on Azure](azure.md) has the Azure Container Apps guide: managed identity, Key Vault references for the keys,
+Azure Database for PostgreSQL, Azure Monitor, and the self-hosted alternative of every Azure piece.
 
 ## More than one instance
 
@@ -103,14 +115,19 @@ scripts/build-image.sh <registry/repo> <tag> [--flavour lite|full] [--cache-ref 
                                  # linux/arm64, smoke-tested read-only, pushed; prints the digest
 ```
 
-### Two images: lite and full
+### Images: lite, lite with voice, full
 
-Evokai ships two flavours of the same image, from one Dockerfile (`--build-arg IMAGE=lite|full`):
+Evokai ships two flavours of one Dockerfile (`--build-arg IMAGE=lite|full`), and the voice stack ([server
+speech](voice.md), WebRTC voice) with `--build-arg VOICE=1`. A release publishes three images:
 
-| Flavour | Installs | Tag | Size (linux/amd64, uncompressed, measured 17 November 2026) |
+| Image | Installs | Tag | Size (linux/amd64, uncompressed, measured 17 November 2026) |
 |---|---|---|---|
 | `lite` (default) | Evokai, the harness core with Code Mode, compaction and subagents, and every harness extra under 30 MB (`harness-lite` in pyproject.toml) | `<commit>` | 1.07 GB |
-| `full` | every harness extra that resolves (`harness`) | `<commit>-full` | 2.79 GB |
+| `lite` with voice | the same and the `voice` extra | `<commit>-voice` | not measured |
+| `full` | every harness extra that resolves (`harness`) and `voice` | `<commit>-full` | 2.79 GB without voice; not measured with it |
+
+Voice stays off until `EVOKAI_VOICE_ENABLED=true`, whatever the image: `<version>` suits the browser's own speech,
+`<version>-voice` server speech on the small image.
 
 The lite image leaves out the extras over 30 MB each, measured as their site-packages beyond Evokai's base: pixeltable
 (574 MB, with pyarrow, pandas and av), prompt-injection-defender-ml (186 MB, onnxruntime and numpy), playwright
@@ -119,9 +136,10 @@ are listed there with `installed: false` and the reason Â«not in the lite imageÂ
 left out of a run like any capability that is not installed. Every other extra is in both (the integrations about
 20 MB each, sharing their MCP client; e2b 27 MB; coder 27 MB; modal 26 MB; the rest smaller).
 
-`scripts/build-image.sh --flavour full` tags `<tag>-full`; the smoke test (read-only root, no network, no
-capabilities, uid 1001) runs on both, and `evokai selftest` prints the flavour (`ok flavour=lite ...`), which the
-build checks. The release workflow (`.github/workflows/release.yml`) publishes both.
+`scripts/build-image.sh --flavour full` tags `<tag>-full` (with voice), `--with-voice` on lite `<tag>-voice`; the smoke
+test (read-only root, no network, no capabilities, uid 1001) runs on each, and `evokai selftest` prints the flavour and
+the voice stack (`ok flavour=lite voice=yes ...`, its models loaded offline), which the build checks. The release
+workflow (`.github/workflows/release.yml`) publishes all three.
 `--no-push` builds and smoke-tests locally and prints the image's size. The capability worker image
 (`workers/capability`) is separate from both ([capabilities](capabilities.md#separate-workers)).
 

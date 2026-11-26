@@ -8,6 +8,259 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
+### Added
+
+- `GET /v1/admin/voices/{provider}/{voice_id}` reads a catalogue voice back with its `settings`. A synthesis whose
+  engine refuses a reference to earlier speech before any audio is tried once more without it, following the earlier
+  text.
+- Guided tours in the console: `first-steps` (applications, an agent, the playground), `security` (system policy, an
+  application's modes, versions, policy tests, events), `usage-traces` (usage, forecast, traces) and `gateway`
+  (gateways, people and keys, policy, usage, events, connecting Claude Code and Codex, the notice). A spotlight on
+  each step's place with a card (Back, Next, Exit, progress), full keyboard support, reduced motion, steps whose place
+  never appears are skipped, and each tour resumes where the person left it (console preferences `tours`, the most recent copy wins). A
+  **Guides** menu in the top bar and an invite to the first tour on a first sign-in (`tourInvite`). The console
+  assistant starts a tour with its new `start_tour` client tool and is told the tour and step on screen.
+
+- Gateways for coding tools ([docs/gateway.md](docs/gateway.md)): Claude Code passes through Evokai with each person's
+  own claude.ai seat, under the organisation's controls. A gateway is stored as an application row
+  (`applications.kind = "gateway"`, migration 0036) but is never an application: its own console section
+  (**Gateways**: people, policy, usage, events, connect snippets, the employee notice) and admin API
+  (`/v1/admin/gateways`), never listed or served among applications. Each person has a personal key (`evk_gw_...`,
+  sent in `x-evokai-key`). The door `POST /gw/anthropic/v1/messages` (and `/count_tokens`) forwards headers, body
+  and the SSE stream byte for byte; before that it checks the provider, the model, data protection, the person's rate
+  and token caps, and runs `input.size`, `input.secrets`, `pii.model` and `scope` on the new text only, with linear-time
+  matching (RE2), blocking or recording, never masking. One row per request: tokens, timings, outcome, never content
+  or amounts.
+- Codex through a gateway: `POST /gw/openai/v1/responses` forwards the OpenAI Responses API unchanged, to ChatGPT's
+  Codex backend for a ChatGPT login's token or to the OpenAI API for an API key (`sk-...`), with the same controls and
+  usage read from `response.completed`; `GET /gw/openai/v1/models` passes Codex's model list through. The Connect
+  page has the Codex snippets.
+- Azure without keys (the optional `azure` extra, in both images): every Azure connection without a configured key
+  uses a Microsoft Entra ID token of the managed identity (`DefaultAzureCredential`, `evokai.core.azure`). Azure
+  OpenAI endpoints take the `/openai/v1` base URL without an `api_version` (the Foundry models sold by Azure too), and
+  `azure:` models without a declared endpoint use `AZURE_OPENAI_ENDPOINT`. Not verified against a live Azure account.
+- Claude in Microsoft Foundry: the `anthropic-foundry:` provider (`api: anthropic-foundry`, the anthropic SDK's
+  Foundry client, key or Entra ID) and its catalog entry with the Hosted on Azure (Global, Data Zone US) and Hosted on
+  Anthropic infrastructure endpoints, Anthropic as the processor and no EU data zone, so a profile excludes or allows
+  it correctly. Not verified against a live Azure account.
+- Knowledge base embeddings beyond Bedrock: Azure OpenAI embeddings (`azure:`, key or Entra ID) and self-hosted
+  OpenAI-compatible servers (Ollama, vLLM, Text Embeddings Inference) through the provider catalog's endpoints.
+- Azure Content Safety (`azure_prompt_shields`, `azure_content_safety`) without `EVOKAI_AZURE_CONTENT_SAFETY_KEY`
+  sends an Entra ID token, fetched at start.
+- [Running on Azure](docs/azure.md): what runs where on AWS, on Azure and self-hosted.
+- Scanned PDFs in knowledge bases: a PDF without a text layer goes to the deployment's document reader
+  (`EVOKAI_DOCUMENT_READER`): Azure AI Document Intelligence `prebuilt-layout` (key or Entra ID; the result is deleted
+  as soon as it is read) or a self-hosted docling-serve, when the application's data protection profile allows the
+  processor. Both are in the provider catalog. Not verified against a live service.
+- Reranking for knowledge bases: `retrieval.rerank` reorders the fused candidates with the deployment's reranker
+  (`EVOKAI_RERANK_MODEL`, the Cohere v2 rerank API: Cohere Rerank in Foundry, vLLM, Infinity), connected and judged by
+  the provider catalog like any model; a failing reranker leaves the fused order. The console's knowledge base form
+  has the switch.
+- `code_run` and `skill_run` on Azure: `EVOKAI_CODE_SANDBOX=azure` runs them in an Azure Container Apps dynamic
+  sessions pool (`EVOKAI_CODE_SESSION_POOL_ENDPOINT`, European regions only, a new session per call deleted
+  afterwards, Entra ID token of the managed identity); the processor `azure-container-apps-sessions` is judged in the
+  pool's region. Not verified against a live Azure account.
+- Azure Monitor: `EVOKAI_OTEL_EXPORTER=azure-monitor` sends the OpenTelemetry traces and metrics to Application
+  Insights with Microsoft's exporter (now in the `azure` extra), Entra ID through
+  `APPLICATIONINSIGHTS_AUTHENTICATION_STRING`; the processor `azure-monitor` is judged in the region of its ingestion
+  endpoint.
+- Azure regions in the provider catalog, so an Azure service running in a region the deployment chose is placed by
+  country for the data protection profile.
+- The Azure Container Apps deployment guide in [Running on Azure](docs/azure.md): managed identity, Key Vault
+  references, Azure Database for PostgreSQL, Azure Monitor, and console sign-in with Microsoft Entra ID.
+
+- A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
+  application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:
+  a minimum mode per control (the stricter of the minimum and the resolved mode applies), a data protection profile
+  every application's processors must meet as well as their own, and default settings an application may change.
+- Policy versions: every save of an application's policy or of the system policy, through any path (security, data
+  protection, the config file, a restore, a copy), writes an immutable version with who, when and a note. List, get,
+  compare (`/diff`) and restore them (`/v1/admin/policy/...`, `/v1/console/system-policy/...`); the Security page and
+  the System policy page show them. The migration gives every existing application version 1.
+- Policy tests: texts and the outcome the guard's input checks must give them, overall or per control. They run those
+  checks only (no model, no classifier), on demand and before every save of a policy's security part; a save whose
+  tests fail is refused (409 `policy_tests_failed`) unless `force` is set.
+- Copy from: an application's policy or the system policy copies another policy the caller can see, as a new version.
+- A guard control `input.secrets` (monitor by default): the secret detectors of `output.secrets` on the person's
+  message; enforced, the turn is refused before the model sees it.
+- ISO/IEC 42001:2023 Annex A in the `controls` compliance pack: its 38 controls with short titles in our own words,
+  an honest status (most are the organisation's) and evidence pointers, in English and Italian.
+
+- The console assistant sees the page and moves it: `read_page` reads the figures and names the person sees,
+  `show_on_page` scrolls to a text and highlights it, or scrolls by a screen.
+- `client_tools.chart_from_tools`: an agent's charts show only numbers its tools returned in the same turn; a chart
+  written from memory is refused and the model reads the data again. The console assistant has it on.
+- The chart unit `ms`: a duration, written like the console (850 ms, 4.3 s).
+- The console assistant is the platform's, not one application's: one conversation across the whole console, a
+  delegation token valid on every application the person can see (each admin MCP tool names its `application`, the
+  new `list_applications` lists them), and each message tells it the page the person is on.
+- The console assistant drives the playground: its `playground` client tool opens the playground on an application
+  and agent, types the message there in front of the person and returns the agent's answer, so it can carry on the
+  conversation.
+- An on/off switch for the console assistant on the Assistant page (`POST /v1/admin/assistant/switch`, owner): off,
+  the console shows neither the mage nor the assistant's application and its sessions are refused; the model is kept,
+  so switching it on again needs no new choice. `GET /v1/console/applications` marks that application `hidden`.
+
+- Messages as ordered parts: a stored answer keeps what the person was shown, in order (its text, the tools that ran
+  with their outcome, client tools, charts, diagrams, questions, confirmations, citations, errors), and a reloaded
+  conversation shows the same cards in the same place, one answer per turn, in the chat panel, the console assistant
+  and the console's conversation review. `GET /v1/session/conversation` and `GET /v1/conversations/{id}` give each
+  message its `turnId`; a stored `client_tool` that waited says how it ended (`status`). Never a tool's arguments or
+  result; masked with `pii.history`; covered by the privacy export and erasure
+  ([what a reload shows](docs/architecture.md#what-a-reload-shows)). Messages stored before load as they did, and older
+  clients and embedded panels keep working: they skip the new `text` and `tool` events of a stored message.
+- Python client: `StoredMessage.turn_id` and `StoredMessage.shown` (what a message showed, in order, older messages
+  included); `ClientToolEvent.status`.
+- The model's reasoning while it works (`show_reasoning`, off by default): `reasoning` events through the output
+  checks, stored as a part and shown collapsed after a reload, in the chat panel and the playground; for Anthropic and
+  Bedrock Claude, OpenAI reasoning models (a summary is asked for), Gemini and OpenAI-compatible servers that return
+  reasoning ([streaming](docs/streaming.md)).
+- Tool arguments as the model writes them (`show_tool_args`, off by default, a change of what reaches a browser):
+  `tool` events with `status: "args"`, the call's `id` and the arguments parsed so far, through the output checks; a
+  call that did not run ends `waiting` (a confirmation follows) or `skipped`. Every `tool` event of a call now carries
+  its `id`.
+- A structured answer fills in over the streaming APIs: `evokai.output` chunks on the OpenAI-compatible API and
+  `artifact-update` frames on A2A `message/stream`, each the object so far, before the validated answer.
+- TypeScript types of an agent's tools: `GET /v1/admin/agents/{name}/types` and `evokai types --agent <name>` write a
+  `.d.ts` with each tool's arguments and results, the custom client tools' arguments and the `output_schema`.
+- Clients: `ReasoningEvent`, `ToolEvent.id`, `ToolEvent.args`, the `reasoning` part and the new tool statuses (TypeScript
+  and Python); the web component's `reasoning` and `tool-args` parts.
+- Tuned catalogue voices ([voice](docs/voice.md#catalogue-voices)): `PUT /v1/admin/voices/{provider}/{voice_id}` takes
+  `settings`, an engine-neutral `model` and `speed` plus the engine's own options under its name (`elevenlabs`:
+  `stability`, `similarityBoost`, `style`, `speakerBoost`; `openai`: `instructions`), checked per engine (400
+  `settings` for anything it does not take). Server speech and WebRTC voice sessions speak a catalogue voice with
+  them, and speech tags follow the voice's model; a voice without settings speaks as before. Migration 0037 adds
+  `evokai_voices.settings`.
+- Server speech in the session's language: `POST /v1/session/speech` takes an optional `language` (BCP 47 or ISO
+  639-1), else the session's locale, reports it in `start`, and passes it to the engines whose model takes one.
+- Continuity across segments: the `say` segments of one turn follow each other on engines that can (the earlier
+  segments by the engine's own reference, else their text, and the next segment's text), so an answer spoken segment
+  by segment keeps a natural prosody. A text follows the speech it names in `after` (the `speechId` that `start`
+  now carries). What a conversation spoke is kept in the instance's memory for two hours, never stored.
+- Character times: `"characters": true` on `POST /v1/session/speech` streams `chars` events (`{at, times: [[startMs,
+  endMs], ...]}` per code point of `spoken`, `[-1, -1]` where the engine reported none) from engines that report them
+  (`elevenlabs`, `fake`), for lip sync, karaoke subtitles or typewriter captions. Speech tags never shift the offsets.
+- Clients: `language`, `after` and `characters` on `session.speak` and `session.speechEvents`, `speechId` and
+  `timings.chars` (TypeScript), the `char` event of `TimedSpeechPlayer`; `language=`, `after=`, `characters=`,
+  `Speech.speech_id` and `Speech.chars` (Python), and `VoiceBody.settings`.
+- Speech start and end on the streaming recognition socket ([docs/voice.md](docs/voice.md#speech-start-and-end)):
+  `{"type": "speech_start", "ms"}` and `{"type": "speech_end", "ms"}` as the voice activity detection hears them, `ms`
+  being where speech began or ended in the audio received. For listening indicators and barge-in without waiting for
+  the first words. `ServerStt` emits `speechstart` and `speechend` with `{ms}`.
+- Utterances decided by the client ([docs/voice.md](docs/voice.md#utterances-decided-by-the-client)): `start` takes
+  `"vad": false` (no voice activity detection on the server), and `{"type": "commit"}` ends the current utterance now,
+  with detection on or off, so the engine transcribes it and the server sends its `final`. For push-to-talk, devices
+  with their own voice detection, and noisy rooms. A commit with too little new audio for the engine is ignored with
+  `{"type": "warning", "code": "commit_too_short"}`; `stop` ends the open utterance and, with a realtime engine, waits
+  for its last words. `ServerStt` takes `vad: false`, has `commit()` and emits `warning`.
+- Vocabulary hints ([docs/voice.md](docs/voice.md#vocabulary-hints)): `hint` (names and terms, at most 500
+  characters) on `POST /v1/session/transcribe` (query) and on the socket's `start`, given to the engines that take a
+  vocabulary (OpenAI and Whisper as a prompt, ElevenLabs as key terms). TypeScript `transcribe(..., {hint})` and
+  `ServerStt({hint})`, Python `session.transcribe(..., hint=...)`.
+- Made-up phrases dropped from transcripts ([docs/voice.md](docs/voice.md#made-up-phrases)): the stock credits and
+  sign-offs recognisers produce on silence or noise («Thanks for watching», subtitle credits) are listed per language
+  pack (`speech.hallucinations`, all seven languages) and dropped from the socket's `final` and `interim` and from
+  `POST /v1/session/transcribe`, with each drop logged and counted (`evokai.stt.dropped_phrases`). On by default; the
+  application setting `stt_filter: false` keeps every transcript as the engine gave it.
+- Release images with the voice stack: every release also publishes `<version>-voice` (lite with the voice stack), and
+  the `full` image now carries it too, so server speech runs from a released image; each image's smoke test checks
+  `voice=yes` or `voice=no` as built ([docs/deployment.md](docs/deployment.md#images-lite-lite-with-voice-full)).
+
+### Fixed
+
+- Gateway: a policy refusal on the Anthropic door is a 451, which Claude Code sends once and shows as it is; with a 400 it
+  resent the refused request 8 times (Codex sends its 400 once).
+- SQLite runs with a write-ahead log and a 30-second busy timeout: a read no longer waits for a write, and concurrent
+  writes take turns instead of failing with "database is locked" after 5 seconds (it failed a red team run's status
+  read on a slow CI runner).
+- A privacy export includes each conversation's prompt module choices with their values (`promptOptions`): a
+  free-text value is whatever the application wrote about the person, and it was erased but never exported. The
+  privacy page lists these settings.
+- An expired conversation no longer opens in the console (its detail and an owner's inspection) before the hourly
+  purge deletes it; the server API and the session already refused it.
+- The assistant's application keeps its audit log 30 days at least, whatever `EVOKAI_AUDIT_TTL_DAYS` says: the
+  owners' inspections of people's conversations live there, and their authors must see them while the conversations
+  exist.
+- A reloaded conversation lost its tool cards, its errors and the tool-call cap's sentence, split each answer into one
+  message per model step, and showed a chart or a question after the whole answer's text instead of where it appeared.
+  The chat panel reloads the stored copy after every turn, so this could show without a reload.
+- With `pii.history` enforced, the charts, questions and confirmations stored with a message are masked like its text
+  (they were masked only in the replay events).
+- The reasoning of a step that called tools is sent back to the model with its calls, as the providers require
+  (Anthropic thinking with its signature, OpenAI encrypted reasoning): every later request of the turn rebuilt the
+  history without it. A confirmation carries the reasoning of the calls that waited (Evokai storage, kept server side).
+- A console login made with the operator key, its one-time sign-in code and the console assistant's delegation made
+  from it end when the operator key is changed or removed (they lasted until they expired). The login holds a keyed
+  fingerprint of the key; operators sign in again after this release.
+- A reset of the assistant's application deletes only what its preview showed: the preview's `plan` goes back with
+  the reset, and anything added or changed meanwhile answers `409 plan_changed` and the console shows the new preview.
+- A failed, capped or interrupted try of a model for the assistant no longer leaves the recorded server's credential
+  in the application's settings, and a finished try stores its numbers before it shows as done (the Assistant page
+  could find it done without them).
+- Audit entries made through the admin MCP server record the address of the MCP server's caller, not 127.0.0.1.
+- The guard's system prompt leak check covers the session's prompt modules, not only the instructions.
+- A version pinned at a turn's start no longer overwrites a choice of modules or a locale minted during the turn.
+- A session token that sends again a free-text module value the conversation already holds is not scanned again (one
+  guard event and one classification per value), and a mint refused for a closed conversation or its storage mode
+  scans nothing. A classifier's own event on a module value keeps its reason.
+- `locale: ""` on a session token clears the conversation's locale; the playground's "Application locale" sends it,
+  so switching back works.
+- The `prompt.put` audit entry holds the prompt's description and data table.
+- `{{map field "table"}}` in confirm labels finds a boolean under `true` and `false`, as the label prints it.
+- On a narrow screen the console assistant's launcher no longer covers the open sidebar drawer.
+- fastmcp is pinned below 3.5: the admin MCP server reads a private attribute of its OpenAPI provider.
+- A reset of the assistant's application revokes people's OAuth connections at the provider before deleting them, as
+  a disconnect or an erasure does: deleting the rows alone left the tokens valid at the provider.
+- The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
+  named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
+- The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
+  page scrolls past it so it never covers the last line.
+- The console assistant could not open pages: the navigate tool now lists the console's paths and wants the
+  application's slug, a hash route (`#/apps/x`) is the same page, and a refused path tells the model the format.
+- With the assistant on, the Mascot preference offers animated or still (the assistant's mage); removing the mage is
+  switching the assistant off.
+- Tests: the service suite no longer hangs at the end of a test until the CI's 20 minute limit. The leak guard now
+  also cancels the tasks that a cancellation starts (a cleanup in a task of its own, as `asyncio.shield` and
+  SQLAlchemy's close make), which the closing of the test's event loop then cancelled once and waited on for good; that
+  closing now waits 30 seconds at most and names the task that ignored it.
+- The gateway's shutdown no longer spins for good when a record has just been written: it waited again on
+  writes already done but not yet out of its set, which completes without giving the event loop a turn
+  (Python 3.12 and later), so they never left it. This was the CI hang at the end of a test on the Postgres
+  pass, not a record that never finished; `close()` now returns how many records it dropped, and a test
+  whose gateway records are still pending at its end fails with their stacks and the database's locks.
+- Tests: the tests that failed on slow CI runners no longer depend on timing. The voice barge-in and the spoken
+  confirmation wait for the agent's state instead of a pause, the classifier timeouts use a classifier that never
+  answers instead of a wall-clock bound, and the rate limit tests pin the clock the windows are cut on (a request
+  rate test failed when its requests straddled a minute).
+
+### Changed
+
+- A skill may now hold 1,000,000 bytes in all (SKILL.md and its files), twice the old 500,000: the built-in
+  assistant's documentation skill had grown to the old limit, and skills only load one page at a time, so a larger
+  skill costs nothing per turn.
+- The ™ sign is gone from the console, the README and the NOTICE files; the name, logo and mascot stay trademarks as
+  the NOTICE says.
+- `POST /v1/admin/application/reset` needs `plan`, the fingerprint its preview (`GET
+  /v1/admin/application/reset/preview`) returns: read the preview, then send its `plan` with the typed slug (400
+  without it, `409 plan_changed` when the preview is out of date). The console does this.
+
+### Upgrading
+
+- **Operators sign in again.** Operator-key logins, sign-in codes and delegations now carry a fingerprint of the key
+  and end when the key changes; the ones issued by 0.2.x end at the upgrade.
+- `POST /v1/admin/application/reset` needs the preview's `plan` (see **Changed**); scripts that call it read the
+  preview first.
+- Migrations `0035` to `0037` are additive (policy versions and tests, gateways, voice settings): nothing dropped or
+  rewritten. Every application gets version 1 of its policy.
+- SQLite deployments get two files next to the database, `-wal` and `-shm`: back up the three together.
+- The gateway for coding tools is a **preview**: its doors follow the providers' current protocols (the Codex door
+  forwards a ChatGPT login to ChatGPT's own backend, which is not a public API), and the 451 on the Anthropic door
+  relies on Claude Code's current handling. The Azure pieces are not verified against a live Azure account.
+- Clients: `@evokai/evokai-ui` and `@evokai/evokai-client` 0.2.x keep working against 0.3.0 (the stored message parts
+  are extra events they skip); update them to show reasoning, tool arguments and replayed tool cards.
+
 ## [0.2.2] - 2026-11-24
 
 ### Added

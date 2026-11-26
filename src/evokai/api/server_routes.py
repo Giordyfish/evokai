@@ -139,7 +139,7 @@ class TokenRequest(BaseModel):
     locale: str | None = Field(default=None, max_length=35)
     """The session's language, a BCP 47 tag (``it-IT``): speech rules and messages use the shipped
     pack of its language (400 ``unknown_locale`` without one). Omitted = the application's locale,
-    or the conversation's earlier choice."""
+    or the conversation's earlier choice; ``""`` = back to the application's locale."""
     clientTools: list[ClientToolDef] | None = Field(default=None, max_length=MAX_CLIENT_TOOLS + 1)
     """Custom client tools of this session (``docs/client-tools.md``), beside the agent's own:
     each ``{name, description, parameters, wait}``. They need the grant ``client:session`` (403
@@ -201,7 +201,7 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
             voice=body.voice if body.speech.tts else None,
         )
     mode = _storage_mode(body.storageMode, application.storage_mode, grants)
-    if body.locale is not None and pack_language(body.locale) is None:
+    if body.locale and pack_language(body.locale) is None:
         raise BadRequest(f"No language pack for the locale {body.locale}.", code="unknown_locale")
     existing = None
     if body.conversationId:
@@ -209,9 +209,9 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         if not existing:
             raise NotFound("Unknown conversation.", code="unknown_conversation")
     session_tools = _session_tools(body, agent, grants)
-    stored = (existing.prompt_options if existing else None) or {}
-    options = await _prompt_options(svc, application, agent, grants, body, stored)
     if existing:
+        # Refused before the module values are scanned: a mint that cannot open the conversation
+        # records no guard event and pays for no classification.
         if existing.status == "closed":
             raise Conflict("This session is closed.", code="closed")
         kept = existing.storage_mode or application.storage_mode
@@ -220,6 +220,9 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         if not grants.storage(kept):
             raise NotGranted("storage_mode", f"The {kept} storage mode is not granted.")
         mode = kept
+    stored = (existing.prompt_options if existing else None) or {}
+    options = await _prompt_options(svc, application, agent, grants, body, stored)
+    if existing:
         conversation_id = existing.id
         if existing.voice_engine != engine:
             await svc.store.sessions.set_voice_engine(existing.id, engine)
@@ -306,19 +309,29 @@ async def _prompt_options(
     """The prompt modules and locale of the session, checked.
 
     A choice of modules replaces the conversation's earlier one (over the agent's defaults); a
-    locale replaces the earlier locale; what is omitted is kept.
+    locale replaces the earlier locale (``""`` clears it); what is omitted is kept.
 
     Returns:
         The options to store, or None when the token chooses nothing.
     """
     modules: dict[str, Any] | None = stored.get("modules")
+    before: dict[str, Any] = dict(modules or {})
     if body.modules is not None:
         modules = choose_modules(agent, body.modules, grants, modules)
     texts = await check_session_modules(svc.store, app.id, agent, modules)
     if body.modules and modules is not None:
-        # Only the values this token brings are scanned (the agent's own are trusted).
+        # Only the values this token brings are scanned (the agent's own are trusted), and not one
+        # the conversation already holds: it was scanned when it came (a second event, a second
+        # classification for the same text, otherwise).
+        def kept(name: str, p: str) -> Any:
+            return ((before.get(name) or {}).get("params") or {}).get(p)
+
         given = {
-            name: [(p, v) for p, v in texts.get(name, []) if (c.params or {}).get(p) == v]
+            name: [
+                (p, v)
+                for p, v in texts.get(name, [])
+                if (c.params or {}).get(p) == v and kept(name, p) != v
+            ]
             for name, c in body.modules.items()
         }
         cleaned = await scan_module_texts(
@@ -335,7 +348,8 @@ async def _prompt_options(
         return None
     return {
         "modules": modules or {},
-        "locale": body.locale if body.locale is not None else stored.get("locale"),
+        # "" clears an earlier choice: the application's locale again.
+        "locale": (body.locale or None) if body.locale is not None else stored.get("locale"),
     }
 
 
@@ -449,10 +463,12 @@ async def conversation(
         "messages": [
             {
                 "id": x.id,
+                "turnId": x.turn_id,
                 "role": x.role,
                 "text": x.text,
                 "events": x.events or [],
                 "feedback": x.feedback,
+                "interrupted": x.interrupted,
             }
             for x in msgs
             if x.text or x.events

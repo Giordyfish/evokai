@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 import sqlalchemy as sa
 
+from evokai import policies
 from evokai.agents.definitions import AgentDef
 from evokai.agents.skills import kind_of
 from evokai.core.caps import caps_of, currency_of
@@ -431,6 +432,7 @@ async def collect(svc: Services, app: m.Application, profile: dict[str, Any]) ->
             "voiceStt": st.voice_stt if st.voice_enabled else None,
             "voiceTts": st.voice_tts if st.voice_enabled else None,
             "otelEnabled": bool(st.otel_enabled),
+            "systemPolicy": policies.system().version > 0,
             "sharedState": bool(st.redis_url),
             "guardEnabled": bool(st.guard_enabled),
             "guardrail": bool(st.guardrail_id),

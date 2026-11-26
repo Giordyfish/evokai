@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 RULES: list[tuple[str, re.Pattern[str]]] = [
     ("private_key", re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----|$)")),
-    ("evokai_key", re.compile(r"\bevk_(?:srv|adm)_[A-Za-z0-9]{6,24}_[A-Za-z0-9_-]{16,}")),
+    ("evokai_key", re.compile(r"\bevk_(?:srv|adm|gw)_[A-Za-z0-9]{6,24}_[A-Za-z0-9_-]{16,}")),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b")),
     ("aws_secret_key", re.compile(r"(?i)aws.{0,20}?(?:secret|private).{0,20}?[:=]\s*['\"]?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),

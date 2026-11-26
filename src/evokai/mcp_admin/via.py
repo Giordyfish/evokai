@@ -13,6 +13,10 @@ _VIA = f"mcp:{secrets.token_urlsafe(24)}"
 audit log by sending the header itself."""
 
 
+CLIENT_HEADER = "x-evokai-via-client"
+"""The address of the MCP server's own caller, believed only with ``VIA_HEADER``'s value."""
+
+
 def via_value() -> str:
     """The header value the MCP server sends.
 
@@ -30,3 +34,21 @@ def via_mcp(headers: Mapping[str, str]) -> bool:
     """
     value = headers.get(VIA_HEADER) or ""
     return hmac.compare_digest(value.encode(), _VIA.encode())
+
+
+def client_address(headers: Mapping[str, str], host: str | None) -> str:
+    """The address an audit entry records: the MCP caller's for an in-process request.
+
+    The admin MCP server reaches the admin API in process, so the request itself comes from
+    127.0.0.1; the server passes on its caller's address, believed only with this process's mark.
+
+    Args:
+        headers: The request's headers.
+        host: The address the request came from.
+
+    Returns:
+        The address (empty when unknown).
+    """
+    if via_mcp(headers) and (forwarded := headers.get(CLIENT_HEADER)):
+        return forwarded[:64]
+    return (host or "")[:64]

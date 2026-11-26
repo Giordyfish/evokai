@@ -320,6 +320,16 @@
             ],
             "title": "Security"
           },
+          "show_reasoning": {
+            "default": false,
+            "title": "Show Reasoning",
+            "type": "boolean"
+          },
+          "show_tool_args": {
+            "default": false,
+            "title": "Show Tool Args",
+            "type": "boolean"
+          },
           "skills": {
             "anyOf": [
               {
@@ -962,6 +972,17 @@
               }
             ],
             "title": "Storage Mode"
+          },
+          "stt_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt Filter"
           },
           "subject_daily_usd": {
             "anyOf": [
@@ -1925,6 +1946,11 @@
             "title": "Chart",
             "type": "boolean"
           },
+          "chart_from_tools": {
+            "default": false,
+            "title": "Chart From Tools",
+            "type": "boolean"
+          },
           "custom": {
             "items": {
               "$ref": "#/components/schemas/ClientToolDef"
@@ -2280,6 +2306,48 @@
           "type"
         ],
         "title": "ContentPart",
+        "type": "object"
+      },
+      "CopyFrom": {
+        "additionalProperties": false,
+        "description": "Where to copy a policy from: the system policy or another application (by slug).",
+        "properties": {
+          "application": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "system": {
+            "default": false,
+            "title": "System",
+            "type": "boolean"
+          }
+        },
+        "title": "CopyFrom",
         "type": "object"
       },
       "CredentialValues": {
@@ -2655,6 +2723,139 @@
         "title": "FileRef",
         "type": "object"
       },
+      "GatewayChange": {
+        "additionalProperties": false,
+        "description": "A change of a gateway (unset fields stay as they are).",
+        "properties": {
+          "allowed_models": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Models"
+          },
+          "data_protection": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Protection"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "providers": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "anthropic",
+                    "openai"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providers"
+          },
+          "security": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecurityPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tokens_per_day": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Per Day"
+          },
+          "tokens_per_month": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Per Month"
+          }
+        },
+        "title": "GatewayChange",
+        "type": "object"
+      },
       "GdprAnswers": {
         "additionalProperties": false,
         "description": "GDPR statements and overrides of what the configuration suggests.",
@@ -2826,7 +3027,7 @@
         "type": "object"
       },
       "HistoryMessage": {
-        "description": "One message of a conversation, as the application stores it and sends it back.\n\n``content`` is what the model sees; ``text`` and ``events`` are what the user saw (the text,\nand the charts, schemas, questions and confirmations shown with it).",
+        "description": "One message of a conversation, as the application stores it and sends it back.\n\n``content`` is what the model sees; ``text`` and ``events`` are what the user saw: the text,\nand every event shown with it in the order it was shown (``evokai.sessions.parts``: the text\nagain, tools, charts, questions, confirmations, citations, errors). Keep them as Evokai returns\nthem.",
         "properties": {
           "content": {
             "items": {
@@ -2857,7 +3058,7 @@
               "additionalProperties": true,
               "type": "object"
             },
-            "maxItems": 100,
+            "maxItems": 500,
             "title": "Events",
             "type": "array"
           },
@@ -3612,6 +3813,67 @@
         "title": "NewApplication",
         "type": "object"
       },
+      "NewGateway": {
+        "additionalProperties": false,
+        "description": "A new gateway.",
+        "properties": {
+          "allowed_models": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "enum": [
+                "anthropic",
+                "openai"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Providers",
+            "type": "array"
+          },
+          "slug": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,40}$",
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "providers"
+        ],
+        "title": "NewGateway",
+        "type": "object"
+      },
+      "NewPerson": {
+        "additionalProperties": false,
+        "description": "A person of a gateway.",
+        "properties": {
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "NewPerson",
+        "type": "object"
+      },
       "NoteBody": {
         "description": "A reviewer's note on a conversation or one of its turns.",
         "properties": {
@@ -3859,6 +4121,65 @@
         "title": "PiiSettings",
         "type": "object"
       },
+      "PolicyTestBody": {
+        "additionalProperties": false,
+        "description": "A policy test: a text and the outcome it must get, overall or per control (or both).",
+        "properties": {
+          "controls": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "allowed",
+                    "flagged",
+                    "blocked"
+                  ],
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controls"
+          },
+          "input": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "allowed",
+                  "flagged",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          }
+        },
+        "required": [
+          "name",
+          "input"
+        ],
+        "title": "PolicyTestBody",
+        "type": "object"
+      },
       "Preferences": {
         "additionalProperties": false,
         "description": "One person's console preferences (version 2). JSON fields are camelCase.",
@@ -3957,6 +4278,25 @@
             ],
             "title": "Timeformat",
             "type": "string"
+          },
+          "tourInvite": {
+            "default": "show",
+            "enum": [
+              "show",
+              "dismissed"
+            ],
+            "title": "Tourinvite",
+            "type": "string"
+          },
+          "tours": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[a-z][a-z0-9-]{1,39}$": {
+                "$ref": "#/components/schemas/TourProgress"
+              }
+            },
+            "title": "Tours",
+            "type": "object"
           },
           "underlineLinks": {
             "default": false,
@@ -4224,6 +4564,28 @@
         "title": "RegenerateBody",
         "type": "object"
       },
+      "Reset": {
+        "description": "The typed slug and the plan of the preview the person saw.",
+        "properties": {
+          "confirm": {
+            "maxLength": 60,
+            "title": "Confirm",
+            "type": "string"
+          },
+          "plan": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Plan",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "plan"
+        ],
+        "title": "Reset",
+        "type": "object"
+      },
       "Residency": {
         "additionalProperties": false,
         "description": "Where an application's data lives and where its models may run.",
@@ -4369,6 +4731,11 @@
             "minimum": 0.0,
             "title": "Mmr Lambda",
             "type": "number"
+          },
+          "rerank": {
+            "default": false,
+            "title": "Rerank",
+            "type": "boolean"
           },
           "top_k": {
             "default": 5,
@@ -4799,6 +5166,76 @@
         "title": "RunUsage",
         "type": "object"
       },
+      "SaveOptions": {
+        "additionalProperties": false,
+        "description": "How to save a restored or copied content.",
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "SaveOptions",
+        "type": "object"
+      },
+      "SavePolicy": {
+        "additionalProperties": false,
+        "description": "A new version of a policy.",
+        "properties": {
+          "data_protection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataProtection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "security": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecurityPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "SavePolicy",
+        "type": "object"
+      },
       "ScopeSettings": {
         "additionalProperties": false,
         "description": "What the agent talks about.",
@@ -5143,7 +5580,7 @@
         "description": "A file of a skill besides SKILL.md: a reference, a data file or template, a script.",
         "properties": {
           "content": {
-            "maxLength": 500000,
+            "maxLength": 1000000,
             "title": "Content",
             "type": "string"
           },
@@ -5165,7 +5602,7 @@
         "description": "The text of one file of a skill.",
         "properties": {
           "content": {
-            "maxLength": 500000,
+            "maxLength": 1000000,
             "title": "Content",
             "type": "string"
           }
@@ -5303,6 +5740,28 @@
       "SpeechRequest": {
         "description": "What to speak: a text, or a ``say`` segment of this conversation.",
         "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "characters": {
+            "default": false,
+            "title": "Characters",
+            "type": "boolean"
+          },
           "format": {
             "default": "pcm",
             "enum": [
@@ -5324,6 +5783,19 @@
               }
             ],
             "title": "Index"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
           },
           "sampleRate": {
             "default": 24000,
@@ -5622,6 +6094,20 @@
         "title": "SubjectRequest",
         "type": "object"
       },
+      "Switch": {
+        "description": "Switching the assistant on or off.",
+        "properties": {
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "Switch",
+        "type": "object"
+      },
       "SwitchBody": {
         "description": "The model the agent should answer with.",
         "properties": {
@@ -5636,6 +6122,38 @@
           "model"
         ],
         "title": "SwitchBody",
+        "type": "object"
+      },
+      "SystemCopy": {
+        "additionalProperties": false,
+        "description": "The application whose policy the system policy copies.",
+        "properties": {
+          "application": {
+            "title": "Application",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "application"
+        ],
+        "title": "SystemCopy",
         "type": "object"
       },
       "TextBlock": {
@@ -6138,6 +6656,30 @@
         "title": "ToolUseBlock",
         "type": "object"
       },
+      "TourProgress": {
+        "additionalProperties": false,
+        "description": "Where one guided tour stopped, and when (so the most recent copy wins on resume).",
+        "properties": {
+          "at": {
+            "maximum": 10000000000000.0,
+            "minimum": 0.0,
+            "title": "At",
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 99.0,
+            "minimum": 0.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "at"
+        ],
+        "title": "TourProgress",
+        "type": "object"
+      },
       "Transcript": {
         "description": "What was heard.",
         "properties": {
@@ -6433,6 +6975,18 @@
               }
             ],
             "title": "Region"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "required": [
@@ -6506,7 +7060,7 @@
   "info": {
     "summary": "Agents runtime: any model provider, MCP tools, skills and voice sessions.",
     "title": "Evokai",
-    "version": "0.2.2"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7534,6 +8088,66 @@
         ]
       }
     },
+    "/agent/v1/admin/agents/{name}/types": {
+      "get": {
+        "description": "TypeScript declarations of the agent's tools: arguments and results, from their schemas.\n\nThe MCP tools the application is granted, the agent's custom client tools and its\n``output_schema`` (``evokai.tools.typescript``). A ``forward_user`` server lists its tools\nonly with a person's credential: send one (a test user's) as ``X-Evokai-Credential``, as a\nsession token would forward it; without it the server is named as not listed. The credential\nis used for this listing only, never kept.\n\nReturns:\n    The ``.d.ts`` text.\n\nRaises:\n    NotFound: Unknown application or agent.",
+        "operationId": "agent_types_agent_v1_admin_agents__name__types_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Evokai-Credential",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Evokai-Credential"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "A TypeScript .d.ts"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Types",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/agent/v1/admin/agents/{name}/version-stats": {
       "get": {
         "description": "Each version of an agent side by side, over a period (default: the last 30 days).\n\nEval cases are left out (they are not people's turns). Shares only: ``usageShare`` is the\nversion's part of the agent's usage in the period, in percent.\n\nReturns:\n    items per version (newest first): version, active, createdAt, turns, medianMs, p95Ms,\n    medianFirstTokenMs, errorRate, toolCalls, toolErrorRate, guardTurns, guardRate,\n    thumbsUp, thumbsDown, feedbackRatio, usageShare, avgInputTokens, avgOutputTokens,\n    outcomes; and from, to.\n\nRaises:\n    NotFound: No such agent.",
@@ -7728,13 +8342,13 @@
     },
     "/agent/v1/admin/application/reset": {
       "post": {
-        "description": "Delete what the reset preview lists and apply the shipped definition again, locked (owner).\n\nReturns:\n    ok and deleted (how many items).\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).\n    Conflict: A system application this version of Evokai does not ship.",
+        "description": "Delete what the reset preview lists and apply the shipped definition again, locked (owner).\n\nReturns:\n    ok and deleted (how many items).\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).\n    Conflict: A system application this version of Evokai does not ship, or what the reset\n        would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).",
         "operationId": "reset_application_agent_v1_admin_application_reset_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Unlock"
+                "$ref": "#/components/schemas/Reset"
               }
             }
           },
@@ -7772,7 +8386,7 @@
     },
     "/agent/v1/admin/application/reset/preview": {
       "get": {
-        "description": "Everything a reset of the system application deletes or restores (owner).\n\nEach deleted item carries its definition without secrets (``item``), for the owner to keep\nbefore resetting.\n\nReturns:\n    slug and items (kind, name, action: ``delete`` or ``restore``, item).\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
+        "description": "Everything a reset of the system application deletes or restores (owner).\n\nEach deleted item carries its definition without secrets (``item``), for the owner to keep\nbefore resetting. ``plan`` fingerprints the items: the reset takes it back.\n\nReturns:\n    slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
         "operationId": "reset_preview_agent_v1_admin_application_reset_preview_get",
         "responses": {
           "200": {
@@ -8024,6 +8638,50 @@
           }
         },
         "summary": "Inspect Conversation",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/assistant/switch": {
+      "post": {
+        "description": "Switch the assistant on or off (owner of its application).\n\nOff, the console shows neither its launcher nor its application, and its sessions are\nrefused; the model is kept, so switching it on again needs no new choice.\n\nReturns:\n    ok, on and the model.\n\nRaises:\n    Conflict: Switching on an assistant that never had a model (``no_model``: activate one).",
+        "operationId": "switch_assistant_agent_v1_admin_assistant_switch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Switch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Switch Assistant Agent V1 Admin Assistant Switch Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch Assistant",
         "tags": [
           "admin"
         ]
@@ -9684,6 +10342,383 @@
         ]
       }
     },
+    "/agent/v1/admin/gateways": {
+      "get": {
+        "description": "The gateways the caller can see.\n\nReturns:\n    items (with the caller's role and the count of active people), and whether the caller\n    may create gateways (a deployment owner).",
+        "operationId": "list_gateways_agent_v1_admin_gateways_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Gateways Agent V1 Admin Gateways Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Gateways",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "post": {
+        "description": "Create a gateway (deployment owners). It starts with a policy fit for coding tools.\n\nReturns:\n    The gateway.\n\nRaises:\n    Conflict: The slug is taken (by a gateway or an application).",
+        "operationId": "create_gateway_agent_v1_admin_gateways_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewGateway"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Gateway Agent V1 Admin Gateways Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Gateway",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}": {
+      "get": {
+        "description": "A gateway.\n\nReturns:\n    The gateway, with its data protection profile.",
+        "operationId": "get_gateway_agent_v1_admin_gateways__gateway_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Gateway Agent V1 Admin Gateways  Gateway Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Gateway",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "patch": {
+        "description": "Change a gateway (owners): its settings, and its policy as a new version.\n\nReturns:\n    The gateway.\n\nRaises:\n    BadRequest: An invalid data protection profile.",
+        "operationId": "patch_gateway_agent_v1_admin_gateways__gateway_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Patch Gateway Agent V1 Admin Gateways  Gateway Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Gateway",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}/people": {
+      "get": {
+        "description": "The people of a gateway: one personal key each (never its secret).\n\nReturns:\n    items: id, label, prefix, createdAt, lastUsedAt, revoked.",
+        "operationId": "list_people_agent_v1_admin_gateways__gateway_id__people_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List People Agent V1 Admin Gateways  Gateway Id  People Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List People",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "post": {
+        "description": "Give a person their personal gateway key (operators). The key is shown only now.\n\nReturns:\n    id, label, key.",
+        "operationId": "add_person_agent_v1_admin_gateways__gateway_id__people_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPerson"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Add Person Agent V1 Admin Gateways  Gateway Id  People Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Person",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}/people/{key_id}": {
+      "delete": {
+        "description": "Revoke a person's gateway key (operators): their requests are refused at once.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Unknown or already revoked.",
+        "operationId": "revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Revoke Person Agent V1 Admin Gateways  Gateway Id  People  Key Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Person",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}/usage": {
+      "get": {
+        "description": "Tokens through a gateway, per person and per model, and its latest requests.\n\nNever an amount: the traffic is people's own subscriptions. Requests hold no content.\n\nReturns:\n    days, people, models, outcomes, recent (timings, sizes, outcome per request).",
+        "operationId": "gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 400,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gateway Usage Agent V1 Admin Gateways  Gateway Id  Usage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gateway Usage",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
     "/agent/v1/admin/grants": {
       "get": {
         "description": "What the application may use: every item with its default, override and value.\n\nReturns:\n    groups, summary, overrides (count), modelAllow, applicationModels, storageMode.\n\nRaises:\n    NotFound: The application is gone.",
@@ -10783,6 +11818,427 @@
         ]
       }
     },
+    "/agent/v1/admin/policy/copy": {
+      "post": {
+        "description": "Copy another policy into the application's as a new version (owner).\n\nThe source is the system policy or an application the caller can see; the policy tests run\nfirst.\n\nReturns:\n    created, version.",
+        "operationId": "app_copy_agent_v1_admin_policy_copy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyFrom"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Copy Agent V1 Admin Policy Copy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Copy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/diff": {
+      "get": {
+        "description": "What changes between two versions of the application's policy (``to``: the current one).\n\nReturns:\n    from, to, changes: ``{path, change, before, after}`` per setting.",
+        "operationId": "app_diff_agent_v1_admin_policy_diff_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Diff Agent V1 Admin Policy Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Diff",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/tests": {
+      "get": {
+        "description": "The application's policy tests.\n\nReturns:\n    items: id, name, input, outcome, controls, updatedAt.",
+        "operationId": "app_tests_agent_v1_admin_policy_tests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Tests Agent V1 Admin Policy Tests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Tests",
+        "tags": [
+          "policies"
+        ]
+      },
+      "post": {
+        "description": "Add a policy test (owner): a text and the outcome the guard's input checks must give it.\n\nReturns:\n    The test.",
+        "operationId": "app_add_test_agent_v1_admin_policy_tests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Add Test Agent V1 Admin Policy Tests Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Add Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/tests/run": {
+      "post": {
+        "description": "Run the application's policy tests against its current policy (no model is called).\n\nReturns:\n    items (per test: id, name, passed, expected, got), passed, failed.",
+        "operationId": "app_run_tests_agent_v1_admin_policy_tests_run_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Run Tests Agent V1 Admin Policy Tests Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Run Tests",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/tests/{test_id}": {
+      "delete": {
+        "description": "Remove a policy test (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Unknown test.",
+        "operationId": "app_delete_test_agent_v1_admin_policy_tests__test_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response App Delete Test Agent V1 Admin Policy Tests  Test Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Delete Test",
+        "tags": [
+          "policies"
+        ]
+      },
+      "put": {
+        "description": "Replace a policy test (owner).\n\nReturns:\n    The test.",
+        "operationId": "app_put_test_agent_v1_admin_policy_tests__test_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Put Test Agent V1 Admin Policy Tests  Test Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Put Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/versions": {
+      "get": {
+        "description": "The versions of the application's policy (security and data protection), newest first.\n\nReturns:\n    items: number, createdAt, createdBy, note.",
+        "operationId": "app_versions_agent_v1_admin_policy_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Versions Agent V1 Admin Policy Versions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Versions",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/versions/{number}": {
+      "get": {
+        "description": "One version of the application's policy, with its content.\n\nReturns:\n    number, createdAt, createdBy, note, content (``security``, ``data_protection``).",
+        "operationId": "app_version_agent_v1_admin_policy_versions__number__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Version Agent V1 Admin Policy Versions  Number  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Version",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/versions/{number}/restore": {
+      "post": {
+        "description": "Save an older version's content as the application's new policy version (owner).\n\nThe policy tests run first, as for any save (409 ``policy_tests_failed`` unless ``force``).\n\nReturns:\n    created (false when the content is already the current one), version.",
+        "operationId": "app_restore_agent_v1_admin_policy_versions__number__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveOptions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Restore Agent V1 Admin Policy Versions  Number  Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Restore",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
     "/agent/v1/admin/prompts": {
       "get": {
         "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data,\n    templateSyntax and createdAt.",
@@ -11038,8 +12494,37 @@
         ]
       },
       "put": {
-        "description": "Replace the application's security policy (unset fields follow the defaults).\n\nAgents may override it in their own definition (``security``). Effective from the next turn.\n\nReturns:\n    The security view.\n\nRaises:\n    BadRequest: ``pii.types`` names a type that is neither built-in nor declared.",
+        "description": "Replace the application's security policy (unset fields follow the defaults).\n\nAgents may override it in their own definition (``security``). Effective from the next turn.\nA change is a new version of the application's policy (``note`` is kept with it). The\napplication's policy tests run first: when one fails the policy is not saved (409\n``policy_tests_failed``, with ``failures``) unless ``force`` is true.\n\nReturns:\n    The security view (400 ``unknown_pii_types`` when ``pii.types`` names a type that is\n    neither built-in nor declared).",
         "operationId": "put_security_agent_v1_admin_security_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "note",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Note"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12083,8 +13568,60 @@
       }
     },
     "/agent/v1/admin/voices/{provider}/{voice_id}": {
+      "get": {
+        "description": "A voice of the deployment's catalog, with how its engine speaks with it (``settings``).\n\nReturns:\n    provider, voiceId, language, name, gender, region, settings (null when the engine's\n    defaults apply).\n\nRaises:\n    NotFound: No such voice.",
+        "operationId": "get_voice_agent_v1_admin_voices__provider___voice_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "voice_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Voice Agent V1 Admin Voices  Provider   Voice Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Voice",
+        "tags": [
+          "admin"
+        ]
+      },
       "put": {
-        "description": "Add or replace a voice in the deployment's catalog (owner).\n\nReturns:\n    ok.",
+        "description": "Add or replace a voice in the deployment's catalog (owner).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: Settings its engine does not take.",
         "operationId": "put_voice_agent_v1_admin_voices__provider___voice_id__put",
         "parameters": [
           {
@@ -13175,7 +14712,7 @@
     },
     "/agent/v1/console/applications": {
       "get": {
-        "description": "The applications of this login, with what the console's list and switcher show.\n\nReturns:\n    items, and whether this login may create applications (operator).",
+        "description": "The applications of this login, with what the console's list and switcher show.\n\nReturns:\n    items (``hidden``: the assistant's application while the assistant is off), and whether\n    this login may create applications (operator).",
         "operationId": "console_applications_agent_v1_console_applications_get",
         "responses": {
           "200": {
@@ -13267,7 +14804,7 @@
     },
     "/agent/v1/console/assistant/session": {
       "post": {
-        "description": "A session token for the console assistant, acting on the selected application.\n\nIt needs a console login (the cookie, its header and the application it acts on): its\nforwarded credential is a delegation token for that application with the login's role, which\nthe admin MCP server checks against the live login on every call. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.\n    Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).",
+        "description": "A session token for the console assistant, the platform's: it acts on every application.\n\nIt needs a console login (the cookie and its header): its forwarded credential is a delegation\ntoken valid on every application the login can see, with the login's highest role; the admin\nMCP server's tools name the application of each call, and Evokai checks the live login's role\non that application every time. The session belongs to the\nassistant's system application, for the subject ``console:<login>``, with browser speech.\n\nReturns:\n    What minting a session token returns, and applicationId (the assistant's).\n\nRaises:\n    Forbidden: A key or the assistant itself instead of a console login (``console_required``).\n    NotFound: The assistant is off.\n    Conflict: The assistant's MCP servers were changed (409 ``assistant_altered``).",
         "operationId": "assistant_session_agent_v1_console_assistant_session_post",
         "requestBody": {
           "content": {
@@ -13585,7 +15122,7 @@
     },
     "/agent/v1/console/me": {
       "get": {
-        "description": "Who is logged in.\n\nReturns:\n    kind (``op``, ``adm`` or ``sso``), applicationId, expiresAt, keyId and keyPrefix (admin\n    logins), email, name and roles (single sign-on), whether it owns the deployment, and the\n    deployment's facts the console needs (model allow-list, voice enabled).\n\nRaises:\n    Unauthorized: Not logged in, the login's key was revoked or its user disabled.",
+        "description": "Who is logged in.\n\nReturns:\n    kind (``op``, ``adm`` or ``sso``), applicationId, expiresAt, keyId and keyPrefix (admin\n    logins), email, name and roles (single sign-on), whether it owns the deployment, and the\n    deployment's facts the console needs (model allow-list, voice enabled).\n\nRaises:\n    Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the\n        operator key changed.",
         "operationId": "me_agent_v1_console_me_get",
         "responses": {
           "200": {
@@ -13872,6 +15409,493 @@
         "summary": "Put Sso Config",
         "tags": [
           "console"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy": {
+      "get": {
+        "description": "The system policy (deployment owners) and what an application that sets nothing gets.\n\nReturns:\n    version, content (``security``: minimum modes and default settings;\n    ``data_protection``: the profile every application's processors must also meet),\n    effective (modes, settings, floors), enabled, controls.",
+        "operationId": "get_system_policy_agent_v1_console_system_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get System Policy Agent V1 Console System Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get System Policy",
+        "tags": [
+          "policies"
+        ]
+      },
+      "put": {
+        "description": "Save the system policy as a new version (deployment owners).\n\nIts modes are minimums for every application's controls, its profile holds as well as each\napplication's, its settings are defaults. Its policy tests run first (409\n``policy_tests_failed`` unless ``force``). In force on this instance at once, on the others\nwithin ``REFRESH_SECONDS``.\n\nReturns:\n    The system policy, as ``GET`` shows it.",
+        "operationId": "put_system_policy_agent_v1_console_system_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put System Policy Agent V1 Console System Policy Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put System Policy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/copy": {
+      "post": {
+        "description": "Copy an application's policy into the system policy as a new version.\n\nIts browser declaration is left out: each application declares its own.\n\nReturns:\n    created, version.\n\nRaises:\n    NotFound: Unknown application.",
+        "operationId": "system_copy_agent_v1_console_system_policy_copy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemCopy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Copy Agent V1 Console System Policy Copy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Copy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/diff": {
+      "get": {
+        "description": "What changes between two versions of the system policy (``to``: the current one).\n\nReturns:\n    from, to, changes.",
+        "operationId": "system_diff_agent_v1_console_system_policy_diff_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Diff Agent V1 Console System Policy Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Diff",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/tests": {
+      "get": {
+        "description": "The system policy's tests.\n\nReturns:\n    items.",
+        "operationId": "system_tests_agent_v1_console_system_policy_tests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Tests Agent V1 Console System Policy Tests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Tests",
+        "tags": [
+          "policies"
+        ]
+      },
+      "post": {
+        "description": "Add a test of the system policy.\n\nReturns:\n    The test.",
+        "operationId": "system_add_test_agent_v1_console_system_policy_tests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Add Test Agent V1 Console System Policy Tests Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Add Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/tests/run": {
+      "post": {
+        "description": "Run the system policy's tests against it, as an application that sets nothing gets it.\n\nReturns:\n    items, passed, failed.",
+        "operationId": "system_run_tests_agent_v1_console_system_policy_tests_run_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Run Tests Agent V1 Console System Policy Tests Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Run Tests",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/tests/{test_id}": {
+      "delete": {
+        "description": "Remove a test of the system policy.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Unknown test.",
+        "operationId": "system_delete_test_agent_v1_console_system_policy_tests__test_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response System Delete Test Agent V1 Console System Policy Tests  Test Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Delete Test",
+        "tags": [
+          "policies"
+        ]
+      },
+      "put": {
+        "description": "Replace a test of the system policy.\n\nReturns:\n    The test.",
+        "operationId": "system_put_test_agent_v1_console_system_policy_tests__test_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Put Test Agent V1 Console System Policy Tests  Test Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Put Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/versions": {
+      "get": {
+        "description": "The system policy's versions, newest first.\n\nReturns:\n    items: number, createdAt, createdBy, note.",
+        "operationId": "system_versions_agent_v1_console_system_policy_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Versions Agent V1 Console System Policy Versions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Versions",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/versions/{number}": {
+      "get": {
+        "description": "One version of the system policy, with its content.\n\nReturns:\n    number, createdAt, createdBy, note, content.",
+        "operationId": "system_version_agent_v1_console_system_policy_versions__number__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Version Agent V1 Console System Policy Versions  Number  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Version",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/versions/{number}/restore": {
+      "post": {
+        "description": "Save an older version's content as the system policy's new version.\n\nReturns:\n    created, version.",
+        "operationId": "system_restore_agent_v1_console_system_policy_versions__number__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveOptions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Restore Agent V1 Console System Policy Versions  Number  Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Restore",
+        "tags": [
+          "policies"
         ]
       }
     },
@@ -15372,7 +17396,7 @@
     },
     "/agent/v1/session/speech": {
       "post": {
-        "description": "Speak a text or a ``say`` segment with the session's speech engine.\n\nA segment that is not in this conversation is 404.\n\nReturns:\n    The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).\n\nRaises:\n    BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.",
+        "description": "Speak a text or a ``say`` segment with the session's speech engine.\n\nA segment that is not in this conversation is 404. The voice's catalogue settings (model,\nspeed, the engine's options) apply; a segment follows the earlier segments of its turn, a text\nthe speech named in ``after``.\n\nReturns:\n    The event stream (``start``, ``audio``, ``word``, ``chars``, ``mark``, ``viseme``,\n    ``done``).\n\nRaises:\n    BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.",
         "operationId": "speech_agent_v1_session_speech_post",
         "requestBody": {
           "content": {
@@ -15462,7 +17486,7 @@
     },
     "/agent/v1/session/transcribe": {
       "post": {
-        "description": "Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.\n\nReturns:\n    The text, the audio's length and the engine.\n\nRaises:\n    AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).\n    BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.",
+        "description": "Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.\n\n``hint`` lists names and terms the person is likely to say (product names, people, jargon),\nseparated by commas, for the engines that take a vocabulary; the others ignore it. Phrases\nrecognisers make up from silence are left out of the text unless the application turned the\nfilter off.\n\nReturns:\n    The text, the audio's length and the engine.\n\nRaises:\n    AppError: Larger than ``EVOKAI_TRANSCRIBE_MAX_BYTES`` (413), or the engine failed (502).\n    BadRequest: Not audio, empty, or longer than ``EVOKAI_TRANSCRIBE_MAX_SECONDS``.",
         "operationId": "transcribe_agent_v1_session_transcribe_post",
         "parameters": [
           {
@@ -15480,6 +17504,23 @@
                 }
               ],
               "title": "Language"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hint"
             }
           }
         ],

@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Route
 
+from evokai import policies
 from evokai.agents.bootstrap import bootstrap, bootstrap_apps
 from evokai.api import (
     a2a_routes,
@@ -30,9 +31,12 @@ from evokai.api import (
     console_routes,
     cost_routes,
     eval_routes,
+    gateway_admin_routes,
+    gateway_routes,
     grants_routes,
     knowledge_routes,
     openai_routes,
+    policy_routes,
     preferences_routes,
     privacy_routes,
     provider_routes,
@@ -105,6 +109,9 @@ async def _housekeeping(svc: Services) -> None:
                 if n := await svc.store.security_events.purge(ttl):
                     state["securityEventsDeleted"] = n
                     logger.info("security_events_purged", extra={"count": n})
+                if n := await svc.store.gateway.purge(ttl):
+                    state["gatewayRequestsDeleted"] = n
+                    logger.info("gateway_requests_purged", extra={"count": n})
                 if n := await svc.store.audit.purge(svc.settings.audit_ttl_days):
                     state["auditDeleted"] = n
                     logger.info("audit_purged", extra={"count": n})
@@ -130,6 +137,16 @@ async def _housekeeping(svc: Services) -> None:
             state["nextRunAt"] = time.time() + PURGE_EVERY
             svc.housekeeping = state
         await asyncio.sleep(300)
+
+
+async def _refresh_system_policy(svc: Services) -> None:
+    """Reload the system policy now and then (a save on another instance)."""
+    while True:
+        await asyncio.sleep(policies.REFRESH_SECONDS)
+        try:
+            await policies.load_system(svc.store)
+        except Exception as e:
+            logger.warning("system_policy_not_loaded", extra={"error_type": type(e).__name__})
 
 
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
@@ -183,7 +200,12 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         # Mailboxes read over IMAP are polled from now on.
         with contextlib.suppress(Exception):
             await svc.channels.start()
+        # The system policy applies from the first turn, and another instance's save reaches
+        # this one within policies.REFRESH_SECONDS.
+        with contextlib.suppress(Exception):
+            await policies.load_system(svc.store)
         task = asyncio.create_task(_housekeeping(svc))
+        refresh = asyncio.create_task(_refresh_system_policy(svc))
         # A local classifier model loads now, not on the first turn that needs it.
         warm = asyncio.create_task(svc.guard.classifiers.warm_up())
         try:
@@ -191,6 +213,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 yield
         finally:
             task.cancel()
+            refresh.cancel()
             warm.cancel()
             await svc.close()
 
@@ -307,6 +330,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(provider_routes.router)
     root.include_router(compliance_routes.router)
     root.include_router(security_routes.router)
+    root.include_router(policy_routes.router)
     root.include_router(privacy_routes.router)
     root.include_router(sso_routes.router)
     root.include_router(preferences_routes.router)
@@ -319,6 +343,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(connection_routes.router)
     root.include_router(channel_routes.public)
     root.include_router(channel_routes.admin)
+    root.include_router(gateway_admin_routes.router)
+    root.include_router(gateway_admin_routes.one)
+    root.include_router(gateway_routes.router)
     if settings.voice_enabled:
         from evokai.api import speech_routes, voice_routes
 
@@ -331,6 +358,11 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     app.router.routes.append(Route(app.state.admin_mcp.path, app.state.admin_mcp))
     if settings.admin_ui_enabled:
         mount_console(app, settings)
-    setup_telemetry(app, enabled=settings.otel_enabled, service_name=settings.service_name)
+    setup_telemetry(
+        app,
+        enabled=settings.otel_enabled,
+        service_name=settings.service_name,
+        exporter=settings.otel_exporter,
+    )
     logging.getLogger("evokai").debug("app_created")
     return app

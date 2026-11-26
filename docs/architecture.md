@@ -206,6 +206,31 @@ conversation (`storageMode`), and the conversation keeps it for good (older conv
 History is windowed and repaired before each model call (no dangling tool calls; an interrupted
 answer is kept and marked as interrupted).
 
+### What a reload shows
+
+A stored message keeps what the person was shown with it as ordered parts (`evokai.sessions.parts`): its `events` are
+every event that drew something, in the order it was shown, with consecutive `text` deltas joined (and `reasoning`
+deltas, for an agent that [shows its reasoning](streaming.md)), a tool's `start` and end as one `tool` event with its
+last status (and, for an agent that shows its tools' arguments, the last arguments shown; a call still being written
+when the turn ends is dropped), a `client_tool` that waited with `status` (`done` or `error`), and
+`chart`, `diagram`, `ask`, `navigate`, `connect`, `confirm`, `citation`, `handoff` and `error` as they were sent. Each
+assistant message of a turn (one per model step) takes what was shown since the previous one; what comes after the
+last one (the tool-call cap's sentence, an error) joins it. `GET /v1/session/conversation` and
+`GET /v1/conversations/{id}` give each message its `turnId`, and the clients apply the events of a turn's messages in
+order, through the same code as the live stream: a reload shows the same tool cards, charts, questions, confirmations,
+citations and errors, in the same place, as one answer per turn. External storage returns the same events in
+`done.messages`, and the application sends them back with its history.
+
+Only what a browser was sent is kept: never a tool's result, nor its arguments unless the agent sends them
+(`show_tool_args`), never what a page answered to a client tool
+(the page has it; the model reads it in the message's `content`), never usage or speech segments. With `pii.history`
+enforced the stored parts are masked like the stored text. They live in the message's row, so the conversation's time
+to live, its deletion, the privacy export and the erasure cover them.
+
+A message stored before ordered parts has no `text` event: its `text` goes first, then its events (the charts,
+questions, confirmations and citations kept then; tools were not). An older client reads the new messages as before:
+it skips the event types it did not store, `text` and `tool` among them, and shows the text and the rest.
+
 ## Rewriting the last question
 
 A person may edit their last message and send it again: `POST /v1/session/chat` with `{text, rewrite: {messageId?}}`
@@ -279,7 +304,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET | `/v1/session` | session | conversation, agent, usage shares, memories and the memory state |
 | GET, PATCH, DELETE | `/v1/session/memories[/{id}]` | session | what the agents remember about the person: list, rewrite, delete |
 | POST | `/v1/session/memory-consent` | session | the person's answer (a no deletes what was remembered) |
-| GET | `/v1/session/conversation` | session | messages, open confirmation, last seq, running turn |
+| GET | `/v1/session/conversation` | session | messages (with their `turnId` and [ordered parts](#what-a-reload-shows)), open confirmation, last seq, running turn |
 | POST | `/v1/session/chat` | session | a turn: `{text?, confirm?, rewrite?, page?, mode: text\|voice, history?, endOfSpeechAt?}` → SSE (or JSON); `rewrite` replaces the last question ([below](#rewriting-the-last-question)) |
 | POST | `/v1/session/regenerate` | session | regenerate the last answer: `{page?, mode?, history?}` → SSE (or JSON), 409 `not_regenerable` ([regenerating](#regenerating-the-last-answer)) |
 | POST | `/v1/session/tool-results` | session | answer a waiting custom client tool: `{callId, result \| error}` ([client tools](client-tools.md)) |
@@ -289,7 +314,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | POST | `/v1/session/exit`, `/v1/session/bug-reports` | session | kiosk exit, bug report |
 | POST/PATCH | `/v1/session/voice/offer` | session | server voice: WebRTC offer / ICE candidates (only when enabled) |
 | POST | `/v1/session/speech`, `/v1/session/transcribe` | session | [server speech](voice.md): a text or a `say` segment as audio and timings (SSE); a recording transcribed (only when enabled) |
-| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled) |
+| WS | `/v1/session/transcribe/stream` | session token in the subprotocol | streaming recognition (only when enabled): transcripts, where speech starts and ends, utterances ended by voice activity detection or by the client (`commit`) |
 | POST | `/v1/session/agui` | session | a turn as an [AG-UI](ag-ui.md) run: `RunAgentInput` in, AG-UI events out (SSE); confirmations and questions are interrupts |
 | POST | `/v1/openai/chat/completions` | server key or session | [OpenAI-compatible](openai-compatible.md) Chat Completions: model = agent, server-run semantics, streaming |
 | GET | `/v1/openai/models` | server key or session | the agents the caller can use, as OpenAI models |
@@ -317,11 +342,12 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET, POST | `/v1/admin/costs/...`, `/v1/admin/agents/{agent}/model-recommendations`, `/switch-model` | console role or admin key | month-end forecasts and alerts, the cheapest model that passes, prompt cache hints, as shares ([costs](costs.md)) |
 | GET, PUT, POST | `/v1/admin/compliance/{pack}`, `/profile`, `/snapshots[/{id}/{pack}]`, `/snapshots/diff` | console role or admin key (profile: owner) | the compliance packs as JSON, Markdown or HTML in English or Italian, the controller's statements, snapshots and their diff ([compliance](compliance.md)) |
 | GET | `/v1/admin/traces[/{id}]`, `/v1/admin/agents/{name}/version-stats` | console role or admin key | traces with filters and their spans; each version of an agent side by side (shares, never amounts) |
+| GET | `/v1/admin/agents/{name}/types` | console role or admin key | a TypeScript `.d.ts` of the agent's tools' arguments and results and its `output_schema` (`evokai types`, [streaming](streaming.md#typescript-types-of-an-agents-tools)) |
 | GET, POST, DELETE | `/v1/admin/conversations[/{id}[/notes[/{noteId}]]]` | console role or admin key (notes: operator) | conversation review with thumbs and notes filters, each turn's trace, reviewers' notes (audited) |
 | GET | `/v1/console/me`, `/applications`, `/health` | console cookie | who is logged in, its applications, health |
-| GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility), per console identity; audited |
+| GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility, where each guided tour stopped), per console identity; audited |
 
-Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (start/done/error),
+Events: `conversation`, `text` (delta), `reasoning` (delta, an agent with [`show_reasoning`](streaming.md)), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (`{name, status, id?, args?}`: start/done/error; with [`show_tool_args`](streaming.md) also args/waiting/skipped),
 `chart` (a chart, or an `image` the agent's code drew), `diagram`, `ask`, `navigate`, `confirm` (`{actionId, items, why}`: `why[i]` says why
 `items[i]` waits, an i18n key and an [ask rule](security.md#ask-rules)'s label), `rewritten` (`{replaced, messageId, replacedFrom?}`, the
 last question was [rewritten](#rewriting-the-last-question)), `citation` (`{index, kb, documentId, title,
@@ -400,7 +426,11 @@ A session declares its **voice engine** (token claim, else the application defau
   says so. STT and TTS are pluggable (registered names or `module:factory`); EU-hosted providers
   plug in without touching the pipeline. Connections stay bound to their session. The engines are
   the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
-  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming).
+  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming). A voice of
+  the deployment's catalogue speaks with its own [settings](voice.md#catalogue-voices) (model, speed,
+  the engine's options) in both, so an operator tunes it once for every application. Server
+  recognition takes a vocabulary hint and drops the phrases recognisers make up from silence; its
+  streaming socket reports where speech starts and ends and lets the client end utterances itself.
 
 ## Module map (`src/evokai`)
 
@@ -418,8 +448,8 @@ A session declares its **voice engine** (token claim, else the application defau
 | `tools` | client tools (charts, diagrams, ask, memory, skills) and confirmation labels |
 | `sessions` | turns and server runs (drivers of the engine), storage modes, events and replay, cancellation, limits |
 | `engine` | turns and runs on pydantic-ai's `Agent`: the guarded toolset, the per-request capability (history view, caps, fallback, caching, traces, usage), Code Mode, compaction, subagents ([pydantic-ai agent](pydantic-ai-agent.md)) |
-| `audio/speech` | speakable text, splitter, redaction, spoken replies |
-| `audio/voice` | Pipecat agent processor, speech providers, WebRTC voice server |
+| `audio/speech` | speakable text, splitter, redaction, spoken replies, made-up phrases of recognisers |
+| `audio/voice` | Pipecat agent processor, speech providers, utterances of the streaming socket, WebRTC voice server |
 | `api` | session, server, admin, grants, console and voice routes; the open standards (`agui_routes`, `openai_routes`, `a2a_routes`); the console's static files |
 | `grants` | capability grants: defaults, overrides, enforcement helpers |
 | `privacy` | a subject's export and erase, session revocations, data residency ([privacy](privacy.md)) |
@@ -452,7 +482,8 @@ the headless client's `EvokaiConsole` from the repository's sources. Sign-in exc
 key) for a signed, short-lived cookie: `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, scoped to the API path; the
 key is never stored in the browser. Every request must also carry `X-Evokai-Console: 1`, a header a cross-site form
 cannot send, so the cookie alone authorises nothing (CSRF). An admin login is bound to its key and ends when the key
-is revoked; logout deletes the cookie. An admin key sees its own application; the operator key (`EVOKAI_OPERATOR_KEY`)
+is revoked; an operator login ends when the operator key is changed or removed (it holds a keyed fingerprint of the
+key), and so does the console assistant's delegation made from it; logout deletes the cookie. An admin key sees its own application; the operator key (`EVOKAI_OPERATOR_KEY`)
 sees every application and creates new ones. People can also sign in with single sign-on (OpenID Connect, code with
 PKCE, MFA required from the provider when configured); their roles (viewer, operator, owner, per application or for
 all of them) come from the provider's claims and are enforced by the service on every route, and every change lands

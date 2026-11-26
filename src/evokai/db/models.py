@@ -83,6 +83,14 @@ class Application(Base):
     it; shipped updates are applied only while it is locked."""
     system_version: Mapped[str | None] = mapped_column(sa.String(64))
     """The hash of the shipped definition a system application was last set from."""
+    kind: Mapped[str] = mapped_column(sa.String(16), default="agents", server_default="agents")
+    """``agents`` (an application) or ``gateway`` (a gateway for coding tools, ``evokai.gateway``):
+    a gateway is stored as an application row so roles, audit, security events, retention and
+    data protection apply to it unchanged, and every path that lists or serves applications
+    leaves it out."""
+    gateway: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """A gateway's own settings: ``providers`` (``anthropic``, ``openai``) and the optional token
+    caps per person (``tokens_per_day``, ``tokens_per_month``). None on an application."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
 
 
@@ -467,6 +475,48 @@ class UsageRecord(Base):
     )
 
 
+class GatewayRequest(Base):
+    """One request through a gateway: who, which provider and model, tokens, timings, outcome.
+
+    Never the content: no prompt, no answer, no header value. No amount either: gateway traffic
+    is the person's own subscription.
+    """
+
+    __tablename__ = "evokai_gateway_requests"
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(ID)
+    """The gateway."""
+    key_id: Mapped[str | None] = mapped_column(ID)
+    """The person's gateway key (None when no valid key was presented)."""
+    person: Mapped[str] = mapped_column(sa.String(120), default="")
+    """The key's label (the person's name or e-mail) when the request was made."""
+    provider: Mapped[str] = mapped_column(sa.String(16))
+    model: Mapped[str] = mapped_column(sa.String(120), default="")
+    outcome: Mapped[str] = mapped_column(sa.String(16))
+    """``forwarded`` (the provider answered 2xx), ``upstream_error`` (it answered an error),
+    ``blocked`` (a control refused it), ``failed`` (the provider could not be reached or the
+    stream broke)."""
+    control: Mapped[str | None] = mapped_column(sa.String(40))
+    """The control that refused it (``blocked``)."""
+    status: Mapped[int] = mapped_column(sa.Integer, default=0)
+    """The HTTP status the tool got."""
+    input_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    """Every input token, the cached ones included."""
+    output_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    request_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
+    response_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
+    first_byte_ms: Mapped[int | None] = mapped_column(sa.Integer)
+    """From the request's arrival to the first byte of the provider's answer."""
+    duration_ms: Mapped[int] = mapped_column(sa.Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    __table_args__ = (
+        sa.Index("ix_evokai_gateway_requests_time", "application_id", "created_at"),
+        sa.Index("ix_evokai_gateway_requests_key", "key_id", "created_at"),
+    )
+
+
 class PromptRecord(Base):
     """A version of a named prompt of an application. Agents reference prompts by name."""
 
@@ -504,6 +554,9 @@ class VoiceRecord(Base):
     gender: Mapped[str | None] = mapped_column(sa.String(16))
     region: Mapped[str | None] = mapped_column(sa.String(40))
     """Where synthesis runs (e.g. eu-north-1, local)."""
+    settings: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """How the engine speaks with this voice: ``model``, ``speed`` and the engine's own options
+    (``evokai.audio.speech.voice_settings``); None speaks with the engine's defaults."""
     __table_args__ = (sa.UniqueConstraint("provider", "voice_id", name="uq_evokai_voice"),)
 
 
@@ -638,6 +691,45 @@ class ConsoleSetting(Base):
     value: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
     updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     updated_by: Mapped[str] = mapped_column(sa.String(200), default="")
+
+
+class PolicyVersion(Base):
+    """A saved version of a policy: the system policy's or an application's (a gateway's too).
+
+    Immutable: every save writes a new row, a restore writes the old content as a new one. The
+    content is ``{"security": ..., "data_protection": ...}``. An application's current policy is
+    on its row (and is its latest version); the system policy is its latest version.
+    """
+
+    __tablename__ = "evokai_policy_versions"
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ID)
+    """The application's id, or ``system`` for the deployment's system policy."""
+    number: Mapped[int] = mapped_column(sa.Integer)
+    content: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    created_by: Mapped[str] = mapped_column(sa.String(200), default="")
+    """Who saved it, as the audit log names them (``config`` for the config file)."""
+    note: Mapped[str | None] = mapped_column(sa.String(500))
+    __table_args__ = (sa.UniqueConstraint("owner_id", "number", name="uq_evokai_policy_version"),)
+
+
+class PolicyTest(Base):
+    """A policy test: a text and the outcome the guard's input checks must give it."""
+
+    __tablename__ = "evokai_policy_tests"
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ID)
+    """The application's id, or ``system`` for the system policy's tests."""
+    name: Mapped[str] = mapped_column(sa.String(120))
+    input: Mapped[str] = mapped_column(sa.Text)
+    outcome: Mapped[str | None] = mapped_column(sa.String(8))
+    """The expected outcome of the whole text: ``allowed``, ``flagged`` or ``blocked``."""
+    controls: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """The expected outcome per control (control id to ``allowed``, ``flagged`` or ``blocked``)."""
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    __table_args__ = (sa.UniqueConstraint("owner_id", "name", name="uq_evokai_policy_test"),)
 
 
 class ConsolePreferences(Base):

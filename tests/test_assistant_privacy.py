@@ -226,7 +226,7 @@ async def test_admin_mcp_cannot_read_others_conversations(env: Env) -> None:
     r = await env.client.get("/agent/v1/admin/traces", headers=bearer)
     assert [t["id"] for t in r.json()["items"]] == [ids["b_trace"]]
     # An owner's delegation reads no more: the assistant never lists other people's conversations.
-    owner = ConsoleLogin("op", None, int(time.time()) + 3600)
+    owner = env.operator_login()
     token = mint_delegation(env.svc.keyring, owner, ids["app"], "owner")
     r = await env.client.get(
         "/agent/v1/admin/conversations", headers={"Authorization": f"Bearer {token}"}
@@ -463,3 +463,28 @@ async def test_assistant_conversations_go_30_days_after_they_start(env: Env) -> 
     assert not await env.svc.store.sessions.exists(ids["a_conv"])
     assert await env.svc.store.sessions.exists(ids["b_conv"])
     assert await env.svc.store.sessions.exists(old[0])
+
+
+async def test_a_short_deployment_audit_ttl_keeps_the_assistants_inspections_30_days(
+    env: Env,
+) -> None:
+    app_id = await _system(env)
+    for owner in (app_id, env.app_id, None):
+        await env.svc.store.audit.add(
+            application_id=owner,
+            actor="sso:olga@example.com",
+            actor_kind="sso",
+            role="owner",
+            action="assistant.conversation.inspect" if owner == app_id else "agent.put",
+            target="",
+            before=None,
+            after=None,
+            ip="",
+            correlation_id="",
+        )
+    # EVOKAI_AUDIT_TTL_DAYS=7: the other application's entry and the deployment's go after a week,
+    # the inspection stays as long as the conversation it is about may exist.
+    assert await env.svc.store.audit.purge(7, now=utcnow() + timedelta(days=10)) == 2
+    assert len(await env.svc.store.audit.query(app_id)) == 1
+    assert await env.svc.store.audit.purge(7, now=utcnow() + timedelta(days=31)) == 1
+    assert await env.svc.store.audit.query(app_id) == []

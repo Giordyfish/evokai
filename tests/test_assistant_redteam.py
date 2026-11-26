@@ -61,8 +61,8 @@ async def test_injected_description_yields_at_most_a_confirmation(trial_env: Env
     # A model that obeys the data it reads: it lists the agents, then deletes the one named.
     env.script.add(
         "function:primary",
-        [Tool("list_agents", {})],
-        [Tool("delete_agent", {"name__path": "helper"}, call_id="t2")],
+        [Tool("list_agents", {"application": "test"})],
+        [Tool("delete_agent", {"application": "test", "name__path": "helper"}, call_id="t2")],
         ["Done."],
     )
     roles = {"test": "owner"}
@@ -117,7 +117,7 @@ def test_assistant_attacks_run_only_on_system_applications() -> None:
 
 
 async def test_assistant_never_changes_an_agents_security_policy(env: Env) -> None:
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
     admin = {"Authorization": f"Bearer {env.admin_key}"}
     agent = (await env.client.get("/agent/v1/admin/agents", headers=admin)).json()["items"][0]

@@ -6,9 +6,11 @@
    words (full text: Postgres text search, or BM25 in the portable index).
 3. Reciprocal rank fusion: each passage scores the sum of ``1 / (60 + rank)`` over the lists it
    is in. A passage found only by meaning must reach ``min_score`` (cosine similarity).
-4. Optional maximal marginal relevance (``mmr``): passages are picked one by one, trading relevance
+4. Optional reranking (``rerank``): the deployment's reranker scores the fused candidates against
+   the question (``evokai.knowledge.rerank``), and its scores replace the fused ones.
+5. Optional maximal marginal relevance (``mmr``): passages are picked one by one, trading relevance
    for difference from those already picked (``mmr_lambda``), so near-duplicates give way.
-5. The best ``top_k``.
+6. The best ``top_k``.
 """
 
 from __future__ import annotations
@@ -38,6 +40,9 @@ class RetrievalSettings(BaseModel):
     """1 = relevance only, 0 = difference only."""
     candidates: int = Field(default=40, ge=5, le=200)
     """Passages each search returns before fusion."""
+    rerank: bool = False
+    """Reorder the fused candidates with the deployment's reranker (``EVOKAI_RERANK_MODEL``),
+    when it has one and the application's data protection profile allows it."""
 
 
 def matches(access: Iterable[str] | None, groups: set[str] | None) -> bool:

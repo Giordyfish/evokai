@@ -83,13 +83,26 @@ class SayEvent(BaseEvent):
     filler: bool = False
 
 
+class ReasoningEvent(BaseEvent):
+    """A piece of the model's reasoning, for an agent that shows it (``show_reasoning``)."""
+
+    type: Literal["reasoning"] = "reasoning"
+    delta: str = ""
+
+
 class ToolEvent(BaseEvent):
-    """A tool call started, finished or failed."""
+    """A tool call: its arguments being written, started, finished, failed, waiting or skipped."""
 
     type: Literal["tool"] = "tool"
     name: str
     status: str
-    """``start``, ``done`` or ``error``."""
+    """``start``, ``done`` or ``error``; for an agent that shows its tools' arguments
+    (``show_tool_args``) also ``args`` (being written), ``waiting`` (for a confirmation) and
+    ``skipped`` (not run)."""
+    id: str | None = None
+    """The call: its events update one card."""
+    args: dict[str, Any] | None = None
+    """``args``: the arguments written so far (``show_tool_args``)."""
 
 
 class ChartEvent(BaseEvent):
@@ -136,6 +149,9 @@ class ClientToolEvent(BaseEvent):
     name: str
     args: dict[str, Any] = Field(default_factory=dict)
     wait: bool = False
+    status: Literal["done", "error"] | None = None
+    """Stored messages only: how a call that waited ended (the page answered, or failed or never
+    answered)."""
 
 
 class ConnectEvent(BaseEvent):
@@ -264,6 +280,7 @@ class UnknownEvent(BaseEvent):
 KnownEvent = Annotated[
     ConversationEvent
     | TextEvent
+    | ReasoningEvent
     | SayEvent
     | ToolEvent
     | ChartEvent
@@ -286,6 +303,7 @@ KnownEvent = Annotated[
 Event = (
     ConversationEvent
     | TextEvent
+    | ReasoningEvent
     | SayEvent
     | ToolEvent
     | ChartEvent
@@ -309,6 +327,7 @@ _KNOWN: TypeAdapter[Any] = TypeAdapter(KnownEvent)
 _TYPES = frozenset({
     "conversation",
     "text",
+    "reasoning",
     "say",
     "tool",
     "chart",
@@ -370,9 +389,18 @@ Events = Annotated[list[Event], BeforeValidator(parse_events)]
 
 
 class StoredMessage(WireModel):
-    """A stored message of a conversation, with the events the user saw."""
+    """A stored message of a conversation, with the events the user saw.
+
+    Since services with ordered parts, ``events`` is everything the person was shown with the
+    message, in the order it was shown (``text`` with the deltas joined, ``tool`` with its last
+    status, charts, questions, citations, errors...); a message stored before has its text apart
+    and no ``text`` event. :attr:`shown` reads both the same way.
+    """
 
     id: str
+    turn_id: str | None = None
+    """The turn that stored it (absent from older services): a turn's assistant messages make one
+    answer."""
     role: Literal["user", "assistant"]
     text: str = ""
     events: Events = Field(default_factory=list)
@@ -383,6 +411,18 @@ class StoredMessage(WireModel):
     """User messages: the last question, which can still be rewritten (``session.rewrite``)."""
     attachments: list[dict[str, Any]] = Field(default_factory=list)
     """User messages: the files attached (id, name, mediaType, size)."""
+
+    @property
+    def shown(self) -> list[Event]:
+        """What the person was shown with this message, in order.
+
+        Returns:
+            The events; for a message stored before ordered parts, a ``text`` event with its text
+            first.
+        """
+        if not self.text or any(isinstance(e, TextEvent) for e in self.events):
+            return list(self.events)
+        return [TextEvent(delta=self.text), *self.events]
 
 
 class ConversationDetail(WireModel):

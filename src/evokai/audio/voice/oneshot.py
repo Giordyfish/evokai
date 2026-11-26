@@ -47,13 +47,18 @@ class Piece:
     """One thing a synthesis produced."""
 
     kind: str
-    """``audio``, ``word``, ``viseme`` or ``error``."""
+    """``audio``, ``word``, ``chars``, ``viseme`` or ``error``."""
     audio: bytes = b""
     word: str = ""
     ms: float = 0.0
     """When it happens, from the start of the audio."""
     viseme: int = 0
     error: str = ""
+    chars: list[str] = field(default_factory=list)
+    """Characters of the text the engine was given, in order (``chars``)."""
+    starts: list[float] = field(default_factory=list)
+    ends: list[float] = field(default_factory=list)
+    """When each of ``chars`` starts and ends (ms)."""
 
 
 class Catch(FrameProcessor):
@@ -108,7 +113,12 @@ async def run_pipeline(
 
 
 async def synthesize(
-    service: Any, text: str, *, sample_rate: int, timeout: float = 60.0
+    service: Any,
+    text: str,
+    *,
+    sample_rate: int,
+    timeout: float = 60.0,
+    characters: bool = False,
 ) -> AsyncIterator[Piece]:
     """Speak a text with a TTS service.
 
@@ -117,10 +127,11 @@ async def synthesize(
         text: What to say.
         sample_rate: PCM sample rate of the audio.
         timeout: The longest the whole synthesis may take (then an ``error`` piece, ``timeout``).
+        characters: Also give character times, from engines that report them (``char_sink``).
 
     Yields:
-        Audio, word timestamps and visemes as the engine gives them; an ``error`` piece when it
-        fails.
+        Audio, word timestamps, character times and visemes as the engine gives them; an
+        ``error`` piece when it fails.
     """
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[Piece | None] = asyncio.Queue()
@@ -136,6 +147,10 @@ async def synthesize(
     if hasattr(service, "viseme_sink"):
         service.viseme_sink = lambda vid, ms: loop.call_soon_threadsafe(
             queue.put_nowait, Piece("viseme", viseme=vid, ms=ms)
+        )
+    if characters and hasattr(service, "char_sink"):
+        service.char_sink = lambda chars, starts, ends: queue.put_nowait(
+            Piece("chars", chars=chars, starts=starts, ends=ends)
         )
 
     def put(frame: Frame, direction: FrameDirection) -> None:
@@ -314,6 +329,95 @@ def estimate(text: str, duration_ms: float) -> list[tuple[str, float]]:
     """
     size = max(1, len(text))
     return [(m.group(0), duration_ms * m.start() / size) for m in _WORD.finditer(text)]
+
+
+_LOOKAHEAD = 32
+"""How far ahead in the text an engine's character is looked for (it may skip a few)."""
+
+
+def spoken_offsets(said: str, spoken: str) -> list[int]:
+    """Where each character of the text the engine was given is in the spoken text.
+
+    The engine is given ``spoken``, or the ``tagged`` form: ``spoken`` with speech tags
+    (``[laughs]``) and the spaces around them added. Tags and added spaces map to -1, so they never
+    shift an offset of ``spoken``.
+
+    Returns:
+        One offset of ``spoken`` (or -1) per character of ``said``.
+    """
+    if said == spoken:
+        return list(range(len(said)))
+    out = [-1] * len(said)
+    i = j = 0
+    while i < len(said):
+        if j < len(spoken) and said[i] == spoken[j]:
+            out[i] = j
+            i, j = i + 1, j + 1
+        elif said[i] == "[" and (end := said.find("]", i)) > 0:
+            i = end + 1
+        else:
+            i += 1
+    return out
+
+
+class CharTimes:
+    """Character times over the spoken text, as the engine reports its alignment.
+
+    Each event covers the code points of ``spoken`` from where the last one ended to the last one
+    this piece of alignment reached: ``{at, times: [[startMs, endMs], ...]}``, with ``[-1, -1]``
+    for a code point the engine did not report (tags never take a place). The end of the audio
+    covers what is left.
+    """
+
+    def __init__(self, said: str, spoken: str) -> None:
+        """Start.
+
+        Args:
+            said: The text the engine was given (``spoken`` or the ``tagged`` form).
+            spoken: The text as spoken.
+        """
+        self._said = said
+        self._size = len(spoken)
+        self._map = spoken_offsets(said, spoken)
+        self._cursor = 0
+        self._next = 0
+
+    def add(
+        self, chars: list[str], starts: list[float], ends: list[float]
+    ) -> dict[str, Any] | None:
+        """A piece of the engine's alignment.
+
+        Returns:
+            Its ``chars`` event, or None when it reached nothing new.
+        """
+        times: dict[int, list[int]] = {}
+        for c, start, end in zip(chars, starts, ends, strict=False):
+            at = self._said.find(c, self._cursor, self._cursor + _LOOKAHEAD)
+            if at < 0:
+                continue
+            self._cursor = at + 1
+            where = self._map[at]
+            if where >= self._next and where not in times:
+                times[where] = [round(start), round(end)]
+        if not times:
+            return None
+        last = max(times)
+        span = range(self._next, last + 1)
+        out = {"at": self._next, "times": [times.get(i, [-1, -1]) for i in span]}
+        self._next = last + 1
+        return out
+
+    def finish(self) -> dict[str, Any] | None:
+        """The end of the audio.
+
+        Returns:
+            A ``chars`` event for the code points no alignment reached, if any.
+        """
+        if not self._next or self._next >= self._size:
+            return None
+        out = {"at": self._next, "times": [[-1, -1]] * (self._size - self._next)}
+        self._next = self._size
+        return out
 
 
 # ── audio formats ───────────────────────────────────────────────────────────────────────────────

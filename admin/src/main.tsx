@@ -131,7 +131,7 @@ function App() {
         <PageLoader what={t('what.console')} />
       </main>
     )
-  const ctx: Console = { me, apps: apps.items, canCreate: apps.canCreate, reloadApps, signedOut }
+  const ctx: Console = { me, apps: apps.items.filter((a) => !a.hidden), allApps: apps.items, canCreate: apps.canCreate, reloadApps, signedOut }
   return (
     <ConsoleCtx.Provider value={ctx}>
       <Shell route={route} />

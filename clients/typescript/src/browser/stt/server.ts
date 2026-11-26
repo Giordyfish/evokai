@@ -1,8 +1,9 @@
 /**
  * Speech recognition by the server, as the user speaks (`WS /v1/session/transcribe/stream`), with the session's
  * engine. The session token travels in the WebSocket subprotocol, never in the URL. The microphone is captured with
- * an AudioWorklet, turned into 16 kHz 16-bit mono PCM and sent as binary messages; the server answers `interim` and
- * `final` transcripts.
+ * an AudioWorklet, turned into 16 kHz 16-bit mono PCM and sent as binary messages; the server answers `speech_start`
+ * and `speech_end` (its voice activity detection), `interim` and `final` transcripts. With `vad: false` the page
+ * decides where each utterance ends with `commit()` (push-to-talk, a device with its own voice detection).
  */
 import { transcribeSocketUrl, type SpeechSession } from '../speech-server'
 import { Emitter, type SttEngine, type SttEvents, type SttSupport } from '../voice/types'
@@ -31,8 +32,13 @@ export interface ServerSttOptions {
   session: SpeechSession
   /** BCP 47 language (default: the server picks the session's). */
   lang?: string
-  /** Voice activity detection on the server (seconds and thresholds). */
-  vad?: { confidence?: number; startSecs?: number; stopSecs?: number; minVolume?: number }
+  /**
+   * Voice activity detection on the server (seconds and thresholds), or `false` for none: then every utterance ends
+   * with `commit()` (or `stop()`).
+   */
+  vad?: { confidence?: number; startSecs?: number; stopSecs?: number; minVolume?: number } | false
+  /** Names and terms the person is likely to say (product names, people, jargon), comma-separated, at most 500 characters. */
+  hint?: string
   /** For tests and custom transports. */
   socket?: (url: string, protocols: string[]) => SocketLike
   source?: PcmSource
@@ -137,7 +143,15 @@ export class ServerStt implements SttEngine {
     ws.onmessage = (e) => this.onMessage(e.data)
     ws.onclose = () => this.finish()
     ws.onerror = () => this.events.emit('error', { code: 'connect', message: 'The recognition connection failed' })
-    ws.send(JSON.stringify({ type: 'start', sampleRate: STREAM_RATE, ...(this.lang ? { language: this.lang } : {}), ...(this.opts.vad ? { vad: this.opts.vad } : {}) }))
+    ws.send(
+      JSON.stringify({
+        type: 'start',
+        sampleRate: STREAM_RATE,
+        ...(this.lang ? { language: this.lang } : {}),
+        ...(this.opts.vad !== undefined ? { vad: this.opts.vad } : {}),
+        ...(this.opts.hint ? { hint: this.opts.hint } : {}),
+      }),
+    )
     const source = (this.source = this.opts.source ?? new MicrophonePcm())
     try {
       await source.start((pcm) => {
@@ -154,17 +168,25 @@ export class ServerStt implements SttEngine {
 
   private onMessage(data: unknown): void {
     if (typeof data !== 'string') return
-    let msg: { type?: string; text?: string; code?: string; message?: string }
+    let msg: { type?: string; text?: string; code?: string; message?: string; ms?: number }
     try {
       msg = JSON.parse(data) as typeof msg
     } catch {
       return
     }
-    if (msg.type === 'interim') this.events.emit('interim', msg.text ?? '')
+    if (msg.type === 'speech_start') this.events.emit('speechstart', { ms: msg.ms ?? 0 })
+    else if (msg.type === 'speech_end') this.events.emit('speechend', { ms: msg.ms ?? 0 })
+    else if (msg.type === 'interim') this.events.emit('interim', msg.text ?? '')
     else if (msg.type === 'final' && msg.text?.trim()) {
       this.events.emit('final', msg.text)
       if (!this.continuous) this.stop()
-    } else if (msg.type === 'error') this.events.emit('error', { code: msg.code ?? 'stt', message: msg.message ?? 'Recognition failed' })
+    } else if (msg.type === 'warning') this.events.emit('warning', { code: msg.code ?? 'stt', message: msg.message ?? '' })
+    else if (msg.type === 'error') this.events.emit('error', { code: msg.code ?? 'stt', message: msg.message ?? 'Recognition failed' })
+  }
+
+  /** End the current utterance now: the server transcribes it and sends its `final` (when the engine heard something). */
+  commit(): void {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify({ type: 'commit' }))
   }
 
   /** Stop: the server delivers what it heard, then closes. */

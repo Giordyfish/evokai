@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +38,7 @@ OWN_WRITES: dict[str, Mapping[str, str] | None] = {
     "/v1/admin/application/unlock": None,
     "/v1/admin/application/reset": None,
     "/v1/admin/assistant/activate": None,
+    "/v1/admin/assistant/switch": None,
     "/v1/admin/assistant/try": None,
     "/v1/admin/assistant/conversations/{conversation_id}/inspect": None,
     "/v1/admin/agents/{name}": _AGENT,
@@ -82,6 +85,7 @@ FRESH: dict[str, Any] = {
     "data_protection": None,
     "security_event_ttl_days": None,
     "audit_ttl_days": None,
+    "gateway": None,
 }
 """Every application setting as a new application has it: a reset sets them all back before the
 shipped definition sets its own (a test keeps this list complete as columns are added)."""
@@ -93,10 +97,11 @@ IDENTITY = frozenset({
     "system",
     "locked",
     "system_version",
+    "kind",
     "created_at",
 })
 """Columns that say which application it is, not how it is set."""
-KEPT_DEFAULTS = (shipped.MODEL_KEY, MEASURED_KEY)
+KEPT_DEFAULTS = (shipped.MODEL_KEY, shipped.OFF_KEY, MEASURED_KEY)
 """Defaults a reset keeps: the activated model and the owner's measured tries (results, not
 settings). Every other default goes, the shipped definition writes its own."""
 
@@ -226,14 +231,29 @@ async def plan(svc: Services, app_id: str) -> list[dict[str, Any]]:
     return items
 
 
-async def reset(svc: Services, app_id: str, model: str | None) -> list[dict[str, Any]]:
-    """Delete what ``plan`` lists and apply the shipped definition again (locked).
+def digest(items: list[dict[str, Any]]) -> str:
+    """A fingerprint of a plan: every item, its action and its definition.
+
+    The preview hands it out and the reset takes it back, so a reset carries out exactly what the
+    owner saw (and could download): an item added or changed meanwhile asks for a new preview.
+
+    Returns:
+        64 hex characters.
+    """
+    text = json.dumps(items, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+async def reset(
+    svc: Services, app_id: str, model: str | None, items: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Delete what ``plan`` lists (or the plan given) and apply the shipped definition again.
 
     Returns:
         The items of the plan that was carried out.
     """
     store = svc.store
-    items = await plan(svc, app_id)
+    items = items if items is not None else await plan(svc, app_id)
     for i in (i for i in items if i["action"] == "delete"):
         kind, name = i["kind"], i["name"]
         if kind == "prompt":
@@ -251,7 +271,9 @@ async def reset(svc: Services, app_id: str, model: str | None) -> list[dict[str,
             channel_kind, channel = name.split("/", 1)
             await store.channels.delete(app_id, channel_kind, channel)
         elif kind == "connection_app":
-            await store.connections.delete_provider(app_id, name)
+            # People's tokens are revoked at the provider first, while the app's client id is
+            # known (as a disconnect or an erasure does): a deleted row leaves them live there.
+            await svc.connections.revoke_all(app_id, name)
             await store.connections.delete_app(app_id, name)
         elif kind == "capability_credential":
             await store.capability_credentials.delete(app_id, name)

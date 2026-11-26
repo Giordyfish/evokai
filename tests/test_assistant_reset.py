@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import pytest
+
 from evokai.assistant.bootstrap import SLUG, ensure_assistant
 from evokai.core.security import generate_key, hash_secret, parse_key
 from evokai.identity import console
@@ -136,6 +138,65 @@ async def test_system_app_refuses_foreign_resource_kinds(env: Env) -> None:
     assert r.status_code != 409, r.text
 
 
+async def _plan(env: Env, headers: dict[str, str]) -> str:
+    r = await env.client.get(PREVIEW, headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()["plan"]
+
+
+async def test_a_reset_deletes_only_what_its_preview_showed(env: Env) -> None:
+    app_id = await _system(env)
+    await _owner(env)
+    h = _on(app_id)
+    plan = await _plan(env, h)
+    # Added after the owner looked: the reset would delete it without the owner having seen it.
+    await env.svc.store.applications.update(app_id, locked=False)
+    r = await env.client.put(
+        "/agent/v1/admin/prompts/late", json={"text": "Added after the preview."}, headers=h
+    )
+    assert r.status_code == 200, r.text
+    r = await env.client.post(RESET, json={"confirm": SLUG, "plan": plan}, headers=h)
+    assert (r.status_code, r.json()["error"]) == (409, "plan_changed"), r.text
+    assert await env.svc.store.prompts.get(app_id, "late") is not None
+    r = await env.client.post(RESET, json={"confirm": SLUG}, headers=h)
+    assert r.status_code == 400, r.text  # no plan, no reset
+    fresh = await env.client.get(PREVIEW, headers=h)
+    assert ("prompt", "late") in {(i["kind"], i["name"]) for i in fresh.json()["items"]}
+    body = {"confirm": SLUG, "plan": fresh.json()["plan"]}
+    assert (await env.client.post(RESET, json=body, headers=h)).status_code == 200
+
+
+async def test_a_reset_revokes_peoples_connections_at_the_provider(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_id = await _system(env)
+    s = env.svc.store
+    await s.connections.put_app(app_id, "github", client_id="cid", secret=SECRET, writes=False)
+    await s.connections.put(
+        app_id,
+        "console:ada",
+        "github",
+        account="ada",
+        scopes=["repo"],
+        access=env.svc.keyring.encrypt("gho_token"),
+        refresh=None,
+        expires_at=None,
+    )
+    revoked: list[str] = []
+
+    async def revoke(row: Any, cfg: Any = None) -> None:  # ruff: ignore[unused-async]
+        del cfg
+        revoked.append(f"{row.subject}/{row.provider}")
+
+    monkeypatch.setattr(env.svc.connections, "_revoke_at_provider", revoke)
+    await _owner(env)
+    h = _on(app_id)
+    r = await env.client.post(RESET, json={"confirm": SLUG, "plan": await _plan(env, h)}, headers=h)
+    assert r.status_code == 200, r.text
+    assert revoked == ["console:ada/github"]  # not only deleted here: still live at GitHub
+    assert await s.connections.of_subject(app_id, "console:ada") == []
+
+
 async def test_reset_preview_matches_what_reset_deletes(env: Env) -> None:
     app_id = await _system(env)
     expected = await _leftovers(env, app_id)
@@ -148,9 +209,10 @@ async def test_reset_preview_matches_what_reset_deletes(env: Env) -> None:
     restores = {(i["kind"], i["name"]) for i in items if i["action"] == "restore"}
     assert ("agent", "assistant") in restores and ("mcp_server", "evokai-admin") in restores
     before = await _present(env, app_id)
-    r = await env.client.post(RESET, json={"confirm": "wrong"}, headers=_on(app_id))
+    plan = await _plan(env, _on(app_id))
+    r = await env.client.post(RESET, json={"confirm": "wrong", "plan": plan}, headers=_on(app_id))
     assert r.status_code == 400 and r.json()["error"] == "confirm", r.text
-    r = await env.client.post(RESET, json={"confirm": SLUG}, headers=_on(app_id))
+    r = await env.client.post(RESET, json={"confirm": SLUG, "plan": plan}, headers=_on(app_id))
     assert r.status_code == 200, r.text
     after = await _present(env, app_id)
     assert before - after == expected
@@ -165,7 +227,8 @@ async def test_reset_touches_nothing_outside_the_system_app(env: Env) -> None:
     before = await _present(env, env.app_id)
     assert others <= before
     await _owner(env)
-    r = await env.client.post(RESET, json={"confirm": SLUG}, headers=_on(app_id))
+    plan = await _plan(env, _on(app_id))
+    r = await env.client.post(RESET, json={"confirm": SLUG, "plan": plan}, headers=_on(app_id))
     assert r.status_code == 200, r.text
     assert await _present(env, env.app_id) == before
 
@@ -210,7 +273,7 @@ async def test_reset_restores_the_settings_an_owner_changed(env: Env) -> None:
         settings["item"]
     )
     assert settings["item"]["eval_credential"] == "***"
-    r = await env.client.post(RESET, json={"confirm": SLUG}, headers=h)
+    r = await env.client.post(RESET, json={"confirm": SLUG, "plan": await _plan(env, h)}, headers=h)
     assert r.status_code == 200, r.text
     app = await env.svc.store.applications.get(app_id)
     assert app is not None and app.locked

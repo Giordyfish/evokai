@@ -309,6 +309,7 @@ async def state(svc: Services) -> dict[str, Any]:
         return {
             "available": False,
             "active": False,
+            "off": False,
             "model": None,
             "requirements": REQUIREMENTS,
             "candidates": [],
@@ -321,7 +322,8 @@ async def state(svc: Services) -> dict[str, Any]:
     return {
         "available": True,
         "active": bool(defaults.get(shipped.MODEL_KEY)),
-        "model": defaults.get(shipped.MODEL_KEY),
+        "off": bool(defaults.get(shipped.OFF_KEY)),
+        "model": defaults.get(shipped.MODEL_KEY) or defaults.get(shipped.OFF_KEY),
         "applicationId": app.id,
         "slug": app.slug,
         "locked": bool(app.locked),
@@ -339,6 +341,7 @@ async def activate(svc: Services, app: m.Application, model: str, by: str = "con
     version with it.
     """
     defaults = {**(app.defaults or {}), shipped.MODEL_KEY: model}
+    defaults.pop(shipped.OFF_KEY, None)
     await svc.store.applications.update(app.id, defaults=defaults)
     if app.locked:
         await shipped.apply_shipped(svc.store, svc.keyring, svc.settings, model=model)
@@ -346,6 +349,29 @@ async def activate(svc: Services, app: m.Application, model: str, by: str = "con
         await shipped.set_model(svc.store, app.id, model, by=by)
     svc.agents.invalidate(app.id, shipped.AGENT)
     svc.mcp.forget(app.id)
+
+
+async def switch_off(svc: Services, app: m.Application, by: str = "console") -> str | None:
+    """Switch the assistant off: no launcher, no application in the console, sessions refused.
+
+    The model is kept aside, so switching it on again needs no new choice.
+
+    Returns:
+        The model it had, or None when it was not active.
+    """
+    defaults = dict(app.defaults or {})
+    model = defaults.pop(shipped.MODEL_KEY, None)
+    if not model:
+        return None
+    defaults[shipped.OFF_KEY] = model
+    await svc.store.applications.update(app.id, defaults=defaults)
+    if app.locked:
+        await shipped.apply_shipped(svc.store, svc.keyring, svc.settings, model=None)
+    else:
+        await shipped.set_model(svc.store, app.id, shipped.UNSET_MODEL, by=by)
+    svc.agents.invalidate(app.id, shipped.AGENT)
+    svc.mcp.forget(app.id)
+    return str(model)
 
 
 def numbers_of(rows: list[tuple[str, dict[str, Any]]], model: str, settings: Any) -> dict[str, Any]:
@@ -471,18 +497,21 @@ async def _trial(
             "budgetPct": budget,
             "passRate": totals.get("passRate"),
         }
+        # The numbers first, then the run's status: whoever sees the try done (the console polls
+        # it) finds its numbers. The recorded server's token goes whatever the outcome (a failed,
+        # capped or interrupted try kept it); a try still running holds its own copy.
+        with contextlib.suppress(Exception):
+            await asyncio.shield(_record(svc, app_id, model, numbers if status == "done" else None))
         with contextlib.suppress(Exception):
             await asyncio.shield(store.evals.finish_run(run.id, status, summary))
-        if status == "done":
-            with contextlib.suppress(Exception):
-                await asyncio.shield(_record(svc, app_id, model, numbers))
 
 
-async def _record(svc: Services, app_id: str, model: str, numbers: dict[str, Any]) -> None:
+async def _record(svc: Services, app_id: str, model: str, numbers: dict[str, Any] | None) -> None:
     app = await svc.store.applications.get(app_id)
     if app is None:
         return
     defaults = dict(app.defaults or {})
-    defaults[MEASURED_KEY] = {**(defaults.get(MEASURED_KEY) or {}), model: numbers}
+    if numbers is not None:
+        defaults[MEASURED_KEY] = {**(defaults.get(MEASURED_KEY) or {}), model: numbers}
     defaults.pop("eval_credential", None)
     await svc.store.applications.update(app_id, defaults=defaults)

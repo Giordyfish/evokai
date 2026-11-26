@@ -452,6 +452,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/agents/{name}/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Types
+         * @description TypeScript declarations of the agent's tools: arguments and results, from their schemas.
+         *
+         *     The MCP tools the application is granted, the agent's custom client tools and its
+         *     ``output_schema`` (``evokai.tools.typescript``). A ``forward_user`` server lists its tools
+         *     only with a person's credential: send one (a test user's) as ``X-Evokai-Credential``, as a
+         *     session token would forward it; without it the server is named as not listed. The credential
+         *     is used for this listing only, never kept.
+         *
+         *     Returns:
+         *         The ``.d.ts`` text.
+         *
+         *     Raises:
+         *         NotFound: Unknown application or agent.
+         */
+        get: operations["agent_types_agent_v1_admin_agents__name__types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/agents/{name}/version-stats": {
         parameters: {
             query?: never;
@@ -568,7 +600,8 @@ export interface paths {
          *
          *     Raises:
          *         BadRequest: The typed slug is not the application's (400 ``confirm``).
-         *         Conflict: A system application this version of Evokai does not ship.
+         *         Conflict: A system application this version of Evokai does not ship, or what the reset
+         *             would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).
          */
         post: operations["reset_application_agent_v1_admin_application_reset_post"];
         delete?: never;
@@ -589,10 +622,10 @@ export interface paths {
          * @description Everything a reset of the system application deletes or restores (owner).
          *
          *     Each deleted item carries its definition without secrets (``item``), for the owner to keep
-         *     before resetting.
+         *     before resetting. ``plan`` fingerprints the items: the reset takes it back.
          *
          *     Returns:
-         *         slug and items (kind, name, action: ``delete`` or ``restore``, item).
+         *         slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.
          *
          *     Raises:
          *         Conflict: A system application this version of Evokai does not ship.
@@ -747,6 +780,35 @@ export interface paths {
          *         NotFound: The assistant is off, or no such conversation.
          */
         post: operations["inspect_conversation_agent_v1_admin_assistant_conversations__conversation_id__inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/assistant/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Assistant
+         * @description Switch the assistant on or off (owner of its application).
+         *
+         *     Off, the console shows neither its launcher nor its application, and its sessions are
+         *     refused; the model is kept, so switching it on again needs no new choice.
+         *
+         *     Returns:
+         *         ok, on and the model.
+         *
+         *     Raises:
+         *         Conflict: Switching on an assistant that never had a model (``no_model``: activate one).
+         */
+        post: operations["switch_assistant_agent_v1_admin_assistant_switch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1522,6 +1584,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/gateways": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Gateways
+         * @description The gateways the caller can see.
+         *
+         *     Returns:
+         *         items (with the caller's role and the count of active people), and whether the caller
+         *         may create gateways (a deployment owner).
+         */
+        get: operations["list_gateways_agent_v1_admin_gateways_get"];
+        put?: never;
+        /**
+         * Create Gateway
+         * @description Create a gateway (deployment owners). It starts with a policy fit for coding tools.
+         *
+         *     Returns:
+         *         The gateway.
+         *
+         *     Raises:
+         *         Conflict: The slug is taken (by a gateway or an application).
+         */
+        post: operations["create_gateway_agent_v1_admin_gateways_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gateway
+         * @description A gateway.
+         *
+         *     Returns:
+         *         The gateway, with its data protection profile.
+         */
+        get: operations["get_gateway_agent_v1_admin_gateways__gateway_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Gateway
+         * @description Change a gateway (owners): its settings, and its policy as a new version.
+         *
+         *     Returns:
+         *         The gateway.
+         *
+         *     Raises:
+         *         BadRequest: An invalid data protection profile.
+         */
+        patch: operations["patch_gateway_agent_v1_admin_gateways__gateway_id__patch"];
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List People
+         * @description The people of a gateway: one personal key each (never its secret).
+         *
+         *     Returns:
+         *         items: id, label, prefix, createdAt, lastUsedAt, revoked.
+         */
+        get: operations["list_people_agent_v1_admin_gateways__gateway_id__people_get"];
+        put?: never;
+        /**
+         * Add Person
+         * @description Give a person their personal gateway key (operators). The key is shown only now.
+         *
+         *     Returns:
+         *         id, label, key.
+         */
+        post: operations["add_person_agent_v1_admin_gateways__gateway_id__people_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}/people/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Person
+         * @description Revoke a person's gateway key (operators): their requests are refused at once.
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: Unknown or already revoked.
+         */
+        delete: operations["revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gateway Usage
+         * @description Tokens through a gateway, per person and per model, and its latest requests.
+         *
+         *     Never an amount: the traffic is people's own subscriptions. Requests hold no content.
+         *
+         *     Returns:
+         *         days, people, models, outcomes, recent (timings, sizes, outcome per request).
+         */
+        get: operations["gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/grants": {
         parameters: {
             query?: never;
@@ -1981,6 +2191,212 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/policy/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * App Copy
+         * @description Copy another policy into the application's as a new version (owner).
+         *
+         *     The source is the system policy or an application the caller can see; the policy tests run
+         *     first.
+         *
+         *     Returns:
+         *         created, version.
+         */
+        post: operations["app_copy_agent_v1_admin_policy_copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Diff
+         * @description What changes between two versions of the application's policy (``to``: the current one).
+         *
+         *     Returns:
+         *         from, to, changes: ``{path, change, before, after}`` per setting.
+         */
+        get: operations["app_diff_agent_v1_admin_policy_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Tests
+         * @description The application's policy tests.
+         *
+         *     Returns:
+         *         items: id, name, input, outcome, controls, updatedAt.
+         */
+        get: operations["app_tests_agent_v1_admin_policy_tests_get"];
+        put?: never;
+        /**
+         * App Add Test
+         * @description Add a policy test (owner): a text and the outcome the guard's input checks must give it.
+         *
+         *     Returns:
+         *         The test.
+         */
+        post: operations["app_add_test_agent_v1_admin_policy_tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/tests/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * App Run Tests
+         * @description Run the application's policy tests against its current policy (no model is called).
+         *
+         *     Returns:
+         *         items (per test: id, name, passed, expected, got), passed, failed.
+         */
+        post: operations["app_run_tests_agent_v1_admin_policy_tests_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/tests/{test_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * App Put Test
+         * @description Replace a policy test (owner).
+         *
+         *     Returns:
+         *         The test.
+         */
+        put: operations["app_put_test_agent_v1_admin_policy_tests__test_id__put"];
+        post?: never;
+        /**
+         * App Delete Test
+         * @description Remove a policy test (owner).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: Unknown test.
+         */
+        delete: operations["app_delete_test_agent_v1_admin_policy_tests__test_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Versions
+         * @description The versions of the application's policy (security and data protection), newest first.
+         *
+         *     Returns:
+         *         items: number, createdAt, createdBy, note.
+         */
+        get: operations["app_versions_agent_v1_admin_policy_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Version
+         * @description One version of the application's policy, with its content.
+         *
+         *     Returns:
+         *         number, createdAt, createdBy, note, content (``security``, ``data_protection``).
+         */
+        get: operations["app_version_agent_v1_admin_policy_versions__number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/versions/{number}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * App Restore
+         * @description Save an older version's content as the application's new policy version (owner).
+         *
+         *     The policy tests run first, as for any save (409 ``policy_tests_failed`` unless ``force``).
+         *
+         *     Returns:
+         *         created (false when the content is already the current one), version.
+         */
+        post: operations["app_restore_agent_v1_admin_policy_versions__number__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/prompts": {
         parameters: {
             query?: never;
@@ -2159,12 +2575,13 @@ export interface paths {
          * @description Replace the application's security policy (unset fields follow the defaults).
          *
          *     Agents may override it in their own definition (``security``). Effective from the next turn.
+         *     A change is a new version of the application's policy (``note`` is kept with it). The
+         *     application's policy tests run first: when one fails the policy is not saved (409
+         *     ``policy_tests_failed``, with ``failures``) unless ``force`` is true.
          *
          *     Returns:
-         *         The security view.
-         *
-         *     Raises:
-         *         BadRequest: ``pii.types`` names a type that is neither built-in nor declared.
+         *         The security view (400 ``unknown_pii_types`` when ``pii.types`` names a type that is
+         *         neither built-in nor declared).
          */
         put: operations["put_security_agent_v1_admin_security_put"];
         post?: never;
@@ -2413,13 +2830,27 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Voice
+         * @description A voice of the deployment's catalog, with how its engine speaks with it (``settings``).
+         *
+         *     Returns:
+         *         provider, voiceId, language, name, gender, region, settings (null when the engine's
+         *         defaults apply).
+         *
+         *     Raises:
+         *         NotFound: No such voice.
+         */
+        get: operations["get_voice_agent_v1_admin_voices__provider___voice_id__get"];
         /**
          * Put Voice
          * @description Add or replace a voice in the deployment's catalog (owner).
          *
          *     Returns:
          *         ok.
+         *
+         *     Raises:
+         *         BadRequest: Settings its engine does not take.
          */
         put: operations["put_voice_agent_v1_admin_voices__provider___voice_id__put"];
         post?: never;
@@ -2917,7 +3348,8 @@ export interface paths {
          * @description The applications of this login, with what the console's list and switcher show.
          *
          *     Returns:
-         *         items, and whether this login may create applications (operator).
+         *         items (``hidden``: the assistant's application while the assistant is off), and whether
+         *         this login may create applications (operator).
          */
         get: operations["console_applications_agent_v1_console_applications_get"];
         put?: never;
@@ -2983,11 +3415,12 @@ export interface paths {
         put?: never;
         /**
          * Assistant Session
-         * @description A session token for the console assistant, acting on the selected application.
+         * @description A session token for the console assistant, the platform's: it acts on every application.
          *
-         *     It needs a console login (the cookie, its header and the application it acts on): its
-         *     forwarded credential is a delegation token for that application with the login's role, which
-         *     the admin MCP server checks against the live login on every call. The session belongs to the
+         *     It needs a console login (the cookie and its header): its forwarded credential is a delegation
+         *     token valid on every application the login can see, with the login's highest role; the admin
+         *     MCP server's tools name the application of each call, and Evokai checks the live login's role
+         *     on that application every time. The session belongs to the
          *     assistant's system application, for the subject ``console:<login>``, with browser speech.
          *
          *     Returns:
@@ -3153,7 +3586,8 @@ export interface paths {
          *         deployment's facts the console needs (model allow-list, voice enabled).
          *
          *     Raises:
-         *         Unauthorized: Not logged in, the login's key was revoked or its user disabled.
+         *         Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
+         *             operator key changed.
          */
         get: operations["me_agent_v1_console_me_get"];
         put?: never;
@@ -3310,6 +3744,249 @@ export interface paths {
          *         The configuration that applies now.
          */
         delete: operations["delete_sso_config_agent_v1_console_sso_config_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get System Policy
+         * @description The system policy (deployment owners) and what an application that sets nothing gets.
+         *
+         *     Returns:
+         *         version, content (``security``: minimum modes and default settings;
+         *         ``data_protection``: the profile every application's processors must also meet),
+         *         effective (modes, settings, floors), enabled, controls.
+         */
+        get: operations["get_system_policy_agent_v1_console_system_policy_get"];
+        /**
+         * Put System Policy
+         * @description Save the system policy as a new version (deployment owners).
+         *
+         *     Its modes are minimums for every application's controls, its profile holds as well as each
+         *     application's, its settings are defaults. Its policy tests run first (409
+         *     ``policy_tests_failed`` unless ``force``). In force on this instance at once, on the others
+         *     within ``REFRESH_SECONDS``.
+         *
+         *     Returns:
+         *         The system policy, as ``GET`` shows it.
+         */
+        put: operations["put_system_policy_agent_v1_console_system_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * System Copy
+         * @description Copy an application's policy into the system policy as a new version.
+         *
+         *     Its browser declaration is left out: each application declares its own.
+         *
+         *     Returns:
+         *         created, version.
+         *
+         *     Raises:
+         *         NotFound: Unknown application.
+         */
+        post: operations["system_copy_agent_v1_console_system_policy_copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Diff
+         * @description What changes between two versions of the system policy (``to``: the current one).
+         *
+         *     Returns:
+         *         from, to, changes.
+         */
+        get: operations["system_diff_agent_v1_console_system_policy_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Tests
+         * @description The system policy's tests.
+         *
+         *     Returns:
+         *         items.
+         */
+        get: operations["system_tests_agent_v1_console_system_policy_tests_get"];
+        put?: never;
+        /**
+         * System Add Test
+         * @description Add a test of the system policy.
+         *
+         *     Returns:
+         *         The test.
+         */
+        post: operations["system_add_test_agent_v1_console_system_policy_tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/tests/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * System Run Tests
+         * @description Run the system policy's tests against it, as an application that sets nothing gets it.
+         *
+         *     Returns:
+         *         items, passed, failed.
+         */
+        post: operations["system_run_tests_agent_v1_console_system_policy_tests_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/tests/{test_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * System Put Test
+         * @description Replace a test of the system policy.
+         *
+         *     Returns:
+         *         The test.
+         */
+        put: operations["system_put_test_agent_v1_console_system_policy_tests__test_id__put"];
+        post?: never;
+        /**
+         * System Delete Test
+         * @description Remove a test of the system policy.
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: Unknown test.
+         */
+        delete: operations["system_delete_test_agent_v1_console_system_policy_tests__test_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Versions
+         * @description The system policy's versions, newest first.
+         *
+         *     Returns:
+         *         items: number, createdAt, createdBy, note.
+         */
+        get: operations["system_versions_agent_v1_console_system_policy_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Version
+         * @description One version of the system policy, with its content.
+         *
+         *     Returns:
+         *         number, createdAt, createdBy, note, content.
+         */
+        get: operations["system_version_agent_v1_console_system_policy_versions__number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/versions/{number}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * System Restore
+         * @description Save an older version's content as the system policy's new version.
+         *
+         *     Returns:
+         *         created, version.
+         */
+        post: operations["system_restore_agent_v1_console_system_policy_versions__number__restore_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4145,10 +4822,13 @@ export interface paths {
          * Speech
          * @description Speak a text or a ``say`` segment with the session's speech engine.
          *
-         *     A segment that is not in this conversation is 404.
+         *     A segment that is not in this conversation is 404. The voice's catalogue settings (model,
+         *     speed, the engine's options) apply; a segment follows the earlier segments of its turn, a text
+         *     the speech named in ``after``.
          *
          *     Returns:
-         *         The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).
+         *         The event stream (``start``, ``audio``, ``word``, ``chars``, ``mark``, ``viseme``,
+         *         ``done``).
          *
          *     Raises:
          *         BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.
@@ -4200,6 +4880,11 @@ export interface paths {
         /**
          * Transcribe
          * @description Transcribe an audio file (WAV, WebM, Ogg, MP3, M4A) sent as the request body.
+         *
+         *     ``hint`` lists names and terms the person is likely to say (product names, people, jargon),
+         *     separated by commas, for the engines that take a vocabulary; the others ignore it. Phrases
+         *     recognisers make up from silence are left out of the text unless the application turned the
+         *     filter off.
          *
          *     Returns:
          *         The text, the audio's length and the engine.
@@ -4643,6 +5328,16 @@ export interface components {
             security?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Show Reasoning
+             * @default false
+             */
+            show_reasoning?: boolean;
+            /**
+             * Show Tool Args
+             * @default false
+             */
+            show_tool_args?: boolean;
             /** Skills */
             skills?: string[] | null;
             /** Subagents */
@@ -4825,6 +5520,8 @@ export interface components {
             security_event_ttl_days?: number | null;
             /** Storage Mode */
             storage_mode?: ("evokai" | "external") | null;
+            /** Stt Filter */
+            stt_filter?: boolean | null;
             /** Subject Daily Usd */
             subject_daily_usd?: number | null;
             /** Subject Monthly Usd */
@@ -5235,6 +5932,11 @@ export interface components {
              * @default true
              */
             chart?: boolean;
+            /**
+             * Chart From Tools
+             * @default false
+             */
+            chart_from_tools?: boolean;
             /** Custom */
             custom?: components["schemas"]["ClientToolDef"][];
             /**
@@ -5420,6 +6122,26 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * CopyFrom
+         * @description Where to copy a policy from: the system policy or another application (by slug).
+         */
+        CopyFrom: {
+            /** Application */
+            application?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
+            /**
+             * System
+             * @default false
+             */
+            system?: boolean;
+        };
+        /**
          * CredentialValues
          * @description A provider's values: a non-empty value replaces, an empty one keeps, null clears.
          */
@@ -5566,6 +6288,36 @@ export interface components {
             size?: number;
         };
         /**
+         * GatewayChange
+         * @description A change of a gateway (unset fields stay as they are).
+         */
+        GatewayChange: {
+            /** Allowed Models */
+            allowed_models?: string[] | null;
+            /** Data Protection */
+            data_protection?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Name */
+            name?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Providers */
+            providers?: ("anthropic" | "openai")[] | null;
+            security?: components["schemas"]["SecurityPolicy"] | null;
+            /** Status */
+            status?: ("active" | "disabled") | null;
+            /** Tokens Per Day */
+            tokens_per_day?: number | null;
+            /** Tokens Per Month */
+            tokens_per_month?: number | null;
+        };
+        /**
          * GdprAnswers
          * @description GDPR statements and overrides of what the configuration suggests.
          */
@@ -5651,8 +6403,10 @@ export interface components {
          * HistoryMessage
          * @description One message of a conversation, as the application stores it and sends it back.
          *
-         *     ``content`` is what the model sees; ``text`` and ``events`` are what the user saw (the text,
-         *     and the charts, schemas, questions and confirmations shown with it).
+         *     ``content`` is what the model sees; ``text`` and ``events`` are what the user saw: the text,
+         *     and every event shown with it in the order it was shown (``evokai.sessions.parts``: the text
+         *     again, tools, charts, questions, confirmations, citations, errors). Keep them as Evokai returns
+         *     them.
          */
         HistoryMessage: {
             /** Content */
@@ -5987,6 +6741,28 @@ export interface components {
             slug: string;
         };
         /**
+         * NewGateway
+         * @description A new gateway.
+         */
+        NewGateway: {
+            /** Allowed Models */
+            allowed_models?: string[];
+            /** Name */
+            name: string;
+            /** Providers */
+            providers: ("anthropic" | "openai")[];
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * NewPerson
+         * @description A person of a gateway.
+         */
+        NewPerson: {
+            /** Label */
+            label: string;
+        };
+        /**
          * NoteBody
          * @description A reviewer's note on a conversation or one of its turns.
          */
@@ -6077,6 +6853,22 @@ export interface components {
             types?: string[] | null;
         };
         /**
+         * PolicyTestBody
+         * @description A policy test: a text and the outcome it must get, overall or per control (or both).
+         */
+        PolicyTestBody: {
+            /** Controls */
+            controls?: {
+                [key: string]: "allowed" | "flagged" | "blocked";
+            } | null;
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Outcome */
+            outcome?: ("allowed" | "flagged" | "blocked") | null;
+        };
+        /**
          * Preferences
          * @description One person's console preferences (version 2). JSON fields are camelCase.
          */
@@ -6140,6 +6932,16 @@ export interface components {
              * @enum {string}
              */
             timeFormat?: "auto" | "24h" | "12h";
+            /**
+             * Tourinvite
+             * @default show
+             * @enum {string}
+             */
+            tourInvite?: "show" | "dismissed";
+            /** Tours */
+            tours?: {
+                [key: string]: components["schemas"]["TourProgress"];
+            };
             /**
              * Underlinelinks
              * @default false
@@ -6246,6 +7048,16 @@ export interface components {
             page?: components["schemas"]["PageContext"] | null;
         };
         /**
+         * Reset
+         * @description The typed slug and the plan of the preview the person saw.
+         */
+        Reset: {
+            /** Confirm */
+            confirm: string;
+            /** Plan */
+            plan: string;
+        };
+        /**
          * Residency
          * @description Where an application's data lives and where its models may run.
          */
@@ -6314,6 +7126,11 @@ export interface components {
              * @default 0.7
              */
             mmr_lambda?: number;
+            /**
+             * Rerank
+             * @default false
+             */
+            rerank?: boolean;
             /**
              * Top K
              * @default 5
@@ -6485,6 +7302,34 @@ export interface components {
             toolCalls: number;
         };
         /**
+         * SaveOptions
+         * @description How to save a restored or copied content.
+         */
+        SaveOptions: {
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * SavePolicy
+         * @description A new version of a policy.
+         */
+        SavePolicy: {
+            data_protection?: components["schemas"]["DataProtection"] | null;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
+            security?: components["schemas"]["SecurityPolicy"] | null;
+        };
+        /**
          * ScopeSettings
          * @description What the agent talks about.
          */
@@ -6640,6 +7485,13 @@ export interface components {
          * @description What to speak: a text, or a ``say`` segment of this conversation.
          */
         SpeechRequest: {
+            /** After */
+            after?: string[] | null;
+            /**
+             * Characters
+             * @default false
+             */
+            characters?: boolean;
             /**
              * Format
              * @default pcm
@@ -6648,6 +7500,8 @@ export interface components {
             format?: "pcm" | "opus";
             /** Index */
             index?: number | null;
+            /** Language */
+            language?: string | null;
             /**
              * Samplerate
              * @default 24000
@@ -6773,12 +7627,35 @@ export interface components {
             subject: string;
         };
         /**
+         * Switch
+         * @description Switching the assistant on or off.
+         */
+        Switch: {
+            /** On */
+            on: boolean;
+        };
+        /**
          * SwitchBody
          * @description The model the agent should answer with.
          */
         SwitchBody: {
             /** Model */
             model: string;
+        };
+        /**
+         * SystemCopy
+         * @description The application whose policy the system policy copies.
+         */
+        SystemCopy: {
+            /** Application */
+            application: string;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
         };
         /**
          * TextBlock
@@ -6926,6 +7803,16 @@ export interface components {
             toolUse: components["schemas"]["ToolUse"];
         };
         /**
+         * TourProgress
+         * @description Where one guided tour stopped, and when (so the most recent copy wins on resume).
+         */
+        TourProgress: {
+            /** At */
+            at: number;
+            /** Step */
+            step: number;
+        };
+        /**
          * Transcript
          * @description What was heard.
          */
@@ -7038,6 +7925,10 @@ export interface components {
             name: string;
             /** Region */
             region?: string | null;
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * VoiceDef
@@ -7781,6 +8672,39 @@ export interface operations {
             };
         };
     };
+    agent_types_agent_v1_admin_agents__name__types_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Evokai-Credential"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A TypeScript .d.ts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     version_stats_agent_v1_admin_agents__name__version_stats_get: {
         parameters: {
             query?: {
@@ -7916,7 +8840,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Unlock"];
+                "application/json": components["schemas"]["Reset"];
             };
         };
         responses: {
@@ -8125,6 +9049,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Inspect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_assistant_agent_v1_admin_assistant_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Switch"];
             };
         };
         responses: {
@@ -9159,6 +10118,272 @@ export interface operations {
             };
         };
     };
+    list_gateways_agent_v1_admin_gateways_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_gateway_agent_v1_admin_gateways_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewGateway"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gateway_agent_v1_admin_gateways__gateway_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_gateway_agent_v1_admin_gateways__gateway_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_agent_v1_admin_gateways__gateway_id__people_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_person_agent_v1_admin_gateways__gateway_id__people_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewPerson"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_grants_agent_v1_admin_grants_get: {
         parameters: {
             query?: never;
@@ -9904,6 +11129,316 @@ export interface operations {
             };
         };
     };
+    app_copy_agent_v1_admin_policy_copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyFrom"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_diff_agent_v1_admin_policy_diff_get: {
+        parameters: {
+            query: {
+                from: number;
+                to?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_tests_agent_v1_admin_policy_tests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    app_add_test_agent_v1_admin_policy_tests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_run_tests_agent_v1_admin_policy_tests_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    app_put_test_agent_v1_admin_policy_tests__test_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_delete_test_agent_v1_admin_policy_tests__test_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_versions_agent_v1_admin_policy_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    app_version_agent_v1_admin_policy_versions__number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_restore_agent_v1_admin_policy_versions__number__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveOptions"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_prompts_agent_v1_admin_prompts_get: {
         parameters: {
             query?: never;
@@ -10101,7 +11636,10 @@ export interface operations {
     };
     put_security_agent_v1_admin_security_put: {
         parameters: {
-            query?: never;
+            query?: {
+                note?: string | null;
+                force?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10530,6 +12068,40 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_voice_agent_v1_admin_voices__provider___voice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                voice_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -11761,6 +13333,373 @@ export interface operations {
             };
         };
     };
+    get_system_policy_agent_v1_console_system_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_system_policy_agent_v1_console_system_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavePolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_copy_agent_v1_console_system_policy_copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemCopy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_diff_agent_v1_console_system_policy_diff_get: {
+        parameters: {
+            query: {
+                from: number;
+                to?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_tests_agent_v1_console_system_policy_tests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    system_add_test_agent_v1_console_system_policy_tests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_run_tests_agent_v1_console_system_policy_tests_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    system_put_test_agent_v1_console_system_policy_tests__test_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_delete_test_agent_v1_console_system_policy_tests__test_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_versions_agent_v1_console_system_policy_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    system_version_agent_v1_console_system_policy_versions__number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_restore_agent_v1_console_system_policy_versions__number__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveOptions"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     users_agent_v1_console_users_get: {
         parameters: {
             query?: never;
@@ -12988,6 +14927,7 @@ export interface operations {
         parameters: {
             query?: {
                 language?: string | null;
+                hint?: string | null;
             };
             header?: never;
             path?: never;

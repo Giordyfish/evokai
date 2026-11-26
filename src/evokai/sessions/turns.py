@@ -85,7 +85,14 @@ from evokai.engine.capability import finish_attempt
 from evokai.engine.client_calls import ClientCalls, ClientToolWait
 from evokai.engine.code_mode import EvokaiCodeMode
 from evokai.engine.compaction import Compactor, EvokaiCompaction, estimate_tokens, over
-from evokai.engine.messages import response_blocks, result_blocks, to_stored
+from evokai.engine.messages import (
+    keep_reasoning,
+    reasoning_block,
+    response_blocks,
+    result_blocks,
+    resume_reasoning,
+    to_stored,
+)
 from evokai.engine.models import USAGE_KIND as CAP_KIND
 from evokai.engine.models import RecordedModel
 from evokai.engine.state import RunState, Scope, StopRun
@@ -135,6 +142,8 @@ from evokai.sessions.history import (
     window,
 )
 from evokai.sessions.limits import EVAL_LIMIT, cap_state, eval_cap_usd, limit_message
+from evokai.sessions.live import CARD_KINDS, LiveStep
+from evokai.sessions.parts import PartLog
 from evokai.sessions.rewrite import Plan
 from evokai.sessions.threads import (
     EvokaiThreads,
@@ -244,6 +253,10 @@ class TurnRun:
     """The message's attachments, checked and prepared (``evokai.attachments``)."""
     dropped: bool = False
     """A rewrite deleted the question it replaces (Evokai storage)."""
+    parts: PartLog = field(default_factory=PartLog)
+    """What the person was shown and no stored message holds yet (``evokai.sessions.parts``)."""
+    last_answer: tuple[ThreadMessage, str | None] | None = None
+    """The turn's last stored assistant message and its id: what is shown after it goes there."""
 
 
 class _Cancelled(Exception):
@@ -821,6 +834,7 @@ class TurnEngine:
         voice_span: dict[str, Span | None] = {"span": None}
 
         def emit(event: dict[str, Any]) -> dict[str, Any]:
+            run.parts.add(event)
             return run.channel.publish(event, run.turn_id)
 
         def say(text: str, *, filler: bool = False, last: bool = False) -> None:
@@ -884,6 +898,12 @@ class TurnEngine:
             })
         finally:
             await self._drop_unkept(run, inp)
+            try:
+                await self._keep_shown(run)
+            except Exception as e:
+                log.warning(
+                    "shown_not_kept", extra={"turnId": run.turn_id, "error": error_class(e)}
+                )
             # The turn is over: its capability workers' call tokens stop working.
             await self.mcp.end_run(run.turn_id)
             run.timings["totalMs"] = round((time.perf_counter() - t0) * 1000)
@@ -1122,6 +1142,7 @@ class TurnEngine:
             self.store, run.app.id, agent, run.session.prompt_options, session=run.session
         )
         modules = protected(modules, guard.protect_text)
+        guard.add_prompt_text(*(m.text for m in modules))  # the leak check covers them too
         if modules and guard.trace is not None:
             # Which modules at which versions; never their parameters.
             guard.trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})
@@ -1154,6 +1175,9 @@ class TurnEngine:
         )
         rs.tools = {t.name: t for t in tools}
         names = set(rs.tools)
+        if agent.show_tool_args:
+            # The calls that show a card show their arguments as they are written.
+            rs.extra["argsOf"] = frozenset(t.name for t in tools if t.kind in CARD_KINDS)
         kbs = kbs if KNOWLEDGE_TOOL in names else []
         code_on = CODE_TOOL in names
         page = await self._guarded_page(guard, inp.page)
@@ -1230,7 +1254,10 @@ class TurnEngine:
                 # providers refuse tool calls in a history sent without tools.
                 model_history = flatten_tools(model_history, set())
             rs.extra["traceInput"] = _new_messages(model_history)
-            return to_model_messages(system, model_history, files)
+            rebuilt = to_model_messages(system, model_history, files)
+            # The reasoning of this turn's steps that called tools goes back with their calls
+            # (the providers require it); no other reasoning is ever sent again.
+            return keep_reasoning(messages, rebuilt) if names else rebuilt
 
         rs.view = view
         rs.before_call = lambda: self._before_call(run, inp, rs, candidates, emit, say)
@@ -1256,6 +1283,8 @@ class TurnEngine:
         history = to_model_messages(system, stored if resume else repair(stored))
         results = None
         if resume is not None:
+            # The calls that waited go back with the reasoning that wrote them, if it was kept.
+            history = resume_reasoning(history, stored)
             for r in resume["state"]["ready"]:
                 rs.ok[r["toolUseId"]] = r["ok"]
             for c in resume["state"]["calls"]:
@@ -1862,12 +1891,20 @@ class TurnEngine:
                             filt = guard.output_filter(
                                 clean=run.markup.clean if run.markup else None
                             )
+                            live = LiveStep(
+                                guard,
+                                emit,
+                                reasoning=run.agent.show_reasoning,
+                                args_of=rs.extra.get("argsOf", frozenset()),
+                                clean=run.markup.clean if run.markup else None,
+                            )
                             started = time.perf_counter()
                             rs.extra["streaming"] = True
                             async with node.stream(ar.ctx) as stream:
                                 async for ev in stream:
                                     if rs.first_ms is None:
                                         rs.first_ms = round((time.perf_counter() - started) * 1000)
+                                    live.event(ev)
                                     delta = None
                                     if isinstance(ev, PartStartEvent) and isinstance(
                                         ev.part, TextPart
@@ -1889,6 +1926,7 @@ class TurnEngine:
                                 for seg in splitter.flush():
                                     say(seg)
                                 guard.after_output(filt)
+                                rs.extra["argsShown"] = live.finish()
                                 response = stream.response
                                 if filt.blocked and rs.attempt is not None:
                                     # Stopped early: pydantic-ai will not report this call.
@@ -1896,6 +1934,7 @@ class TurnEngine:
                                     await finish_attempt(rs, a, response)
                             rs.extra["streaming"] = False
                             if filt.blocked:
+                                self._settle_args(run, rs, emit)
                                 stop = message(run.app, "turn.guardStopped", session=run.session)
                                 emit({"type": "text", "delta": ("\n\n" if rs.text else "") + stop})
                                 say(stop)
@@ -1905,7 +1944,6 @@ class TurnEngine:
                                     role="assistant",
                                     content=[{"text": answer}, *_acted(rs)],
                                     text=answer,
-                                    events=rs.events or None,
                                 )
                                 run.reason = "guard"
                                 return
@@ -1917,7 +1955,6 @@ class TurnEngine:
                                         role="assistant",
                                         content=blocks,
                                         text=rs.text,
-                                        events=rs.events or None,
                                     )
                                 run.reason = "end_turn"
                                 return
@@ -1930,6 +1967,7 @@ class TurnEngine:
                                     async for ev in stream
                                     if isinstance(ev, FunctionToolResultEvent)
                                 ]
+                            self._settle_args(run, rs, emit)
                             got = result_blocks(
                                 ModelRequest(parts=done), rs.ok, rs.renamed, rs.wrote
                             )
@@ -1965,6 +2003,13 @@ class TurnEngine:
                                 continue
                             assistant = response_blocks(response, rs.args, rs.renamed)
                             if rs.waiting:
+                                kept = (
+                                    reasoning_block(response) if run.storage == "evokai" else None
+                                )
+                                if kept is not None:
+                                    # Sent back with the calls when they are carried out (the
+                                    # provider requires it); never shown, never sent otherwise.
+                                    assistant.append(kept)
                                 ready = [
                                     {
                                         "toolUseId": b["toolResult"]["id"],
@@ -1983,7 +2028,6 @@ class TurnEngine:
                                     role="assistant",
                                     content=assistant,
                                     text=rs.text,
-                                    events=rs.events or None,
                                 )
                             await self._add(run, role="user", content=got)
                             # A question shown to the user ends the turn, like a confirmation: the
@@ -2009,9 +2053,7 @@ class TurnEngine:
             if isinstance(stop.detail, dict) and stop.detail.get("store"):
                 # A capability ended the turn on something it showed (ask_user's next question):
                 # it is kept as the turn's answer, so the next message answers it.
-                await self._add(
-                    run, role="assistant", content=stop.detail["store"], events=rs.events or None
-                )
+                await self._add(run, role="assistant", content=stop.detail["store"])
         except _Cancelled:
             if rs.attempt is not None and rs.attempt.span is not None:
                 rs.trace.end(rs.attempt.span, status="cancelled", outputTokens=None)
@@ -2067,9 +2109,7 @@ class TurnEngine:
             )
         )
         if assistant:
-            await self._add(
-                run, role="assistant", content=assistant, text=rs.text, events=rs.events
-            )
+            await self._add(run, role="assistant", content=assistant, text=rs.text)
         run.reason = "confirm"
 
     def _turn_tools(
@@ -2100,11 +2140,12 @@ class TurnEngine:
         emit = rs.emit
         assert emit is not None  # ruff: ignore[assert] (a turn always emits)
         app_names = toolbox.names()
+        figures: set[float] = rs.extra.setdefault("toolFigures", set())
         mutating = toolbox.mutating() | {n for n in app_names if guard.forced_confirmation(n)}
 
         def app_tool(name: str) -> Any:
-            async def handle(args: dict[str, Any], _cid: str, span: Any) -> ToolResult:
-                emit({"type": "tool", "name": name, "status": "start"})
+            async def handle(args: dict[str, Any], cid: str, span: Any) -> ToolResult:
+                emit({"type": "tool", "name": name, "status": "start", **_call(cid)})
                 filler = (
                     self._filler(agent, name, say)
                     if inp.mode == "voice" and rs.confirm is None
@@ -2115,7 +2156,12 @@ class TurnEngine:
                 finally:
                     if filler:
                         filler.cancel()
-                emit({"type": "tool", "name": name, "status": "done" if r.ok else "error"})
+                emit({
+                    "type": "tool",
+                    "name": name,
+                    "status": "done" if r.ok else "error",
+                    **_call(cid),
+                })
                 if r.connect and not any(
                     e["type"] == "connect" and e.get("provider") == r.connect["provider"]
                     for e in rs.events
@@ -2125,6 +2171,9 @@ class TurnEngine:
                 text_out = await guard.tool_result(name, r.text)
                 if span is not None:
                     span.set(outcome="ok" if r.ok else "error", resultChars=len(text_out))
+                if r.ok:
+                    # What a chart may show (``client_tools.chart_from_tools``).
+                    figures.update(visuals.numbers_in(r.text))
                 return ToolResult(ok=r.ok, text=clip(text_out, settings.tool_result_chars))
 
             return handle
@@ -2152,6 +2201,19 @@ class TurnEngine:
 
         def local(name: str) -> Any:
             async def handle(args: dict[str, Any], cid: str, span: Any) -> ToolResult:
+                if name == "ui_chart" and agent.client_tools.chart_from_tools:
+                    chart = visuals.to_chart(args)
+                    loose = visuals.ungrounded(chart, figures) if chart else []
+                    if loose:
+                        if span is not None:
+                            span.set(outcome="error", type="client", ungrounded=len(loose))
+                        shown = ", ".join(str(v) for v in loose[:6])
+                        return ToolResult(
+                            False,
+                            f"Not shown: no tool returned {shown} in this turn. Read the data "
+                            "again with the tools now, then chart their values as they are "
+                            "(a duration in ms with unit ms).",
+                        )
                 r = await self._local(
                     name,
                     args,
@@ -2209,8 +2271,10 @@ class TurnEngine:
         if kbs and guard.offered(KNOWLEDGE_TOOL) and KNOWLEDGE_TOOL not in app_names:
             kd = knowledge_tool(kbs)
 
-            async def search(args: dict[str, Any], _cid: str, span: Any) -> ToolResult:
-                r = await self._knowledge_search(run, inp, kbs, args, guard, emit, rs.show)
+            async def search(args: dict[str, Any], cid: str, span: Any) -> ToolResult:
+                r = await self._knowledge_search(
+                    run, inp, kbs, args, guard, emit, rs.show, call_id=cid
+                )
                 if span is not None:
                     span.set(outcome="ok" if r.ok else "error", type="knowledge")
                 return r
@@ -2226,12 +2290,17 @@ class TurnEngine:
             )
 
         def sandboxed(name: str, runner: Any) -> Any:
-            async def handle(args: dict[str, Any], _cid: str, span: Any) -> ToolResult:
-                emit({"type": "tool", "name": name, "status": "start"})
+            async def handle(args: dict[str, Any], cid: str, span: Any) -> ToolResult:
+                emit({"type": "tool", "name": name, "status": "start", **_call(cid)})
                 result = await runner(args)
                 for chart in result.charts:
                     rs.show({"type": "chart", "chart": chart})
-                emit({"type": "tool", "name": name, "status": "done" if result.ok else "error"})
+                emit({
+                    "type": "tool",
+                    "name": name,
+                    "status": "done" if result.ok else "error",
+                    **_call(cid),
+                })
                 text_out = await guard.tool_result(name, result.text)
                 if span is not None:
                     span.set(**result.attrs)
@@ -2293,6 +2362,21 @@ class TurnEngine:
         return [t for t in out if guard.offered(t.name) and (asks or not guard.askable(t.name))]
 
     @staticmethod
+    def _settle_args(run: TurnRun, rs: RunState, emit: Any) -> None:
+        """Calls whose arguments were shown and that did not start: they wait or did not run.
+
+        A card that showed a call being written never stays as if it might still run: the call
+        waits for the person's confirmation (``waiting``, the confirmation card follows), or it
+        was refused, cut off or left out (``skipped``).
+        """
+        shown: dict[str, str] = rs.extra.pop("argsShown", None) or {}
+        waiting = {w["toolUseId"] for w in rs.waiting}
+        for cid, name in shown.items():
+            if run.parts.status(cid) == "args":
+                status = "waiting" if cid in waiting else "skipped"
+                emit({"type": "tool", "name": name, "id": cid, "status": status})
+
+    @staticmethod
     def _native(run: TurnRun, rs: RunState, part: Any, emit: Any) -> None:
         """A provider built-in tool's call or result, as events.
 
@@ -2300,7 +2384,13 @@ class TurnEngine:
         citations); traced as an event.
         """
         if isinstance(part, NativeToolCallPart):
-            emit({"type": "tool", "name": part.tool_name, "status": "start", "builtin": True})
+            emit({
+                "type": "tool",
+                "name": part.tool_name,
+                "status": "start",
+                "builtin": True,
+                **_call(part.tool_call_id),
+            })
             if builtin_tools.kind_of(part.tool_name) in builtin_tools.CHANGING:
                 # Kept with an answer that ends before its response is stored (``_acted``).
                 rs.extra.setdefault("acted", []).append({
@@ -2313,7 +2403,13 @@ class TurnEngine:
             return
         failed = isinstance(part.content, dict) and part.content.get("error_code")
         status = "error" if failed else "done"
-        emit({"type": "tool", "name": part.tool_name, "status": status, "builtin": True})
+        emit({
+            "type": "tool",
+            "name": part.tool_name,
+            "status": status,
+            "builtin": True,
+            **_call(part.tool_call_id),
+        })
         # A source shown as a link follows the link policy, like a link in the answer.
         found = [x for x in builtin_tools.sources(part.content) if rs.guard.link_allowed(x["url"])]
         for src in found:
@@ -2438,6 +2534,7 @@ class TurnEngine:
             # The result comes from the browser: data the person controls, never instructions.
             text = clip(await guard.tool_result(name, text), limit)
             rs.ok[cid] = ok
+            run.parts.settle(cid, ok)
             span = trace.event(
                 "tool",
                 f"client_tool_result {name}",
@@ -2462,6 +2559,7 @@ class TurnEngine:
         def timed_out(cids: list[str]) -> None:
             for cid in cids:
                 rs.ok[cid] = False
+                run.parts.settle(cid, ok=False)
                 name = called.get(cid, "client")
                 trace.event(
                     "tool",
@@ -2619,15 +2717,14 @@ class TurnEngine:
         """Whether the application's data protection profile lets data reach the code sandbox.
 
         Returns:
-            True without a profile, or when AgentCore in its region meets it.
+            True without a profile, or when the sandbox (AgentCore, Azure sessions) in its region
+            meets it.
         """
         if not guard.protection or self.code is None:
             return True
         from evokai.protection import processor_allows
 
-        return processor_allows(
-            guard.protection, "agentcore-code-interpreter", region=self.code.region
-        )
+        return processor_allows(guard.protection, self.code.processor, region=self.code.region)
 
     def skill_run_offered(
         self, agent: AgentDef, grants: Grants, guard: TurnGuard, skills: dict[str, Skill]
@@ -2735,13 +2832,15 @@ class TurnEngine:
                 session_id=session_id,
                 turn_id=turn_id,
                 kind="eval" if evaluation else CODE_KIND,
-                model=CODE_MODEL,
+                model=getattr(self.code, "usage_model", CODE_MODEL),
                 characters=out.code_chars,
                 latency_ms=out.session_ms,
                 cost_micro_usd=cost,
                 tool_calls=1,
             )
-            telemetry.record("model_cost", cost, model=CODE_MODEL)
+            telemetry.record(
+                "model_cost", cost, model=getattr(self.code, "usage_model", CODE_MODEL)
+            )
 
     async def _knowledge_bases(self, run: TurnRun) -> list[m.KnowledgeBase]:
         """The knowledge bases the turn's agent may search (existing and granted).
@@ -2764,6 +2863,7 @@ class TurnEngine:
         guard: TurnGuard,
         emit: Any,
         show: Any,
+        call_id: str | None = None,
     ) -> ToolResult:
         """Run ``knowledge_search`` for the session's subject and groups; cite what it finds.
 
@@ -2782,7 +2882,7 @@ class TurnEngine:
             return ToolResult(False, f"Unknown knowledge base: {name}")
         filters = args.get("filters") if isinstance(args.get("filters"), dict) else None
         claims = inp.principal.claims
-        emit({"type": "tool", "name": KNOWLEDGE_TOOL, "status": "start"})
+        emit({"type": "tool", "name": KNOWLEDGE_TOOL, "status": "start", **_call(call_id)})
         try:
             with retrieval_span(guard.trace, chosen, query) as span:
                 found = await self.knowledge.search(
@@ -2803,7 +2903,7 @@ class TurnEngine:
             log.warning(
                 "knowledge_search_failed", extra={"turnId": run.turn_id, "error": error_class(e)}
             )
-            emit({"type": "tool", "name": KNOWLEDGE_TOOL, "status": "error"})
+            emit({"type": "tool", "name": KNOWLEDGE_TOOL, "status": "error", **_call(call_id)})
             return ToolResult(False, "The knowledge search is not available right now.")
         items = []
         for f in found:
@@ -2812,7 +2912,7 @@ class TurnEngine:
                 n = run.citations[f.chunk.id] = len(run.citations) + 1
                 show(self.knowledge.citation(f, n))
             items.append((n, f, await guard.untrusted(f.chunk.text, f.source, tool=KNOWLEDGE_TOOL)))
-        emit({"type": "tool", "name": KNOWLEDGE_TOOL, "status": "done"})
+        emit({"type": "tool", "name": KNOWLEDGE_TOOL, "status": "done", **_call(call_id)})
         return ToolResult(True, format_results(query, items))
 
     async def _auto_knowledge(
@@ -2825,17 +2925,11 @@ class TurnEngine:
         emit: Any,
     ) -> None:
         """Search before the first model step and keep it in the conversation as a tool call."""
-        events: list[dict[str, Any]] = []
-
-        def show(e: dict[str, Any]) -> None:
-            events.append(e)
-            emit(e)
-
         call_id = f"kb_{run.turn_id.replace('-', '')[:16]}"
         args = {"query": text[:2_000]}
-        r = await self._race(run, self._knowledge_search(run, inp, kbs, args, guard, emit, show))
+        r = await self._race(run, self._knowledge_search(run, inp, kbs, args, guard, emit, emit))
         use = {"toolUse": {"id": call_id, "name": KNOWLEDGE_TOOL, "input": args}}
-        await self._add(run, role="assistant", content=[use], events=events or None)
+        await self._add(run, role="assistant", content=[use])
         await self._add(run, role="user", content=[_result(call_id, KNOWLEDGE_TOOL, r.ok, r.text)])
 
     async def _handoff_targets(self, run: TurnRun) -> dict[str, AgentDef]:
@@ -3017,18 +3111,59 @@ class TurnEngine:
     ) -> str | None:
         """Append a message to the conversation, wherever the application keeps it.
 
+        An assistant message keeps what the person was shown since the previous one, in order
+        (``evokai.sessions.parts``); ``events`` is for a user message (the decision on a
+        confirmation).
+
         Returns:
             The message id, where the store assigns one.
         """
         assert run.threads is not None  # ruff: ignore[assert] (set by open())
+        if role == "assistant":
+            events = run.parts.take(interrupted=interrupted) or None
         if run.storage == "evokai":
             stored, kept = self._guard(run).for_storage(content, text)
             if role == "user" and (stored != content or kept != text):
                 # Identifiers were masked: the question cannot be asked again as it was.
                 stored = [*stored, {rewrite.MASKED: True}]
             content, text = stored, kept
+            events = self._stored_parts(run, events)
         msg = ThreadMessage(role, content, text, events, interrupted=interrupted)
-        return await run.threads.add(msg, run.turn_id)
+        msg_id = await run.threads.add(msg, run.turn_id)
+        if role == "assistant":
+            run.last_answer = (msg, msg_id)
+        return msg_id
+
+    def _stored_parts(self, run: TurnRun, events: list[Any] | None) -> list[Any] | None:
+        """What is stored of a message's parts.
+
+        Masked like its text when ``pii.history`` is enforced.
+
+        Returns:
+            The parts to store.
+        """
+        guard = self._guard(run)
+        if not events or not guard.policy.enforced("pii.history"):
+            return events
+        return [guard.persisted(e) for e in events]
+
+    async def _keep_shown(self, run: TurnRun) -> None:
+        """Keep what the turn showed after its last stored answer with that answer.
+
+        An error, the tool-call cap's sentence: a turn that stored no answer keeps nothing of it.
+        """
+        if not run.parts.pending or run.last_answer is None:
+            return
+        msg, msg_id = run.last_answer
+        # The turn is over: a call still marked as running was cut off.
+        more = run.parts.take(interrupted=True)
+        if run.storage == "evokai":
+            more = self._stored_parts(run, more) or []
+            if msg_id is None:
+                return
+            await self.store.messages.append_events(run.who, msg_id, more)
+        # External storage: the message is returned to the application with them.
+        msg.events = [*(msg.events or []), *more]
 
     def _threads(
         self, storage: str, who: Who, session_id: str, thread_id: str, inp: TurnInput
@@ -3099,10 +3234,17 @@ class TurnEngine:
 
         if name == "ui_navigate":
             path = args.get("path")
+            # A hash route ("#/apps/x") is the same page as its path.
+            if isinstance(path, str):
+                path = path.strip().removeprefix("#")
             if not isinstance(path, str) or not re.match(
                 agent.client_tools.navigate.path_pattern, path
             ):
-                return ToolResult(False, "Path not allowed.")
+                return ToolResult(
+                    False,
+                    "Path not allowed: give a path that starts with / and matches "
+                    f"{agent.client_tools.navigate.path_pattern} (no address, no spaces).",
+                )
             show({"type": "navigate", "path": path})
             return ToolResult(True, f"Opened {path}")
         if name == "ui_chart":
@@ -3187,6 +3329,15 @@ class TurnEngine:
             ok, text = await load_skill(skills, args, read, runnable=scripts_runnable)
             return ToolResult(ok, text)
         return ToolResult(False, f"Unknown tool: {name}")
+
+
+def _call(call_id: str | None) -> dict[str, Any]:
+    """The call a ``tool`` event is about (its arguments, start and end update one card).
+
+    Returns:
+        ``{"id": call_id}``, or nothing without one.
+    """
+    return {"id": call_id} if call_id else {}
 
 
 def _acted(rs: RunState) -> list[dict[str, Any]]:

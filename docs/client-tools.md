@@ -7,6 +7,12 @@ an event, and for a tool that waits it holds the turn until the client answers.
 Evokai's own client tools (navigation, charts, diagrams, questions, confirmations, memory) keep working as before;
 this page is about the tools you declare.
 
+A chart's values are numbers the model writes. An agent whose figures must be exactly the data's sets
+`client_tools.chart_from_tools: true`: every value of a chart (a KPI's delta aside) must be a number one of the
+application's tools returned in the same turn, rounded at most as the chart writes it. Otherwise the chart is not shown
+and the model is told to read the data again. Chart units are `eur`, `pct`, `count` (the default) and `ms`, a duration
+the UI writes in milliseconds below a second and in seconds above (850 ms, 4.3 s).
+
 ## Declaring a tool
 
 A tool has a name, a description for the model, a JSON Schema of its arguments and a `wait` flag:
@@ -72,6 +78,11 @@ its session and turn and answers once (404 `unknown_call` afterwards, from anoth
 wait lives in the task that runs the turn, like a turn's cancellation: keep a browser session on one task (sticky
 sessions, see [deployment](deployment.md)).
 
+The call is kept with the answer as it was sent (name, `callId`, `args`), and for a tool that waits with how it ended:
+`"status": "done"` when the client answered, `"error"` when it sent an error or never answered. A reloaded conversation
+shows its card in the same place ([what a reload shows](architecture.md#what-a-reload-shows)); the result the client
+sent is not kept with it.
+
 With the TypeScript client, `handleTool` does all of it:
 
 ```ts
@@ -90,9 +101,10 @@ A page can draw any tool's activity itself, not only its client tools: `session.
 TypeScript client calls `render({name, status, callId?, args?, result?, error?})` when the tool starts and ends, and
 `<evokai-chat>` takes `toolRenderers` (`{name: (part) => HTMLElement | null}`) to show that element in the chat instead
 of the default line (`null` keeps it; `ui_chart` and `ui_diagram` replace the built-in visuals). A part carries only
-what the session's events already carry: a server or MCP tool's name and status (never its arguments or output), a
-client tool's arguments and the result your own handler returned, a chart or a diagram. Nothing more leaves the
-service.
+what the session's events already carry: a server or MCP tool's name and status (never its output, and its
+arguments only for an agent with [`show_tool_args`](streaming.md)), a client tool's arguments and the result your
+own handler returned, a chart or a diagram. Nothing more leaves the service. `evokai types` gives the
+[TypeScript types](streaming.md#typescript-types-of-an-agents-tools) of each tool's arguments and results.
 
 ## Security
 

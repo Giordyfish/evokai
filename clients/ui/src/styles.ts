@@ -164,6 +164,14 @@ a.src-title:hover{text-decoration:underline;color:var(--ek-brand)}
 .tool i{width:6px;height:6px;border-radius:50%;background:var(--ek-s1)}
 .tool.start i{background:var(--ek-accent);animation:ekblink 1s ease-in-out infinite}
 .tool.error i{background:var(--ek-danger)}
+.tool.args i{background:var(--ek-accent);animation:ekblink 1s ease-in-out infinite}
+.tool.skipped{opacity:.7}
+.tool{flex-wrap:wrap}
+.tool-args{flex-basis:100%;margin-left:14px;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ek-subtle);overflow-wrap:anywhere;white-space:pre-wrap}
+.reasoning{font-size:12px;color:var(--ek-subtle)}
+.reasoning summary{cursor:pointer;width:max-content;max-width:100%}
+.reasoning summary:focus-visible{outline:2px solid var(--ek-accent);outline-offset:2px;border-radius:4px}
+.reasoning-text{margin:6px 0 0;padding-left:10px;border-left:2px solid var(--ek-border);white-space:pre-wrap;overflow-wrap:anywhere}
 @keyframes ekblink{50%{opacity:.3}}
 .nav{font-size:12px;color:var(--ek-subtle)}
 .err{font-size:12px;color:var(--ek-danger)}

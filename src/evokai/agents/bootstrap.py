@@ -116,6 +116,10 @@ async def bootstrap(
         )
         if k in spec
     }
+    if spec.get("stt_filter") is not None:
+        if not isinstance(spec["stt_filter"], bool):
+            raise ConfigError("bootstrap: stt_filter must be true or false")
+        in_defaults["stt_filter"] = spec["stt_filter"]
     if spec.get("markup") is not None:
         try:
             markup = MarkupDef.model_validate(spec["markup"])
@@ -602,13 +606,13 @@ async def ensure_application(store: Store, slug: str, name: str, fields: dict[st
     removed = fields.pop("defaults_removed", [])
     app = await store.applications.by_slug(slug)
     if app is None:
-        app = await store.applications.create(slug, name, **fields)
+        app = await store.applications.create(slug, name, by="config", **fields)
         log.info("application_created", extra={"application": slug})
         return app.id
     if "defaults" in fields or any(k in (app.defaults or {}) for k in removed):
         merged = {**(app.defaults or {}), **(fields.get("defaults") or {})}
         fields = {**fields, "defaults": {k: v for k, v in merged.items() if k not in removed}}
-    await store.applications.update(app.id, name=name, **fields)
+    await store.applications.update(app.id, name=name, by="config", **fields)
     return app.id
 
 

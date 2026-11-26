@@ -64,6 +64,20 @@ describe('server speech', () => {
     expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe('Bearer tok')
   })
 
+  test('character times, the language and the speech followed travel as asked', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const stream = [
+      ev('start', { engine: 'fake', voice: null, format: 'pcm', sampleRate: 1000, channels: 1, text: 'Hi.', spoken: 'Hi.', language: 'it', speechId: 'sp_2' }),
+      ev('chars', { at: 0, times: [[0, 1], [1, 2]] }),
+      ev('chars', { at: 2, times: [[-1, -1]] }),
+      ev('done', { durationMs: 2, characters: 3, estimated: false }),
+    ]
+    const r = await speak(session(stream, calls), { text: 'Hi.', language: 'it', after: ['sp_1'], characters: true })
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ text: 'Hi.', language: 'it', after: ['sp_1'], characters: true })
+    expect(r.start.speechId).toBe('sp_2')
+    expect(r.timings.chars).toEqual([[0, 1], [1, 2], [-1, -1]])
+  })
+
   test('an engine error and a refused request are errors', async () => {
     await expect(speak(session([STREAM[0]!, ev('error', { code: 'tts_failed', message: 'no' })]), { text: 'x' })).rejects.toMatchObject({ code: 'tts_failed' })
     const refused = () => new Response(JSON.stringify({ error: 'limit', message: 'cap' }), { status: 429 })
@@ -76,6 +90,8 @@ describe('server speech', () => {
     const r = await transcribe(s, new Uint8Array([1, 2]), { language: 'it-IT', contentType: 'audio/wav' })
     expect(r.text).toBe('hello')
     expect(calls[0]?.url).toBe('http://evokai.test/agent/v1/session/transcribe?language=it-IT')
+    await transcribe(s, new Uint8Array([1, 2]), { hint: 'Evokai, Pipecat' })
+    expect(calls[1]?.url).toBe('http://evokai.test/agent/v1/session/transcribe?hint=Evokai%2C+Pipecat')
     expect(transcribeSocketUrl(s)).toBe('ws://evokai.test/agent/v1/session/transcribe/stream')
   })
 })
@@ -121,6 +137,21 @@ describe('TimedSpeechPlayer', () => {
     await vi.advanceTimersByTimeAsync(5)
     expect(await done).toEqual({ cancelled: false })
     expect(got.at(-1)).toBe('end:false')
+  })
+
+  test('character times fire as each code point is heard, unknown ones never', async () => {
+    vi.useFakeTimers()
+    const p = new TimedSpeechPlayer({ context: new FakeContext(), leadMs: 0 })
+    const got: string[] = []
+    p.on('char', (c) => got.push(`${c.at}@${c.start}-${c.end}`))
+    const stream = [STREAM[0]!, STREAM[1]!, ev('chars', { at: 0, times: [[0, 1], [-1, -1], [2, 3]] }), STREAM.at(-1)!]
+    const done = p.play(events(stream))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(got).toEqual(['0@0-1'])
+    await vi.advanceTimersByTimeAsync(2)
+    expect(got).toEqual(['0@0-1', '2@2-3'])
+    await vi.advanceTimersByTimeAsync(5)
+    expect(await done).toEqual({ cancelled: false })
   })
 
   test('stop cuts it off', async () => {
@@ -198,6 +229,34 @@ describe('ServerStt', () => {
     expect(finals).toEqual(['ciao'])
     stt.stop()
     expect(JSON.parse(String(s.sent.at(-1)))).toEqual({ type: 'stop' })
+  })
+
+  test('client-decided utterances: no detection, a hint, commits, speech marks and warnings', async () => {
+    let socket: FakeSocket | null = null
+    const stt = new ServerStt({
+      session: session([]),
+      vad: false,
+      hint: 'Evokai, Pipecat',
+      socket: (url, protocols) => (socket = new FakeSocket(url, protocols)),
+      source: { start: async () => undefined, stop: () => undefined },
+    })
+    const got: unknown[] = []
+    stt.on('speechstart', (m) => got.push(['start', m]))
+    stt.on('speechend', (m) => got.push(['end', m]))
+    stt.on('warning', (w) => got.push(['warning', w.code]))
+    stt.on('final', (t) => got.push(['final', t]))
+    await stt.start({ continuous: true })
+    const s = socket as unknown as FakeSocket
+    expect(JSON.parse(String(s.sent[0]))).toEqual({ type: 'start', sampleRate: 16000, vad: false, hint: 'Evokai, Pipecat' })
+    stt.commit()
+    expect(JSON.parse(String(s.sent.at(-1)))).toEqual({ type: 'commit' })
+    s.onmessage?.({ data: JSON.stringify({ type: 'speech_start', ms: 120 }) })
+    s.onmessage?.({ data: JSON.stringify({ type: 'speech_end', ms: 900 }) })
+    s.onmessage?.({ data: JSON.stringify({ type: 'final', text: 'ciao' }) })
+    s.onmessage?.({ data: JSON.stringify({ type: 'warning', code: 'commit_too_short', message: 'ignored' }) })
+    expect(got).toEqual([['start', { ms: 120 }], ['end', { ms: 900 }], ['final', 'ciao'], ['warning', 'commit_too_short']])
+    expect(stt.running).toBe(true)
+    stt.abort()
   })
 
   test('toPcm16 downsamples and clips', () => {

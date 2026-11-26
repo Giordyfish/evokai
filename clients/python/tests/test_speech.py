@@ -59,6 +59,32 @@ async def test_async_speak_and_an_engine_failure(router: respx.MockRouter) -> No
     assert err.value.code == "tts_failed"
 
 
+def test_speak_asks_for_character_times_and_follows_earlier_speech(
+    router: respx.MockRouter,
+) -> None:
+    start = json.loads(SPEECH[0].split("data: ")[1])
+    events = [
+        _ev("start", {**start, "language": "it", "speechId": "sp_2"}),
+        _ev("chars", {"at": 0, "times": [[0, 10], [10, 20]]}),
+        _ev("chars", {"at": 2, "times": [[-1, -1]]}),
+        SPEECH[-1],
+    ]
+    response, _ = sse_response(events)
+    route = router.post("/v1/session/speech").mock(return_value=response)
+    with EvokaiSession(BASE, TOKEN) as s:
+        out = s.speak("Hi.", language="it", after=["sp_1"], characters=True)
+    assert sent_json(route) == {
+        "format": "pcm",
+        "sampleRate": 24000,
+        "text": "Hi.",
+        "language": "it",
+        "after": ["sp_1"],
+        "characters": True,
+    }
+    assert out.speech_id == "sp_2" and out.language == "it"
+    assert out.chars == [(0, 10), (10, 20), (-1, -1)]
+
+
 def test_speak_needs_a_text_or_a_segment() -> None:
     with EvokaiSession(BASE, TOKEN) as s, pytest.raises(ValueError):
         s.speak()
@@ -76,7 +102,20 @@ def test_transcribe_posts_the_recording(router: respx.MockRouter) -> None:
     request = route.calls.last.request
     assert request.headers["content-type"] == "audio/wav"
     assert request.url.params["language"] == "it-IT"
+    assert "hint" not in request.url.params
     assert request.content == b"RIFF...."
+
+
+async def test_a_transcription_hint_is_a_query_parameter(router: respx.MockRouter) -> None:
+    route = router.post("/v1/session/transcribe").mock(
+        return_value=httpx.Response(200, json={"text": "Evokai", "durationMs": 300, "engine": "x"})
+    )
+    with EvokaiSession(BASE, TOKEN) as s:
+        s.transcribe(b"RIFF....", hint="Evokai, Pipecat")
+    assert route.calls.last.request.url.params["hint"] == "Evokai, Pipecat"
+    async with AsyncEvokaiSession(BASE, TOKEN) as a:
+        await a.transcribe(b"RIFF....", hint="Silero")
+    assert route.calls.last.request.url.params["hint"] == "Silero"
 
 
 async def test_async_transcribe_refused(router: respx.MockRouter) -> None:

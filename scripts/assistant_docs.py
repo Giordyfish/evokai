@@ -19,7 +19,7 @@ DOCS = ROOT / "docs"
 SKILL = ROOT / "src" / "evokai" / "assistant" / "skills" / "evokai-docs"
 LEFT_OUT = {"releasing.md", "architecture.md", "pydantic-ai-agent.md", "security-assessment.md"}
 """Pages for Evokai's maintainers and contributors (how it is built inside), not for people
-operating a deployment. Leaving them out also keeps the skill under its size limit (500 KB)."""
+operating a deployment. Leaving them out also keeps the skill under its size limit (1 MB)."""
 
 HEADER = """---
 name: evokai-docs

@@ -93,9 +93,17 @@ export function uploadDocument(
  * cookie, its CSRF header and the application an operator acts on, like every other console call.
  */
 export async function adminJson<T>(applicationId: string, method: string, path: string, body?: unknown): Promise<T> {
-  const client = forApp(applicationId)
+  return consoleCall<T>(forApp(applicationId).application, method, path, body)
+}
+
+/** A JSON call to a deployment route of the console (the system policy): the cookie and the CSRF header, no application. */
+export function consoleJson<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return consoleCall<T>(null, method, path, body)
+}
+
+async function consoleCall<T>(application: string | null | undefined, method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'X-Evokai-Console': '1' }
-  if (client.application) headers['X-Evokai-Application'] = client.application
+  if (application) headers['X-Evokai-Application'] = application
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   let r: Response
   try {

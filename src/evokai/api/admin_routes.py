@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from evokai import audit
@@ -29,6 +30,7 @@ from evokai.agents.templates import check_agent_templates, check_prompt, syntax_
 from evokai.api.deps import admin_app, services
 from evokai.assistant.privacy import MAX_TTL_DAYS, lists_everyone, own_subject
 from evokai.audio.speech.markup import MarkupDef
+from evokai.audio.speech.voice_settings import check_voice_settings
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
 from evokai.connectors import validate as validate_connector
@@ -51,6 +53,7 @@ from evokai.privacy import Residency, residency_allows
 from evokai.protection import DataProtection, protection, stored_profile
 from evokai.sandbox.skill_scripts import unavailable_reason
 from evokai.services import Services
+from evokai.tools.typescript import ToolTypes, declarations
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 Svc = Annotated[Services, Depends(services)]
@@ -146,6 +149,9 @@ class AppPatch(BaseModel):
     markup: MarkupDef | None = None
     """Inline markup the agents may write: ``cue`` (``{wave}``, delivered as marks on the
     spoken segments) and ``speech`` (``[laughs]``, for expressive voices); null removes it."""
+    stt_filter: bool | None = None
+    """Drop the phrases speech recognisers make up from silence or noise («Thanks for watching»,
+    subtitle credits) from transcripts: true (the default) or false."""
 
 
 EVAL_KEYS = ("eval_monthly_usd", "eval_judge_model", "eval_on_save", "eval_credential")
@@ -173,6 +179,7 @@ DEFAULT_KEYS = frozenset({
     "messages",
     "tracing_content",
     "markup",
+    "stt_filter",
 })
 """Application settings kept in its defaults."""
 
@@ -260,6 +267,7 @@ async def get_application(svc: Svc, a: Admin) -> dict[str, Any]:
         "hasEvalCredential": bool((app.defaults or {}).get("eval_credential")),
         "tracing_content": (app.defaults or {}).get("tracing_content", "masked"),
         "markup": (app.defaults or {}).get("markup"),
+        "stt_filter": (app.defaults or {}).get("stt_filter", True),
         "memory_mode": (app.defaults or {}).get("memory_mode", "on"),
         "memory_ttl_days": (app.defaults or {}).get("memory_ttl_days"),
         "redteam_gate": (app.defaults or {}).get("redteam_gate", "off"),
@@ -345,7 +353,7 @@ async def patch_application(
                 defaults[key] = value
         fields["defaults"] = defaults
     if fields:
-        await svc.store.applications.update(a.application_id, **fields)
+        await svc.store.applications.update(a.application_id, by=audit.actor_of(a)[0], **fields)
     after = await get_application(svc, a)
     changed = [k for k in after if before.get(k) != after.get(k)]
     await audit.record(
@@ -471,6 +479,51 @@ async def list_agents(svc: Svc, a: Admin) -> dict[str, Any]:
     return {
         "items": [{"template_syntax": "legacy", **r.definition, "version": r.version} for r in rows]
     }
+
+
+@router.get(
+    "/agents/{name}/types",
+    response_class=PlainTextResponse,
+    responses={200: {"content": {"text/plain": {}}, "description": "A TypeScript .d.ts"}},
+)
+async def agent_types(
+    name: str,
+    svc: Svc,
+    a: Admin,
+    credential: Annotated[str | None, Header(alias="X-Evokai-Credential", max_length=8192)] = None,
+) -> PlainTextResponse:
+    """TypeScript declarations of the agent's tools: arguments and results, from their schemas.
+
+    The MCP tools the application is granted, the agent's custom client tools and its
+    ``output_schema`` (``evokai.tools.typescript``). A ``forward_user`` server lists its tools
+    only with a person's credential: send one (a test user's) as ``X-Evokai-Credential``, as a
+    session token would forward it; without it the server is named as not listed. The credential
+    is used for this listing only, never kept.
+
+    Returns:
+        The ``.d.ts`` text.
+
+    Raises:
+        NotFound: Unknown application or agent.
+    """
+    app = await svc.store.applications.get(a.application_id)
+    if app is None:
+        raise NotFound()
+    agent = await svc.agents.active(a.application_id, name)
+    grants = await grants_of(svc.store, app)
+    box = await svc.mcp.toolbox(a.application_id, agent, credential or None, grants)
+    text = declarations(
+        agent.name,
+        agent.version,
+        [
+            ToolTypes(t.name, t.description, t.input_schema, t.output_schema, t.mutating)
+            for t in box.tools
+        ],
+        [ToolTypes(t.name, t.description, t.parameters) for t in agent.client_tools.custom],
+        agent.output_schema,
+        box.unavailable,
+    )
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
 
 
 def _check_builtin_tools(app: Any, body: AgentDef) -> None:
@@ -1100,7 +1153,12 @@ async def put_prompt(
         a,
         "prompt.put",
         target=f"{name} v{version}",
-        after={"text": body.text, "parameters": parameters},
+        after={
+            "text": body.text,
+            "parameters": parameters,
+            "description": description,
+            "data": data,  # a module's data table shapes its text as much as the text does
+        },
     )
     return {"version": version}
 
@@ -1186,6 +1244,11 @@ class VoiceBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     gender: str | None = Field(default=None, max_length=16)
     region: str | None = Field(default=None, max_length=40)
+    settings: dict[str, Any] | None = None
+    """How the engine speaks with this voice, for every application: ``model`` and ``speed``, and
+    the engine's own options under its name (``elevenlabs``: ``stability``, ``similarityBoost``,
+    ``style``, ``speakerBoost``; ``openai``: ``instructions``). Checked against the provider's
+    engine; anything it does not take is refused (400 ``settings``)."""
 
 
 @router.put("/voices/{provider}/{voice_id}")
@@ -1196,12 +1259,45 @@ async def put_voice(
 
     Returns:
         ok.
+
+    Raises:
+        BadRequest: Settings its engine does not take.
     """
+    try:
+        settings = check_voice_settings(provider, body.settings)
+    except ValueError as e:
+        raise BadRequest(f"Voice settings: {e}.", code="settings") from e
+    body = body.model_copy(update={"settings": settings})
     await svc.store.voices.put(provider, voice_id, **body.model_dump())
     await audit.record(
         request, a, "voice.put", target=f"{provider}/{voice_id}", after=body.model_dump()
     )
     return {"ok": True}
+
+
+@router.get("/voices/{provider}/{voice_id}")
+async def get_voice(provider: str, voice_id: str, svc: Svc, _a: Admin) -> dict[str, Any]:
+    """A voice of the deployment's catalog, with how its engine speaks with it (``settings``).
+
+    Returns:
+        provider, voiceId, language, name, gender, region, settings (null when the engine's
+        defaults apply).
+
+    Raises:
+        NotFound: No such voice.
+    """
+    v = await svc.store.voices.get(provider, voice_id)
+    if v is None:
+        raise NotFound("No such voice.")
+    return {
+        "provider": v.provider,
+        "voiceId": v.voice_id,
+        "language": v.language,
+        "name": v.name,
+        "gender": v.gender,
+        "region": v.region,
+        "settings": v.settings,
+    }
 
 
 @router.get("/bug-reports")

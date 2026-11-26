@@ -231,12 +231,15 @@ class AzurePromptShields(HttpClassifier):
 
         Args:
             endpoint: The Content Safety resource (``EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT``).
-            key: Its key (``EVOKAI_AZURE_CONTENT_SAFETY_KEY``).
+            key: Its key (``EVOKAI_AZURE_CONTENT_SAFETY_KEY``); without one, a Microsoft Entra ID
+                token of the managed identity (``evokai.core.azure``, the 'azure' extra), which
+                needs the Cognitive Services User role on the resource.
             **kw: ``timeout``, ``http``.
         """
         super().__init__(**kw)
         self.endpoint = (endpoint or "").rstrip("/")
         self.key = key
+        self._token: Callable[[], Awaitable[str]] | None = None
 
     def missing(self) -> str | None:
         """What is not configured.
@@ -244,9 +247,30 @@ class AzurePromptShields(HttpClassifier):
         Returns:
             The reason, or None.
         """
-        if not self.endpoint or not self.key:
-            return "EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT and _KEY are not set"
+        if not self.endpoint:
+            return "EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT is not set"
         return None
+
+    async def auth(self) -> dict[str, str]:
+        """The resource's key, or an Entra ID bearer token without one.
+
+        https://learn.microsoft.com/en-us/azure/ai-services/authentication
+
+        Returns:
+            The header.
+        """
+        if self.key:
+            return {"Ocp-Apim-Subscription-Key": self.key}
+        if self._token is None:
+            from evokai.core.azure import COGNITIVE_SERVICES, token_provider
+
+            self._token = token_provider(COGNITIVE_SERVICES)
+        return {"Authorization": f"Bearer {await self._token()}"}
+
+    async def warm_up(self) -> None:
+        """Fetch the first Entra ID token at start, so the first check is not slowed by it."""
+        if not self.key and self.endpoint:
+            await self.auth()
 
     def units(self, piece: str) -> int:
         """Text records of up to 1,000 characters.
@@ -270,7 +294,7 @@ class AzurePromptShields(HttpClassifier):
         r = await self._post(
             f"{self.endpoint}/contentsafety/text:shieldPrompt?api-version={self.API_VERSION}",
             body,
-            {"Ocp-Apim-Subscription-Key": str(self.key)},
+            await self.auth(),
         )
         hit = bool((r.get("userPromptAnalysis") or {}).get("attackDetected")) or any(
             bool(d.get("attackDetected")) for d in r.get("documentsAnalysis") or []
@@ -295,7 +319,7 @@ class AzureContentSafety(AzurePromptShields):
         r = await self._post(
             f"{self.endpoint}/contentsafety/text:analyze?api-version={self.API_VERSION}",
             {"text": piece, "outputType": "FourSeverityLevels"},
-            {"Ocp-Apim-Subscription-Key": str(self.key)},
+            await self.auth(),
         )
         worst = max(
             (int(c.get("severity") or 0) for c in r.get("categoriesAnalysis") or []), default=0

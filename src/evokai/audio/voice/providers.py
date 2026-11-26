@@ -10,29 +10,43 @@ configuration change, not a code change. Credentials come from the vendors' usua
 (``ELEVENLABS_API_KEY``, ``OPENAI_API_KEY``, ``AZURE_SPEECH_KEY`` and ``AZURE_SPEECH_REGION``) and
 the engine's own settings from ``EVOKAI_*`` variables (docs/voice.md).
 
-Every factory takes ``voice`` (the session's voice, else the engine's default), ``sample_rate``
-and ``language`` (BCP 47), and ignores what it does not use.
+Every factory takes ``voice`` (the session's voice, else the engine's default), ``sample_rate``,
+``language`` (BCP 47) and, for speech, ``settings`` (the catalogue voice's settings, already
+checked by ``check_voice_settings``), and ignores what it does not use. A recognition factory is
+also given ``hint`` when the client sent one: names and terms the person is likely to say, which
+engines that take a vocabulary use (OpenAI and Whisper as a prompt, ElevenLabs as key terms).
 """
 
 from __future__ import annotations
 
+import functools
 import importlib
 import os
+import re
 import weakref
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from dataclasses import dataclass, replace
+from typing import Any, cast
 
 from pipecat.frames.frames import Frame, TranscriptionFrame, TTSAudioRawFrame
 from pipecat.services.stt_service import STTService
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.time import time_now_iso8601
 
+from evokai.audio.speech.voice_settings import TTS_SETTINGS, VoiceSettingsRule
 from evokai.core.errors import ConfigError
 
 Factory = Callable[..., Any]
 VisemeSink = Callable[[int, float], None]
 """Called with a viseme id and its time in milliseconds (from any thread)."""
+CharSink = Callable[[list[str], list[float], list[float]], None]
+"""Called with characters of the text the engine was given, in order, with their start and end
+times in milliseconds (once per piece of alignment the engine reports)."""
+
+FOLLOW_REFS = 3
+"""The most earlier syntheses one synthesis follows by reference."""
+CONTEXT_CHARS = 1_000
+"""The most characters of the text around a synthesis given to the engine as context."""
 
 
 @dataclass(frozen=True)
@@ -45,6 +59,8 @@ class TtsCaps:
     """Viseme events (mouth shapes) with their times."""
     speech_tags: bool = False
     """It performs speech tags written ``[words]`` (``say.tagged``)."""
+    characters: bool = False
+    """Character times from the engine (``characters`` on ``POST /v1/session/speech``)."""
 
 
 @dataclass(frozen=True)
@@ -55,6 +71,21 @@ class SttCaps:
     """It transcribes whole utterances (it needs voice activity detection to cut them)."""
     realtime: str | None = None
     """The engine streaming uses instead (``WS /v1/session/transcribe/stream``), if another."""
+    commit_ms: int = 0
+    """It transcribes what it was sent when an utterance ends (a realtime engine with commits),
+    and needs at least this much audio since the last one; 0 for engines that do not commit."""
+
+
+def voice_model(engine: str, settings: Mapping[str, Any] | None) -> str | None:
+    """The model a voice speaks with: its own, else the engine's default where Evokai knows it.
+
+    Returns:
+        The model id, or None.
+    """
+    own = (settings or {}).get("model")
+    if own:
+        return str(own)
+    return elevenlabs_model() if engine == "elevenlabs" else None
 
 
 class FakeSTT(STTService):
@@ -65,9 +96,10 @@ class FakeSTT(STTService):
 
         Args:
             phrases: What the user will have said, in order.
-            **kwargs: Passed to STTService (``language`` and ``voice`` are ignored).
+            **kwargs: Passed to STTService (``language`` is ignored, ``hint`` kept for tests).
         """
         kwargs.pop("language", None)
+        self.hint: str | None = kwargs.pop("hint", None)
         super().__init__(**kwargs)
         self.phrases = list(phrases or [])
 
@@ -85,25 +117,51 @@ class FakeSTT(STTService):
 
 
 class FakeTTS(TTSService):
-    """Speaks silence: 20 ms of audio per 4 characters, with word timestamps and visemes.
+    """Speaks silence: 20 ms of audio per 4 characters, with word and character times and visemes.
 
-    Can be told to fail (quota, outage).
+    Can be told to fail (quota, outage). It keeps what it was given (voice, language, settings, the
+    text around it) and gives each synthesis a reference, like an engine that can follow earlier
+    syntheses.
     """
 
-    def __init__(self, *, fail: bool = False, voice: str | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        voice: str | None = None,
+        language: str | None = None,
+        settings: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Configure.
 
         Args:
             fail: Report an error instead of speaking.
             voice: The voice it was asked for (kept, for tests).
-            **kwargs: Passed to TTSService (``language`` is ignored).
+            language: The language it was asked for (kept, for tests).
+            settings: The catalogue voice's settings (kept, for tests).
+            **kwargs: Passed to TTSService.
         """
-        kwargs.pop("language", None)
         super().__init__(push_text_frames=False, **kwargs)
         self.fail = fail
         self.voice = voice
+        self.language = language
+        self.voice_settings = dict(settings or {})
         self.spoken: list[str] = []
+        self.followed: tuple[list[str], str, str] | None = None
+        self.speech_ref: str | None = None
         self.viseme_sink: VisemeSink | None = None
+        self.char_sink: CharSink | None = None
+
+    def follow(self, refs: list[str], before: str, after: str) -> None:
+        """Speak in continuity with the text around.
+
+        Args:
+            refs: The references of the earlier syntheses, oldest first.
+            before: The text spoken before (used when there are no references).
+            after: The text that comes next.
+        """
+        self.followed = (refs, before, after)
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None]:
         """Synthesize.
@@ -119,9 +177,21 @@ class FakeTTS(TTSService):
             await self.push_error("tts quota exceeded")
             return
         self.spoken.append(text)
+        self.speech_ref = f"fake-{len(self.spoken)}"
         rate = self.sample_rate or 16_000
         chunks = max(1, len(text) // 4)
         seconds = chunks * 0.02
+        if self.char_sink is not None:
+            # Two pieces of alignment, as engines report them while they speak.
+            step = seconds * 1000 / max(1, len(text))
+            half = len(text) // 2
+            for a, b in ((0, half), (half, len(text))):
+                if a < b:
+                    self.char_sink(
+                        list(text[a:b]),
+                        [round(i * step, 3) for i in range(a, b)],
+                        [round((i + 1) * step, 3) for i in range(a, b)],
+                    )
         words, at = [], 0
         for word in text.split():
             at = text.index(word, at)
@@ -171,6 +241,20 @@ def _language(tag: str | None) -> Any:
     return None
 
 
+KEYTERMS_MAX = 50
+"""The most key terms a hint gives an engine that takes a list (each under 50 characters)."""
+
+
+def key_terms(hint: str | None) -> list[str]:
+    """A hint as a list of terms: split at commas, semicolons and new lines.
+
+    Returns:
+        The terms, in order, without repeats; those of 50 characters or more are left out.
+    """
+    terms = [t.strip() for t in re.split(r"[,;\n]", hint or "")]
+    return list(dict.fromkeys(t for t in terms if t and len(t) < 50))[:KEYTERMS_MAX]
+
+
 def _http() -> Any:
     import aiohttp
 
@@ -186,44 +270,166 @@ def elevenlabs_model() -> str:
     return os.environ.get("EVOKAI_ELEVENLABS_TTS_MODEL") or "eleven_flash_v2_5"
 
 
-def elevenlabs_tts(*, voice: str | None = None, sample_rate: int | None = None, **_: Any) -> Any:
-    """ElevenLabs over HTTP with timestamps (word times).
+class _ElevenLabsSession:
+    """The HTTP session of an ElevenLabs service, around the real one.
+
+    It adds the text around a synthesis (or the ids of the earlier ones) to the request the Pipecat
+    service builds, and keeps the id ElevenLabs answers with (``request-id``), so a later synthesis
+    can follow this one. The service only calls ``post``.
+    """
+
+    def __init__(self, session: Any) -> None:
+        self.session = session
+        self.fields: dict[str, Any] = {}
+        self.ref: str | None = None
+
+    def post(self, url: str, *, json: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+        if json is not None and self.fields:
+            json = {**json, **self.fields}
+        return _KeepRef(self, self.session.post(url, json=json, **kwargs))
+
+    async def close(self) -> None:
+        await self.session.close()
+
+
+class _KeepRef:
+    def __init__(self, owner: _ElevenLabsSession, request: Any) -> None:
+        self._owner, self._request = owner, request
+
+    async def __aenter__(self) -> Any:
+        response = await self._request.__aenter__()
+        if response.status == 200:
+            self._owner.ref = response.headers.get("request-id") or None
+        return response
+
+    async def __aexit__(self, *exc: object) -> Any:
+        return await self._request.__aexit__(*exc)
+
+
+@functools.cache
+def _elevenlabs_service() -> type:
+    from pipecat.services.elevenlabs.tts import (
+        ELEVENLABS_CONTEXT_UNSUPPORTED_MODELS,
+        ElevenLabsHttpTTSService,
+    )
+
+    class ElevenLabsSpeech(ElevenLabsHttpTTSService):
+        """ElevenLabs over HTTP that follows earlier syntheses and reports character times."""
+
+        char_sink: CharSink | None = None
+        http: _ElevenLabsSession
+
+        @property
+        def speech_ref(self) -> str | None:
+            return self.http.ref
+
+        def follow(self, refs: list[str], before: str, after: str) -> None:
+            """Speak in continuity with the text around (not with the models that refuse it)."""
+            self.http.fields.clear()
+            if self._settings.model in ELEVENLABS_CONTEXT_UNSUPPORTED_MODELS:
+                return
+            if refs:
+                self.http.fields["previous_request_ids"] = refs[-FOLLOW_REFS:]
+            elif before:
+                self.http.fields["previous_text"] = before[-CONTEXT_CHARS:]
+            if after:
+                self.http.fields["next_text"] = after[:CONTEXT_CHARS]
+
+        def calculate_word_times(
+            self, alignment_info: Mapping[str, Any], *, audio_tags: bool = False
+        ) -> list[tuple[str, float]]:
+            # Pipecat hands every piece of character alignment here to make words of it.
+            sink = self.char_sink
+            chars = list(alignment_info.get("characters") or [])
+            starts = list(alignment_info.get("character_start_times_seconds") or [])
+            ends = list(alignment_info.get("character_end_times_seconds") or [])
+            if sink is not None and chars and len(chars) == len(starts) == len(ends):
+                base = float(getattr(self, "_cumulative_time", 0) or 0)
+                sink(
+                    chars,
+                    [(base + float(t)) * 1000 for t in starts],
+                    [(base + float(t)) * 1000 for t in ends],
+                )
+            return super().calculate_word_times(alignment_info, audio_tags=audio_tags)
+
+    return ElevenLabsSpeech
+
+
+def elevenlabs_tts(
+    *,
+    voice: str | None = None,
+    sample_rate: int | None = None,
+    language: str | None = None,
+    settings: Mapping[str, Any] | None = None,
+    **_: Any,
+) -> Any:
+    """ElevenLabs over HTTP with timestamps (word and character times).
+
+    The voice's settings choose the model and the voice options; the language goes to the models
+    that take one.
 
     Returns:
         The service.
     """
-    from pipecat.services.elevenlabs.tts import ElevenLabsHttpTTSService
+    from pipecat.services.elevenlabs.tts import (
+        ELEVENLABS_MODEL_LANGUAGES,
+        ElevenLabsHttpTTSService,
+    )
 
-    session = _http()
-    service = ElevenLabsHttpTTSService(
+    own = dict(settings or {})
+    options = dict(own.get("elevenlabs") or {})
+    model = own.get("model") or elevenlabs_model()
+    lang = _language(language) if model in ELEVENLABS_MODEL_LANGUAGES else None
+    http = _ElevenLabsSession(_http())
+    service = _elevenlabs_service()(
         api_key=_env("ELEVENLABS_API_KEY"),
-        aiohttp_session=session,
+        aiohttp_session=cast(Any, http),
         settings=ElevenLabsHttpTTSService.Settings(
             voice=voice or os.environ.get("EVOKAI_ELEVENLABS_VOICE") or "21m00Tcm4TlvDq8ikWAM",
-            model=elevenlabs_model(),
+            model=model,
+            language=lang,
+            stability=options.get("stability"),
+            similarity_boost=options.get("similarityBoost"),
+            style=options.get("style"),
+            use_speaker_boost=options.get("speakerBoost"),
+            speed=own.get("speed"),
         ),
         base_url=os.environ.get("EVOKAI_ELEVENLABS_URL") or "https://api.elevenlabs.io",
         sample_rate=sample_rate,
     )
-    _CLOSERS[service] = session.close
+    service.http = http
+    _CLOSERS[service] = http.close
     return service
 
 
-def openai_tts(*, voice: str | None = None, sample_rate: int | None = None, **_: Any) -> Any:
+def openai_tts(
+    *,
+    voice: str | None = None,
+    sample_rate: int | None = None,
+    settings: Mapping[str, Any] | None = None,
+    **_: Any,
+) -> Any:
     """OpenAI speech (no word times: they are estimated).
+
+    The voice's settings choose the model, the speed and the instructions.
 
     Returns:
         The service.
     """
     from pipecat.services.openai.tts import OpenAITTSService
 
+    own = dict(settings or {})
+    options = dict(own.get("openai") or {})
+    model = own.get("model") or os.environ.get("EVOKAI_OPENAI_TTS_MODEL") or "gpt-4o-mini-tts"
     return OpenAITTSService(
         api_key=_env("OPENAI_API_KEY"),
         base_url=os.environ.get("EVOKAI_OPENAI_SPEECH_URL") or None,
         sample_rate=sample_rate,
         settings=OpenAITTSService.Settings(
             voice=voice or "alloy",
-            model=os.environ.get("EVOKAI_OPENAI_TTS_MODEL") or "gpt-4o-mini-tts",
+            model=model,
+            speed=own.get("speed"),
+            instructions=options.get("instructions"),
         ),
     )
 
@@ -310,8 +516,8 @@ def azure_stt(*, language: str | None = None, sample_rate: int | None = None, **
     )
 
 
-def elevenlabs_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
-    """ElevenLabs Scribe, one utterance at a time.
+def elevenlabs_stt(*, sample_rate: int | None = None, hint: str | None = None, **_: Any) -> Any:
+    """ElevenLabs Scribe, one utterance at a time (a hint becomes key terms).
 
     Returns:
         The service.
@@ -319,26 +525,43 @@ def elevenlabs_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
     from pipecat.services.elevenlabs.stt import ElevenLabsSTTService
 
     session = _http()
+    terms = key_terms(hint)
     service = ElevenLabsSTTService(
-        api_key=_env("ELEVENLABS_API_KEY"), aiohttp_session=session, sample_rate=sample_rate
+        api_key=_env("ELEVENLABS_API_KEY"),
+        aiohttp_session=session,
+        sample_rate=sample_rate,
+        settings=ElevenLabsSTTService.Settings(keyterms=terms) if terms else None,
     )
     _CLOSERS[service] = session.close
     return service
 
 
-def elevenlabs_realtime_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
-    """ElevenLabs Scribe realtime (streaming).
+def elevenlabs_realtime_stt(
+    *, sample_rate: int | None = None, hint: str | None = None, **_: Any
+) -> Any:
+    """ElevenLabs Scribe realtime (streaming; a hint becomes key terms).
 
     Returns:
         The service.
     """
     from pipecat.services.elevenlabs.stt import ElevenLabsRealtimeSTTService
 
-    return ElevenLabsRealtimeSTTService(api_key=_env("ELEVENLABS_API_KEY"), sample_rate=sample_rate)
+    terms = key_terms(hint)
+    return ElevenLabsRealtimeSTTService(
+        api_key=_env("ELEVENLABS_API_KEY"),
+        sample_rate=sample_rate,
+        settings=ElevenLabsRealtimeSTTService.Settings(keyterms=terms) if terms else None,
+    )
 
 
-def openai_stt(*, language: str | None = None, sample_rate: int | None = None, **_: Any) -> Any:
-    """OpenAI transcription, one utterance at a time.
+def openai_stt(
+    *,
+    language: str | None = None,
+    sample_rate: int | None = None,
+    hint: str | None = None,
+    **_: Any,
+) -> Any:
+    """OpenAI transcription, one utterance at a time (a hint is its prompt).
 
     Returns:
         The service.
@@ -351,14 +574,19 @@ def openai_stt(*, language: str | None = None, sample_rate: int | None = None, *
         settings=OpenAISTTService.Settings(
             model=os.environ.get("EVOKAI_OPENAI_STT_MODEL") or "gpt-4o-mini-transcribe",
             language=_language(language),
+            prompt=hint or None,
         ),
     )
 
 
 def openai_realtime_stt(
-    *, language: str | None = None, sample_rate: int | None = None, **_: Any
+    *,
+    language: str | None = None,
+    sample_rate: int | None = None,
+    hint: str | None = None,
+    **_: Any,
 ) -> Any:
-    """OpenAI realtime transcription (streaming).
+    """OpenAI realtime transcription (streaming; a hint is its prompt).
 
     Returns:
         The service.
@@ -371,12 +599,15 @@ def openai_realtime_stt(
         settings=OpenAIRealtimeSTTService.Settings(
             model=os.environ.get("EVOKAI_OPENAI_STT_MODEL") or "gpt-4o-mini-transcribe",
             language=_language(language),
+            prompt=hint or None,
         ),
     )
 
 
-def whisper_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
+def whisper_stt(*, sample_rate: int | None = None, hint: str | None = None, **_: Any) -> Any:
     """faster-whisper in this process (``pipecat-ai[whisper]``), one utterance at a time.
+
+    A hint is its initial prompt.
 
     Returns:
         The service.
@@ -384,7 +615,9 @@ def whisper_stt(*, sample_rate: int | None = None, **_: Any) -> Any:
     from pipecat.services.whisper.stt import WhisperSTTService
 
     return WhisperSTTService(
-        model=os.environ.get("EVOKAI_WHISPER_MODEL") or "distil-medium.en", sample_rate=sample_rate
+        model=os.environ.get("EVOKAI_WHISPER_MODEL") or "distil-medium.en",
+        sample_rate=sample_rate,
+        settings=WhisperSTTService.Settings(initial_prompt=hint) if hint else None,
     )
 
 
@@ -406,8 +639,8 @@ TTS: dict[str, Factory] = {
     "kokoro": kokoro_tts,
 }
 TTS_CAPS: dict[str, TtsCaps] = {
-    "fake": TtsCaps(words=True, visemes=True),
-    "elevenlabs": TtsCaps(words=True),
+    "fake": TtsCaps(words=True, visemes=True, characters=True),
+    "elevenlabs": TtsCaps(words=True, characters=True),
     "azure": TtsCaps(words=True, visemes=True),
 }
 """Engines not listed give audio only (their word times are estimated)."""
@@ -415,19 +648,31 @@ STT_CAPS: dict[str, SttCaps] = {
     "elevenlabs": SttCaps(segmented=True, realtime="elevenlabs-realtime"),
     "openai": SttCaps(segmented=True, realtime="openai-realtime"),
     "whisper": SttCaps(segmented=True),
+    "elevenlabs-realtime": SttCaps(commit_ms=300),
+    "openai-realtime": SttCaps(commit_ms=100),
 }
-"""Engines not listed stream (they need no voice activity detection to cut utterances)."""
+"""Engines not listed stream (they need no voice activity detection to cut utterances, and
+transcribe as they hear)."""
 
 
-def tts_caps(ref: str) -> TtsCaps:
-    """What a speech engine gives (ElevenLabs performs speech tags with its v3 models).
+ELEVENLABS_TAG_MODELS = ("eleven_v3", "eleven_v4")
+"""The ElevenLabs models that perform speech tags (by prefix)."""
+
+
+def tts_caps(ref: str, model: str | None = None) -> TtsCaps:
+    """What a speech engine gives with a model (ElevenLabs performs speech tags with v3 and v4).
+
+    Args:
+        ref: The engine.
+        model: The voice's own model (``voice_model``), else the engine's default.
 
     Returns:
         The capabilities.
     """
-    if ref == "elevenlabs" and elevenlabs_model().startswith("eleven_v3"):
-        return TtsCaps(words=True, speech_tags=True)
-    return TTS_CAPS.get(ref, TtsCaps())
+    caps = TTS_CAPS.get(ref, TtsCaps())
+    if ref == "elevenlabs" and (model or elevenlabs_model()).startswith(ELEVENLABS_TAG_MODELS):
+        return replace(caps, speech_tags=True)
+    return caps
 
 
 def stt_caps(ref: str) -> SttCaps:
@@ -446,11 +691,18 @@ def register_stt(name: str, factory: Factory, caps: SttCaps | None = None) -> No
         STT_CAPS[name] = caps
 
 
-def register_tts(name: str, factory: Factory, caps: TtsCaps | None = None) -> None:
-    """Make a TTS provider available by name."""
+def register_tts(
+    name: str,
+    factory: Factory,
+    caps: TtsCaps | None = None,
+    settings: VoiceSettingsRule | None = None,
+) -> None:
+    """Make a TTS provider available by name (with the settings its catalogue voices may carry)."""
     TTS[name] = factory
     if caps is not None:
         TTS_CAPS[name] = caps
+    if settings is not None:
+        TTS_SETTINGS[name] = settings
 
 
 def _resolve(kind: str, ref: str, table: dict[str, Factory]) -> Factory:

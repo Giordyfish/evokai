@@ -66,6 +66,7 @@ async def test_any_write_on_locked_system_app_is_409(env: Env) -> None:
         "/agent/v1/admin/application/unlock",
         "/agent/v1/admin/application/reset",
         "/agent/v1/admin/assistant/activate",
+        "/agent/v1/admin/assistant/switch",
         "/agent/v1/admin/assistant/try",
         "/agent/v1/admin/assistant/conversations/{conversation_id}/inspect",
     }
@@ -75,6 +76,8 @@ async def test_any_write_on_locked_system_app_is_409(env: Env) -> None:
             continue
         if path.removeprefix("/agent") in READ_ONLY_POSTS:
             continue
+        if path.startswith("/agent/v1/admin/gateways"):
+            continue  # gateways are not an application's resources (tests/test_gateway.py)
         for method in set(operations) - {"get", "head"}:
             r = await env.client.request(method.upper(), _fill(path), json={}, headers=_on(app_id))
             assert r.status_code == 409, (method, path, r.status_code, r.text)
@@ -107,7 +110,7 @@ async def test_unlock_needs_owner_and_typed_confirmation(env: Env) -> None:
     assert app is not None and not app.locked
     # The assistant itself never unlocks: a person does, in the console.
     await env.svc.store.applications.update(app_id, locked=True)
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, app_id, "owner")
     r = await env.client.post(
         url, json={"confirm": SLUG}, headers={"Authorization": f"Bearer {token}"}
@@ -145,9 +148,9 @@ async def test_reset_restores_shipped_definition(env: Env) -> None:
     changed.pop("version", None)
     r = await env.client.put("/agent/v1/admin/agents/assistant", json=changed, headers=_on(app_id))
     assert r.status_code == 200, r.text
-    r = await env.client.post(
-        "/agent/v1/admin/application/reset", json={"confirm": SLUG}, headers=_on(app_id)
-    )
+    preview = await env.client.get("/agent/v1/admin/application/reset/preview", headers=_on(app_id))
+    body = {"confirm": SLUG, "plan": preview.json()["plan"]}
+    r = await env.client.post("/agent/v1/admin/application/reset", json=body, headers=_on(app_id))
     assert r.status_code == 200, r.text
     app = await env.svc.store.applications.get(app_id)
     agent = await env.svc.store.agents.active(app_id, "assistant")
@@ -204,6 +207,14 @@ async def test_assistant_agent_has_no_forbidden_capabilities(env: Env) -> None:
     assert tools["diagram"] is False and tools["memory"] is False
     assert tools["ask"] is True and tools["chart"] is True
     assert tools["navigate"]["path_pattern"].startswith("^/")
+    custom = {t["name"]: t for t in tools["custom"]}
+    assert set(custom) == {"playground", "read_page", "show_on_page", "start_tour"}
+    # The console starts a guided tour and answers with its steps (or the tour ids): the turn waits.
+    tour = custom["start_tour"]
+    assert tour["wait"] is True
+    assert tour["parameters"]["required"] == ["tour"]
+    for tour_id in ("first-steps", "security", "usage-traces", "gateway"):
+        assert tour_id in tour["description"]
     servers = await env.svc.store.mcp_servers.all(app_id)
     assert [(s.name, s.auth) for s in servers] == [("evokai-admin", "forward_user")]
     assert servers[0].url == f"{env.svc.settings.internal_base}/mcp/admin"
@@ -276,5 +287,5 @@ async def test_the_assistant_speaks_the_console_language_and_suggests_in_it(env:
     italian = await _suggestions(env.svc, app_id, "assistant", _language(app, conv))
     english = await _suggestions(env.svc, app_id, "assistant", _language(app, None))
     assert italian and italian != english
-    assert any("applicazione" in q for q in italian)
-    assert any("application" in q for q in english)
+    assert any("applicazioni" in q for q in italian)
+    assert any("applications" in q for q in english)

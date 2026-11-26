@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
 
 import httpx
 import pytest
 
-from evokai.assistant.delegation import mint_delegation
+from evokai.assistant.delegation import ALL, mint_delegation
 from evokai.identity.console import ConsoleLogin
 from evokai.identity.roles import required
 from evokai.mcp.client import McpClient, McpTool
@@ -71,7 +72,11 @@ async def tools(env: Env, token: str) -> dict[str, McpTool]:
 
 async def test_tools_are_exactly_the_allow_list(mcp: Env) -> None:
     listed = await tools(mcp, mcp.admin_key)
-    assert set(listed) == {t.name for t in ADMIN_TOOLS}
+    assert set(listed) == {t.name for t in ADMIN_TOOLS} | {"list_applications"}
+    # Every route tool names the application it acts on (the console assistant's token is
+    # valid on every application its login sees).
+    for spec in ADMIN_TOOLS:
+        assert "application" in listed[spec.name].input_schema["properties"], spec.name
     # Every listed route exists in the API (a renamed route would silently drop its tool).
     paths = (await mcp.client.get("/agent/openapi.json")).json()["paths"]
     for t in ADMIN_TOOLS:
@@ -117,6 +122,7 @@ async def test_excluded_routes_never_exposed(mcp: Env) -> None:
 
 async def test_get_tools_are_read_only_others_destructive(mcp: Env) -> None:
     listed = await tools(mcp, mcp.admin_key)
+    assert listed["list_applications"].read_only is True
     for spec in ADMIN_TOOLS:
         tool = listed[spec.name]
         if spec.method == "GET" or required(spec.method, spec.path) == "viewer":
@@ -129,7 +135,7 @@ async def test_get_tools_are_read_only_others_destructive(mcp: Env) -> None:
 async def test_viewer_lists_only_reads(mcp: Env) -> None:
     listed = await tools(mcp, await delegated(mcp, "viewer"))
     reads = {t.name for t in ADMIN_TOOLS if required(t.method, t.path) == "viewer"}
-    assert set(listed) == reads and reads
+    assert set(listed) == reads | {"list_applications"} and reads
     operator = await tools(mcp, await delegated(mcp, "operator", sub="op"))
     assert "put_agent" in operator and "update_application" not in operator
 
@@ -178,6 +184,34 @@ async def test_operator_changes_an_agent_and_audit_says_mcp(mcp: Env) -> None:
     assert other["actorKind"] == "admin_key"
 
 
+async def test_the_audit_keeps_the_mcp_callers_address(mcp: Env) -> None:
+    import sqlalchemy as sa
+
+    from evokai.db import models as m
+
+    app = mcp.client._transport.app  # ty: ignore[missing-attribute]
+    remote = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=("203.0.113.7", 50000)),
+        base_url="http://evokai",
+    )
+    async with remote:
+        owner = McpClient("evokai-admin", URL, remote, {"Authorization": f"Bearer {mcp.admin_key}"})
+        result = await owner.call_tool("put_prompt", {"name": "greeting", "text": "Hello."})
+        assert result.ok, result.text
+        # Sent from outside, the address header is not believed either.
+        r = await remote.put(
+            "/agent/v1/admin/prompts/other",
+            json={"text": "Hi."},
+            headers={**_admin(mcp), "X-Evokai-Via-Client": "198.51.100.1"},
+        )
+        assert r.status_code == 200, r.text
+    async with mcp.svc.store.db.session() as s:
+        rows = (await s.execute(sa.select(m.AuditEntry.target, m.AuditEntry.ip))).all()
+    ips = {target.split(" ")[0]: ip for target, ip in rows if target}
+    assert ips["greeting"] == "203.0.113.7"  # not 127.0.0.1, where the in-process call comes from
+    assert ips["other"] == "203.0.113.7"
+
+
 async def test_no_bearer_is_401(mcp: Env) -> None:
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     headers = {"Accept": "application/json, text/event-stream"}
@@ -219,3 +253,31 @@ async def test_mcp_server_secrets_never_in_tool_output(mcp: Env) -> None:
 def test_transport_is_mounted_without_a_trailing_slash() -> None:
     assert not URL.endswith("/")
     assert httpx.URL(f"http://evokai{URL}").path == URL
+
+
+async def test_the_console_assistant_names_the_application_of_each_call(mcp: Env) -> None:
+    other = await mcp.svc.store.applications.create("shop", "Shop")
+    roles = {"test": "owner", "shop": "viewer"}
+    user = await mcp.svc.store.console_users.signed_in(
+        "https://idp.example", "bo", "bo@example.com", "Bo", roles
+    )
+    login = ConsoleLogin(
+        "sso", None, int(time.time()) + 3600, user_id=user.id, email=user.email, roles=roles
+    )
+    everywhere = client(mcp, mint_delegation(mcp.svc.keyring, login, ALL, "owner"))
+    listed = await everywhere.call_tool("list_applications", {})
+    assert listed.ok, listed.text
+    items = json.loads(listed.text)["items"]
+    assert {(a["slug"], a["role"]) for a in items} == {("test", "owner"), ("shop", "viewer")}
+    # Each call acts on the application it names, with the role there.
+    on_test = await everywhere.call_tool("get_application", {"application": "test"})
+    assert on_test.ok and mcp.app_id in on_test.text, on_test.text
+    on_shop = await everywhere.call_tool("get_application", {"application": "shop"})
+    assert on_shop.ok and other.id in on_shop.text, on_shop.text
+    refused = await everywhere.call_tool(
+        "update_application", {"application": "shop", "name": "Renamed"}
+    )
+    assert not refused.ok and "403" in refused.text
+    # Naming none is refused with what to do.
+    unnamed = await everywhere.call_tool("get_application", {})
+    assert not unnamed.ok and "list_applications" in unnamed.text, unnamed.text

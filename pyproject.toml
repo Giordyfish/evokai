@@ -1,6 +1,6 @@
 [project]
 name = "evokai"
-version = "0.2.2"
+version = "0.3.0"
 description = "Agents runtime: any model provider, MCP tools, skills and voice sessions"
 authors = [
     { name = "Giordano Pescetelli", email = "giordano.pescetelli@gmail.com" }
@@ -15,7 +15,9 @@ dependencies = [
     "asyncpg>=0.32.0",
     "cryptography>=50.0.2",
     "fastapi>=0.164.0",
-    "fastmcp>=3.4,<4",
+    # The admin MCP server reads a private attribute of its OpenAPI provider (src/evokai/mcp_admin):
+    # a minor release may change it, so a new one comes in by hand, with the admin MCP tests.
+    "fastmcp>=3.4,<3.5",
     "httpx>=0.28.1",
     "jsonschema>=4.26.0",
     "packaging>=24.0",
@@ -30,6 +32,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.1.9",
     "uvicorn[standard]>=0.54.0",
     "num2words>=0.5.14",
+    "google-re2>=1.1.20251105",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +45,14 @@ otel = [
 ]
 voice = [
     "pipecat-ai[silero,webrtc]>=1.16.0",
+]
+# Azure without keys and Claude in Microsoft Foundry: a Microsoft Entra ID token from the managed
+# identity (evokai.core.azure), the anthropic SDK's Foundry client and the Azure Monitor
+# OpenTelemetry exporter (EVOKAI_OTEL_EXPORTER=azure-monitor). See docs/azure.md.
+azure = [
+    "azure-identity>=1.27.0",
+    "azure-monitor-opentelemetry-exporter>=1.0.0b59",
+    "pydantic-ai-slim[anthropic]==2.69.0",
 ]
 # Every pydantic-ai-harness capability's dependencies (the catalog, evokai.capabilities), in the
 # image: whether one is used stays the deployment's, the grant's and the agent's choice. Leaves out
@@ -89,6 +100,7 @@ dev = [
     "fakeredis>=2.40",
     "pytest-recording>=0.15",
     "vcrpy>=9.4",
+    "pytest-xdist>=3.8",
 ]
 # The documentation site (mkdocs.yml): never installed with the service.
 docs = [

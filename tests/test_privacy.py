@@ -66,6 +66,38 @@ async def test_an_export_holds_everything_about_the_subject(env: Env) -> None:
     assert "someone-else" not in json.dumps(data)
 
 
+async def test_free_text_module_values_are_exported_and_erased_everywhere(env: Env) -> None:
+    """A free-text prompt module value is whatever the application wrote about the person."""
+    import sqlalchemy as sa
+
+    from evokai.db import models as m
+    from tests.test_prompt_modules_mint import _mint, _setup
+
+    name = "Zeferino Quattrocchi"
+    await _setup(env)
+    r = await _mint(env, modules={"persona": {"on": True, "params": {"name": name}}})
+    assert r.status_code == 200, r.text
+    env.script.add("function:primary", ["Ciao."])
+    await env.chat(r.json()["token"], text="Hallo")
+
+    async def tables_holding_it() -> list[str]:
+        found = []
+        async with env.svc.store.db.session() as s:
+            for table in m.Base.metadata.sorted_tables:
+                rows = (await s.execute(sa.select(table))).all()
+                if any(name in repr(row) for row in rows):
+                    found.append(table.name)
+        return found
+
+    assert await tables_holding_it() == ["evokai_sessions"]
+    r = await env.client.post("/agent/v1/privacy/export", json={"subject": "u1"}, headers=_srv(env))
+    (conv,) = r.json()["conversations"]
+    assert conv["promptOptions"]["modules"]["persona"]["params"] == {"name": name}
+    r = await env.client.post("/agent/v1/privacy/erase", json={"subject": "u1"}, headers=_srv(env))
+    assert r.status_code == 200, r.text
+    assert await tables_holding_it() == []
+
+
 async def test_the_console_export_carries_no_amounts(env: Env) -> None:
     await _history(env)
     login = await env.client.post("/agent/v1/console/login", json={"key": env.admin_key})

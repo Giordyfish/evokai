@@ -11,6 +11,8 @@ import { ALERTS_CHANGED, alertText, bannerAlert } from './costs'
 import { pl } from './format'
 import { BrandMark, Empty } from './magic'
 import { Access } from './pages/Access'
+import { SystemPolicy } from './pages/SystemPolicy'
+import { Gateways } from './pages/Gateways'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
 import { Apps } from './pages/Apps'
@@ -47,6 +49,8 @@ import { tabCounts, tabLabel, tabs, voiceLabel } from './nav'
 import { locale, t, tn } from './i18n'
 import { toggleTheme, useDark } from './theme'
 import { AppAvatar, Btn, Icon, type IconName } from './ui'
+import { GuidesMenu, TourInvite, TourOverlay } from './tours/Tour'
+import { setTourEnv } from './tours/run'
 
 function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
   if (route.view === 'app') {
@@ -99,6 +103,7 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
         return <Audit app={app} />
     }
   }
+  if (route.view === 'gateways') return <Gateways gateway={route.gateway} tab={route.tab} />
   switch (route.view) {
     case 'apps':
       return <Apps />
@@ -112,6 +117,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
       return <Health />
     case 'access':
       return <Access />
+    case 'policy':
+      return <SystemPolicy />
     case 'assistant':
       return <Assistant />
     case 'preferences':
@@ -135,6 +142,8 @@ export function Shell({ route }: { route: Route }) {
   const alerts = useCostAlerts(app)
   const assistant = useAssistantState(route.view === 'assistant')
   const assistantOn = assistantActive(assistant)
+  // The guided tours show the applications this person sees, with their rights.
+  setTourEnv({ slugs: c.apps.map((a) => a.slug), canCreate: c.canCreate, owner: !!c.me.deploymentOwner })
 
   useEffect(() => {
     setOpen(false)
@@ -186,11 +195,14 @@ export function Shell({ route }: { route: Route }) {
               : route.id,
         ])
     }
+  } else if (route.view === 'gateways') {
+    crumbs.push([t('page.gateways'), '#/gateways'])
+    if (route.gateway) crumbs.push([route.gateway])
   } else if (route.view === 'apps') crumbs.push([t('page.applications')])
   else if (route.view === 'setup') crumbs.push([t('page.applications'), '#/apps'], [t('page.setup')])
   else
     crumbs.push([
-      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
+      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), policy: t('page.systemPolicy'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
         t('page.notFound'),
     ])
 
@@ -214,9 +226,7 @@ export function Shell({ route }: { route: Route }) {
       <aside class="side" aria-label={t('shell.navigation')}>
         <a class="brand" href="#/apps" title={t('shell.home')} aria-label={t('shell.homeLabel')}>
           <BrandMark assistantActive={assistantOn} />
-          <b>
-            Evokai<sup>™</sup>
-          </b>
+          <b>Evokai</b>
         </a>
         <div style="position:relative">
           <button class="switch" aria-haspopup="true" aria-expanded={pop} onClick={() => setPop(!pop)}>
@@ -267,11 +277,13 @@ export function Shell({ route }: { route: Route }) {
         <div class="nl">
           <h6>{t('shell.console')}</h6>
           {nav('#/apps', t('page.applications'), 'apps', route.view === 'apps')}
+          {nav('#/gateways', t('page.gateways'), 'connections', route.view === 'gateways')}
           {nav('#/playground', t('page.playground'), 'play', route.view === 'playground')}
           {nav('#/usage', t('page.usage'), 'usage', route.view === 'usage')}
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
           {nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant')}
           {c.me.deploymentOwner ? nav('#/access', t('page.access'), 'access', route.view === 'access') : null}
+          {c.me.deploymentOwner ? nav('#/policy', t('page.systemPolicy'), 'security', route.view === 'policy') : null}
         </div>
         <div class="foot">
           <a
@@ -295,7 +307,7 @@ export function Shell({ route }: { route: Route }) {
           </Btn>
         </div>
       </aside>
-      <div class="content">
+      <div class={`content ${assistantOn ? 'withassistant' : ''}`}>
         <div class="topbar">
           <Btn kind="ic sm mbar" label={t('shell.menu')} onClick={() => setOpen(!open)}>
             <Icon name="menu" />
@@ -317,8 +329,10 @@ export function Shell({ route }: { route: Route }) {
             <span>{t('shell.goTo')}</span>
             <kbd>Ctrl K</kbd>
           </button>
+          <GuidesMenu />
         </div>
         <main class={`enter ${app ? 'inapp' : ''} ${readOnly ? 'ro' : ''}`} key={route.view === 'app' ? `${route.app}/${route.tab}/${route.id}` : route.view}>
+          <TourInvite />
           {readOnly ? (
             <p class="hint rob" role="status">
               {t('shell.readOnly', { app: app!.name })}
@@ -329,7 +343,8 @@ export function Shell({ route }: { route: Route }) {
         </main>
       </div>
       {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
-      <AssistantLauncher app={app} state={assistant} dark={dark} />
+      <AssistantLauncher state={assistant} dark={dark} />
+      <TourOverlay />
     </div>
   )
 }

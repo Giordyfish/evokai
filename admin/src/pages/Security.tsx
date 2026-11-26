@@ -1,9 +1,10 @@
 /**
- * Security: the application's policy (each control off, in monitor or enforced, with its OWASP ids), what each agent
- * overrides, the events with filters and their counts by rule. Snippets are masked by the service: no secret or raw
- * personal data ever reaches this page.
+ * Security: the application's policy (each control off, in monitor or enforced, with its OWASP ids, and the minimum the
+ * system policy sets), what each agent overrides, the policy's versions and tests, a copy from another policy, the
+ * events with filters and their counts by rule. Snippets are masked by the service: no secret or raw personal data
+ * ever reaches this page.
  */
-import { useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 
 import type {
   Application,
@@ -14,7 +15,10 @@ import type {
   SecurityPolicy,
   SecurityView,
 } from '@client/core/types'
-import { describe, forApp } from '../api'
+import { adminJson, describe, forApp } from '../api'
+import { GATEWAY_CONTROLS } from '../gateway'
+import { appPolicy, type PolicyTestResult, testFailures } from '../policy'
+import { CopyPolicy, PolicyHistory, PolicyTests, TestFailures } from './PolicyTools'
 import {
   CLASSIFIER_CHOICES,
   type Choice,
@@ -30,7 +34,7 @@ import {
 import { ago, csv, dateTime, download } from '../format'
 import { DEFAULT_MIN_SCORE, GATE_MODES, type GateMode } from '../redteam'
 import { done, Empty, sparkle, toast } from '../magic'
-import { appHref, setTitle, useLoad } from '../state'
+import { appHref, setTitle, useConsole, useLoad } from '../state'
 import { Bar, Btn, Field, Hero, Panel, Seg, Switch, Tag, type Tone } from '../ui'
 import { Loads } from './common'
 import { has, num, t, tn, type TextKey } from '../i18n'
@@ -56,12 +60,26 @@ const sevLabel = (s: string): string => ((SEVERITIES as readonly string[]).inclu
 export function Security({ app }: { app: ConsoleApplication }) {
   setTitle(t('tab.security'), app.name)
   const api = forApp(app.id)
+  const c = useConsole()
   const load = useLoad(() => api.admin.security.get(), [app.id])
+  const policy = useMemo(() => appPolicy(app.id), [app.id])
+  const owner = app.role === 'owner'
+  // What this person may copy from: the system policy (deployment owners) and the other applications they see.
+  // A slug never starts with '*': the system policy's entry cannot be taken for an application.
+  const sources = [
+    ...(c.me.deploymentOwner ? [{ value: '*system', label: t('pol.systemSource'), system: true }] : []),
+    ...c.apps.filter((a) => a.id !== app.id).map((a) => ({ value: a.slug, label: a.name })),
+  ]
   return (
     <>
       <Loads load={load} what={t('what.securityPolicy')}>
         {(view) => <Policy key={JSON.stringify(view.policy)} app={app} view={view} onSaved={(v) => load.set(v)} onReload={load.reload} />}
       </Loads>
+      <div class="grid g2" style="margin-top:16px">
+        <PolicyHistory api={policy} canEdit={owner} onChanged={load.reload} stamp={load.data?.version} />
+        <PolicyTests api={policy} canEdit={owner} stamp={load.data?.version} />
+      </div>
+      {owner ? <CopyPolicy api={policy} sources={sources} onChanged={load.reload} /> : null}
       <RedTeamGate app={app} />
       <Events app={app} />
     </>
@@ -155,7 +173,10 @@ function GateForm({ app, a, reload }: { app: ConsoleApplication; a: Application;
 }
 
 /** An agent's own policy, edited as JSON; saving stores a new version of the agent. */
-function AgentPolicy(p: { app: ConsoleApplication; name: string; policy: SecurityPolicy | null; onSaved: () => Promise<void> }) {
+/** Whose policy a page edits: an application, or a gateway (stored as an application row, `src/gateway.ts`). */
+export type PolicyOwner = Pick<ConsoleApplication, 'id' | 'slug' | 'name' | 'role'>
+
+function AgentPolicy(p: { app: PolicyOwner; name: string; policy: SecurityPolicy | null; onSaved: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(JSON.stringify(p.policy ?? {}, null, 2))
   const [busy, setBusy] = useState(false)
@@ -205,25 +226,35 @@ function AgentPolicy(p: { app: ConsoleApplication; name: string; policy: Securit
   )
 }
 
-function Policy({
+/**
+ * The policy's controls and settings, saved as a new version. On a gateway only the controls a gateway runs are listed
+ * (`GATEWAY_CONTROLS`), and there is no classifier and no agent.
+ */
+export function Policy({
   app,
   view,
   onSaved,
   onReload,
+  gateway = false,
 }: {
-  app: ConsoleApplication
+  app: PolicyOwner
   view: SecurityView
   onSaved: (v: SecurityView) => void
   onReload: () => Promise<void>
+  gateway?: boolean
 }) {
+  const controls = gateway ? view.controls.filter((c) => (GATEWAY_CONTROLS as readonly string[]).includes(c.id)) : view.controls
   const [base, setBase] = useState<Choice>(view.policy.mode ?? INHERIT)
   const [modes, setModes] = useState<Record<string, Choice>>({ ...(view.policy.modes ?? {}) })
   const [json, setJson] = useState(JSON.stringify(settingsOf(view.policy), null, 2))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const [failures, setFailures] = useState<PolicyTestResult[] | null>(null)
+  const floors = view.effective.floors ?? {}
 
-  const save = async (e: Event) => {
-    const btn = e.currentTarget as Element
+  const save = async (e: Event | null, force = false) => {
+    const btn = e ? (e.currentTarget as Element) : null
     let settings: Record<string, unknown>
     try {
       settings = json.trim() ? (JSON.parse(json) as Record<string, unknown>) : {}
@@ -234,13 +265,21 @@ function Policy({
     setSaving(true)
     setError(null)
     try {
-      const v = await forApp(app.id).admin.security.put(policyFrom(base, modes, settings))
+      // A save is a new version of the policy: the note goes with it; force saves although policy tests fail.
+      const q = new URLSearchParams()
+      if (note.trim()) q.set('note', note.trim())
+      if (force) q.set('force', 'true')
+      const query = q.toString()
+      const v = await adminJson<SecurityView>(app.id, 'PUT', `/v1/admin/security${query ? `?${query}` : ''}`, policyFrom(base, modes, settings))
       sparkle(btn)
       done(btn)
+      setFailures(null)
       toast(t('sec.saved'), t('sec.savedSub'))
       onSaved(v)
     } catch (err) {
-      setError(describe(err))
+      const f = testFailures(err)
+      if (f) setFailures(f)
+      else setError(describe(err))
     } finally {
       setSaving(false)
     }
@@ -249,14 +288,18 @@ function Policy({
   return (
     <>
       <Hero
-        title={t('tab.security')}
-        sub={t('sec.sub')}
+        title={gateway ? t('gw.tab.policy') : t('tab.security')}
+        sub={gateway ? t('gw.policySub') : t('sec.sub')}
         actions={
-          <Btn kind="pri" check busy={saving ? t('common.saving') : false} onClick={(e) => void save(e)}>
-            {t('common.save')}
-          </Btn>
+          <span style="display:flex;gap:8px;align-items:center">
+            <input class="in" style="max-width:240px" maxLength={500} value={note} placeholder={t('pol.note')} title={t('pol.noteHint')} onInput={(e) => setNote(e.currentTarget.value)} />
+            <Btn kind="pri" check busy={saving ? t('common.saving') : false} onClick={(e) => void save(e)}>
+              {t('common.save')}
+            </Btn>
+          </span>
         }
       />
+      {failures ? <TestFailures failures={failures} busy={saving} onForce={() => void save(null, true)} /> : null}
       {!view.enabled ? (
         <p class="hint" style="color:var(--s-bad);margin-bottom:12px">
           {t('sec.guardOff')}
@@ -264,6 +307,7 @@ function Policy({
       ) : null}
       {error ? <p class="hint" style="color:var(--s-bad);margin-bottom:12px">{error}</p> : null}
       <Panel
+        tour="sec-controls"
         title={t('sec.controls')}
         actions={
           <span style="display:flex;gap:8px;align-items:center">
@@ -280,11 +324,11 @@ function Policy({
                 <th>{t('sec.control')}</th>
                 <th>OWASP</th>
                 <th>{t('sec.now')}</th>
-                <th>{t('sec.application')}</th>
+                <th>{gateway ? t('gw.thisGateway') : t('sec.application')}</th>
               </tr>
             </thead>
             <tbody>
-              {view.controls.map((c) => {
+              {controls.map((c) => {
                 const now = view.effective.modes[c.id] ?? c.default
                 return (
                   <tr key={c.id}>
@@ -304,6 +348,7 @@ function Policy({
                         {now}
                       </Tag>
                       {now !== c.default ? <div class="s">{t('sec.defaultMode', { mode: c.default })}</div> : null}
+                      {floors[c.id] ? <div class="s">{t('pol.min', { mode: floors[c.id]! })}</div> : null}
                     </td>
                     <td style="white-space:nowrap">
                       <Seg
@@ -320,7 +365,7 @@ function Policy({
           </table>
         </div>
       </Panel>
-      <ClassifierPanel view={view} json={json} setJson={setJson} />
+      {gateway ? null : <ClassifierPanel view={view} json={json} setJson={setJson} />}
       <div class="grid g2">
         <Panel title={t('sec.settings')}>
           <Field label={t('sec.policySettings')} hint={t('sec.policySettingsHint')}>
@@ -331,6 +376,12 @@ function Policy({
             <pre class="mono" style="white-space:pre-wrap;font-size:12px">{JSON.stringify(view.effective.settings, null, 2)}</pre>
           </details>
         </Panel>
+        {gateway ? (
+          <Panel title={t('gw.checksTitle')}>
+            <p class="hint">{t('gw.checksText')}</p>
+            <p class="hint">{t('gw.neverMask')}</p>
+          </Panel>
+        ) : (
         <Panel title={t('sec.agents')}>
           {view.agents.length ? (
             <ul class="plain">
@@ -369,6 +420,7 @@ function Policy({
               : t('sec.eventsKeptForever')}
           </p>
         </Panel>
+        )}
       </div>
     </>
   )
@@ -487,7 +539,7 @@ const CONTROL_FILTERS: Array<[string, TextKey]> = [
   ['turn.budget', 'sec.f.budget'],
 ]
 
-function Events({ app }: { app: ConsoleApplication }) {
+export function Events({ app }: { app: PolicyOwner }) {
   const api = forApp(app.id)
   const [q, setQ] = useState<SecurityEventQuery>({})
   const [more, setMore] = useState<SecurityEvent[]>([])
@@ -526,7 +578,7 @@ function Events({ app }: { app: ConsoleApplication }) {
         const top = summary.byRule.slice(0, 8)
         const max = Math.max(1, ...top.map((r) => r.count))
         return (
-          <div class="grid g2" style="margin-top:16px">
+          <div class="grid g2" style="margin-top:16px" data-tour="sec-events">
             <Panel title={t('sec.byRule')} actions={<Tag>{tn('sec.nEvents', summary.total)}</Tag>}>
               {top.length ? (
                 <table class="tbl">

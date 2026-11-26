@@ -1,7 +1,8 @@
 # The console assistant
 
 Evokai ships its own assistant, built into the admin console. It answers questions about the deployment (with
-Evokai's documentation as a skill) and operates the application the person is looking at: it reads its agents,
+Evokai's documentation as a skill) and operates every application the person can see (it is the platform's, not one
+application's): it reads their agents,
 prompts, skills, MCP servers, grants, evals and usage, and proposes changes that the person confirms in the chat.
 The mascot, Evokai's own, is its face.
 
@@ -23,17 +24,21 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   keys, other MCP servers) answers `409 system_app`.
 - **Nothing survives a reset.** `GET /v1/admin/application/reset/preview` lists every item the reset deletes or
   restores, by kind and name (the application's settings with the values the reset sets back), each deleted item with its definition (never a secret) for the owner to keep; the
-  console offers it as a JSON download. `POST /v1/admin/application/reset` `{confirm: <slug>}` deletes exactly those
-  items, applies the shipped definition again and locks it. Conversations (they follow their retention), eval and red
+  console offers it as a JSON download, and its `plan` fingerprints them. `POST /v1/admin/application/reset`
+  `{confirm: <slug>, plan}` deletes exactly those items (`409 plan_changed` when anything was added or changed since
+  the preview: look at it again), applies the shipped definition again and locks it. Conversations (they follow their retention), eval and red
   team results, traces and the audit log are not part of the definition and stay. None of these routes is a tool of
   the admin MCP server, and the assistant itself is refused on all of them.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
-  `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only), `ask` and
-  `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
+  `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only),
+  `playground`, `read_page`, `show_on_page` and `start_tour` (below), `ask` and `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
   handoffs or subagents. The guard's injection detection and spotlighting are enforced.
 - **Its rights are the person's.** Opening the panel calls `POST /v1/console/assistant/session` with the console
-  login. Evokai mints a **delegation token** for the selected application (`evk_cdt_`, its own issuer and the
-  `evokai-admin-mcp` audience, valid on that application only) and a session token for the assistant that forwards it.
+  login. Evokai mints a **delegation token** valid on every application the login can see (`evk_cdt_`, its own issuer
+  and the `evokai-admin-mcp` audience, `app: "*"`, with the login's highest role); each admin tool names the
+  application of the call (`application`, a slug; `list_applications` lists them with the role on each), which
+  reaches the admin API as the `X-Evokai-Application` header, and a request naming none is refused
+  (`400 application_required`) and a session token for the assistant that forwards it.
   The admin API re-checks the token against the live login on every call: a revoked admin key or a disabled single
   sign-on user ends it at once, and the role used is the lower of the token's and the login's current role. A viewer's
   assistant only reads; an operator's cannot change the owner's settings. Even used directly, the token opens only
@@ -142,10 +147,11 @@ measured requirements above: a model recommended only by the estimate opens the 
 | `GET /v1/admin/assistant` | any console role: state, requirements, candidates (with their estimate), the latest try |
 | `POST /v1/admin/assistant/activate` `{model, acceptNotRecommended?}` | an owner of the assistant's application |
 | `POST /v1/admin/assistant/try` `{model}` | an owner of the assistant's application |
+| `POST /v1/admin/assistant/switch` `{on}` | an owner of the assistant's application: off, no launcher, no application in the console's list, sessions refused; the model is kept |
 | `POST /v1/console/assistant/session` `{conversationId?}` | a console login on an application |
 | `GET /v1/console/assistant/privacy`, `POST` `{version}` | a console login: the notice, the voice in use, inspections of one's conversations |
 | `POST /v1/admin/assistant/conversations/{id}/inspect` `{reason}` | an owner of the assistant's application |
-| `GET /v1/admin/application/reset/preview`, `POST /v1/admin/application/reset` `{confirm}` | an owner of the assistant's application |
+| `GET /v1/admin/application/reset/preview`, `POST /v1/admin/application/reset` `{confirm, plan}` | an owner of the assistant's application |
 
 ## The panel and the mascot
 
@@ -154,9 +160,9 @@ mascot as its orb (`slot="orb"`, see the UI components' README, "Your own orb").
 There is no button: the mascot is the launcher. A click (or Ctrl/Cmd+J) opens the chat and the mascot moves to the
 panel's header as the orb does; in voice mode, to the middle of the panel; minimized, the conversation goes on in the
 mascot at the bottom right with the bubble beside it and mute, restore and end above it on hover or focus. While the assistant is not active (or not available to the person) there is no
-launcher: it is activated from the Assistant page. The chat acts on the application the person is looking at; on a
-page without one, on the last application they opened, else the first one they can see other than the assistant's
-own, and a new conversation says which. Until the first-use notice is read, opening the chat shows the notice, and
+launcher: it is activated from the Assistant page. There is one conversation for the whole console: it stays the same
+from page to page and application to application. Each message tells the assistant the page the person is on (its
+console path and title, never its text), so "this application" is the one in view. Until the first-use notice is read, opening the chat shows the notice, and
 voice cannot be started from the launcher.
 
 The mascot is the only one on screen: the sidebar's header shows Evokai's logo while the assistant is active, whatever
@@ -177,14 +183,65 @@ conversation's state the component exposes to slotted content:
 
 The live states are drawn with WebGL; the console's "still" mascot preference and reduced motion are respected.
 
+**It drives the playground.** When the person wants to try or talk to an agent, the assistant does it in the
+playground, in front of them: its client tool `playground` (`{application, agent, message, new?}`, it waits for the
+console's answer) opens the playground on that application and agent, types the message in the composer, sends it,
+and returns the agent's answer, the tools it used, and whether it now waits for a confirmation or a choice (the person
+gives those in the playground). The assistant keeps the conversation going one message per call; after 100 seconds it
+gets what the agent said so far and the turn goes on in the playground. `try_agent` stays for a check nobody watches.
+
+**It sees the page and moves it.** `read_page` returns the page the person is looking at: its path, title and visible
+text (up to 6,000 characters), so the assistant talks about the figures and names the person sees, as the page writes
+them. The text reaches the model as data, spotlighted like any tool result. `show_on_page` scrolls the page to a text
+it shows and highlights it for a moment (a figure lights up with its name), or scrolls by a screen, to the top or to
+the bottom.
+
+**Its figures come from the tools.** Its agent sets `client_tools.chart_from_tools`: every value of a chart must be a
+number an admin tool returned in the same turn (rounded as the chart writes it). A chart written from memory is
+refused, and the assistant reads the data again. Durations use the chart unit `ms`, written like the console (850 ms,
+4.3 s). When the person sees a different figure, the assistant reads the page and the data again before it answers.
+
 **The voice follows data protection.** The browser's online voice (Google's: the spoken text goes to the browser
-vendor's speech service, only in voice mode) is used only when both the selected application's and the assistant's
+vendor's speech service, only in voice mode) is used only when the assistant's data protection and that of every application the person can see
 [data protection](data-protection.md) allow processors outside the EU: no profile at all, or a profile whose
 residency includes `us` or `global` (or the country `US`), whose jurisdiction rule includes `US`, with no retention
 rule, and whose browser declaration does not turn online voices off. Otherwise the voice stays on the device: a voice
 of the operating system for the console's language when there is one, else Piper's `it_IT-serena-high` in the browser
 with `pitchShift 1.15` (synthesis stretched and playback sped up by the same factor, a small and bright voice). The
-chat says which voice is in use. Speech recognition stays on the device in every case.
+chat names the voice only when it is the online one, the one whose text leaves the device. Speech recognition stays on the device in every case.
+
+## Guided tours
+
+The console has guided tours that work with or without the assistant. A tour dims the page except the place each
+step points at, and a card beside it (never under the assistant's open panel, and never over a place taller than the screen: the light
+then stops above the card) gives the step's title, at most two lines of explanation, the progress ("3 of
+8") and Back, Next and Exit. The keyboard drives it: arrows or Enter move, Esc leaves, the focus stays in the card,
+and reduced motion is respected. A tour opens each step's page itself and waits for its place to appear; a place that
+does not appear within a few seconds (a page that shows nothing yet, a role that hides it) is skipped, and the card
+says how many steps were skipped. Steps that need something the person does not have (an application, the right to
+create one, owning the deployment, a gateway, the right to create one) are left out from the start. A tour shows the
+application or gateway that is open, else the first one listed.
+
+| Tour | Steps |
+| --- | --- |
+| `first-steps` | the applications, creating one (wizard), the agents of an application, a new agent's sections and summary, the playground |
+| `security` | the system policy (deployment owners), an application's Security page: the mode of each control, versions, policy tests, events |
+| `usage-traces` | the usage of every application, an application's forecast and views, its traces, filters and version comparison |
+| `gateway` | the gateways, creating one, a gateway's people and personal keys, its policy (controls, versions, tests), usage, events, the snippets that connect Claude Code and Codex, the notice to the people |
+
+**Guides** in the top bar lists the tours with where each one stands (not started, stopped at a step, done) and
+starts, resumes or restarts them. On a first sign-in the console invites the person to `first-steps` until they start
+a tour or choose "Not now". A tour resumes where the person left it: the step and its time are kept in this browser
+at every step and in the person's console preferences (`tours`, each `{step, at}`, and `tourInvite` in
+`/v1/console/me/preferences`) when they leave or finish it, one save per tour so the audit log gets no entry per step;
+the more recent of the two copies wins.
+
+**With the assistant.** The assistant's client tool `start_tour` (`{tour, restart?}`, it waits for the console's
+answer) starts a tour in front of the person and returns its steps (title and page) and the step it starts at, or an
+error listing the tour ids. While a tour runs, the page context the assistant receives names the tour, the step on
+screen and what the step says, so it can answer questions about that step. The tours are data in the console
+(`admin/src/tours/tours.ts`): each step is a route, the `data-tour` place it points at and its texts in English and
+Italian; a test checks that every place exists on the page its step opens.
 
 ## Configuration
 

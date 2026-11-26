@@ -7,7 +7,9 @@
  */
 import { useState } from 'preact/hooks'
 
-import type { AdminConversation, AdminConversationDetail, AdminConversationQuery, ConsoleApplication, TraceSummary } from '@client/core/types'
+import type { AdminConversation, AdminConversationDetail, AdminConversationQuery, Citation, ConsoleApplication, StoredMessage, TraceSummary } from '@client/core/types'
+import { Sources } from '../cite'
+import { shownParts } from '../shown'
 import { adminJson, describe, EvokaiError, forApp } from '../api'
 import { ago, dateTime, ms } from '../format'
 import { Empty, toast } from '../magic'
@@ -15,6 +17,7 @@ import { appHref, go, setTitle, useLoad } from '../state'
 import { labelText, LABELS } from '../traces'
 import { Btn, Field, Hero, Panel, Tag } from '../ui'
 import { Loads } from './common'
+import { Visual } from './Playground'
 import { OutcomeTag } from './Traces'
 import { num, t, tn } from '../i18n'
 
@@ -319,7 +322,7 @@ function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: str
                     return (
                       <div key={m.id} style={{ display: 'contents' }}>
                         <div class={`msg ${m.role === 'user' ? 'me' : 'ai'}`} style={{ whiteSpace: 'pre-wrap', outline: m.role === 'assistant' && m.turnId && m.turnId === focus ? '2px solid var(--vi)' : undefined }}>
-                          {m.text || <span class="s">{t('cv.noText')}</span>}
+                          <Shown m={m} />
                           {m.interrupted ? <div class="s">{t('cv.interrupted')}</div> : null}
                         </div>
                         {m.role === 'assistant' && (trace || m.feedback != null) ? (
@@ -379,5 +382,101 @@ function ConversationView({ app, id, focus }: { app: ConsoleApplication; id: str
         )
       }}
     </Loads>
+  )
+}
+
+/**
+ * What the person was shown with a stored message, in the order it was shown: the text, the tools that ran, charts,
+ * questions, confirmations and errors, then the sources it cited. A message stored before ordered parts shows its text,
+ * then its events.
+ */
+function Shown({ m }: { m: StoredMessage }) {
+  const parts = shownParts(m)
+  const cites: Citation[] = []
+  const out = parts.map((e, i) => {
+    switch (e.type) {
+      case 'text':
+        return <span key={i}>{e.delta}</span>
+      case 'reasoning':
+        return (
+          <details key={i} class="pgreason">
+            <summary>{t('cv.reasoning')}</summary>
+            <div>{e.delta}</div>
+          </details>
+        )
+      case 'tool':
+        return (
+          <div key={i}>
+            <Tag tone={e.status === 'error' ? 'bad' : undefined}>{t(`cv.tool.${e.status}`, { name: e.name })}</Tag>
+            {e.args ? <code class="toolargs">{JSON.stringify(e.args)}</code> : null}
+          </div>
+        )
+      case 'client_tool': {
+        const status = e.status ?? (e.wait ? 'start' : 'done')
+        return (
+          <div key={i}>
+            <Tag tone={status === 'error' ? 'bad' : undefined}>{t(`cv.clientTool.${status}`, { name: e.name })}</Tag>
+          </div>
+        )
+      }
+      case 'chart':
+        return <Visual key={i} v={{ chart: e.chart }} />
+      case 'diagram':
+        return <Visual key={i} v={{ diagram: e.diagram }} />
+      case 'ask':
+        return (
+          <div key={i} class="s">
+            {t('cv.asked', { question: `${e.question} (${(e.options ?? []).join(', ')})` })}
+          </div>
+        )
+      case 'confirm':
+        return (
+          <div key={i} class="s">
+            {t('cv.confirmAsked', { items: (e.items ?? []).join('; ') })}
+          </div>
+        )
+      case 'confirmed':
+        return (
+          <div key={i} class="s">
+            {e.approve ? t('cv.confirmed') : t('cv.refused')}
+          </div>
+        )
+      case 'navigate':
+        return (
+          <div key={i} class="s">
+            {t('pg.navigate', { path: e.path })}
+          </div>
+        )
+      case 'connect':
+        return (
+          <div key={i} class="s">
+            {t('cv.connectAsked', { title: e.title || e.provider })}
+          </div>
+        )
+      case 'handoff':
+        return (
+          <div key={i} class="s">
+            {t('cv.handedOff', { title: e.title || e.to })}
+          </div>
+        )
+      case 'error':
+        return (
+          <div key={i} class="s bad">
+            {e.message}
+          </div>
+        )
+      case 'citation':
+        cites.push(e as unknown as Citation)
+        return null
+      default:
+        return null
+    }
+  })
+  if (!out.some(Boolean)) return <span class="s">{t('cv.noText')}</span>
+  return (
+    <>
+      {out}
+      <Sources cites={cites} all />
+    </>
   )
 }

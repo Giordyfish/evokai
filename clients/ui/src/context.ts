@@ -8,11 +8,16 @@ import { en, type Strings } from './strings'
 
 /**
  * Formats a chart value. The default writes plain numbers in the page's language, `pct` with a percent sign; units
- * are the application's own (e.g. `eur` for its business figures): pass a formatter to show them your way.
+ * are the application's own (e.g. `eur` for its business figures), `ms` a duration (850 ms, 4.3 s): pass a formatter to show them your way.
  */
 export type ValueFormatter = (value: number, unit: Unit, locale: string) => string
 
 export const defaultFormat: ValueFormatter = (value, unit, locale) => {
+  if (unit === 'ms') {
+    const secs = Math.abs(value) >= 1000
+    const n = new Intl.NumberFormat(locale, { maximumFractionDigits: secs ? 1 : 0 }).format(secs ? value / 1000 : value)
+    return secs ? `${n} s` : `${n} ms`
+  }
   const nf = new Intl.NumberFormat(locale, { maximumFractionDigits: unit === 'count' || unit === 'pct' ? 1 : Math.abs(value) < 100 && value % 1 ? 2 : 0 })
   return unit === 'pct' ? `${nf.format(value)}%` : nf.format(value)
 }

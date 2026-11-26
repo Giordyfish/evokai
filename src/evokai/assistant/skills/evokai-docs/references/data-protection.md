@@ -30,7 +30,9 @@ browser.
 
 `processors` describes what Evokai calls besides chat models: guard classifiers (Bedrock Guardrails, Azure Prompt
 Shields and Content Safety, Google Model Armor, OpenAI and Mistral moderation, the local Prompt Guard, a self-hosted
-Llama Guard), the AgentCore code sandbox, server speech, the OAuth connections and the observability exporter.
+Llama Guard), the document readers of scanned PDFs (Azure Document Intelligence, a self-hosted docling-serve), the
+AgentCore code sandbox and the Azure Container Apps session pool, server speech, the OAuth connections and the
+observability exporters (OTLP, Azure Monitor).
 
 ### Coverage
 
@@ -38,6 +40,7 @@ Llama Guard), the AgentCore code sandbox, server speech, the OAuth connections a
 |---|---|---|---|
 | Amazon Bedrock | `bedrock:` | `eu.`, `us.`, `apac.`, `global.` profiles; in-region ids in `EVOKAI_AWS_REGION` | US |
 | Azure OpenAI / AI Foundry | `azure:` | Global, Data Zone EU, Data Zone US, Regional (declared per deployment) | US |
+| Claude in Microsoft Foundry | `anthropic-foundry:` | Hosted on Azure (Global, Data Zone US), Hosted on Anthropic infrastructure (declared per deployment) | US |
 | Google Vertex AI | `google-vertex:` | `eu` and `us` multi-regions, EU regional endpoints, global (declared per deployment) | US |
 | Google Gemini API | `google-gla:` | global | US |
 | OpenAI API | `openai:`, `openai-eu:` | global; European data residency (`eu.api.openai.com`, eligible projects) | US |
@@ -109,10 +112,12 @@ same way, on the endpoint (`terms: {retention: none}`, `declared_by: operator`).
 ### How models are built
 
 `evokai.llm.catalog.ModelCatalog` builds a model from its endpoint's connection when it has one: `openai-compatible`
-(Scaleway, IONOS, STACKIT, OpenAI's EU residency, self-hosted servers), `azure`, `google-vertex`, `mistral` (Mistral's
-EU and US endpoints), `anthropic`, `bedrock` (with the endpoint's `region`); otherwise Bedrock in the deployment's
-region, or pydantic-ai's `infer_model` (OVHcloud, Ollama, Groq...). The API key comes from the environment variable the
-endpoint names (`SCALEWAY_API_KEY`, `IONOS_API_KEY`, `STACKIT_API_KEY`, `MISTRAL_API_KEY`, `OPENAI_API_KEY`); a
+(Scaleway, IONOS, STACKIT, OpenAI's EU residency, self-hosted servers), `azure` (a dated resource URL with its
+`api_version`, or the `/openai/v1` URL without), `anthropic-foundry` (Claude in Microsoft Foundry), `google-vertex`,
+`mistral` (Mistral's EU and US endpoints), `anthropic`, `bedrock` (with the endpoint's `region`); otherwise Azure from
+its standard variables, Bedrock in the deployment's region, or pydantic-ai's `infer_model` (OVHcloud, Ollama,
+Groq...). An Azure endpoint without a key uses a Microsoft Entra ID token of the managed identity ([Azure](azure.md)).
+The API key comes from the environment variable the endpoint names (`SCALEWAY_API_KEY`, `IONOS_API_KEY`, `STACKIT_API_KEY`, `MISTRAL_API_KEY`, `OPENAI_API_KEY`); a
 missing key or base URL is a configuration error, never a silent fallback.
 
 ## The data protection profile
@@ -173,6 +178,15 @@ The older `residency` declaration (`model_regions`, `models`) keeps working besi
 `GET /v1/admin/data-protection` returns the profile and every processor with its facts, whether it is allowed and
 why not (`reasons`: dimension and `outside`, `unknown`, `training` or `retained`). The console shows it on the Privacy
 page; the GDPR pack (section 2) states the profile and each processor's residency, jurisdiction and terms as known.
+
+### The system policy's profile
+
+The deployment's [system policy](security.md#the-system-policy) may set a profile too. It holds **as well as** each
+application's: a processor must meet both, and a reason the system profile gives carries `source: system` in
+`GET /v1/admin/data-protection` (which also returns the system profile as `systemProfile`). Unlike an application's,
+an unset `provider_tool_storage` in the system profile constrains nothing; `provider_tool_storage: false` or
+`retention: zero_retention` there keeps provider built-in tools from storing data for every application. The system
+profile has no `browser` declaration: what a browser sends is each application's choice.
 
 ## Regulatory spaces
 

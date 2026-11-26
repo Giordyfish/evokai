@@ -127,6 +127,47 @@ async def test_activate_not_recommended_needs_explicit_acceptance(env: Env) -> N
     assert r.status_code == 400 and r.json()["error"] == "model"
 
 
+async def test_switch_off_and_on_keeps_the_model_and_hides_the_application(env: Env) -> None:
+    app_id = await _system(env)
+    await _measured(env, app_id, "function:primary", GOOD)
+    await _console_as(env, {"*": "owner"})
+    url = "/agent/v1/admin/assistant/switch"
+    # Never activated: nothing to switch on.
+    r = await env.client.post(url, json={"on": True}, headers=_on(app_id))
+    assert r.status_code == 409 and r.json()["error"] == "no_model", r.text
+
+    async def listed() -> dict[str, bool]:
+        items = (await env.client.get("/agent/v1/console/applications", headers=CONSOLE)).json()
+        return {a["slug"]: a["hidden"] for a in items["items"]}
+
+    assert (await listed())[SLUG] is True
+    r = await env.client.post(
+        "/agent/v1/admin/assistant/activate",
+        json={"model": "function:primary"},
+        headers=_on(app_id),
+    )
+    assert r.status_code == 200, r.text
+    assert (await listed())[SLUG] is False
+
+    r = await env.client.post(url, json={"on": False}, headers=_on(app_id))
+    assert r.status_code == 200 and r.json()["model"] == "function:primary", r.text
+    state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(app_id))).json()
+    assert state["active"] is False and state["off"] is True
+    assert state["model"] == "function:primary"
+    assert (await listed())[SLUG] is True
+    r = await _mint(env)
+    assert r.status_code == 409 and r.json()["error"] == "assistant_inactive", r.text
+    agent = await env.svc.store.agents.active(app_id, "assistant")
+    assert agent is not None and agent.definition["model"] == "evokai:unset"
+
+    r = await env.client.post(url, json={"on": True}, headers=_on(app_id))
+    assert r.status_code == 200, r.text
+    state = (await env.client.get("/agent/v1/admin/assistant", headers=_on(app_id))).json()
+    assert state["active"] is True and state["off"] is False
+    assert state["model"] == "function:primary"
+    assert (await _mint(env)).status_code == 200
+
+
 async def test_activate_needs_owner(env: Env) -> None:
     app_id = await _system(env)
     body = {"model": "function:primary", "acceptNotRecommended": True}
@@ -137,7 +178,7 @@ async def test_activate_needs_owner(env: Env) -> None:
     r = await env.client.post(url, json=body, headers={"Authorization": f"Bearer {env.admin_key}"})
     assert r.status_code == 403 and r.json()["error"] == "system_app"
     # Nor does the assistant itself.
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, app_id, "owner")
     r = await env.client.post(url, json=body, headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403 and r.json()["error"] == "assistant_route"
@@ -220,11 +261,10 @@ async def test_try_runs_suite_against_fake_mcp_and_records_numbers(trial_env: En
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["runId"]
-    for _ in range(400):
-        run = await env.svc.store.evals.run(app_id, run_id)
-        if run is not None and run.status != "running":
-            break
-        await asyncio.sleep(0.05)
+    # The try's own task ends after its numbers are stored: polling the run's status raced it
+    # (the run is marked done first, the numbers follow), and failed once on CI Postgres.
+    await asyncio.wait_for(asyncio.gather(*env.svc.evals.tasks), 60)
+    run = await env.svc.store.evals.run(app_id, run_id)
     assert run is not None and run.status == "done", run and run.summary
     results = await env.svc.store.evals.results(run_id)
     assert len(results) == len(suite())
@@ -249,6 +289,30 @@ async def test_try_runs_suite_against_fake_mcp_and_records_numbers(trial_env: En
         )
     ).json()
     assert after == before
+
+
+async def test_a_failed_try_does_not_leave_its_credential(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evokai.assistant.activation import start_trial
+
+    app_id = await _system(env)
+
+    async def broken(*_a: Any, **_k: Any) -> Any:  # ruff: ignore[unused-async]
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(env.svc.evals, "run_case", broken)
+    app = await env.svc.store.applications.get(app_id)
+    assert app is not None
+    run = await start_trial(env.svc, app, "function:primary", "owner")
+    held = await env.svc.store.applications.get(app_id)
+    assert held is not None and (held.defaults or {}).get("eval_credential")
+    await asyncio.gather(*env.svc.evals.tasks)
+    done = await env.svc.store.evals.run(app_id, run.id)
+    assert done is not None and done.status == "failed"
+    after = await env.svc.store.applications.get(app_id)
+    assert after is not None and "eval_credential" not in (after.defaults or {})
+    assert MEASURED_KEY not in (after.defaults or {})  # nothing measured
 
 
 AMOUNT = re.compile(r"usd|cost|amount|price|spend|spent|\$", re.IGNORECASE)

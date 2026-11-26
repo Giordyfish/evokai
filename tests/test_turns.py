@@ -117,6 +117,29 @@ async def test_client_tools_emit_navigation_and_sanitised_charts(env: Env) -> No
     assert [p["label"] for p in chart["points"]] == ["A", "B"]
 
 
+async def test_navigation_takes_a_hash_route_and_explains_a_refused_path(env: Env) -> None:
+    env.script.add(
+        "function:primary",
+        [
+            Tool("ui_navigate", {"path": "#/backend/y"}, "a"),
+            Tool("ui_navigate", {"path": "https://example.com/x"}, "b"),
+        ],
+        ["Ecco."],
+    )
+    tok = await env.token()
+    ev = await env.chat(tok["token"], text="Apri")
+    assert [e["path"] for e in ev if e["type"] == "navigate"] == ["/backend/y"]
+    _, messages = env.script.seen[-1]
+    refused = [
+        str(p.content)
+        for m in messages
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+        if isinstance(p, ToolReturnPart) and p.tool_call_id == "b"
+    ]
+    assert refused and "starts with /" in refused[0], refused
+
+
 async def test_ask_ends_the_turn_and_the_answer_is_labelled(env: Env) -> None:
     env.script.add(
         "function:primary",
@@ -353,3 +376,41 @@ async def test_memories_persist_across_conversations(env: Env) -> None:
 
 def _h(tok: dict) -> dict[str, str]:
     return {"Authorization": f"Bearer {tok['token']}"}
+
+
+async def test_a_chart_from_tools_shows_only_numbers_a_tool_returned(env: Env) -> None:
+    head = {"Authorization": f"Bearer {env.admin_key}"}
+    r = await env.client.get("/agent/v1/admin/agents", headers=head)
+    helper = next(a for a in r.json()["items"] if a["name"] == "helper")
+    helper.pop("version", None)
+    helper["client_tools"] = {**helper["client_tools"], "chart_from_tools": True}
+    r = await env.client.put("/agent/v1/admin/agents/helper", json=helper, headers=head)
+    assert r.status_code == 200, r.text
+
+    def kpi(value: float, cid: str) -> Tool:
+        return Tool(
+            "ui_chart",
+            {"type": "kpi", "title": "Ottobre", "items": [{"label": "Ordini", "value": value}]},
+            cid,
+        )
+
+    env.script.add(
+        "function:primary",
+        [kpi(99, "a")],
+        [Tool("orders_month", {"period": "2026-10"}, "b")],
+        [kpi(24, "c")],
+        ["Ecco."],
+    )
+    tok = await env.token()
+    ev = await env.chat(tok["token"], text="Quanti ordini?")
+    charts = [e["chart"] for e in ev if e["type"] == "chart"]
+    assert [c["items"][0]["value"] for c in charts] == [24]
+    _, messages = env.script.seen[-1]
+    returns = {
+        p.tool_call_id: str(p.content)
+        for m in messages
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+        if isinstance(p, ToolReturnPart)
+    }
+    assert "no tool returned 99" in returns["a"], returns

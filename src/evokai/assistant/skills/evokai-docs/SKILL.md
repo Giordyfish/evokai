@@ -11,6 +11,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/ai-sdk.md`: Use Evokai from the AI SDK
 - `references/assistant.md`: The console assistant
 - `references/attachments.md`: Attachments
+- `references/azure.md`: Running on Azure
 - `references/builtin-tools.md`: Provider built-in tools
 - `references/capabilities.md`: Capabilities
 - `references/channels-readme.md`: Channels beyond the web panel: e-mail, Microsoft Teams, Slack
@@ -30,6 +31,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/deployment.md`: Running and deploying Evokai
 - `references/evals.md`: Evals
 - `references/features.md`: Features
+- `references/gateway.md`: Gateways for coding tools
 - `references/index.md`: Evokai
 - `references/knowledge.md`: Knowledge bases
 - `references/markup.md`: Inline markup
@@ -41,6 +43,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/quickstart.md`: Quick start: Evokai in five minutes
 - `references/redteam.md`: Red team
 - `references/security.md`: Security of agents
+- `references/streaming.md`: Reasoning, tool arguments and tool types
 - `references/templates.md`: Templates
 - `references/voice.md`: Server speech
 - `references/workflows.md`: Workflows

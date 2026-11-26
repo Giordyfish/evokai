@@ -30,8 +30,8 @@ type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out'
 const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
   ins: ['name', 'title', 'instructions', 'channels', 'a2a'],
   mod: ['modules'],
-  model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'model_settings', 'temperature', 'prompt_cache'],
-  tools: ['mcp_servers', 'client_tools', 'ask_rules', 'attachments'],
+  model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'model_settings', 'temperature', 'prompt_cache', 'show_reasoning'],
+  tools: ['mcp_servers', 'client_tools', 'ask_rules', 'attachments', 'show_tool_args'],
   skills: ['skills', 'preload_skills'],
   kb: ['knowledge', 'code', 'capabilities', 'subagents'],
   voice: ['voice'],
@@ -568,6 +568,11 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
         <Field label={t('ag.modelSettings')} hint={t('ag.modelSettingsHint')}>
           <textarea class="in" spellcheck={false} style="min-height:90px" value={settingsText} onInput={(e) => setSettingsText(e.currentTarget.value)} />
         </Field>
+        {row(
+          t('ag.showReasoning'),
+          t('ag.showReasoningSub'),
+          <Switch on={!!draft.show_reasoning} aria={t('ag.showReasoning')} onChange={(v) => set({ show_reasoning: v })} />,
+        )}
       </Panel>
     ),
     tools: (
@@ -602,6 +607,11 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
               {t('ag.noMcp')}
               <a href={appHref(app.slug, 'mcp')}>{t('ag.addOne')}</a>.
             </p>
+          )}
+          {row(
+            t('ag.showToolArgs'),
+            t('ag.showToolArgsSub'),
+            <Switch on={!!draft.show_tool_args} aria={t('ag.showToolArgs')} onChange={(v) => set({ show_tool_args: v })} />,
           )}
         </Panel>
         <div style="height:16px" />
@@ -1132,7 +1142,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
         </Panel>
       ) : null}
       <div class="ed">
-        <nav class="secnav" aria-label={t('ag.sections')}>
+        <nav class="secnav" aria-label={t('ag.sections')} data-tour="agent-sections">
           {secs.map(([k, l]) => (
             <a
               key={k}
@@ -1152,7 +1162,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             {panes[sec]}
           </div>
         </div>
-        <aside class="panel preview">
+        <aside class="panel preview" data-tour="agent-preview">
           <div class="head">
             <img src={HAT} alt="" />
             <div>

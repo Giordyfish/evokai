@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from evokai.agents.registry import AgentRegistry
+from evokai.audio.speech.continuity import SpeechMemory
 from evokai.core.config import Settings
 from evokai.core.security import Keyring
 from evokai.core.shared import SharedState, build_shared
@@ -47,6 +48,9 @@ class Services:
     """The WebRTC voice server, created on the first voice offer when voice is enabled."""
     speech_streams: set[tuple[str, str, str]] = field(default_factory=set)
     """Sessions streaming speech recognition in this process (one socket per session)."""
+    speech_memory: SpeechMemory = field(default_factory=SpeechMemory)
+    """Each conversation's recent server speech, so the next synthesis follows it (this process,
+    two hours, never stored)."""
     evals: Any = None
     """The eval runs (``evokai.evals.runner.EvalService``)."""
     knowledge: Any = None
@@ -68,6 +72,8 @@ class Services:
     """Per-user OAuth connections (``evokai.connections.service.ConnectionService``)."""
     channels: Any = None
     """E-mail, Teams and Slack (``evokai.channels.service.ChannelService``)."""
+    gateway: Any = None
+    """The gateways' doors for coding tools (``evokai.gateway.service.GatewayService``)."""
     housekeeping: dict[str, Any] = field(default_factory=dict)
     """The purge job's last run: lastRunAt, deleted, nextRunAt, error (epoch seconds)."""
 
@@ -91,6 +97,8 @@ class Services:
         self.guard.classifiers.close()
         if self.voice is not None:
             await self.voice.close()
+        if self.gateway is not None:
+            await self.gateway.close()
         await self.http.aclose()
         await self.shared.close()
         await self.db.close()
@@ -201,4 +209,7 @@ def build_services(
     from evokai.channels.service import ChannelService
 
     built.channels = ChannelService(built)
+    from evokai.gateway.service import GatewayService
+
+    built.gateway = GatewayService(built)
     return built

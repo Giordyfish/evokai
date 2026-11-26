@@ -1,5 +1,5 @@
 import { setLocale } from '../src/i18n'
-import { deleted, kindText, type ResetPreview, resetExport, slugTyped } from '../src/assistant/reset'
+import { deleted, kindText, planChanged, type ResetPreview, resetExport, slugTyped } from '../src/assistant/reset'
 
 afterEach(() => setLocale('en'))
 
@@ -12,6 +12,7 @@ const preview: ResetPreview = {
     { kind: 'settings', name: 'application', action: 'restore', item: { locale: 'it', eval_credential: '***' } },
     { kind: 'settings', name: 'grants', action: 'restore' },
   ],
+  plan: 'a'.repeat(64),
 }
 
 describe('the reset preview', () => {
@@ -29,6 +30,12 @@ describe('the reset preview', () => {
     expect(slugTyped('', 'evokai-assistant')).toBe(false)
     expect(slugTyped('evokai', 'evokai-assistant')).toBe(false)
     expect(slugTyped(' evokai-assistant ', 'evokai-assistant')).toBe(true)
+  })
+  it('knows a reset refused because the plan changed since the preview', () => {
+    expect(planChanged({ code: 'plan_changed', status: 409 })).toBe(true)
+    expect(planChanged({ code: 'confirm', status: 400 })).toBe(false)
+    expect(planChanged(new Error('boom'))).toBe(false)
+    expect(planChanged(null)).toBe(false)
   })
   it('names the kinds in both languages', () => {
     expect(kindText('knowledge')).toBe('Knowledge base')

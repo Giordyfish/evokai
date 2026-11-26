@@ -42,6 +42,15 @@
     "channel.notAvailable": "Assistenten är inte tillgänglig i den här kanalen."
   },
   "speech": {
+    "hallucinations": [
+      "undertexter från amara.org-gemenskapen",
+      "svensktextning.nu",
+      "tack för att du tittade",
+      "tack för att ni tittade",
+      "prenumerera på kanalen",
+      "glöm inte att prenumerera",
+      "vi ses i nästa video"
+    ],
     "redactions": {
       "taxCode": "personnumret",
       "iban": "IBAN-numret",

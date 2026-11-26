@@ -43,6 +43,7 @@ export const ICONS = {
   menu: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h14M3 10h14M3 14h9"/></svg>',
   search: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" width="16" height="16"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>',
   check: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>',
+  guide: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M12.8 7.2l-1.7 3.9-3.9 1.7 1.7-3.9z" stroke-linejoin="round"/></svg>',
   plus: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor"><circle cx="32" cy="32" r="28" stroke-dasharray="2 4"/><circle cx="32" cy="32" r="18"/><path d="M32 24v16M24 32h16" stroke-width="1.6" stroke-linecap="round"/></svg>',
 } as const
 export type IconName = keyof typeof ICONS
@@ -69,6 +70,8 @@ type BtnProps = {
   style?: string
   /** The effect that starts on pointerdown: `save` (also given by `check`), `confirm`, `key`. */
   fx?: 'save' | 'confirm' | 'key'
+  /** The place a guided tour points at (`data-tour`, see src/tours). */
+  tour?: string
 }
 
 /** A button; `busy` shows the drawing ring and its label, `check` lets a save draw its check mark. */
@@ -85,7 +88,7 @@ export function Btn(p: BtnProps) {
   const cls = `btn ${p.kind ?? ''} ${p.sm ? 'sm' : ''}`
   if (p.href)
     return (
-      <a class={cls} href={p.href} aria-label={p.label} style={p.style}>
+      <a class={cls} href={p.href} aria-label={p.label} style={p.style} data-tour={p.tour}>
         {inner}
       </a>
     )
@@ -98,6 +101,7 @@ export function Btn(p: BtnProps) {
       aria-label={p.label}
       style={p.style}
       data-fx={p.fx ?? (p.check ? 'save' : undefined)}
+      data-tour={p.tour}
     >
       {inner}
       {p.check ? (
@@ -183,9 +187,10 @@ export function Field(p: { label: ComponentChildren; children: ComponentChildren
   )
 }
 
-export function Panel(p: { title?: ComponentChildren; actions?: ComponentChildren; children: ComponentChildren; cls?: string; style?: string }) {
+/** A panel; `tour` names the place a guided tour points at (`data-tour`, see src/tours). */
+export function Panel(p: { title?: ComponentChildren; actions?: ComponentChildren; children: ComponentChildren; cls?: string; style?: string; tour?: string }) {
   return (
-    <section class={`panel ${p.cls ?? ''}`} style={p.style}>
+    <section class={`panel ${p.cls ?? ''}`} style={p.style} data-tour={p.tour}>
       {p.title ? (
         <h3>
           {p.title}

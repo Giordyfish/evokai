@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from tests.conftest import _cancel_hard
+import pytest
+
+from tests.conftest import Env, _cancel_hard
 
 
 async def test_a_task_that_swallows_one_cancellation_is_cancelled_again_and_ends() -> None:
@@ -37,3 +39,81 @@ async def test_a_task_that_ignores_every_cancellation_is_reported_as_stuck() -> 
     stop.set()  # let it end, or this test's own loop could not close
     await asyncio.wait({task}, timeout=2)
     assert task.done()
+
+
+async def test_a_task_started_by_a_cancellation_is_cancelled_too() -> None:
+    from tests.conftest import _cancel_until_quiet
+
+    started: list[asyncio.Task[None]] = []
+
+    async def cleanup() -> None:  # a close in a task of its own, like SQLAlchemy's
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            await asyncio.sleep(3600)  # swallows the first cancellation
+
+    async def turn() -> None:
+        try:
+            await asyncio.sleep(3600)
+        finally:
+            inner = asyncio.ensure_future(cleanup())
+            started.append(inner)
+            await asyncio.shield(inner)
+
+    me = asyncio.current_task()
+    before = set(asyncio.all_tasks())
+    task = asyncio.create_task(turn())
+    await asyncio.sleep(0)
+
+    def running() -> set[asyncio.Task[object]]:
+        return {t for t in asyncio.all_tasks() if t is not me and t not in before and not t.done()}
+
+    # Cancelling only the tasks the test left ends them, and leaves the cleanup they started: the
+    # loop's closing then cancels it once, it swallows that, and the closing waits for good.
+    assert await _cancel_hard([task], 1.0) == set()
+    assert task.done() and started and not started[0].done()
+    assert await _cancel_until_quiet(running, 3.0) == set()
+    assert started[0].done()
+
+
+def test_the_loops_closing_names_a_task_that_ignores_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    import tests.conftest as conftest
+
+    monkeypatch.setattr(conftest, "CLOSE_WAIT_SECONDS", 0.2)
+
+    async def deaf() -> None:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            await asyncio.sleep(1)  # ignores the closing's one cancellation for a while
+
+    left: list[asyncio.Task[None]] = []
+
+    async def leave() -> None:
+        left.append(asyncio.get_running_loop().create_task(deaf(), name="deaf-task"))
+        await asyncio.sleep(0)
+
+    runner = asyncio.Runner()
+    runner.run(leave())
+    with pytest.raises(pytest.fail.Exception, match="deaf-task"):
+        runner.close()  # without the bound, this waited for the task (forever, for a deaf one)
+    left[0]._log_destroy_pending = False  # ty: ignore[missing-attribute]  # expected, not a leak
+
+
+async def test_a_gateway_record_that_never_ends_is_named_at_the_end_of_the_test(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tests.conftest as conftest
+
+    monkeypatch.setattr(conftest, "GATEWAY_WAIT_SECONDS", 0.2)
+    assert await conftest._gateway_writes_hung(env.svc) is None
+    stuck = asyncio.Event()
+
+    async def write_that_never_ends() -> None:
+        await stuck.wait()
+
+    env.svc.gateway._later(write_that_never_ends())
+    found = await conftest._gateway_writes_hung(env.svc)
+    assert found is not None and "write_that_never_ends" in found
+    stuck.set()  # done: the real teardown finds nothing pending
+    await env.svc.gateway.idle(5)

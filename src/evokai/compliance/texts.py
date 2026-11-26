@@ -1451,13 +1451,14 @@ T: dict[str, tuple[str, str]] = {
         "This mapping shows which controls Evokai's features support and where the evidence is. "
         "It is support for the organisation's own information security management system and its "
         "auditors, not a certification or an attestation: ISO/IEC 27001 certifies an "
-        "organisation's ISMS and SOC 2 reports on a service organisation's controls, neither a "
-        "piece of software.",
+        "organisation's ISMS, ISO/IEC 42001 its AI management system and SOC 2 reports on a "
+        "service organisation's controls, none of them a piece of software.",
         "Questa mappatura mostra quali controlli le funzioni di Evokai supportano e dove si "
         "trovano le evidenze. È un supporto al sistema di gestione della sicurezza delle "
         "informazioni dell'organizzazione e ai suoi auditor, non una certificazione né "
-        "un'attestazione: la ISO/IEC 27001 certifica l'ISMS di un'organizzazione e il SOC 2 "
-        "riferisce sui controlli di un'organizzazione di servizi, non su un software.",
+        "un'attestazione: la ISO/IEC 27001 certifica l'ISMS di un'organizzazione, la ISO/IEC "
+        "42001 il suo sistema di gestione per l'IA e il SOC 2 riferisce sui controlli di "
+        "un'organizzazione di servizi, nessuna su un software.",
     ),
     "ct.legend": ("Statuses", "Stati"),
     "st.supported": ("supported", "supportato"),
@@ -1483,6 +1484,16 @@ T: dict[str, tuple[str, str]] = {
     ),
     "ct.iso": ("2. ISO/IEC 27001:2022 Annex A", "2. ISO/IEC 27001:2022 Annex A"),
     "ct.soc2": ("3. SOC 2 Trust Services Criteria", "3. SOC 2 Trust Services Criteria"),
+    "ct.iso42001": ("4. ISO/IEC 42001:2023 Annex A", "4. ISO/IEC 42001:2023 Annex A"),
+    "ct.iso42001.note": (
+        "ISO/IEC 42001 certifies an organisation's AI management system. Most of its controls "
+        "are the organisation's own processes; Evokai gives evidence for some of them. The "
+        "titles below are short descriptions in our own words, not the standard's text.",
+        "La ISO/IEC 42001 certifica il sistema di gestione per l'IA di un'organizzazione. "
+        "La maggior parte dei suoi controlli sono processi dell'organizzazione; Evokai fornisce "
+        "evidenze per alcuni di essi. I titoli qui sotto sono brevi descrizioni con parole "
+        "nostre, non il testo della norma.",
+    ),
     "ct.summary": (
         "{supported} supported, {available} available but not configured, {partial} partly "
         "supported, {organisation} for the organisation.",
@@ -1502,6 +1513,10 @@ _CTL = {
         "Testo nascosto: caratteri invisibili, lettere sosia, blocchi codificati",
     ),
     "input.size": ("Input size", "Lunghezza del messaggio"),
+    "input.secrets": (
+        "Secrets and credentials in the user's input",
+        "Segreti e credenziali nel messaggio dell’utente",
+    ),
     "input.moderation": (
         "Harmful content in the user's input (a moderation classifier)",
         "Contenuti dannosi nel messaggio dell’utente (un classificatore di moderazione)",
@@ -1566,6 +1581,7 @@ NIST: dict[str, tuple[str, ...]] = {
     "input.injection": ("Information Security",),
     "input.encoding": ("Information Security",),
     "input.size": ("Information Security",),
+    "input.secrets": ("Information Security", "Data Privacy"),
     "input.moderation": ("Dangerous, Violent, or Hateful Content",),
     "untrusted.spotlight": ("Information Security", "Information Integrity"),
     "untrusted.injection": ("Information Security", "Information Integrity"),
@@ -1654,6 +1670,265 @@ CONTROL_MAP: dict[str, tuple[str, str, str]] = {
 }
 ISO_CONTROLS = tuple(k for k in CONTROL_MAP if k.startswith("A.") and k[2] in "58" and k[3] == ".")
 SOC2_CONTROLS = tuple(k for k in CONTROL_MAP if k not in ISO_CONTROLS)
+
+# ISO/IEC 42001:2023 Annex A: id -> (feature, evidence, status rule). Titles are our own short
+# words (the standard's text is copyrighted); most controls are the organisation's.
+ISO42001_MAP: dict[str, tuple[str, str, str]] = {
+    "A.2.2": ("aipolicy", "system policy, GET /v1/console/system-policy", "partial"),
+    "A.2.3": ("orgpolicy", "-", "org"),
+    "A.2.4": ("policyreview", "evokai_policy_versions, GET /v1/admin/policy/diff", "partial"),
+    "A.3.2": ("airoles", "evokai.identity.roles, console roles per application", "partial"),
+    "A.3.3": ("concerns", "POST /v1/session/bug-reports, evokai_bug_reports", "partial"),
+    "A.4.2": ("inventory", "AI Act pack, GET /v1/admin/agents, /mcp-servers, /grants", "ok"),
+    "A.4.3": ("dataresources", "knowledge bases, GDPR pack data categories", "partial"),
+    "A.4.4": ("tooling", "MCP servers, skills, built-in tools, GET /v1/admin/grants", "ok"),
+    "A.4.5": ("computing", "provider catalog, models and regions (GDPR pack section 2)", "partial"),
+    "A.4.6": ("people", "-", "org"),
+    "A.5.2": ("impactprocess", "GDPR pack DPIA template, compliance profile", "partial"),
+    "A.5.3": ("impactrecords", "GDPR pack DPIA, compliance snapshots", "partial"),
+    "A.5.4": ("impactpeople", "GDPR pack DPIA risk table", "partial"),
+    "A.5.5": ("societal", "-", "org"),
+    "A.6.1.2": ("devobjectives", "-", "org"),
+    "A.6.1.3": ("devprocess", "agent versions, evals and red team on save, publish gate", "gate"),
+    "A.6.2.2": ("requirements", "-", "org"),
+    "A.6.2.3": ("designdocs", "agent versions, application YAML, evokai_agents", "partial"),
+    "A.6.2.4": (
+        "testing",
+        "evals, red team, policy tests (tests/test_policies.py), evokai_eval_runs",
+        "ok",
+    ),
+    "A.6.2.5": ("change", "agent versions, publish gate, evokai_audit_log", "gate"),
+    "A.6.2.6": ("monitoring", "security events, traces, cost alerts, health", "otel"),
+    "A.6.2.7": ("techdocs", "AI Act pack (in the spirit of Annex IV)", "ok"),
+    "A.6.2.8": ("logging", "evokai_traces, evokai_audit_log, evokai_security_events", "ok"),
+    "A.7.2": ("devdata", "data_protection retention (no_training), knowledge bases", "partial"),
+    "A.7.3": ("acquisition", "-", "org"),
+    "A.7.4": ("dataquality", "-", "org"),
+    "A.7.5": ("provenance", "knowledge documents with their source, cited answers", "partial"),
+    "A.7.6": (
+        "preparation",
+        "knowledge ingestion (extraction, chunks), docs/knowledge.md",
+        "partial",
+    ),
+    "A.8.2": ("userinfo", "AI Act pack transparency, compliance profile disclosure", "partial"),
+    "A.8.3": ("extreporting", "-", "org"),
+    "A.8.4": ("incidentcomms", "-", "org"),
+    "A.8.5": ("stakeholders", "-", "org"),
+    "A.9.2": ("responsibleuse", "system policy, security policy, ask rules", "systempolicy"),
+    "A.9.3": ("useobjectives", "-", "org"),
+    "A.9.4": (
+        "intendeduse",
+        "compliance profile intended purpose, scope topics and deny lists",
+        "partial",
+    ),
+    "A.10.2": ("responsibilities", "compliance profile: controller and processor", "partial"),
+    "A.10.3": (
+        "suppliers",
+        "provider catalog, data protection profile (GDPR pack section 2)",
+        "dataprotection",
+    ),
+    "A.10.4": ("customers", "-", "org"),
+}
+
+T.update({
+    "ctrl42.A.2.2": ("AI policy", "Politica per l'IA"),
+    "ctrl42.A.2.3": (
+        "Fit of the AI policy with the organisation's other policies",
+        "Coerenza della politica per l'IA con le altre politiche dell'organizzazione",
+    ),
+    "ctrl42.A.2.4": (
+        "Periodic review of the AI policy",
+        "Riesame periodico della politica per l'IA",
+    ),
+    "ctrl42.A.3.2": ("Roles and responsibilities for AI", "Ruoli e responsabilità per l'IA"),
+    "ctrl42.A.3.3": ("Raising concerns", "Segnalazione di dubbi e problemi"),
+    "ctrl42.A.4.2": ("Records of the resources", "Documentazione delle risorse"),
+    "ctrl42.A.4.3": ("Data used by the system", "Dati usati dal sistema"),
+    "ctrl42.A.4.4": ("Tools used by the system", "Strumenti usati dal sistema"),
+    "ctrl42.A.4.5": ("Systems and computing used", "Sistemi e risorse di calcolo usati"),
+    "ctrl42.A.4.6": ("People and skills involved", "Persone e competenze coinvolte"),
+    "ctrl42.A.5.2": ("How impacts are assessed", "Come si valutano gli impatti"),
+    "ctrl42.A.5.3": ("Records of impact assessments", "Documentazione delle valutazioni d'impatto"),
+    "ctrl42.A.5.4": (
+        "Impact on people and groups",
+        "Impatto su persone e gruppi",
+    ),
+    "ctrl42.A.5.5": ("Impact on society", "Impatto sulla società"),
+    "ctrl42.A.6.1.2": (
+        "Goals for responsible development",
+        "Obiettivi per uno sviluppo responsabile",
+    ),
+    "ctrl42.A.6.1.3": (
+        "How responsible design and development is done",
+        "Come si progetta e si sviluppa in modo responsabile",
+    ),
+    "ctrl42.A.6.2.2": ("Requirements of the system", "Requisiti del sistema"),
+    "ctrl42.A.6.2.3": ("Design and development records", "Documentazione di progetto e sviluppo"),
+    "ctrl42.A.6.2.4": ("Checking and validating the system", "Verifica e validazione del sistema"),
+    "ctrl42.A.6.2.5": ("Putting the system into service", "Messa in servizio del sistema"),
+    "ctrl42.A.6.2.6": ("Running and watching the system", "Esercizio e monitoraggio del sistema"),
+    "ctrl42.A.6.2.7": ("Technical documentation", "Documentazione tecnica"),
+    "ctrl42.A.6.2.8": ("Event logs", "Registrazione degli eventi"),
+    "ctrl42.A.7.2": (
+        "Data for building and improving the system",
+        "Dati per costruire e migliorare il sistema",
+    ),
+    "ctrl42.A.7.3": ("Where data comes from and how it is obtained", "Come si ottengono i dati"),
+    "ctrl42.A.7.4": ("Quality of the data", "Qualità dei dati"),
+    "ctrl42.A.7.5": ("Origin of the data", "Provenienza dei dati"),
+    "ctrl42.A.7.6": ("Preparing the data", "Preparazione dei dati"),
+    "ctrl42.A.8.2": (
+        "Documentation and information for users",
+        "Documentazione e informazioni per gli utenti",
+    ),
+    "ctrl42.A.8.3": ("Reporting to outside parties", "Comunicazioni verso l'esterno"),
+    "ctrl42.A.8.4": ("Telling people about incidents", "Comunicazione degli incidenti"),
+    "ctrl42.A.8.5": (
+        "Information for the parties concerned",
+        "Informazioni per le parti interessate",
+    ),
+    "ctrl42.A.9.2": (
+        "How the system is used responsibly",
+        "Come si usa il sistema in modo responsabile",
+    ),
+    "ctrl42.A.9.3": ("Goals for responsible use", "Obiettivi per un uso responsabile"),
+    "ctrl42.A.9.4": ("What the system is meant for", "A cosa è destinato il sistema"),
+    "ctrl42.A.10.2": ("Sharing responsibilities", "Ripartizione delle responsabilità"),
+    "ctrl42.A.10.3": ("Suppliers", "Fornitori"),
+    "ctrl42.A.10.4": ("Customers", "Clienti"),
+    "feat.aipolicy": (
+        "The system policy enforces the technical rules of the AI policy; the policy itself is "
+        "the organisation's",
+        "La policy di sistema applica le regole tecniche della politica per l'IA; la politica è "
+        "dell'organizzazione",
+    ),
+    "feat.orgpolicy": (
+        "Not in the software: the organisation's policies",
+        "Non nel software: le politiche dell'organizzazione",
+    ),
+    "feat.policyreview": (
+        "Every policy change kept as a version, with author, date, note and diff",
+        "Ogni modifica di policy conservata come versione, con autore, data, nota e differenze",
+    ),
+    "feat.airoles": (
+        "Console roles per application; who holds them is the organisation's choice",
+        "Ruoli della console per applicazione; chi li ricopre lo decide l'organizzazione",
+    ),
+    "feat.concerns": (
+        "People report a problem from the chat; the process is the organisation's",
+        "Le persone segnalano un problema dalla chat; il processo è dell'organizzazione",
+    ),
+    "feat.dataresources": (
+        "Knowledge bases and data categories listed",
+        "Basi di conoscenza e categorie di dati elencate",
+    ),
+    "feat.tooling": (
+        "Tools, MCP servers and skills of each agent listed and granted",
+        "Strumenti, server MCP e skill di ogni agente elencati e concessi",
+    ),
+    "feat.computing": (
+        "Models and providers with their regions; the infrastructure is the organisation's",
+        "Modelli e fornitori con le loro regioni; l'infrastruttura è dell'organizzazione",
+    ),
+    "feat.people": (
+        "Not in the software: the organisation's people",
+        "Non nel software: le persone dell'organizzazione",
+    ),
+    "feat.impactprocess": (
+        "A DPIA template filled from the configuration",
+        "Un modello di DPIA compilato dalla configurazione",
+    ),
+    "feat.impactrecords": (
+        "DPIA in the GDPR pack, snapshots kept",
+        "DPIA nel pacchetto GDPR, istantanee conservate",
+    ),
+    "feat.impactpeople": (
+        "Risks to people in the DPIA risk table",
+        "Rischi per le persone nella tabella dei rischi della DPIA",
+    ),
+    "feat.societal": (
+        "Not in the software: the organisation's assessment",
+        "Non nel software: la valutazione dell'organizzazione",
+    ),
+    "feat.devobjectives": (
+        "Not in the software: the organisation's objectives",
+        "Non nel software: gli obiettivi dell'organizzazione",
+    ),
+    "feat.devprocess": (
+        "Versions, evals and red team on save, publish gate",
+        "Versioni, evals e red team al salvataggio, blocco di pubblicazione",
+    ),
+    "feat.requirements": (
+        "Not in the software: the organisation's requirements",
+        "Non nel software: i requisiti dell'organizzazione",
+    ),
+    "feat.designdocs": (
+        "Versioned agents and configuration as code",
+        "Agenti versionati e configurazione come codice",
+    ),
+    "feat.techdocs": (
+        "Technical documentation generated in the AI Act pack",
+        "Documentazione tecnica generata nel pacchetto AI Act",
+    ),
+    "feat.devdata": (
+        "Evokai trains no model; providers bound by no_training where set",
+        "Evokai non addestra modelli; fornitori vincolati da no_training dove impostato",
+    ),
+    "feat.acquisition": (
+        "Not in the software: how the organisation obtains data",
+        "Non nel software: come l'organizzazione ottiene i dati",
+    ),
+    "feat.dataquality": (
+        "Not in the software: the organisation's data quality",
+        "Non nel software: la qualità dei dati dell'organizzazione",
+    ),
+    "feat.provenance": (
+        "Knowledge documents keep their source; answers cite it",
+        "I documenti di conoscenza conservano la fonte; le risposte la citano",
+    ),
+    "feat.preparation": (
+        "Documents extracted and split the same way every time",
+        "Documenti estratti e suddivisi sempre allo stesso modo",
+    ),
+    "feat.userinfo": (
+        "Transparency facts in the AI Act pack; the notice to users is the organisation's",
+        "Informazioni di trasparenza nel pacchetto AI Act; l'avviso agli utenti è "
+        "dell'organizzazione",
+    ),
+    "feat.extreporting": (
+        "Not in the software: the organisation's reports",
+        "Non nel software: le comunicazioni dell'organizzazione",
+    ),
+    "feat.incidentcomms": (
+        "Not in the software: security events are the facts, telling people is the organisation's",
+        "Non nel software: gli eventi di sicurezza sono i fatti, comunicarli spetta "
+        "all'organizzazione",
+    ),
+    "feat.stakeholders": (
+        "Not in the software: the organisation's communication",
+        "Non nel software: la comunicazione dell'organizzazione",
+    ),
+    "feat.responsibleuse": (
+        "System policy, security policies and ask rules applied on every turn",
+        "Policy di sistema, policy di sicurezza e regole di conferma applicate a ogni turno",
+    ),
+    "feat.useobjectives": (
+        "Not in the software: the organisation's objectives",
+        "Non nel software: gli obiettivi dell'organizzazione",
+    ),
+    "feat.intendeduse": (
+        "Intended purpose declared; topics and denied topics per agent",
+        "Finalità dichiarata; argomenti e argomenti vietati per agente",
+    ),
+    "feat.responsibilities": (
+        "Controller and processor declared in the compliance profile",
+        "Titolare e responsabile dichiarati nel profilo di conformità",
+    ),
+    "feat.customers": (
+        "Not in the software: the organisation's customer relations",
+        "Non nel software: i rapporti con i clienti dell'organizzazione",
+    ),
+})
 
 T.update({
     "ctrl.A.5.9": (
@@ -2127,7 +2402,7 @@ SOURCES.update({
         f"Control mapping: {T[f'feat.{f}'][0]} (docs/security.md, docs/privacy.md)",
         f"Mappatura dei controlli: {T[f'feat.{f}'][1]} (docs/security.md, docs/privacy.md)",
     )
-    for f in sorted({v[0] for v in CONTROL_MAP.values()})
+    for f in sorted({v[0] for v in (*CONTROL_MAP.values(), *ISO42001_MAP.values())})
 })
 
 _ACTION_WORDS = {

@@ -1,6 +1,7 @@
 /**
  * The playground: talk to an agent as a test subject and inspect every event of the turn. It mints a real session
- * token with the console login and runs real turns (they are priced and recorded under the test subject).
+ * token with the console login and runs real turns (they are priced and recorded under the test subject). The console
+ * assistant can drive it (`assistant/drive.ts`): it opens it on an agent, types its message here and reads the answer.
  */
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -13,13 +14,24 @@ import { Empty, Fx, HAT, Mage, Motes, oneshot, toast } from '../magic'
 import { setTitle, useConsole, useLoad } from '../state'
 import { Btn, Hero, Panel, Seg, Switch, Tag } from '../ui'
 import { ParamsForm } from './ModuleParams'
+import { type PlaygroundReply, registerPlayground } from '../assistant/drive'
 import { num, t } from '../i18n'
 
 type Item =
   | { kind: 'user'; text: string }
   | { kind: 'think' }
   | { kind: 'ai'; text: string; visuals: Array<{ chart?: Chart; diagram?: Diagram }>; interrupted?: boolean; cites?: Citation[] }
-  | { kind: 'tool'; name: string; status: 'start' | 'done' | 'error' | 'waiting'; ms?: number; t0: number }
+  | { kind: 'reasoning'; text: string }
+  | {
+      kind: 'tool'
+      name: string
+      status: 'start' | 'done' | 'error' | 'waiting' | 'args' | 'skipped'
+      ms?: number
+      t0: number
+      /** The call, when the agent shows its tools' arguments (show_tool_args). */
+      id?: string
+      args?: Record<string, unknown>
+    }
   | { kind: 'confirm'; actionId: string; items: string[]; state: 'open' | 'approved' | 'rejected' }
   | { kind: 'ask'; question: string; options: string[]; answered?: boolean }
   | { kind: 'note'; text: string; tone?: 'bad' | 'mu' }
@@ -37,6 +49,7 @@ interface Ev {
 const KIND: Record<string, 'meta' | 'tool' | 'text' | 'chart' | 'confirm' | 'usage' | 'bad'> = {
   tool: 'tool',
   text: 'text',
+  reasoning: 'text',
   say: 'text',
   chart: 'chart',
   diagram: 'chart',
@@ -50,6 +63,14 @@ const KIND: Record<string, 'meta' | 'tool' | 'text' | 'chart' | 'confirm' | 'usa
 const COL = { meta: 'var(--e-meta)', tool: 'var(--e-tool)', text: 'var(--e-text)', chart: 'var(--e-chart)', confirm: 'var(--e-confirm)', usage: 'var(--e-usage)', bad: 'var(--s-bad)' }
 const GL = { meta: '○', tool: '◆', text: '●', chart: '▮', confirm: '▲', usage: '■', bad: '⊘' }
 
+/** A call's arguments on one line, cut short (show_tool_args). */
+function argsLine(args: Record<string, unknown>): string {
+  const text = Object.entries(args)
+    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join(', ')
+  return text.length > 200 ? `${text.slice(0, 199)}…` : text
+}
+
 function label(e: Record<string, unknown>): string {
   switch (e.type) {
     case 'conversation':
@@ -57,6 +78,7 @@ function label(e: Record<string, unknown>): string {
     case 'tool':
       return `${e.status} ${e.name}`
     case 'text':
+    case 'reasoning':
       return JSON.stringify(e.delta).slice(0, 60)
     case 'say':
       return `${e.filler ? t('pg.ev.filler') : ''}${String(e.text).slice(0, 60)}`
@@ -83,7 +105,8 @@ function label(e: Record<string, unknown>): string {
   }
 }
 
-function Visual({ v }: { v: { chart?: Chart; diagram?: Diagram } }) {
+/** A chart or a diagram as the console draws it (the playground, a conversation under review). */
+export function Visual({ v }: { v: { chart?: Chart; diagram?: Diagram } }) {
   if (v.chart?.type === 'kpi')
     return (
       <div class="kpis">
@@ -139,10 +162,20 @@ function Visual({ v }: { v: { chart?: Chart; diagram?: Diagram } }) {
   return null
 }
 
+/** How long the assistant waits for an agent's answer before it reads what came so far (its tool waits up to 120 s). */
+const DRIVE_MS = 100_000
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 export function Playground({ q }: { q: URLSearchParams }) {
   setTitle(t('page.playground'))
   const c = useConsole()
   const [appSlug, setAppSlug] = useState(q.get('app') ?? c.apps[0]?.slug ?? '')
+  // The address can change while the page is open (the assistant opens another application here).
+  const wanted = q.get('app')
+  useEffect(() => {
+    if (wanted) setAppSlug(wanted)
+  }, [wanted])
   const app = c.apps.find((a) => a.slug === appSlug) ?? c.apps[0]
   if (!app)
     return (
@@ -165,6 +198,9 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
   const prompts = useLoad(() => api.admin.prompts.list().catch(() => [] as PromptVersion[]), [app.id])
   const browserAgents = (agents.data ?? []).filter((a: AgentDef) => (a.channels ?? ['browser']).includes('browser'))
   const [agent, setAgent] = useState(agentName ?? '')
+  useEffect(() => {
+    if (agentName) setAgent(agentName)
+  }, [agentName])
   const current = browserAgents.find((a) => a.name === agent) ?? browserAgents[0]
   const [subject, setSubject] = useState('playground:console')
   const [tags, setTags] = useState('playground')
@@ -183,6 +219,10 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
   const history = useRef<HistoryMessage[]>([])
   const abort = useRef<AbortController | null>(null)
   const thread = useRef<HTMLDivElement>(null)
+  /** The assistant is typing here (its `playground` tool). */
+  const [driven, setDriven] = useState(false)
+  /** What the turn in flight has said so far, for the assistant when its time runs out. */
+  const live = useRef<PlaygroundReply | null>(null)
 
   useEffect(() => () => abort.current?.abort(), [])
   useEffect(() => {
@@ -217,16 +257,19 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
       tags: tags.split(/[\s,]+/).filter(Boolean),
       ...(prev ? { conversationId: prev.conversationId } : {}),
       ...(Object.keys(choices).length ? { modules: choices } : {}),
-      ...(locale ? { locale } : {}),
+      // Always sent: "" (the application's locale) clears what this conversation chose before.
+      locale,
     })
     optionsChanged.current = false
     token.current = next
     return next
   }
 
-  const run = async (body: Record<string, unknown>, shown: Item | null) => {
-    if (!current || busy) return
+  const run = async (body: Record<string, unknown>, shown: Item | null): Promise<PlaygroundReply | null> => {
+    if (!current || busy) return null
     setBusy(true)
+    const reply: PlaygroundReply = { application: app.slug, agent: current.name, answer: '', tools: [] }
+    live.current = reply
     const t0 = performance.now()
     setEvents([])
     let list: Item[] = [...items.filter((x) => x.kind !== 'think'), ...(shown ? [shown] : []), { kind: 'think' }]
@@ -262,7 +305,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         const at = Math.round(performance.now() - t0)
         const ev: Ev = { seq: Number(e.seq ?? evs.length + 1), type: String(e.type), t: at, label: label(e), raw: e }
         if (e.type === 'tool' && e.status === 'start') openTools.set(String(e.name), evs.length)
-        if (e.type === 'tool' && e.status !== 'start') {
+        if (e.type === 'tool' && (e.status === 'done' || e.status === 'error')) {
           const i = openTools.get(String(e.name))
           if (i != null) evs[i]!.end = at
         }
@@ -271,6 +314,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         const unthink = (l: Item[]) => l.filter((x) => x.kind !== 'think')
         switch (e.type) {
           case 'text': {
+            reply.answer += String(e.delta)
             push((l) => {
               const last = l[l.length - 1]
               if (last?.kind === 'ai') return [...l.slice(0, -1), { ...last, text: last.text + String(e.delta), cites }]
@@ -291,9 +335,35 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             })
             break
           }
+          case 'reasoning':
+            push((l) => {
+              const last = l[l.length - 1]
+              if (last?.kind === 'reasoning') return [...l.slice(0, -1), { ...last, text: last.text + String(e.delta) }]
+              return [...unthink(l), { kind: 'reasoning', text: String(e.delta) }, { kind: 'think' }]
+            })
+            break
           case 'tool': {
             const name = String(e.name)
-            if (e.status === 'start') push((l) => [...unthink(l), { kind: 'tool', name, status: 'start', t0: at }, { kind: 'think' }])
+            const status = e.status as Extract<Item, { kind: 'tool' }>['status']
+            if (status === 'start') reply.tools.push(name)
+            const id = typeof e.id === 'string' ? e.id : undefined
+            const args = e.args && typeof e.args === 'object' ? { args: e.args as Record<string, unknown> } : {}
+            if (id && status !== 'start') {
+              // A call the agent shows as it is written (show_tool_args): one chip from its arguments to its end.
+              push((l) => {
+                const at0 = l.findIndex((x) => x.kind === 'tool' && x.id === id)
+                if (at0 < 0) return [...unthink(l), { kind: 'tool', name, status, t0: at, id, ...args }, { kind: 'think' }]
+                return l.map((x, k) =>
+                  k === at0 && x.kind === 'tool' ? { ...x, status, ...args, ...(x.status === 'start' ? { ms: at - x.t0 } : {}) } : x,
+                )
+              })
+            } else if (id && status === 'start') {
+              push((l) => {
+                const at0 = l.findIndex((x) => x.kind === 'tool' && x.id === id)
+                if (at0 < 0) return [...unthink(l), { kind: 'tool', name, status: 'start', t0: at, id }, { kind: 'think' }]
+                return l.map((x, k) => (k === at0 && x.kind === 'tool' ? { ...x, status: 'start', t0: at } : x))
+              })
+            } else if (status === 'start') push((l) => [...unthink(l), { kind: 'tool', name, status: 'start', t0: at }, { kind: 'think' }])
             else
               push((l) =>
                 l.map((x) => (x.kind === 'tool' && x.name === name && x.status === 'start' ? { ...x, status: e.status as 'done', ms: at - x.t0 } : x)),
@@ -301,12 +371,14 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             break
           }
           case 'confirm':
+            reply.waiting = 'confirm'
             push((l) => [
               ...unthink(l),
               { kind: 'confirm', actionId: String(e.actionId), items: (e.items as string[]) ?? [], state: 'open' },
             ])
             break
           case 'ask':
+            reply.waiting = 'ask'
             push((l) => [...unthink(l), { kind: 'ask', question: String(e.question), options: (e.options as string[]) ?? [] }])
             break
           case 'navigate':
@@ -316,6 +388,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             setUsage(t('pg.usage', { day: (e.dayPct as number | null) ?? t('fmt.none'), month: (e.monthPct as number | null) ?? t('fmt.none') }))
             break
           case 'error':
+            reply.error = String(e.message)
             push((l) => [...unthink(l), { kind: 'note', text: String(e.message), tone: 'bad' }])
             break
           case 'done':
@@ -324,15 +397,52 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         }
       }
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError'))
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        reply.error = describe(err)
         push((l) => [...l.filter((x) => x.kind !== 'think'), { kind: 'note', text: describe(err), tone: 'bad' }])
+      }
     } finally {
       push((l) => l.filter((x) => x.kind !== 'think'))
       setBusy(false)
       abort.current = null
       void c.reloadApps()
     }
+    return reply
   }
+
+  // The assistant drives the playground while it shows this agent: it types its message in the composer, sends it,
+  // and gets the agent's answer back (or what came so far, when its time runs out: the turn goes on here).
+  const latest = useRef({ run, busy, reset })
+  latest.current = { run, busy, reset }
+  const offered = browserAgents.map((a) => a.name).join(',')
+  useEffect(() => {
+    if (!current) return
+    return registerPlayground({
+      application: app.slug,
+      agent: current.name,
+      agents: offered ? offered.split(',') : [],
+      send: async (message, fresh) => {
+        if (latest.current.busy) throw new Error('The playground is still answering the last message: wait for it, then send again.')
+        if (fresh) {
+          latest.current.reset()
+          await pause(80)
+        }
+        setDriven(true)
+        const steps = Math.min(message.length, 40)
+        for (let i = 1; i <= steps; i++) {
+          setText(message.slice(0, Math.ceil((message.length * i) / steps)))
+          await pause(18)
+        }
+        await pause(150)
+        setText('')
+        const done = latest.current.run({ text: message }, { kind: 'user', text: message })
+        const late = pause(DRIVE_MS).then(() => (live.current ? { ...live.current, stillAnswering: true } : null))
+        const out = await Promise.race([done, late])
+        if (!out) throw new Error('The playground could not send the message.')
+        return out
+      },
+    })
+  }, [app.slug, current?.name, offered])
 
   const send = (e?: Event) => {
     e?.preventDefault()
@@ -383,16 +493,27 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             </div>
           </div>
         )
+      case 'reasoning':
+        return (
+          <details key={i} class="pgreason">
+            <summary>{t('pg.reasoning')}</summary>
+            <div>{x.text}</div>
+          </details>
+        )
       case 'tool':
         return (
-          <span key={i} class="toolchip">
-            {x.status === 'start' ? (
+          <span key={i} class="toolchip" data-status={x.status}>
+            {x.status === 'start' || x.status === 'args' ? (
               <Motes />
             ) : (
-              <span class="ok" style={x.status === 'error' ? 'background:var(--s-bad)' : ''} />
+              <span class="ok" style={x.status === 'error' ? 'background:var(--s-bad)' : x.status === 'done' ? '' : 'background:var(--mu)'} />
             )}
             {x.name}
+            {x.status === 'args' ? <span>{t('pg.toolArgs')}</span> : null}
+            {x.status === 'waiting' ? <span>{t('pg.toolWaiting')}</span> : null}
+            {x.status === 'skipped' ? <span>{t('pg.toolSkipped')}</span> : null}
             {x.ms != null ? <span>{x.ms} ms</span> : null}
+            {x.args ? <code class="toolargs">{argsLine(x.args)}</code> : null}
           </span>
         )
       case 'confirm':
@@ -460,7 +581,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
           </Btn>
         }
       />
-      <div class="pgbar">
+      <div class="pgbar" data-tour="pg-pick">
         <select class="in" value={app.slug} onChange={(e) => onApp(e.currentTarget.value)} aria-label={t('pg.application')}>
           {c.apps.map((a) => (
             <option key={a.id} value={a.slug}>
@@ -475,6 +596,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             </option>
           ))}
         </select>
+        {driven ? <Tag tone="gold">{t('pg.byAssistant')}</Tag> : null}
         {current ? <Tag tone="ok">{t('pg.live', { version: (current as AgentDef & { version: string }).version.slice(0, 7) })}</Tag> : null}
         <input class="in mono" style="width:190px" value={subject} onChange={(e) => setSubject(e.currentTarget.value)} aria-label={t('pg.subject')} />
         <input class="in mono" style="width:120px" value={tags} onInput={(e) => setTags(e.currentTarget.value)} aria-label={t('pg.tags')} />
@@ -538,7 +660,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             )}
             {rendered}
           </div>
-          <form class="composer" onSubmit={send}>
+          <form class="composer" onSubmit={send} data-tour="pg-composer">
             <input value={text} onInput={(e) => setText(e.currentTarget.value)} placeholder={t('pg.ask')} aria-label={t('pg.message')} disabled={!current} />
             <Btn kind="pri" type="submit" busy={busy ? t('pg.running') : false} flame disabled={!current}>
               {t('pg.send')}
@@ -546,6 +668,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
           </form>
         </Panel>
         <Panel
+          tour="pg-events"
           title={t('pg.events')}
           actions={<Seg options={['waterfall', 'raw'] as const} labels={{ waterfall: t('pg.waterfall'), raw: t('pg.raw') }} value={view} onChange={setView} />}
         >

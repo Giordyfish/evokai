@@ -61,7 +61,7 @@ async def test_a_model_id_never_reads_the_environment(env: Env) -> None:
 
 
 async def test_malformed_bodies_are_400_for_a_delegation(env: Env) -> None:
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     for body in (b"{not json", b"[1, 2]"):
@@ -120,7 +120,7 @@ async def test_the_assistant_cannot_weaken_security_by_recreating_an_agent(env: 
     strict = {**agent, "security": {"mode": "enforce"}}
     r = await env.client.put("/agent/v1/admin/agents/helper", json=strict, headers=admin)
     assert r.status_code == 200, r.text
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
     bearer = {"Authorization": f"Bearer {token}"}
     r = await env.client.delete("/agent/v1/admin/agents/helper", headers=bearer)

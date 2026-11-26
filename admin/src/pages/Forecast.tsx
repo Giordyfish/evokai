@@ -64,7 +64,7 @@ export function Forecast({ app }: { app: ConsoleApplication }) {
         const a = f.application
         const names = new Map(f.subjects.map((s) => [s.subjectKey, s.subject]))
         return (
-          <div class="grid" style="margin-bottom:16px">
+          <div class="grid" style="margin-bottom:16px" data-tour="usage-forecast">
             <Panel
               title={t('costs.fc.title')}
               actions={

@@ -42,6 +42,19 @@
     "channel.notAvailable": "L’assistente non è disponibile su questo canale."
   },
   "speech": {
+    "hallucinations": [
+      "sottotitoli creati dalla comunità amara.org",
+      "sottotitoli a cura di *",
+      "sottotitoli e revisione a cura di *",
+      "grazie per la visione",
+      "grazie a tutti per la visione",
+      "grazie per aver guardato",
+      "grazie per aver guardato il video",
+      "iscriviti al canale",
+      "iscrivetevi al canale",
+      "ci vediamo nel prossimo video",
+      "ci vediamo al prossimo video"
+    ],
     "redactions": {
       "taxCode": "il codice fiscale",
       "iban": "l’IBAN",

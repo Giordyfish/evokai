@@ -1,10 +1,16 @@
 """Code interpreters: where ``code_run`` executes Python, isolated from Evokai and the network.
 
-The one implementation is Amazon Bedrock AgentCore Code Interpreter. Every call gets its own
-session (start, write the input files, execute, list and read ``output/``, stop): nothing survives
-between calls, so one person's data never meets another's. The AWS-managed interpreter
-``aws.codeinterpreter.v1`` runs in sandbox network mode (no internet; the session has no execution
-role, so no AWS resource either).
+Two implementations, both with a session per call (nothing survives between calls, so one person's
+data never meets another's):
+
+- Amazon Bedrock AgentCore Code Interpreter (``EVOKAI_CODE_SANDBOX=agentcore``, the default): start,
+  write the input files, execute, list and read ``output/``, stop. The AWS-managed interpreter
+  ``aws.codeinterpreter.v1`` runs in sandbox network mode (no internet; the session has no
+  execution role, so no AWS resource either).
+- Azure Container Apps dynamic sessions, a Python code interpreter session pool
+  (``EVOKAI_CODE_SANDBOX=azure``, :class:`ContainerAppsInterpreter`): each session is isolated by a
+  Hyper-V boundary; Evokai reaches the pool's management endpoint with a Microsoft Entra ID token of
+  its managed identity (Azure ContainerApps Session Executor role).
 
 boto3 is synchronous: a call runs in a thread. Past the timeout the session is stopped from
 another thread, which ends the execution server side; what the sandbox printed until then is lost.
@@ -16,12 +22,16 @@ container next to it, is not made safe by this module (see ``docs/code.md``).
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 log = logging.getLogger("evokai.sandbox")
 
@@ -82,7 +92,12 @@ class Execution:
 
 
 class Interpreter(Protocol):
-    """A place to run code."""
+    """A place to run code.
+
+    An interpreter may also name its entry in the provider catalog (``processor``, for the data
+    protection profile) and the model its usage records carry (``usage_model``); without them it
+    is taken for AgentCore.
+    """
 
     kind: str
     region: str
@@ -125,6 +140,8 @@ class AgentCoreInterpreter:
     """Amazon Bedrock AgentCore Code Interpreter, one session per call."""
 
     kind = "agentcore"
+    processor = "agentcore-code-interpreter"
+    usage_model = "agentcore:code-interpreter"
 
     def __init__(
         self,
@@ -335,3 +352,208 @@ def _consume(task: asyncio.Future[Any]) -> None:
     """Swallow the result of a call abandoned at its timeout (its session is already stopped)."""
     if not task.cancelled():
         task.exception()
+
+
+AZURE_EUROPE = frozenset({
+    "austriaeast", "belgiumcentral", "denmarkeast", "francecentral", "francesouth",
+    "germanynorth", "germanywestcentral", "italynorth", "northeurope", "norwayeast", "norwaywest",
+    "polandcentral", "spaincentral", "swedencentral", "switzerlandnorth", "switzerlandwest",
+    "uksouth", "ukwest", "westeurope",
+})  # fmt: skip
+"""Azure regions in Europe (https://learn.microsoft.com/en-us/azure/reliability/regions-list),
+the only ones the Azure sandbox runs in (like ``eu-*`` on AWS)."""
+
+SESSIONS_API = "2025-10-02-preview"
+"""Executions (``/executions``) of the code interpreter session pool."""
+SESSION_API = "2025-02-02-preview"
+"""Deleting a session (``DELETE /session``)."""
+WORKDIR = "/mnt/data"
+"""Where a session's files live; ``input/`` and ``output/`` are made under it."""
+
+_SETUP = """
+import json as _j, os as _o
+_o.makedirs({work!r} + "/input", exist_ok=True)
+_o.makedirs({work!r} + "/output", exist_ok=True)
+_o.chdir({work!r})
+for _n, _t in _j.loads({files!r}):
+    with open("input/" + _n, "w", encoding="utf-8") as _f:
+        _f.write(_t)
+"""
+
+_COLLECT = """
+import base64 as _b, json as _j, os as _o
+_d, _r = {work!r} + "/output", []
+for _n in sorted(_o.listdir(_d)) if _o.path.isdir(_d) else []:
+    _p = _o.path.join(_d, _n)
+    if not _o.path.isfile(_p):
+        continue
+    _s = _o.path.getsize(_p)
+    _r.append([_n, _s, _b.b64encode(open(_p, "rb").read()).decode() if _s <= {cap} else None])
+print({marker!r} + _j.dumps(_r))
+"""
+_MARKER = "EVOKAI_OUTPUT_FILES:"
+_OK = ("success", "succeeded")
+
+
+def azure_region_of(endpoint: str) -> str:
+    """The Azure region of a session pool's management endpoint.
+
+    ``https://<region>.dynamicsessions.io/subscriptions/.../sessionPools/<name>``.
+
+    Returns:
+        The region (lower case), or an empty string.
+    """
+    host = (urlsplit(endpoint).hostname or "").lower()
+    return host.split(".", 1)[0] if host.endswith(".dynamicsessions.io") else ""
+
+
+class ContainerAppsInterpreter:
+    """Azure Container Apps dynamic sessions (Python code interpreter), one session per call.
+
+    REST, read 26 November 2026 (not verified against a live Azure account):
+    ``POST {pool}/executions?api-version=2025-10-02-preview&identifier=<id>`` with
+    ``{"properties": {"codeInputType": "inline", "executionType": "synchronous", "code": ...}}``
+    answers ``{"properties": {"status", "stdout", "stderr", "executionResult",
+    "executionTimeInMilliseconds"}}``; ``DELETE {pool}/session?api-version=2025-02-02-preview&
+    identifier=<id>`` ends the session. Bearer token for ``https://dynamicsessions.io/.default``.
+    Inputs are written and ``output/`` is read back by two extra executions in the same session, so
+    only documented calls are used. An execution runs at most 220 seconds.
+    https://learn.microsoft.com/en-us/azure/container-apps/sessions-code-interpreter
+    https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-nodejs
+    """
+
+    kind = "azure-sessions"
+    processor = "azure-container-apps-sessions"
+    usage_model = "azure:container-apps-sessions"
+
+    def __init__(self, endpoint: str, *, http: Any = None, token: Any = None) -> None:
+        """Bind the session pool.
+
+        Args:
+            endpoint: The pool's management endpoint (``poolManagementEndpoint``).
+            http: An ``httpx.AsyncClient`` (tests pass a mock transport).
+            token: An async callable returning a bearer token (default: the managed identity).
+
+        Raises:
+            ValueError: The endpoint is not a session pool in a European region.
+        """
+        self.endpoint = endpoint.rstrip("/")
+        self.region = azure_region_of(self.endpoint)
+        if self.region not in AZURE_EUROPE:
+            raise ValueError(
+                "the session pool must be in a European Azure region, not "
+                f"{self.region or endpoint}"
+            )
+        self.identifier = self.endpoint.rsplit("/", 1)[-1]
+        self._http = http
+        self._token = token
+
+    @property
+    def http(self) -> Any:
+        """The HTTP client (made on first use).
+
+        Returns:
+            The client.
+        """
+        if self._http is None:
+            import httpx
+
+            self._http = httpx.AsyncClient(timeout=httpx.Timeout(240.0, connect=10.0))
+        return self._http
+
+    async def _headers(self) -> dict[str, str]:
+        if self._token is None:
+            from evokai.core.azure import DYNAMIC_SESSIONS, token_provider
+
+            self._token = token_provider(DYNAMIC_SESSIONS)
+        return {"Authorization": f"Bearer {await self._token()}"}
+
+    async def _execute(self, session: str, code: str) -> dict[str, Any]:
+        r = await self.http.post(
+            f"{self.endpoint}/executions",
+            params={"api-version": SESSIONS_API, "identifier": session},
+            json={
+                "properties": {
+                    "codeInputType": "inline",
+                    "executionType": "synchronous",
+                    "code": code,
+                }
+            },
+            headers=await self._headers(),
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"session pool: HTTP {r.status_code}")
+        return dict(r.json().get("properties") or {})
+
+    async def run(self, code: str, files: list[tuple[str, str]], *, timeout: float) -> Execution:
+        """Run Python in a fresh session, then delete it.
+
+        Args:
+            code: The Python source.
+            files: (name, text) written under ``input/`` first.
+            timeout: Seconds for the whole call; past it the session is deleted.
+
+        Returns:
+            The execution (``timed_out`` when the timeout stopped it).
+        """
+        out = Execution(session_id=f"evokai-{uuid.uuid4().hex}")
+        t0 = time.perf_counter()
+        try:
+            await asyncio.wait_for(self._run(out, code, files), timeout)
+        except TimeoutError:
+            out.timed_out = True
+            out.error = True
+        except Exception as e:
+            out.error = True
+            out.stderr += f"\n[sandbox error: {str(e)[:200]}]"
+        finally:
+            await self._delete(out.session_id)
+        out.session_ms = round((time.perf_counter() - t0) * 1000)
+        return out
+
+    async def _run(self, out: Execution, code: str, files: list[tuple[str, str]]) -> None:
+        setup = _SETUP.format(work=WORKDIR, files=json.dumps(files))
+        prepared = await self._execute(out.session_id, setup)
+        if str(prepared.get("status", "")).lower() not in _OK:
+            raise RuntimeError("the session could not be prepared")
+        p = await self._execute(out.session_id, code)
+        out.stdout = str(p.get("stdout") or "")
+        result = p.get("executionResult")
+        if result not in (None, ""):
+            sep = "" if not out.stdout or out.stdout.endswith("\n") else "\n"
+            out.stdout += sep + str(result)
+        out.stderr = str(p.get("stderr") or "")
+        out.execution_ms = int(p.get("executionTimeInMilliseconds") or 0)
+        out.error = str(p.get("status", "")).lower() not in _OK
+        collect = _COLLECT.format(work=WORKDIR, cap=MAX_IMAGE_BYTES, marker=_MARKER)
+        collected = await self._execute(out.session_id, collect)
+        self._collect(out, str(collected.get("stdout") or ""))
+
+    def _collect(self, out: Execution, stdout: str) -> None:
+        """Keep the images and text files of ``output/`` (within the caps)."""
+        line = next((x for x in stdout.splitlines() if x.startswith(_MARKER)), None)
+        if line is None:
+            return
+        images = texts = 0
+        for name, _size, b64 in json.loads(line[len(_MARKER) :]):
+            media = _media_type(str(name), None)
+            data = base64.b64decode(b64) if b64 is not None else None
+            if media in IMAGE_TYPES and images < MAX_IMAGES and data is not None:
+                images += 1
+                out.files.append(OutputFile(str(name), media, data=data))
+            elif _is_text(str(name), media) and texts < MAX_TEXT_FILES and data is not None:
+                texts += 1
+                text = data.decode("utf-8", "replace")
+                out.files.append(OutputFile(str(name), media, text=text))
+            else:
+                out.skipped.append(str(name))
+
+    async def _delete(self, session: str) -> None:
+        try:
+            await self.http.delete(
+                f"{self.endpoint}/session",
+                params={"api-version": SESSION_API, "identifier": session},
+                headers=await self._headers(),
+            )
+        except Exception as e:
+            log.warning("code_session_not_stopped", extra={"error": type(e).__name__})

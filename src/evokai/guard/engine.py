@@ -43,6 +43,7 @@ SEVERITY = {
     "input.injection": "high",
     "input.encoding": "medium",
     "input.size": "low",
+    "input.secrets": "high",
     "untrusted.injection": "high",
     "pii.model": "medium",
     "pii.history": "medium",
@@ -153,6 +154,9 @@ class TurnGuard:
     """The application's inline markup made inert (``Markup.neutralise``): applied to what the
     person controls besides their typed text (attachment names and text, client tool results)
     on its way to the model, so nobody can write cues for the agent through them."""
+    offline: bool = False
+    """A policy test (``evokai.policies``): no classifier is asked, events are neither logged
+    nor traced (and never stored: nothing flushes them)."""
 
     # events
 
@@ -189,6 +193,8 @@ class TurnGuard:
             "details": details or {},
         }
         self.events.append(row)
+        if self.offline:
+            return
         if self.trace is not None:
             self.trace.event(
                 "guard",
@@ -251,6 +257,17 @@ class TurnGuard:
             )
             if enforce:
                 return InputDecision(text, blocked="input.size")
+        if p.on("input.secrets") and (found := secrets.find(text, self.guard.known_secrets)):
+            enforce = p.enforced("input.secrets")
+            self.record(
+                "input.secrets",
+                found[0].rule,
+                "blocked" if enforce else "logged",
+                details={"count": len(found), "rules": sorted({f.rule for f in found})},
+                direction="input",
+            )
+            if enforce:
+                return InputDecision(text, blocked="input.secrets")
         norm = normalize(text)
         if p.on("input.encoding") and (norm.invisible or norm.mixed_scripts or norm.decoded):
             enforce = p.enforced("input.encoding") and bool(norm.invisible)
@@ -336,7 +353,7 @@ class TurnGuard:
         """
         s = self.policy.settings.injection
         cid = self.guard.classifiers.resolve(s.classifier if s else None)
-        if cid is None:
+        if cid is None or self.offline:
             return
         clf = self.guard.classifiers.get(cid)
         status = clf.status() if clf is not None else None
@@ -427,7 +444,7 @@ class TurnGuard:
         p = self.policy
         s = p.settings.moderation
         cid = s.classifier if s else None
-        if not cid or cid == "none":
+        if not cid or cid == "none" or self.offline:
             return None
         control = "input.moderation"
         clf = self.guard.classifiers.get_moderation(cid)
@@ -747,6 +764,13 @@ class TurnGuard:
             return pii.mask(t, types, self.declared) if spans and p.enforced("pii.history") else t
 
         blocks = [_stored_block(b, scan) for b in content_blocks]
+        # A model's reasoning kept for a confirmation is sent back unchanged or not at all (its
+        # signature covers it): masked, it is dropped.
+        blocks = [
+            b
+            for b, before in zip(blocks, content_blocks, strict=True)
+            if not (isinstance(b, dict) and "reasoning" in b and b != before)
+        ]
         text = scan(text) if text else text
         self._pii_event("pii.history", found, add=True)
         return blocks, text
@@ -818,7 +842,9 @@ class TurnGuard:
         return content.origin_hosts(self.origins) + list((links.allow if links else None) or [])
 
     def prompt_shingles(self) -> set[str]:
-        """Shingles of the agent's instructions (not of its skills, which it may quote).
+        """Shingles of the agent's instructions and prompt modules (not of its skills).
+
+        Skills are left out: the agent may quote them.
 
         Returns:
             The shingles.
@@ -826,6 +852,17 @@ class TurnGuard:
         if self._shingles is None:
             self._shingles = output.shingles(self.instructions)
         return self._shingles
+
+    def add_prompt_text(self, *texts: str) -> None:
+        """Add text the system prompt carries beside the instructions, for the leak check.
+
+        The session's prompt modules go in as written: their values, which the person gave, are
+        not the prompt's own.
+        """
+        extra = [t for t in texts if t and t.strip()]
+        if extra:
+            self.instructions = "\n\n".join([self.instructions, *extra])
+            self._shingles = None
 
     def after_output(self, f: output.OutputFilter) -> None:
         """Record what the output checks found in a finished step."""
@@ -1148,6 +1185,8 @@ class Guard:
         self.known_secrets: tuple[str, ...] = tuple(s for s in known if s and len(s) >= 12)
         self.classifiers = Classifiers(settings)
         self.shared: SharedState = shared or MemoryState()
+        self.clock: Callable[[], float] = time.time
+        """The wall clock that rate windows are cut on, a minute each (tests pin it)."""
 
     def policy(self, app: m.Application, agent: Any = None) -> Effective:
         """The effective policy of an agent of an application.
@@ -1155,10 +1194,13 @@ class Guard:
         Returns:
             The policy.
         """
+        from evokai import policies
+
         return resolve(
             getattr(app, "security", None),
             getattr(agent, "security", None) if agent is not None else None,
             disabled=not self.enabled,
+            system=policies.system_security(),
         )
 
     def keyed(self, *parts: str) -> str:
@@ -1238,7 +1280,7 @@ class Guard:
         Returns:
             The minute's count.
         """
-        bucket = str(int(time.time() // 60))
+        bucket = str(int(self.clock() // 60))
         return await self.shared.incr(self._shared_key(*key, bucket), 120)
 
     async def _note(

@@ -27,8 +27,9 @@ CHART = {
         ),
         (
             "kpi = 1-4 big key figures (items with label, value, unit, optional delta % and "
-            "note, e.g. 'vs September'). unit: eur only for money, pct for percentages, "
-            "count (the default) for everything else."
+            "note, e.g. 'vs September'). unit: eur only for money, pct for percentages, ms "
+            "for durations in milliseconds (written as seconds when long), count (the default) "
+            "for everything else. Values exactly as the tools returned them."
         ),
         (
             "highlight = the label to emphasise (e.g. the current month). compare = a second "
@@ -51,7 +52,7 @@ CHART = {
                 "type": "string",
                 "description": "Optional: period or filter, e.g. 'October 2026'",
             },
-            "unit": {"type": "string", "enum": ["eur", "count", "pct"]},
+            "unit": {"type": "string", "enum": ["eur", "count", "pct", "ms"]},
             "name": {
                 "type": "string",
                 "description": "Name of the main series, when there is compare",
@@ -93,7 +94,7 @@ CHART = {
                     "properties": {
                         "label": {"type": "string"},
                         "value": {"type": "number"},
-                        "unit": {"type": "string", "enum": ["eur", "count", "pct"]},
+                        "unit": {"type": "string", "enum": ["eur", "count", "pct", "ms"]},
                         "delta": {
                             "type": "number",
                             "description": "Change in % from the previous period",

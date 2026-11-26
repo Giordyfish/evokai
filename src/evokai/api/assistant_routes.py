@@ -7,6 +7,7 @@ Neither route is a tool of the admin MCP server, and the assistant's delegation 
 
 from __future__ import annotations
 
+import hmac
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -15,16 +16,21 @@ from pydantic import BaseModel, Field, field_validator
 
 from evokai import audit
 from evokai.agents.definitions import AgentDef
-from evokai.api.console_routes import conversation_subject, conversation_view
+from evokai.api.console_routes import (
+    conversation_subject,
+    conversation_view,
+    visible_applications,
+)
 from evokai.api.deps import admin_app, console_login, services
 from evokai.api.server_routes import TokenRequest, mint
 from evokai.assistant import activation, privacy, reset
 from evokai.assistant import bootstrap as shipped
-from evokai.assistant.delegation import mint_delegation
+from evokai.assistant.delegation import ALL, mint_delegation
 from evokai.core.errors import BadRequest, Conflict, Forbidden, NotFound
 from evokai.core.util import utcnow
 from evokai.identity.models import AppPrincipal
 from evokai.identity.preferences import identity_of
+from evokai.identity.roles import highest
 from evokai.services import Services
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -36,6 +42,13 @@ class Unlock(BaseModel):
     """The application's slug, typed by the person who unlocks or resets it."""
 
     confirm: str = Field(max_length=60)
+
+
+class Reset(Unlock):
+    """The typed slug and the plan of the preview the person saw."""
+
+    plan: str = Field(min_length=64, max_length=64)
+    """``plan`` from ``GET /v1/admin/application/reset/preview``: the reset deletes only that."""
 
 
 async def _system_app(svc: Services, a: AppPrincipal) -> Any:
@@ -88,10 +101,10 @@ async def reset_preview(svc: Svc, a: Admin) -> dict[str, Any]:
     """Everything a reset of the system application deletes or restores (owner).
 
     Each deleted item carries its definition without secrets (``item``), for the owner to keep
-    before resetting.
+    before resetting. ``plan`` fingerprints the items: the reset takes it back.
 
     Returns:
-        slug and items (kind, name, action: ``delete`` or ``restore``, item).
+        slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.
 
     Raises:
         Conflict: A system application this version of Evokai does not ship.
@@ -99,11 +112,12 @@ async def reset_preview(svc: Svc, a: Admin) -> dict[str, Any]:
     app = await _system_app(svc, a)
     if app.slug != shipped.SLUG:
         raise Conflict("This version of Evokai does not ship this application.", code="not_system")
-    return {"slug": app.slug, "items": await reset.plan(svc, app.id)}
+    items = await reset.plan(svc, app.id)
+    return {"slug": app.slug, "items": items, "plan": reset.digest(items)}
 
 
 @router.post("/application/reset")
-async def reset_application(body: Unlock, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
+async def reset_application(body: Reset, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
     """Delete what the reset preview lists and apply the shipped definition again, locked (owner).
 
     Returns:
@@ -111,16 +125,23 @@ async def reset_application(body: Unlock, svc: Svc, a: Admin, request: Request) 
 
     Raises:
         BadRequest: The typed slug is not the application's (400 ``confirm``).
-        Conflict: A system application this version of Evokai does not ship.
+        Conflict: A system application this version of Evokai does not ship, or what the reset
+            would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).
     """
     app = await _system_app(svc, a)
     if app.slug != shipped.SLUG:
         raise Conflict("This version of Evokai does not ship this application.", code="not_system")
     if body.confirm != app.slug:
         raise BadRequest("Type the application's slug to confirm.", code="confirm")
+    planned = await reset.plan(svc, app.id)
+    if not hmac.compare_digest(reset.digest(planned), body.plan):
+        raise Conflict(
+            "What the reset deletes changed since the preview: look at the preview again.",
+            code="plan_changed",
+        )
     before = await svc.store.agents.active_all(app.id)
     model = (app.defaults or {}).get(shipped.MODEL_KEY)
-    items = await reset.reset(svc, app.id, model)
+    items = await reset.reset(svc, app.id, model, planned)
     for agent in before:
         svc.agents.invalidate(app.id, agent.name)
     svc.mcp.forget(app.id)
@@ -231,6 +252,46 @@ async def activate_assistant(
         after={"model": model, "recommended": recommended},
     )
     return {"ok": True, "model": model, "recommended": recommended}
+
+
+class Switch(BaseModel):
+    """Switching the assistant on or off."""
+
+    on: bool
+
+
+@router.post("/assistant/switch")
+async def switch_assistant(body: Switch, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
+    """Switch the assistant on or off (owner of its application).
+
+    Off, the console shows neither its launcher nor its application, and its sessions are
+    refused; the model is kept, so switching it on again needs no new choice.
+
+    Returns:
+        ok, on and the model.
+
+    Raises:
+        Conflict: Switching on an assistant that never had a model (``no_model``: activate one).
+    """
+    app = await _owned_assistant(svc, a, "switches")
+    defaults = app.defaults or {}
+    if body.on:
+        model = defaults.get(shipped.MODEL_KEY) or defaults.get(shipped.OFF_KEY)
+        if not model:
+            raise Conflict("Choose the assistant's model first.", code="no_model")
+        if not defaults.get(shipped.MODEL_KEY):
+            await activation.activate(svc, app, str(model), by=a.key_id)
+    else:
+        model = await activation.switch_off(svc, app, by=a.key_id) or defaults.get(shipped.OFF_KEY)
+    await audit.record(
+        request,
+        a,
+        "assistant.switch",
+        target=str(model or ""),
+        before={"on": bool(defaults.get(shipped.MODEL_KEY))},
+        after={"on": body.on},
+    )
+    return {"ok": True, "on": body.on, "model": model}
 
 
 @router.post("/assistant/try", status_code=202)
@@ -346,11 +407,12 @@ class SessionBody(BaseModel):
 async def assistant_session(
     svc: Svc, a: Admin, request: Request, body: SessionBody | None = None
 ) -> dict[str, Any]:
-    """A session token for the console assistant, acting on the selected application.
+    """A session token for the console assistant, the platform's: it acts on every application.
 
-    It needs a console login (the cookie, its header and the application it acts on): its
-    forwarded credential is a delegation token for that application with the login's role, which
-    the admin MCP server checks against the live login on every call. The session belongs to the
+    It needs a console login (the cookie and its header): its forwarded credential is a delegation
+    token valid on every application the login can see, with the login's highest role; the admin
+    MCP server's tools name the application of each call, and Evokai checks the live login's role
+    on that application every time. The session belongs to the
     assistant's system application, for the subject ``console:<login>``, with browser speech.
 
     Returns:
@@ -372,11 +434,12 @@ async def assistant_session(
             "The assistant's MCP servers were changed: an owner resets it in the console.",
             code="assistant_altered",
         )
+    role = highest(*(login.role_for(x) for x in await visible_applications(svc, login)))
     credential = mint_delegation(
         svc.keyring,
         login,
-        a.application_id,
-        a.role,  # ty: ignore[invalid-argument-type]
+        ALL,
+        role or a.role,  # ty: ignore[invalid-argument-type]
         ttl=svc.settings.session_token_max_ttl,
     )
     token = TokenRequest(
@@ -462,9 +525,13 @@ async def assistant_privacy(svc: Svc, a: Admin, request: Request) -> dict[str, A
         }
         for e in mine
     ]
+    # The assistant reads every application the person sees: the online voice only when all of
+    # them allow it (and the assistant's own application).
+    readable = [selected, *await visible_applications(svc, login)]
     voice = (
         "online"
-        if privacy.online_voice_allowed(system) and privacy.online_voice_allowed(selected)
+        if privacy.online_voice_allowed(system)
+        and all(privacy.online_voice_allowed(x) for x in readable if x is not None)
         else "device"
     )
     return {

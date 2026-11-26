@@ -65,6 +65,5 @@ export function voiceOptions(kind: VoiceKind) {
   return { ttsOptions: { piper: { voice: 'it_IT-serena-high', pitchShift: 1.15 }, browser: { allowOnlineVoices: false } } }
 }
 
-/** What the panel says about the voice in use. */
-export const voiceText = (kind: VoiceKind): string =>
-  kind === 'online' ? t('assistant.voiceOnline') : kind === 'system' ? t('assistant.voiceSystem') : t('assistant.voicePiper')
+/** What the panel says about the voice: only the online voice, the one that sends the text off the device. */
+export const voiceText = (kind: VoiceKind): string | null => (kind === 'online' ? t('assistant.voiceOnline') : null)

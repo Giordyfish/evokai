@@ -24,10 +24,11 @@ from pydantic import BaseModel, Field, model_validator
 from evokai import audit
 from evokai.agents.definitions import AgentDef
 from evokai.agents.skills import SkillError, parse_skill_text
-from evokai.api.deps import admin_app, console_login, operator, services
+from evokai.api.deps import admin_app, console_login, login_alive, operator, services
 from evokai.api.grants_routes import grant_view
 from evokai.api.trace_routes import note_view
 from evokai.api.trace_routes import summary as trace_summary
+from evokai.assistant import bootstrap as shipped
 from evokai.assistant.privacy import lists_everyone, own_subject
 from evokai.core.caps import LEGACY
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
@@ -145,7 +146,8 @@ async def _resolve(key: str, svc: Services) -> console.ConsoleLogin:
     expires = int(time.time()) + svc.settings.console_session_ttl
     try:
         if console.is_operator_key(key, svc.settings.operator_key):
-            return console.ConsoleLogin("op", None, expires)
+            mark = console.operator_fingerprint(svc.keyring, svc.settings.operator_key)
+            return console.ConsoleLogin("op", None, expires, mark)
         app = await svc.auth.application(key, admin=True)
         return console.ConsoleLogin("adm", app.application_id, expires, app.key_id)
     except AppError as e:
@@ -167,11 +169,7 @@ async def login(body: Login, request: Request, response: Response, svc: Svc) -> 
     await _throttle(request, svc)
     if body.code is not None:
         held = _login_of(await svc.shared.take(_code_key(body.code)))
-        alive = held is not None and (
-            held.kind != "adm"
-            or not held.key_id
-            or await svc.auth.key_alive(held.key_id, held.application_id or "")
-        )
+        alive = held is not None and await login_alive(svc, held)
         if held is None or not alive:
             await _failed(request, svc)
             await audit.record(request, None, "console.login_failed", target="code")
@@ -242,7 +240,8 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
         deployment's facts the console needs (model allow-list, voice enabled).
 
     Raises:
-        Unauthorized: Not logged in, the login's key was revoked or its user disabled.
+        Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
+            operator key changed.
     """
     value = request.cookies.get(console.COOKIE)
     if not value:
@@ -250,6 +249,8 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
     who = console.read(svc.keyring, value)
     if who.kind == "sso" and not await svc.auth.user_active(who.user_id or ""):
         raise Unauthorized("This console user was disabled.", code="console")
+    if who.kind == "op" and not await login_alive(svc, who):
+        raise Unauthorized("The operator key of this login changed.", code="console")
     prefix = None
     if who.kind == "adm" and who.key_id:
         key = await svc.store.applications.key(who.key_id)
@@ -260,7 +261,7 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
         "kind": who.kind,
         "applicationId": who.application_id,
         "expiresAt": who.expires_at,
-        "keyId": who.key_id,
+        "keyId": who.key_id if who.kind == "adm" else None,
         "keyPrefix": prefix,
         "email": who.email,
         "name": who.name,
@@ -318,10 +319,11 @@ async def create_application(body: NewApplication, svc: Svc, request: Request) -
     Raises:
         Conflict: The slug is taken.
     """
-    if await svc.store.applications.by_slug(body.slug):
+    if await svc.store.applications.by_slug(body.slug, kind=None):
         raise Conflict("An application with this slug already exists.", code="slug_taken")
     fields = body.model_dump(exclude={"slug", "name"}, exclude_none=True)
-    app = await svc.store.applications.create(body.slug, body.name, **fields)
+    actor = deployment_actor(request, svc)
+    app = await svc.store.applications.create(body.slug, body.name, by=actor.actor, **fields)
     keys = {}
     for kind in ("srv", "adm"):
         key = generate_key(kind)
@@ -329,7 +331,7 @@ async def create_application(body: NewApplication, svc: Svc, request: Request) -
         keys[kind] = key.value
     await audit.record(
         request,
-        deployment_actor(request, svc),
+        actor,
         "application.create",
         application_id=app.id,
         target=app.slug,
@@ -617,16 +619,21 @@ async def conversation_subject(
     """The subject of a conversation of the application.
 
     Returns:
-        The subject, or None when there is no such conversation.
+        The subject, or None when there is no such conversation or it has expired (its time to
+        live ended: it is gone for every reader, even before the hourly purge deletes it).
     """
     async with svc.db.session() as s:
-        return (
+        subject = (
             await s.execute(
                 sa.select(m.Session.subject).where(
                     m.Session.id == conversation_id, m.Session.application_id == application_id
                 )
             )
         ).scalar_one_or_none()
+    if subject is None:
+        return None
+    alive = await svc.store.sessions.get(Who(application_id, subject), conversation_id)
+    return subject if alive is not None else None
 
 
 async def conversation_view(
@@ -638,7 +645,7 @@ async def conversation_view(
         The conversation.
 
     Raises:
-        NotFound: No such conversation.
+        NotFound: No such conversation, or it has expired.
     """
     async with svc.db.session() as s:
         row = (
@@ -663,6 +670,8 @@ async def conversation_view(
     if row is None:
         raise NotFound()
     who = Who(application_id, row.subject)
+    if await svc.store.sessions.get(who, row.id) is None:
+        raise NotFound()  # expired: its time to live ended, the purge has not run yet
     thread = await svc.store.sessions.thread(row.id)
     msgs = await svc.store.messages.recent(who, thread.id, 400)
     application = await svc.store.applications.get(application_id)
@@ -728,7 +737,7 @@ async def health(svc: Svc, _a: Admin) -> dict[str, Any]:
 DEFAULT_MCP_TIMEOUT = 60
 
 
-async def _visible(svc: Services, login: console.ConsoleLogin) -> list[m.Application]:
+async def visible_applications(svc: Services, login: console.ConsoleLogin) -> list[m.Application]:
     """The applications a login may see: every one for the operator, its own for an admin.
 
     Returns:
@@ -808,18 +817,35 @@ async def _card(svc: Services, app: m.Application, now: datetime) -> dict[str, A
     }
 
 
+def _assistant_off(app: m.Application) -> bool:
+    """Whether this is the built-in assistant's application while the assistant is not on.
+
+    The console lists it only while the assistant is active (``hidden`` otherwise); the
+    Assistant page still manages it.
+
+    Returns:
+        True for the assistant's application without an active model.
+    """
+    return (
+        bool(app.system)
+        and app.slug == shipped.SLUG
+        and not (app.defaults or {}).get(shipped.MODEL_KEY)
+    )
+
+
 @router.get("/v1/console/applications")
 async def console_applications(svc: Svc, login: ConsoleUser) -> dict[str, Any]:
     """The applications of this login, with what the console's list and switcher show.
 
     Returns:
-        items, and whether this login may create applications (operator).
+        items (``hidden``: the assistant's application while the assistant is off), and whether
+        this login may create applications (operator).
     """
     now = utcnow()
     return {
         "items": [
-            {**await _card(svc, a, now), "role": login.role_for(a)}
-            for a in await _visible(svc, login)
+            {**await _card(svc, a, now), "role": login.role_for(a), "hidden": _assistant_off(a)}
+            for a in await visible_applications(svc, login)
         ],
         "canCreate": login.deployment_owner,
     }
@@ -894,7 +920,7 @@ async def console_health(svc: Svc, login: ConsoleUser, check: bool = False) -> d
     Returns:
         database, models, mcp, voice, sharedState (memory or redis, answering), otel, purge, build.
     """
-    apps = await _visible(svc, login)
+    apps = await visible_applications(svc, login)
     servers = []
     for app in apps:
         for server in await svc.store.mcp_servers.all(app.id):
@@ -1082,6 +1108,7 @@ async def export(svc: Svc, a: Admin) -> dict[str, str]:
         ("messages", d.get("messages") or None),
         ("markup", d.get("markup") or None),
         ("tracing", {"content": d["tracing_content"]} if d.get("tracing_content") else None),
+        ("stt_filter", d.get("stt_filter")),
     )
     # An old *_usd field whose cap ``caps`` sets does not apply: left out, or the file would set
     # the same cap twice.

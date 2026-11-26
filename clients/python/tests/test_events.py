@@ -7,6 +7,7 @@ import pytest
 from evokai import (
     AskEvent,
     ChartEvent,
+    ClientToolEvent,
     ConfirmedEvent,
     ConfirmEvent,
     ConversationEvent,
@@ -14,6 +15,7 @@ from evokai import (
     DoneEvent,
     ErrorEvent,
     NavigateEvent,
+    ReasoningEvent,
     SayEvent,
     SpeechEvent,
     TextEvent,
@@ -60,6 +62,12 @@ CASES: list[tuple[dict[str, Any], type, dict[str, Any]]] = [
         ToolEvent,
         {"name": "crm_search", "status": "done"},
     ),
+    (
+        {"type": "tool", "name": "crm_search", "status": "args", "id": "c1", "args": {"q": "Ro"}},
+        ToolEvent,
+        {"name": "crm_search", "status": "args", "id": "c1", "args": {"q": "Ro"}},
+    ),
+    ({"type": "reasoning", "delta": "Looking up."}, ReasoningEvent, {"delta": "Looking up."}),
     (
         {"type": "chart", "chart": {"type": "kpi", "title": "T", "subtitle": "", "items": []}},
         ChartEvent,
@@ -202,6 +210,35 @@ def test_stored_events_are_typed() -> None:
     assert conv.pending is not None
     assert conv.pending.action_id == "a1"
     assert conv.last_seq == 9
+
+
+def test_a_stored_message_reads_what_was_shown_in_order_old_or_new() -> None:
+    conv = SessionConversation.model_validate({
+        "messages": [
+            {
+                "id": "m1",
+                "turnId": "t1",
+                "role": "assistant",
+                "text": "Let me check. Done.",
+                "events": [
+                    {"type": "text", "delta": "Let me check. "},
+                    {"type": "tool", "name": "orders_month", "status": "done"},
+                    {"type": "client_tool", "callId": "c", "name": "open", "wait": True,
+                     "status": "done"},
+                    {"type": "text", "delta": "Done."},
+                ],
+            },
+            {"id": "m0", "role": "assistant", "text": "Old.", "events": [{"type": "navigate",
+                                                                          "path": "/x"}]},
+        ]
+    })  # fmt: skip
+    new, old = conv.messages
+    assert new.turn_id == "t1"
+    assert [type(e) for e in new.shown] == [TextEvent, ToolEvent, ClientToolEvent, TextEvent]
+    assert isinstance(new.shown[2], ClientToolEvent) and new.shown[2].status == "done"
+    assert old.turn_id is None
+    assert [type(e) for e in old.shown] == [TextEvent, NavigateEvent]
+    assert isinstance(old.shown[0], TextEvent) and old.shown[0].delta == "Old."
 
 
 def test_chat_result_events_are_typed() -> None:

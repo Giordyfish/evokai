@@ -63,27 +63,87 @@ class _Repo:
     db: Database
 
 
+APPLICATION = "agents"
+"""The kind of an application row that is an application (``gateway``: a gateway)."""
+GATEWAY = "gateway"
+
+POLICY_FIELDS = frozenset({"security", "data_protection"})
+"""The application fields that make up its policy (each save of them is a new version)."""
+
+
+def policy_content(security: Any, data_protection: Any) -> dict[str, Any]:
+    """A policy's content as a version keeps it.
+
+    Returns:
+        ``{"security": ..., "data_protection": ...}`` (None for what is not set).
+    """
+    return {"security": security or None, "data_protection": data_protection or None}
+
+
+async def _add_version(
+    s: Any, owner_id: str, content: dict[str, Any], by: str, note: str | None
+) -> m.PolicyVersion | None:
+    """Write a new version of a policy in a session, unless the content is the latest's.
+
+    Returns:
+        The new version, or None when nothing changed.
+    """
+    q = (
+        sa
+        .select(m.PolicyVersion)
+        .where(m.PolicyVersion.owner_id == owner_id)
+        .order_by(m.PolicyVersion.number.desc())
+        .limit(1)
+    )
+    latest = (await s.execute(q)).scalar_one_or_none()
+    if latest is not None and latest.content == content:
+        return None
+    row = m.PolicyVersion(
+        id=new_id(),
+        owner_id=owner_id,
+        number=(latest.number if latest else 0) + 1,
+        content=content,
+        created_at=utcnow(),
+        created_by=by[:200],
+        note=note[:500] if note else None,
+    )
+    s.add(row)
+    await s.flush()
+    return row
+
+
 class ApplicationRepository(_Repo):
     """Applications and their keys."""
 
-    async def all(self) -> list[m.Application]:
-        """Every application (operator view).
+    async def all(self, kind: str | None = APPLICATION) -> list[m.Application]:
+        """Every application (operator view), never a gateway unless asked.
+
+        Args:
+            kind: ``agents`` (the default: applications only), ``gateway``, or None for both.
 
         Returns:
             Applications by name.
         """
         async with self.db.session() as s:
             q = sa.select(m.Application).order_by(m.Application.name)
+            if kind is not None:
+                q = q.where(m.Application.kind == kind)
             return list((await s.execute(q)).scalars().all())
 
-    async def by_slug(self, slug: str) -> m.Application | None:
-        """Find an application by slug.
+    async def by_slug(self, slug: str, kind: str | None = APPLICATION) -> m.Application | None:
+        """Find an application by slug (a gateway only when asked: slugs are shared).
+
+        Args:
+            slug: The slug.
+            kind: ``agents`` (the default), ``gateway``, or None for either.
 
         Returns:
             The application or None.
         """
         async with self.db.session() as s:
             q = sa.select(m.Application).where(m.Application.slug == slug)
+            if kind is not None:
+                q = q.where(m.Application.kind == kind)
             return (await s.execute(q)).scalar_one_or_none()
 
     async def get(self, application_id: str) -> m.Application | None:
@@ -95,8 +155,10 @@ class ApplicationRepository(_Repo):
         async with self.db.session() as s:
             return await s.get(m.Application, application_id)
 
-    async def create(self, slug: str, name: str, **fields: Any) -> m.Application:
-        """Create an application.
+    async def create(
+        self, slug: str, name: str, *, by: str = "evokai", **fields: Any
+    ) -> m.Application:
+        """Create an application, with version 1 of its policy.
 
         Returns:
             The new application.
@@ -104,13 +166,42 @@ class ApplicationRepository(_Repo):
         async with self.db.session() as s:
             app = m.Application(id=new_id(), slug=slug, name=name, **fields)
             s.add(app)
+            content = policy_content(fields.get("security"), fields.get("data_protection"))
+            await _add_version(s, app.id, content, by, None)
             return app
 
-    async def update(self, application_id: str, **fields: Any) -> None:
-        """Change an application's settings (caps, origins, models)."""
+    async def update(
+        self, application_id: str, *, by: str = "evokai", note: str | None = None, **fields: Any
+    ) -> m.PolicyVersion | None:
+        """Change an application's settings (caps, origins, models).
+
+        A change of its policy (``security``, ``data_protection``) that makes it differ from its
+        latest version writes a new version, in the same transaction, whatever the path.
+
+        Args:
+            application_id: The application.
+            by: Who changes it (the audit log's actor), for the policy version.
+            note: The policy version's note.
+            fields: The columns to set.
+
+        Returns:
+            The new policy version, or None when the policy did not change.
+        """
         async with self.db.session() as s:
             q = sa.update(m.Application).where(m.Application.id == application_id)
             await s.execute(q.values(**fields))
+            if not POLICY_FIELDS & set(fields):
+                return None
+            row = (
+                await s.execute(
+                    sa.select(m.Application.security, m.Application.data_protection).where(
+                        m.Application.id == application_id
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                return None
+            return await _add_version(s, application_id, policy_content(*row), by, note)
 
     async def add_key(
         self, application_id: str, kind: str, prefix: str, secret_hash: str, label: str = ""
@@ -757,6 +848,44 @@ class SessionRepository(_Repo):
                 .values(prompt_options=options)
             )
 
+    async def pin_module_versions(
+        self, session_id: str, pins: dict[str, tuple[dict[str, Any], int]]
+    ) -> dict[str, Any] | None:
+        """Pin module versions on the session's stored choice, keeping whatever else it holds now.
+
+        The choice is read again in the same transaction (locked on Postgres): a mint that replaced
+        it while the turn ran keeps its modules, values and locale, and a version another turn
+        pinned first stays.
+
+        Args:
+            session_id: The conversation.
+            pins: Module name to (its entry when the choice has none, the version to pin).
+
+        Returns:
+            The stored choice after pinning, or None when the conversation is gone.
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.Session.prompt_options).where(m.Session.id == session_id)
+            found = (await s.execute(q.with_for_update())).first()
+            if found is None:
+                return None
+            options = dict(found[0] or {"modules": {}, "locale": None})
+            modules = dict(options.get("modules") or {})
+            for name, (fallback, version) in pins.items():
+                entry = modules.get(name)
+                if entry is None:
+                    modules[name] = {**fallback, "version": version}
+                elif entry.get("version") is None:
+                    modules[name] = {**entry, "version": version}
+            options["modules"] = modules
+            await s.execute(
+                sa
+                .update(m.Session)
+                .where(m.Session.id == session_id)
+                .values(prompt_options=options)
+            )
+            return options
+
     async def set_client_tools(self, session_id: str, tools: list[dict[str, Any]] | None) -> None:
         """Replace the custom client tools the session token declared."""
         async with self.db.session() as s:
@@ -1206,6 +1335,20 @@ class MessageRepository(_Repo):
             )
             rows = (await s.execute(q)).scalars().all()
         return list(reversed(rows))
+
+    async def append_events(self, w: Who, message_id: str, events: list[Any]) -> None:
+        """Add what was shown after a message was stored to its parts (``sessions.parts``)."""
+        if not events:
+            return
+        async with self.db.session() as s:
+            q = sa.select(m.Message).where(
+                m.Message.id == message_id,
+                m.Message.application_id == w.application_id,
+                m.Message.subject == w.subject,
+            )
+            row = (await s.execute(q)).scalar_one_or_none()
+            if row is not None:
+                row.events = [*(row.events or []), *events]
 
     async def set_feedback(self, w: Who, message_id: str, value: int | None) -> bool:
         """Thumbs up/down on a message.
@@ -1869,6 +2012,17 @@ class VoiceRepository(_Repo):
             await s.execute(sa.delete(v).where(v.provider == provider, v.voice_id == voice_id))
             s.add(v(id=new_id(), provider=provider, voice_id=voice_id, **fields))
 
+    async def get(self, provider: str, voice_id: str) -> m.VoiceRecord | None:
+        """One voice of the catalogue.
+
+        Returns:
+            The record, or None.
+        """
+        async with self.db.session() as s:
+            v = m.VoiceRecord
+            q = sa.select(v).where(v.provider == provider, v.voice_id == voice_id)
+            return (await s.execute(q)).scalars().first()
+
     async def all(self, language: str | None = None) -> list[m.VoiceRecord]:
         """Voices, optionally for one language.
 
@@ -2139,6 +2293,11 @@ class SecurityEventRepository(_Repo):
             return _rowcount(r)
 
 
+SYSTEM_AUDIT_MIN_DAYS = 30
+"""The shortest a system application keeps its audit log: no less than its conversations at most
+(``evokai.assistant.privacy.MAX_TTL_DAYS``)."""
+
+
 class AuditRepository(_Repo):
     """The audit log of changes."""
 
@@ -2195,6 +2354,10 @@ class AuditRepository(_Repo):
     async def purge(self, default_ttl_days: int | None, now: datetime | None = None) -> int:
         """Delete entries past their application's time to live (deployment entries: the default).
 
+        A system application keeps its entries ``SYSTEM_AUDIT_MIN_DAYS`` at least, whatever the
+        deployment's default: its owners' inspections of people's conversations live there, and
+        their authors must see them as long as the conversations exist.
+
         Returns:
             How many were deleted.
         """
@@ -2203,12 +2366,16 @@ class AuditRepository(_Repo):
         deleted = 0
         async with self.db.session() as s:
             apps = (
-                await s.execute(sa.select(m.Application.id, m.Application.audit_ttl_days))
+                await s.execute(
+                    sa.select(m.Application.id, m.Application.audit_ttl_days, m.Application.system)
+                )
             ).all()
-            for app_id, ttl in [*apps, (None, None)]:
+            for app_id, ttl, system in [*apps, (None, None, False)]:
                 days = ttl or default_ttl_days
                 if not days:
                     continue
+                if system:
+                    days = max(int(days), SYSTEM_AUDIT_MIN_DAYS)
                 owner = a.application_id.is_(None) if app_id is None else a.application_id == app_id
                 cutoff = now - timedelta(days=int(days))
                 r = await s.execute(sa.delete(a).where(owner, a.at < cutoff))
@@ -2308,6 +2475,136 @@ class ConsoleSettingRepository(_Repo):
         """
         async with self.db.session() as s:
             r = await s.execute(sa.delete(m.ConsoleSetting).where(m.ConsoleSetting.key == key))
+            return _rowcount(r) > 0
+
+
+class PolicyRepository(_Repo):
+    """Versions and tests of policies.
+
+    The owner is ``system`` for the system policy, else the application's id.
+    """
+
+    async def add_version(
+        self, owner_id: str, content: dict[str, Any], by: str, note: str | None = None
+    ) -> m.PolicyVersion | None:
+        """Write a new version (the system policy's; an application's is written by its update).
+
+        Returns:
+            The new version, or None when the content is the latest's.
+        """
+        async with self.db.session() as s:
+            return await _add_version(s, owner_id, content, by, note)
+
+    async def latest(self, owner_id: str) -> m.PolicyVersion | None:
+        """The latest version of a policy.
+
+        Returns:
+            The version, or None when it has none.
+        """
+        async with self.db.session() as s:
+            q = (
+                sa
+                .select(m.PolicyVersion)
+                .where(m.PolicyVersion.owner_id == owner_id)
+                .order_by(m.PolicyVersion.number.desc())
+                .limit(1)
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def versions(self, owner_id: str, limit: int = 200) -> list[m.PolicyVersion]:
+        """A policy's versions, newest first.
+
+        Returns:
+            Versions.
+        """
+        async with self.db.session() as s:
+            q = (
+                sa
+                .select(m.PolicyVersion)
+                .where(m.PolicyVersion.owner_id == owner_id)
+                .order_by(m.PolicyVersion.number.desc())
+                .limit(limit)
+            )
+            return list((await s.execute(q)).scalars().all())
+
+    async def version(self, owner_id: str, number: int) -> m.PolicyVersion | None:
+        """One version of a policy.
+
+        Returns:
+            The version or None.
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.PolicyVersion).where(
+                m.PolicyVersion.owner_id == owner_id, m.PolicyVersion.number == number
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def tests(self, owner_id: str) -> list[m.PolicyTest]:
+        """A policy's tests, by name.
+
+        Returns:
+            Tests.
+        """
+        async with self.db.session() as s:
+            q = (
+                sa
+                .select(m.PolicyTest)
+                .where(m.PolicyTest.owner_id == owner_id)
+                .order_by(m.PolicyTest.name)
+            )
+            return list((await s.execute(q)).scalars().all())
+
+    async def test(self, owner_id: str, test_id: str) -> m.PolicyTest | None:
+        """One test of a policy.
+
+        Returns:
+            The test or None.
+        """
+        async with self.db.session() as s:
+            row = await s.get(m.PolicyTest, test_id)
+            return row if row is not None and row.owner_id == owner_id else None
+
+    async def by_name(self, owner_id: str, name: str) -> m.PolicyTest | None:
+        """A test of a policy by name.
+
+        Returns:
+            The test or None.
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.PolicyTest).where(
+                m.PolicyTest.owner_id == owner_id, m.PolicyTest.name == name
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def put_test(self, owner_id: str, test_id: str | None, **fields: Any) -> m.PolicyTest:
+        """Create a test (no id) or replace one.
+
+        Returns:
+            The test.
+        """
+        async with self.db.session() as s:
+            row = await s.get(m.PolicyTest, test_id) if test_id else None
+            if row is None or row.owner_id != owner_id:
+                row = m.PolicyTest(id=new_id(), owner_id=owner_id, created_at=utcnow())
+                s.add(row)
+            for k, v in fields.items():
+                setattr(row, k, v)
+            row.updated_at = utcnow()
+            await s.flush()
+            return row
+
+    async def delete_test(self, owner_id: str, test_id: str) -> bool:
+        """Remove a test.
+
+        Returns:
+            Whether it existed.
+        """
+        async with self.db.session() as s:
+            r = await s.execute(
+                sa.delete(m.PolicyTest).where(
+                    m.PolicyTest.id == test_id, m.PolicyTest.owner_id == owner_id
+                )
+            )
             return _rowcount(r) > 0
 
 
@@ -2845,6 +3142,7 @@ class Store:
         self.console_users = ConsoleUserRepository(db)
         self.console_settings = ConsoleSettingRepository(db)
         self.console_preferences = ConsolePreferenceRepository(db)
+        self.policies = PolicyRepository(db)
         self.evals = EvalRepository(db)
         self.traces = TraceRepository(db)
         self.review_notes = ReviewNoteRepository(db)
@@ -2867,6 +3165,9 @@ class Store:
 
         self.capabilities = CapabilityRecordRepository(db)
         self.capability_credentials = CapabilityCredentialRepository(db)
+        from evokai.gateway.store import GatewayRepository
+
+        self.gateway = GatewayRepository(db)
 
 
 def _aware(value: datetime) -> datetime:

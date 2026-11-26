@@ -4,6 +4,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'preact/hoo
 
 import type { ConsoleApplication, ConsoleMe } from '@client/core/types'
 import { loggedOut } from './api'
+import { GW_TABS, type GwTab } from './gateway'
 import { progress } from './magic'
 import { t } from './i18n'
 
@@ -12,7 +13,8 @@ export type Tab =
   | 'usage' | 'traces' | 'conversations' | 'security' | 'privacy' | 'providers' | 'compliance' | 'audit'
 export type Route =
   | { view: 'app'; app: string; tab: Tab; id: string | null; q: URLSearchParams }
-  | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'assistant' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
+  | { view: 'gateways'; gateway: string | null; tab: GwTab; q: URLSearchParams }
+  | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'policy' | 'assistant' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
 
 const TABS: Tab[] = ['overview', 'agents', 'evals', 'perms', 'mcp', 'connections', 'channels', 'skills', 'prompts', 'knowledge', 'workflows', 'approvals', 'keys', 'limits', 'usage', 'traces', 'conversations', 'security', 'privacy', 'providers', 'compliance', 'audit']
 
@@ -25,9 +27,14 @@ export function parseRoute(hash = location.hash): Route {
     if (!TABS.includes(tab)) return { view: 'missing', q }
     return { view: 'app', app: p[1], tab, id: p[3] ?? null, q }
   }
+  if (p[0] === 'gateways') {
+    const tab = (p[2] || 'people') as GwTab
+    if (!GW_TABS.includes(tab)) return { view: 'missing', q }
+    return { view: 'gateways', gateway: p[1] || null, tab, q }
+  }
   const view = p[0] as Route['view']
   if (p[0] === 'me') return { view: 'preferences', q }
-  if (['apps', 'setup', 'playground', 'usage', 'health', 'access', 'assistant', 'preferences', 'login'].includes(view)) return { view, q } as Route
+  if (['apps', 'setup', 'playground', 'usage', 'health', 'access', 'policy', 'assistant', 'preferences', 'login'].includes(view)) return { view, q } as Route
   if (view === 'states' && import.meta.env.DEV) return { view, q }
   return { view: 'missing', q }
 }
@@ -42,7 +49,10 @@ export const appHref = (slug: string, tab: Tab = 'overview', id?: string): strin
 
 export interface Console {
   me: ConsoleMe
+  /** The applications the console lists (not the assistant's own while the assistant is off). */
   apps: ConsoleApplication[]
+  /** Every application of this login, the hidden ones too (the Assistant page reads its own role there). */
+  allApps: ConsoleApplication[]
   canCreate: boolean
   reloadApps: () => Promise<void>
   /** The login ended: back to sign in. */

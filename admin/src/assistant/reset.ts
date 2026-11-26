@@ -14,7 +14,12 @@ export interface ResetItem {
 export interface ResetPreview {
   slug: string
   items: ResetItem[]
+  /** The plan's fingerprint: the reset takes it back and deletes nothing the preview did not show. */
+  plan: string
 }
+
+/** Whether a reset was refused because what it deletes changed since its preview. */
+export const planChanged = (e: unknown): boolean => (e as { code?: string } | null)?.code === 'plan_changed'
 
 /** The items the reset deletes. */
 export const deleted = (p: ResetPreview): ResetItem[] => p.items.filter((i) => i.action === 'delete')
