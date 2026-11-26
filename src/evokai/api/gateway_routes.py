@@ -2,6 +2,10 @@
 
 - ``POST {base}/gw/anthropic/v1/messages`` and ``.../v1/messages/count_tokens``: the Anthropic
   Messages API, for Claude Code (``ANTHROPIC_BASE_URL={base}/gw/anthropic``).
+- ``POST {base}/gw/openai/v1/responses``: the OpenAI Responses API, for Codex (a model provider
+  with ``base_url = "{base}/gw/openai/v1"`` and ``wire_api = "responses"``). A ChatGPT login goes
+  to ChatGPT's Codex backend, an API key to the OpenAI API. ``GET .../v1/models`` lists the
+  models of that upstream, so Codex's model refresh works.
 
 The person's gateway key comes in ``x-evokai-key``; every other header, the query and the body go
 to the provider as they came (``evokai.gateway.relay``). Errors are the provider's own shape. These
@@ -38,3 +42,23 @@ async def anthropic_count_tokens(request: Request) -> Response:
     return await request.app.state.services.gateway.relay(
         request, ANTHROPIC, "/v1/messages/count_tokens"
     )
+
+
+@router.post("/openai/v1/responses")
+async def openai_responses(request: Request) -> Response:
+    """Codex's model calls, to the OpenAI Responses API (or ChatGPT's Codex backend).
+
+    Returns:
+        The provider's answer, streamed, or the gateway's refusal.
+    """
+    return await request.app.state.services.gateway.openai(request)
+
+
+@router.get("/openai/v1/models")
+async def openai_models(request: Request) -> Response:
+    """Codex's list of models, from the upstream its login goes to.
+
+    Returns:
+        The provider's answer, or the gateway's refusal.
+    """
+    return await request.app.state.services.gateway.openai_models(request)

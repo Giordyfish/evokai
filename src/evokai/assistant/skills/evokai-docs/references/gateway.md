@@ -1,7 +1,7 @@
 # Gateways for coding tools
 
-A **gateway** lets the people of an organisation use Claude Code with their own company seats (Claude Team or
-Enterprise) through Evokai, under the organisation's controls. Evokai forwards each tool's own API to the provider
+A **gateway** lets the people of an organisation use Claude Code and Codex with their own company seats (Claude
+Team or Enterprise, ChatGPT Business or Enterprise) through Evokai, under the organisation's controls. Evokai forwards each tool's own API to the provider
 unchanged: the person's login, every header and the body go through as they came, and the answer streams back byte for
 byte. Before forwarding, the gateway checks who is asking and what they send; it records one row per request (tokens,
 timings, outcome), never the content.
@@ -14,8 +14,8 @@ one gateway.
 ## Set it up
 
 1. A deployment owner (the operator key, or a console owner of every application) creates the gateway: the console's
-   **Gateways** page, or `POST /v1/admin/gateways` with `{slug, name, providers}` (`providers`: `anthropic`). Slugs are
-   shared with applications.
+   **Gateways** page, or `POST /v1/admin/gateways` with `{slug, name, providers}` (`providers`: `anthropic` for
+   Claude Code, `openai` for Codex). Slugs are shared with applications.
 2. An operator gives each person their **personal gateway key** on the gateway's **People** page (or
    `POST /v1/admin/gateways/{id}/people` with `{label}`, the person's name or e-mail). The key (`evk_gw_...`) is shown
    once; only its hash is stored. Revoking it (`DELETE .../people/{key_id}`) refuses the person's requests at once.
@@ -38,6 +38,20 @@ one gateway.
    The person stays logged in to Claude Code with their claude.ai account: the gateway forwards their login, it has
    no provider key of its own.
 
+   For Codex, each person adds a model provider to `~/.codex/config.toml` that keeps their ChatGPT login
+   (`requires_openai_auth`) and sends their key from an environment variable (`export EVOKAI_GATEWAY_KEY=evk_gw_...`):
+
+   ```toml
+   model_provider = "evokai"
+
+   [model_providers.evokai]
+   name = "Evokai"
+   base_url = "https://evokai.example.com/agent/gw/openai/v1"
+   wire_api = "responses"
+   requires_openai_auth = true
+   env_http_headers = { "x-evokai-key" = "EVOKAI_GATEWAY_KEY" }
+   ```
+
 The addresses are the same for everyone: the key alone says who is asking and through which gateway.
 
 ## The door
@@ -46,8 +60,18 @@ The addresses are the same for everyone: the key alone says who is asking and th
 | --- | --- | --- |
 | `POST {base}/gw/anthropic/v1/messages` (Claude Code adds `?beta=true`) | `https://api.anthropic.com/v1/messages` | Claude Code |
 | `POST {base}/gw/anthropic/v1/messages/count_tokens` | `https://api.anthropic.com/v1/messages/count_tokens` | Claude Code (`/context`) |
+| `POST {base}/gw/openai/v1/responses` with a ChatGPT login | `https://chatgpt.com/backend-api/codex/responses` | Codex |
+| `POST {base}/gw/openai/v1/responses` with an API key (`sk-...`) | `https://api.openai.com/v1/responses` | Codex |
+| `GET {base}/gw/openai/v1/models` | the same upstream's `/models` | Codex (its model list) |
 
-`EVOKAI_GATEWAY_ANTHROPIC_URL` changes the upstream (a test double, a proxy); `EVOKAI_GATEWAY_TIMEOUT_SECONDS` (900) is
+Codex's upstream is chosen from the person's token, which the gateway looks at and never verifies, logs or keeps: a
+ChatGPT login's token is a JWT whose claims hold `https://api.openai.com/auth` (with `chatgpt_account_id`), and goes
+to ChatGPT's Codex backend with the headers Codex sends (`chatgpt-account-id`, `originator`, `session-id`...); an API
+key goes to the OpenAI API; any other token is refused (401). The body is forwarded as Codex sends it, never
+translated. The model list is forwarded for a live key of a gateway with OpenAI enabled, and recorded nowhere.
+
+`EVOKAI_GATEWAY_ANTHROPIC_URL`, `EVOKAI_GATEWAY_CHATGPT_URL` and `EVOKAI_GATEWAY_OPENAI_URL` change the upstreams (a
+test double, a proxy); `EVOKAI_GATEWAY_TIMEOUT_SECONDS` (900) is
 the longest the gateway waits for the provider's next bytes.
 
 What goes up: the body bytes as they came, the query, and every header except the hop-by-hop ones (`connection`,
@@ -80,8 +104,9 @@ In order, before anything is forwarded; the first that refuses ends them.
 A token count (`count_tokens`) passes the key, provider, model and data protection checks only: it is not a model call,
 and its content is checked when it is sent for real.
 
-A refusal is in the provider's error shape (`{"type": "error", "error": {"type": "invalid_request_error", "message":
-...}}`) with `x-should-retry: false`, and a message the person reads in their tool, for example:
+A refusal is in the provider's error shape (Anthropic: `{"type": "error", "error": {"type": "invalid_request_error",
+"message": ...}}` with `x-should-retry: false`; OpenAI: `{"error": {"message", "type", "code", "param"}}`), with a
+message the person reads in their tool, for example:
 
 ```text
 API Error: 400 Evokai gateway: this request was not sent because it contains what looks like a secret or credential
@@ -96,7 +121,9 @@ request, and the security event is written once.
 ### Which text is checked
 
 Only the **new text** of a request: the newest user turn's text and the tool results since the previous assistant
-message (what the person or their files add now). The conversation's history was checked when it was new and is not
+message (what the person or their files add now). For Codex: the `user` messages and the tool outputs
+(`function_call_output`, `custom_tool_call_output`, `local_shell_call_output`) after the model's last item; its
+`instructions` and `developer` messages are the tool's own. The conversation's history was checked when it was new and is not
 checked again; the tool's own system prompt (and its mid-conversation reminders) is not the person's and is not checked.
 A secret pasted early in a conversation is refused on that request; once refused it never reaches the history.
 
@@ -136,7 +163,8 @@ input (`tests/test_gateway.py`).
 ## Records
 
 - **One row per request** (`evokai_gateway_requests`): the gateway, the person (key id and label), the provider, the
-  model, input, output and cache tokens read from the stream (`message_start` and `message_delta` usage), the request
+  model, input, output and cache tokens read from the stream (Anthropic's `message_start` and `message_delta`
+  usage, OpenAI's `response.completed`), the request
   and answer sizes, the time to the provider's first byte and the duration, and the outcome: `forwarded`,
   `upstream_error` (the provider answered an error), `blocked` (with the control), `failed` (the provider could not be
   reached, or its stream broke) or `cancelled` (the tool went away). **No content, and no amount**: the traffic is the
