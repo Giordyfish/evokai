@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Route
 
+from evokai import policies
 from evokai.agents.bootstrap import bootstrap, bootstrap_apps
 from evokai.api import (
     a2a_routes,
@@ -33,6 +34,7 @@ from evokai.api import (
     grants_routes,
     knowledge_routes,
     openai_routes,
+    policy_routes,
     preferences_routes,
     privacy_routes,
     provider_routes,
@@ -132,6 +134,16 @@ async def _housekeeping(svc: Services) -> None:
         await asyncio.sleep(300)
 
 
+async def _refresh_system_policy(svc: Services) -> None:
+    """Reload the system policy now and then (a save on another instance)."""
+    while True:
+        await asyncio.sleep(policies.REFRESH_SECONDS)
+        try:
+            await policies.load_system(svc.store)
+        except Exception as e:
+            logger.warning("system_policy_not_loaded", extra={"error_type": type(e).__name__})
+
+
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
     """Build the application.
 
@@ -183,7 +195,12 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         # Mailboxes read over IMAP are polled from now on.
         with contextlib.suppress(Exception):
             await svc.channels.start()
+        # The system policy applies from the first turn, and another instance's save reaches
+        # this one within policies.REFRESH_SECONDS.
+        with contextlib.suppress(Exception):
+            await policies.load_system(svc.store)
         task = asyncio.create_task(_housekeeping(svc))
+        refresh = asyncio.create_task(_refresh_system_policy(svc))
         # A local classifier model loads now, not on the first turn that needs it.
         warm = asyncio.create_task(svc.guard.classifiers.warm_up())
         try:
@@ -191,6 +208,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 yield
         finally:
             task.cancel()
+            refresh.cancel()
             warm.cancel()
             await svc.close()
 
@@ -307,6 +325,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(provider_routes.router)
     root.include_router(compliance_routes.router)
     root.include_router(security_routes.router)
+    root.include_router(policy_routes.router)
     root.include_router(privacy_routes.router)
     root.include_router(sso_routes.router)
     root.include_router(preferences_routes.router)

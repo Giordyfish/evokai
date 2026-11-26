@@ -10,6 +10,23 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
+  application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:
+  a minimum mode per control (the stricter of the minimum and the resolved mode applies), a data protection profile
+  every application's processors must meet as well as their own, and default settings an application may change.
+- Policy versions: every save of an application's policy or of the system policy, through any path (security, data
+  protection, the config file, a restore, a copy), writes an immutable version with who, when and a note. List, get,
+  compare (`/diff`) and restore them (`/v1/admin/policy/...`, `/v1/console/system-policy/...`); the Security page and
+  the System policy page show them. The migration gives every existing application version 1.
+- Policy tests: texts and the outcome the guard's input checks must give them, overall or per control. They run those
+  checks only (no model, no classifier), on demand and before every save of a policy's security part; a save whose
+  tests fail is refused (409 `policy_tests_failed`) unless `force` is set.
+- Copy from: an application's policy or the system policy copies another policy the caller can see, as a new version.
+- A guard control `input.secrets` (monitor by default): the secret detectors of `output.secrets` on the person's
+  message; enforced, the turn is refused before the model sees it.
+- ISO/IEC 42001:2023 Annex A in the `controls` compliance pack: its 38 controls with short titles in our own words,
+  an honest status (most are the organisation's) and evidence pointers, in English and Italian.
+
 - The console assistant sees the page and moves it: `read_page` reads the figures and names the person sees,
   `show_on_page` scrolls to a text and highlights it, or scrolls by a screen.
 - `client_tools.chart_from_tools`: an agent's charts show only numbers its tools returned in the same turn; a chart

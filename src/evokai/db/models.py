@@ -640,6 +640,45 @@ class ConsoleSetting(Base):
     updated_by: Mapped[str] = mapped_column(sa.String(200), default="")
 
 
+class PolicyVersion(Base):
+    """A saved version of a policy: the system policy's or an application's (a gateway's too).
+
+    Immutable: every save writes a new row, a restore writes the old content as a new one. The
+    content is ``{"security": ..., "data_protection": ...}``. An application's current policy is
+    on its row (and is its latest version); the system policy is its latest version.
+    """
+
+    __tablename__ = "evokai_policy_versions"
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ID)
+    """The application's id, or ``system`` for the deployment's system policy."""
+    number: Mapped[int] = mapped_column(sa.Integer)
+    content: Mapped[dict[str, Any]] = mapped_column(sa.JSON)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    created_by: Mapped[str] = mapped_column(sa.String(200), default="")
+    """Who saved it, as the audit log names them (``config`` for the config file)."""
+    note: Mapped[str | None] = mapped_column(sa.String(500))
+    __table_args__ = (sa.UniqueConstraint("owner_id", "number", name="uq_evokai_policy_version"),)
+
+
+class PolicyTest(Base):
+    """A policy test: a text and the outcome the guard's input checks must give it."""
+
+    __tablename__ = "evokai_policy_tests"
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ID)
+    """The application's id, or ``system`` for the system policy's tests."""
+    name: Mapped[str] = mapped_column(sa.String(120))
+    input: Mapped[str] = mapped_column(sa.Text)
+    outcome: Mapped[str | None] = mapped_column(sa.String(8))
+    """The expected outcome of the whole text: ``allowed``, ``flagged`` or ``blocked``."""
+    controls: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """The expected outcome per control (control id to ``allowed``, ``flagged`` or ``blocked``)."""
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    __table_args__ = (sa.UniqueConstraint("owner_id", "name", name="uq_evokai_policy_test"),)
+
+
 class ConsolePreferences(Base):
     """The console preferences of one console identity (language, appearance, accessibility).
 

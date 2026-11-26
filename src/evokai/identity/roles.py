@@ -30,6 +30,11 @@ RANK: dict[str, int] = {r: i for i, r in enumerate(ROLES)}
 OWNER_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("PATCH", "/v1/admin/application"),
     ("PUT", "/v1/admin/security"),
+    ("POST", "/v1/admin/policy/versions/{number}/restore"),
+    ("POST", "/v1/admin/policy/copy"),
+    ("POST", "/v1/admin/policy/tests"),
+    ("PUT", "/v1/admin/policy/tests/{test_id}"),
+    ("DELETE", "/v1/admin/policy/tests/{test_id}"),
     ("PUT", "/v1/admin/voices/{provider}/{voice_id}"),
     ("POST", "/v1/admin/agents/{agent}/versions/{version}/publish"),
     ("PUT", "/v1/admin/compliance/profile"),
@@ -41,7 +46,8 @@ OWNER_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/v1/admin/assistant/try"),
     ("POST", "/v1/admin/assistant/conversations/{conversation_id}/inspect"),
 })
-"""Changes that need the owner role (application settings and policy, the deployment's voices)."""
+"""Changes that need the owner role (application settings and policy, its versions and tests, the
+deployment's voices)."""
 
 READ_ONLY_POSTS: frozenset[str] = frozenset({
     "/v1/console/skills/parse",
@@ -50,6 +56,7 @@ READ_ONLY_POSTS: frozenset[str] = frozenset({
     "/v1/admin/agents/{agent}/try",
     "/v1/console/assistant/session",
     "/v1/console/assistant/privacy",
+    "/v1/admin/policy/tests/run",
 })
 """POST routes that change nothing of the application (they parse what they are sent, open the
 console assistant's own session, which acts with the caller's role, or try an agent in a

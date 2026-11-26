@@ -1,9 +1,10 @@
 /**
- * Security: the application's policy (each control off, in monitor or enforced, with its OWASP ids), what each agent
- * overrides, the events with filters and their counts by rule. Snippets are masked by the service: no secret or raw
- * personal data ever reaches this page.
+ * Security: the application's policy (each control off, in monitor or enforced, with its OWASP ids, and the minimum the
+ * system policy sets), what each agent overrides, the policy's versions and tests, a copy from another policy, the
+ * events with filters and their counts by rule. Snippets are masked by the service: no secret or raw personal data
+ * ever reaches this page.
  */
-import { useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 
 import type {
   Application,
@@ -14,7 +15,9 @@ import type {
   SecurityPolicy,
   SecurityView,
 } from '@client/core/types'
-import { describe, forApp } from '../api'
+import { adminJson, describe, forApp } from '../api'
+import { appPolicy, type PolicyTestResult, testFailures } from '../policy'
+import { CopyPolicy, PolicyHistory, PolicyTests, TestFailures } from './PolicyTools'
 import {
   CLASSIFIER_CHOICES,
   type Choice,
@@ -30,7 +33,7 @@ import {
 import { ago, csv, dateTime, download } from '../format'
 import { DEFAULT_MIN_SCORE, GATE_MODES, type GateMode } from '../redteam'
 import { done, Empty, sparkle, toast } from '../magic'
-import { appHref, setTitle, useLoad } from '../state'
+import { appHref, setTitle, useConsole, useLoad } from '../state'
 import { Bar, Btn, Field, Hero, Panel, Seg, Switch, Tag, type Tone } from '../ui'
 import { Loads } from './common'
 import { has, num, t, tn, type TextKey } from '../i18n'
@@ -56,12 +59,26 @@ const sevLabel = (s: string): string => ((SEVERITIES as readonly string[]).inclu
 export function Security({ app }: { app: ConsoleApplication }) {
   setTitle(t('tab.security'), app.name)
   const api = forApp(app.id)
+  const c = useConsole()
   const load = useLoad(() => api.admin.security.get(), [app.id])
+  const policy = useMemo(() => appPolicy(app.id), [app.id])
+  const owner = app.role === 'owner'
+  // What this person may copy from: the system policy (deployment owners) and the other applications they see.
+  // A slug never starts with '*': the system policy's entry cannot be taken for an application.
+  const sources = [
+    ...(c.me.deploymentOwner ? [{ value: '*system', label: t('pol.systemSource'), system: true }] : []),
+    ...c.apps.filter((a) => a.id !== app.id).map((a) => ({ value: a.slug, label: a.name })),
+  ]
   return (
     <>
       <Loads load={load} what={t('what.securityPolicy')}>
         {(view) => <Policy key={JSON.stringify(view.policy)} app={app} view={view} onSaved={(v) => load.set(v)} onReload={load.reload} />}
       </Loads>
+      <div class="grid g2" style="margin-top:16px">
+        <PolicyHistory api={policy} canEdit={owner} onChanged={load.reload} stamp={load.data?.version} />
+        <PolicyTests api={policy} canEdit={owner} stamp={load.data?.version} />
+      </div>
+      {owner ? <CopyPolicy api={policy} sources={sources} onChanged={load.reload} /> : null}
       <RedTeamGate app={app} />
       <Events app={app} />
     </>
@@ -221,9 +238,12 @@ function Policy({
   const [json, setJson] = useState(JSON.stringify(settingsOf(view.policy), null, 2))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const [failures, setFailures] = useState<PolicyTestResult[] | null>(null)
+  const floors = view.effective.floors ?? {}
 
-  const save = async (e: Event) => {
-    const btn = e.currentTarget as Element
+  const save = async (e: Event | null, force = false) => {
+    const btn = e ? (e.currentTarget as Element) : null
     let settings: Record<string, unknown>
     try {
       settings = json.trim() ? (JSON.parse(json) as Record<string, unknown>) : {}
@@ -234,13 +254,21 @@ function Policy({
     setSaving(true)
     setError(null)
     try {
-      const v = await forApp(app.id).admin.security.put(policyFrom(base, modes, settings))
+      // A save is a new version of the policy: the note goes with it; force saves although policy tests fail.
+      const q = new URLSearchParams()
+      if (note.trim()) q.set('note', note.trim())
+      if (force) q.set('force', 'true')
+      const query = q.toString()
+      const v = await adminJson<SecurityView>(app.id, 'PUT', `/v1/admin/security${query ? `?${query}` : ''}`, policyFrom(base, modes, settings))
       sparkle(btn)
       done(btn)
+      setFailures(null)
       toast(t('sec.saved'), t('sec.savedSub'))
       onSaved(v)
     } catch (err) {
-      setError(describe(err))
+      const f = testFailures(err)
+      if (f) setFailures(f)
+      else setError(describe(err))
     } finally {
       setSaving(false)
     }
@@ -252,11 +280,15 @@ function Policy({
         title={t('tab.security')}
         sub={t('sec.sub')}
         actions={
-          <Btn kind="pri" check busy={saving ? t('common.saving') : false} onClick={(e) => void save(e)}>
-            {t('common.save')}
-          </Btn>
+          <span style="display:flex;gap:8px;align-items:center">
+            <input class="in" style="max-width:240px" maxLength={500} value={note} placeholder={t('pol.note')} title={t('pol.noteHint')} onInput={(e) => setNote(e.currentTarget.value)} />
+            <Btn kind="pri" check busy={saving ? t('common.saving') : false} onClick={(e) => void save(e)}>
+              {t('common.save')}
+            </Btn>
+          </span>
         }
       />
+      {failures ? <TestFailures failures={failures} busy={saving} onForce={() => void save(null, true)} /> : null}
       {!view.enabled ? (
         <p class="hint" style="color:var(--s-bad);margin-bottom:12px">
           {t('sec.guardOff')}
@@ -304,6 +336,7 @@ function Policy({
                         {now}
                       </Tag>
                       {now !== c.default ? <div class="s">{t('sec.defaultMode', { mode: c.default })}</div> : null}
+                      {floors[c.id] ? <div class="s">{t('pol.min', { mode: floors[c.id]! })}</div> : null}
                     </td>
                     <td style="white-space:nowrap">
                       <Seg

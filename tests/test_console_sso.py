@@ -350,8 +350,9 @@ async def test_a_viewer_is_refused_on_every_change(env: Env, idp: FakeIdp) -> No
             "/agent/v1/admin/knowledge/{name}/search",
             "/agent/v1/admin/workflows/validate",
             "/agent/v1/admin/agents/{agent}/try",
+            "/agent/v1/admin/policy/tests/run",
         }:
-            continue  # parses text, tries a search or an agent: changes nothing
+            continue  # parses text, tries a search, an agent or policy tests: changes nothing
         if path.startswith(("/agent/v1/workflow-hooks/", "/agent/v1/channels/")):
             continue  # an outside system's signed webhook or channel delivery, not a console route
         if path == "/agent/v1/console/me/preferences":
