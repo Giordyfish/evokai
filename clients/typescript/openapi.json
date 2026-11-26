@@ -5707,6 +5707,28 @@
       "SpeechRequest": {
         "description": "What to speak: a text, or a ``say`` segment of this conversation.",
         "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "characters": {
+            "default": false,
+            "title": "Characters",
+            "type": "boolean"
+          },
           "format": {
             "default": "pcm",
             "enum": [
@@ -5728,6 +5750,19 @@
               }
             ],
             "title": "Index"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
           },
           "sampleRate": {
             "default": 24000,
@@ -6907,6 +6942,18 @@
               }
             ],
             "title": "Region"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "required": [
@@ -13489,7 +13536,7 @@
     },
     "/agent/v1/admin/voices/{provider}/{voice_id}": {
       "put": {
-        "description": "Add or replace a voice in the deployment's catalog (owner).\n\nReturns:\n    ok.",
+        "description": "Add or replace a voice in the deployment's catalog (owner).\n\nReturns:\n    ok.\n\nRaises:\n    BadRequest: Settings its engine does not take.",
         "operationId": "put_voice_agent_v1_admin_voices__provider___voice_id__put",
         "parameters": [
           {
@@ -17264,7 +17311,7 @@
     },
     "/agent/v1/session/speech": {
       "post": {
-        "description": "Speak a text or a ``say`` segment with the session's speech engine.\n\nA segment that is not in this conversation is 404.\n\nReturns:\n    The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).\n\nRaises:\n    BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.",
+        "description": "Speak a text or a ``say`` segment with the session's speech engine.\n\nA segment that is not in this conversation is 404. The voice's catalogue settings (model,\nspeed, the engine's options) apply; a segment follows the earlier segments of its turn, a text\nthe speech named in ``after``.\n\nReturns:\n    The event stream (``start``, ``audio``, ``word``, ``chars``, ``mark``, ``viseme``,\n    ``done``).\n\nRaises:\n    BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.",
         "operationId": "speech_agent_v1_session_speech_post",
         "requestBody": {
           "content": {

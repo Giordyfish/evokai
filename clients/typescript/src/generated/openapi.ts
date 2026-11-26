@@ -2836,6 +2836,9 @@ export interface paths {
          *
          *     Returns:
          *         ok.
+         *
+         *     Raises:
+         *         BadRequest: Settings its engine does not take.
          */
         put: operations["put_voice_agent_v1_admin_voices__provider___voice_id__put"];
         post?: never;
@@ -4806,10 +4809,13 @@ export interface paths {
          * Speech
          * @description Speak a text or a ``say`` segment with the session's speech engine.
          *
-         *     A segment that is not in this conversation is 404.
+         *     A segment that is not in this conversation is 404. The voice's catalogue settings (model,
+         *     speed, the engine's options) apply; a segment follows the earlier segments of its turn, a text
+         *     the speech named in ``after``.
          *
          *     Returns:
-         *         The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).
+         *         The event stream (``start``, ``audio``, ``word``, ``chars``, ``mark``, ``viseme``,
+         *         ``done``).
          *
          *     Raises:
          *         BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.
@@ -7449,6 +7455,13 @@ export interface components {
          * @description What to speak: a text, or a ``say`` segment of this conversation.
          */
         SpeechRequest: {
+            /** After */
+            after?: string[] | null;
+            /**
+             * Characters
+             * @default false
+             */
+            characters?: boolean;
             /**
              * Format
              * @default pcm
@@ -7457,6 +7470,8 @@ export interface components {
             format?: "pcm" | "opus";
             /** Index */
             index?: number | null;
+            /** Language */
+            language?: string | null;
             /**
              * Samplerate
              * @default 24000
@@ -7880,6 +7895,10 @@ export interface components {
             name: string;
             /** Region */
             region?: string | null;
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * VoiceDef

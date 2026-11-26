@@ -30,6 +30,7 @@ from evokai.agents.templates import check_agent_templates, check_prompt, syntax_
 from evokai.api.deps import admin_app, services
 from evokai.assistant.privacy import MAX_TTL_DAYS, lists_everyone, own_subject
 from evokai.audio.speech.markup import MarkupDef
+from evokai.audio.speech.voice_settings import check_voice_settings
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
 from evokai.connectors import validate as validate_connector
@@ -1233,6 +1234,11 @@ class VoiceBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     gender: str | None = Field(default=None, max_length=16)
     region: str | None = Field(default=None, max_length=40)
+    settings: dict[str, Any] | None = None
+    """How the engine speaks with this voice, for every application: ``model`` and ``speed``, and
+    the engine's own options under its name (``elevenlabs``: ``stability``, ``similarityBoost``,
+    ``style``, ``speakerBoost``; ``openai``: ``instructions``). Checked against the provider's
+    engine; anything it does not take is refused (400 ``settings``)."""
 
 
 @router.put("/voices/{provider}/{voice_id}")
@@ -1243,7 +1249,15 @@ async def put_voice(
 
     Returns:
         ok.
+
+    Raises:
+        BadRequest: Settings its engine does not take.
     """
+    try:
+        settings = check_voice_settings(provider, body.settings)
+    except ValueError as e:
+        raise BadRequest(f"Voice settings: {e}.", code="settings") from e
+    body = body.model_copy(update={"settings": settings})
     await svc.store.voices.put(provider, voice_id, **body.model_dump())
     await audit.record(
         request, a, "voice.put", target=f"{provider}/{voice_id}", after=body.model_dump()
