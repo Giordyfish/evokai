@@ -17,6 +17,20 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   **Guides** menu in the top bar and an invite to the first tour on a first sign-in (`tourInvite`). The console
   assistant starts a tour with its new `start_tour` client tool and is told the tour and step on screen.
 
+- Gateways for coding tools ([docs/gateway.md](docs/gateway.md)): Claude Code passes through Evokai with each person's
+  own claude.ai seat, under the organisation's controls. A gateway is stored as an application row
+  (`applications.kind = "gateway"`, migration 0036) but is never an application: its own console section
+  (**Gateways**: people, policy, usage, events, connect snippets, the employee notice) and admin API
+  (`/v1/admin/gateways`), never listed or served among applications. Each person has a personal key (`evk_gw_...`,
+  sent in `x-evokai-key`). The door `POST /gw/anthropic/v1/messages` (and `/count_tokens`) forwards headers, body
+  and the SSE stream byte for byte; before that it checks the provider, the model, data protection, the person's rate
+  and token caps, and runs `input.size`, `input.secrets`, `pii.model` and `scope` on the new text only, with linear-time
+  matching (RE2), blocking or recording, never masking. One row per request: tokens, timings, outcome, never content
+  or amounts.
+- Codex through a gateway: `POST /gw/openai/v1/responses` forwards the OpenAI Responses API unchanged, to ChatGPT's
+  Codex backend for a ChatGPT login's token or to the OpenAI API for an API key (`sk-...`), with the same controls and
+  usage read from `response.completed`; `GET /gw/openai/v1/models` passes Codex's model list through. The Connect
+  page has the Codex snippets.
 - Azure without keys (the optional `azure` extra, in both images): every Azure connection without a configured key
   uses a Microsoft Entra ID token of the managed identity (`DefaultAzureCredential`, `evokai.core.azure`). Azure
   OpenAI endpoints take the `/openai/v1` base URL without an `api_version` (the Foundry models sold by Azure too), and
@@ -30,6 +44,26 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - Azure Content Safety (`azure_prompt_shields`, `azure_content_safety`) without `EVOKAI_AZURE_CONTENT_SAFETY_KEY`
   sends an Entra ID token, fetched at start.
 - [Running on Azure](docs/azure.md): what runs where on AWS, on Azure and self-hosted.
+- Scanned PDFs in knowledge bases: a PDF without a text layer goes to the deployment's document reader
+  (`EVOKAI_DOCUMENT_READER`): Azure AI Document Intelligence `prebuilt-layout` (key or Entra ID; the result is deleted
+  as soon as it is read) or a self-hosted docling-serve, when the application's data protection profile allows the
+  processor. Both are in the provider catalog. Not verified against a live service.
+- Reranking for knowledge bases: `retrieval.rerank` reorders the fused candidates with the deployment's reranker
+  (`EVOKAI_RERANK_MODEL`, the Cohere v2 rerank API: Cohere Rerank in Foundry, vLLM, Infinity), connected and judged by
+  the provider catalog like any model; a failing reranker leaves the fused order. The console's knowledge base form
+  has the switch.
+- `code_run` and `skill_run` on Azure: `EVOKAI_CODE_SANDBOX=azure` runs them in an Azure Container Apps dynamic
+  sessions pool (`EVOKAI_CODE_SESSION_POOL_ENDPOINT`, European regions only, a new session per call deleted
+  afterwards, Entra ID token of the managed identity); the processor `azure-container-apps-sessions` is judged in the
+  pool's region. Not verified against a live Azure account.
+- Azure Monitor: `EVOKAI_OTEL_EXPORTER=azure-monitor` sends the OpenTelemetry traces and metrics to Application
+  Insights with Microsoft's exporter (now in the `azure` extra), Entra ID through
+  `APPLICATIONINSIGHTS_AUTHENTICATION_STRING`; the processor `azure-monitor` is judged in the region of its ingestion
+  endpoint.
+- Azure regions in the provider catalog, so an Azure service running in a region the deployment chose is placed by
+  country for the data protection profile.
+- The Azure Container Apps deployment guide in [Running on Azure](docs/azure.md): managed identity, Key Vault
+  references, Azure Database for PostgreSQL, Azure Monitor, and console sign-in with Microsoft Entra ID.
 
 - A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
   application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:

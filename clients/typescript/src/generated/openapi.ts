@@ -1583,6 +1583,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/gateways": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Gateways
+         * @description The gateways the caller can see.
+         *
+         *     Returns:
+         *         items (with the caller's role and the count of active people), and whether the caller
+         *         may create gateways (a deployment owner).
+         */
+        get: operations["list_gateways_agent_v1_admin_gateways_get"];
+        put?: never;
+        /**
+         * Create Gateway
+         * @description Create a gateway (deployment owners). It starts with a policy fit for coding tools.
+         *
+         *     Returns:
+         *         The gateway.
+         *
+         *     Raises:
+         *         Conflict: The slug is taken (by a gateway or an application).
+         */
+        post: operations["create_gateway_agent_v1_admin_gateways_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gateway
+         * @description A gateway.
+         *
+         *     Returns:
+         *         The gateway, with its data protection profile.
+         */
+        get: operations["get_gateway_agent_v1_admin_gateways__gateway_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Gateway
+         * @description Change a gateway (owners): its settings, and its policy as a new version.
+         *
+         *     Returns:
+         *         The gateway.
+         *
+         *     Raises:
+         *         BadRequest: An invalid data protection profile.
+         */
+        patch: operations["patch_gateway_agent_v1_admin_gateways__gateway_id__patch"];
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List People
+         * @description The people of a gateway: one personal key each (never its secret).
+         *
+         *     Returns:
+         *         items: id, label, prefix, createdAt, lastUsedAt, revoked.
+         */
+        get: operations["list_people_agent_v1_admin_gateways__gateway_id__people_get"];
+        put?: never;
+        /**
+         * Add Person
+         * @description Give a person their personal gateway key (operators). The key is shown only now.
+         *
+         *     Returns:
+         *         id, label, key.
+         */
+        post: operations["add_person_agent_v1_admin_gateways__gateway_id__people_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}/people/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Person
+         * @description Revoke a person's gateway key (operators): their requests are refused at once.
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: Unknown or already revoked.
+         */
+        delete: operations["revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/gateways/{gateway_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gateway Usage
+         * @description Tokens through a gateway, per person and per model, and its latest requests.
+         *
+         *     Never an amount: the traffic is people's own subscriptions. Requests hold no content.
+         *
+         *     Returns:
+         *         days, people, models, outcomes, recent (timings, sizes, outcome per request).
+         */
+        get: operations["gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/grants": {
         parameters: {
             query?: never;
@@ -6114,6 +6262,36 @@ export interface components {
             size?: number;
         };
         /**
+         * GatewayChange
+         * @description A change of a gateway (unset fields stay as they are).
+         */
+        GatewayChange: {
+            /** Allowed Models */
+            allowed_models?: string[] | null;
+            /** Data Protection */
+            data_protection?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Name */
+            name?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Providers */
+            providers?: ("anthropic" | "openai")[] | null;
+            security?: components["schemas"]["SecurityPolicy"] | null;
+            /** Status */
+            status?: ("active" | "disabled") | null;
+            /** Tokens Per Day */
+            tokens_per_day?: number | null;
+            /** Tokens Per Month */
+            tokens_per_month?: number | null;
+        };
+        /**
          * GdprAnswers
          * @description GDPR statements and overrides of what the configuration suggests.
          */
@@ -6537,6 +6715,28 @@ export interface components {
             slug: string;
         };
         /**
+         * NewGateway
+         * @description A new gateway.
+         */
+        NewGateway: {
+            /** Allowed Models */
+            allowed_models?: string[];
+            /** Name */
+            name: string;
+            /** Providers */
+            providers: ("anthropic" | "openai")[];
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * NewPerson
+         * @description A person of a gateway.
+         */
+        NewPerson: {
+            /** Label */
+            label: string;
+        };
+        /**
          * NoteBody
          * @description A reviewer's note on a conversation or one of its turns.
          */
@@ -6890,6 +7090,11 @@ export interface components {
              * @default 0.7
              */
             mmr_lambda?: number;
+            /**
+             * Rerank
+             * @default false
+             */
+            rerank?: boolean;
             /**
              * Top K
              * @default 5
@@ -9850,6 +10055,272 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    list_gateways_agent_v1_admin_gateways_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_gateway_agent_v1_admin_gateways_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewGateway"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gateway_agent_v1_admin_gateways__gateway_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_gateway_agent_v1_admin_gateways__gateway_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_agent_v1_admin_gateways__gateway_id__people_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_person_agent_v1_admin_gateways__gateway_id__people_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewPerson"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -319,7 +319,7 @@ async def create_application(body: NewApplication, svc: Svc, request: Request) -
     Raises:
         Conflict: The slug is taken.
     """
-    if await svc.store.applications.by_slug(body.slug):
+    if await svc.store.applications.by_slug(body.slug, kind=None):
         raise Conflict("An application with this slug already exists.", code="slug_taken")
     fields = body.model_dump(exclude={"slug", "name"}, exclude_none=True)
     actor = deployment_actor(request, svc)

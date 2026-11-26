@@ -31,6 +31,8 @@ from evokai.api import (
     console_routes,
     cost_routes,
     eval_routes,
+    gateway_admin_routes,
+    gateway_routes,
     grants_routes,
     knowledge_routes,
     openai_routes,
@@ -107,6 +109,9 @@ async def _housekeeping(svc: Services) -> None:
                 if n := await svc.store.security_events.purge(ttl):
                     state["securityEventsDeleted"] = n
                     logger.info("security_events_purged", extra={"count": n})
+                if n := await svc.store.gateway.purge(ttl):
+                    state["gatewayRequestsDeleted"] = n
+                    logger.info("gateway_requests_purged", extra={"count": n})
                 if n := await svc.store.audit.purge(svc.settings.audit_ttl_days):
                     state["auditDeleted"] = n
                     logger.info("audit_purged", extra={"count": n})
@@ -338,6 +343,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     root.include_router(connection_routes.router)
     root.include_router(channel_routes.public)
     root.include_router(channel_routes.admin)
+    root.include_router(gateway_admin_routes.router)
+    root.include_router(gateway_admin_routes.one)
+    root.include_router(gateway_routes.router)
     if settings.voice_enabled:
         from evokai.api import speech_routes, voice_routes
 
@@ -350,6 +358,11 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     app.router.routes.append(Route(app.state.admin_mcp.path, app.state.admin_mcp))
     if settings.admin_ui_enabled:
         mount_console(app, settings)
-    setup_telemetry(app, enabled=settings.otel_enabled, service_name=settings.service_name)
+    setup_telemetry(
+        app,
+        enabled=settings.otel_enabled,
+        service_name=settings.service_name,
+        exporter=settings.otel_exporter,
+    )
     logging.getLogger("evokai").debug("app_created")
     return app

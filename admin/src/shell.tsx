@@ -12,6 +12,7 @@ import { pl } from './format'
 import { BrandMark, Empty } from './magic'
 import { Access } from './pages/Access'
 import { SystemPolicy } from './pages/SystemPolicy'
+import { Gateways } from './pages/Gateways'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
 import { Apps } from './pages/Apps'
@@ -102,6 +103,7 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
         return <Audit app={app} />
     }
   }
+  if (route.view === 'gateways') return <Gateways gateway={route.gateway} tab={route.tab} />
   switch (route.view) {
     case 'apps':
       return <Apps />
@@ -193,6 +195,9 @@ export function Shell({ route }: { route: Route }) {
               : route.id,
         ])
     }
+  } else if (route.view === 'gateways') {
+    crumbs.push([t('page.gateways'), '#/gateways'])
+    if (route.gateway) crumbs.push([route.gateway])
   } else if (route.view === 'apps') crumbs.push([t('page.applications')])
   else if (route.view === 'setup') crumbs.push([t('page.applications'), '#/apps'], [t('page.setup')])
   else
@@ -272,6 +277,7 @@ export function Shell({ route }: { route: Route }) {
         <div class="nl">
           <h6>{t('shell.console')}</h6>
           {nav('#/apps', t('page.applications'), 'apps', route.view === 'apps')}
+          {nav('#/gateways', t('page.gateways'), 'connections', route.view === 'gateways')}
           {nav('#/playground', t('page.playground'), 'play', route.view === 'playground')}
           {nav('#/usage', t('page.usage'), 'usage', route.view === 'usage')}
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}

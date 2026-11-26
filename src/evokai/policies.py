@@ -54,9 +54,12 @@ TESTABLE: tuple[str, ...] = (
     "input.injection",
     "scope",
     "untrusted.injection",
+    "pii.model",
 )
 """The controls the guard's input checks run (``untrusted.injection`` when the policy treats the
-person's input as data). ``input.moderation`` is a classifier model: policy tests never call it."""
+person's input as data). ``input.moderation`` is a classifier model: policy tests never call it.
+``pii.model`` acts in a gateway's tests only: a gateway blocks or records personal data on its way
+to the provider, while an application tokenises or masks it after the input checks."""
 
 
 # The system policy, as this process knows it
@@ -325,15 +328,29 @@ async def evaluate(guard: Any, policy: Effective, text: str) -> dict[str, Any]:
     return {"outcome": outcome, "controls": controls}
 
 
-async def run_tests(guard: Any, policy: Effective, rows: list[Any]) -> list[dict[str, Any]]:
+async def run_tests(
+    guard: Any, policy: Effective, rows: list[Any], *, gateway: bool = False
+) -> list[dict[str, Any]]:
     """Run policy tests under a policy.
+
+    Args:
+        guard: The guard.
+        policy: The effective policy.
+        rows: The tests.
+        gateway: The policy is a gateway's: its own input checks run (``evokai.gateway.checks``).
 
     Returns:
         Per test: id, name, passed, expected (outcome, controls), got (outcome, controls).
     """
+    from evokai.gateway import checks
+
     out = []
     for row in rows:
-        got = await evaluate(guard, policy, row.input)
+        got = (
+            checks.evaluate(policy, row.input, guard.known_secrets)
+            if gateway
+            else await evaluate(guard, policy, row.input)
+        )
         ok = row.outcome is None or got["outcome"] == row.outcome
         for control, want in (row.controls or {}).items():
             ok = ok and got["controls"].get(control, "allowed") == want
@@ -362,6 +379,18 @@ def effective(
     if owner_id == SYSTEM:
         return resolve(None, disabled=disabled, system=security)
     return resolve(security, disabled=disabled, system=system_security())
+
+
+async def is_gateway(svc: Any, owner_id: str) -> bool:
+    """Whether a policy is a gateway's (its tests run the gateway's checks).
+
+    Returns:
+        True for a gateway.
+    """
+    if owner_id == SYSTEM:
+        return False
+    app = await svc.store.applications.get(owner_id)
+    return app is not None and app.kind == "gateway"
 
 
 class PolicyTestsFailed(Conflict):
@@ -394,7 +423,12 @@ async def gate(svc: Any, owner_id: str, security: Any, *, force: bool) -> list[d
     rows = await svc.store.policies.tests(owner_id)
     if not rows:
         return []
-    results = await run_tests(svc.guard, effective(svc.guard, owner_id, security), rows)
+    results = await run_tests(
+        svc.guard,
+        effective(svc.guard, owner_id, security),
+        rows,
+        gateway=await is_gateway(svc, owner_id),
+    )
     failures = [r for r in results if not r["passed"]]
     if failures and not force:
         raise PolicyTestsFailed(failures)

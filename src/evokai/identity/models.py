@@ -39,6 +39,17 @@ class AppPrincipal:
 
 
 @dataclass(frozen=True)
+class GatewayPerson:
+    """A person authenticated on a gateway with their gateway key (``evokai.gateway``)."""
+
+    application_id: str
+    """The gateway."""
+    key_id: str
+    label: str
+    """The person's name or e-mail, as the key was labelled."""
+
+
+@dataclass(frozen=True)
 class SessionPrincipal:
     """A browser session for one subject, one agent and one conversation."""
 

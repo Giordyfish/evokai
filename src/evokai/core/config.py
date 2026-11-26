@@ -284,6 +284,19 @@ class Settings(BaseSettings):
     security_event_ttl_days: int | None = 180
     """Security events are deleted after this many days unless the application sets its own."""
 
+    # Gateways for coding tools (evokai.gateway)
+    gateway_anthropic_url: str = "https://api.anthropic.com"
+    """``EVOKAI_GATEWAY_ANTHROPIC_URL``: where a gateway forwards Anthropic Messages requests."""
+    gateway_openai_url: str = "https://api.openai.com/v1"
+    """``EVOKAI_GATEWAY_OPENAI_URL``: where a gateway forwards OpenAI Responses requests made with
+    an OpenAI API key (``sk-...``)."""
+    gateway_chatgpt_url: str = "https://chatgpt.com/backend-api/codex"
+    """``EVOKAI_GATEWAY_CHATGPT_URL``: where a gateway forwards Codex's requests made with a ChatGPT
+    login (the token of a ChatGPT Business or Enterprise seat)."""
+    gateway_timeout_seconds: float = 900.0
+    """``EVOKAI_GATEWAY_TIMEOUT_SECONDS``: the longest a gateway waits for the provider's next
+    bytes (a stream can think for minutes; the provider's pings keep it alive)."""
+
     # State shared by every instance (rate counters, concurrency, sign-in codes)
     redis_url: str | None = None
     """``EVOKAI_REDIS_URL``: Redis or Valkey (``redis://host:6379/0``, ``rediss://`` for TLS) for
@@ -312,6 +325,25 @@ class Settings(BaseSettings):
     """Lifetime in seconds of the signed links to a document that citations carry."""
     knowledge_workers: int = Field(default=2, ge=1, le=16)
     """Documents ingested at the same time by one process."""
+    document_reader: Literal["none", "azure", "docling"] = "none"
+    """``EVOKAI_DOCUMENT_READER``: who reads a scanned PDF (no text layer) with text recognition:
+    Azure AI Document Intelligence or a self-hosted docling-serve (``evokai.knowledge.readers``),
+    when the application's data protection profile allows it. ``none``: a scan fails."""
+    document_intelligence_endpoint: str | None = None
+    """``EVOKAI_DOCUMENT_INTELLIGENCE_ENDPOINT``: ``https://<resource>.cognitiveservices.azure.com``."""
+    document_intelligence_key: str | None = None
+    """``EVOKAI_DOCUMENT_INTELLIGENCE_KEY``: its key; unset, a Microsoft Entra ID token of the
+    managed identity."""
+    document_intelligence_model: str = "prebuilt-layout"
+    """``EVOKAI_DOCUMENT_INTELLIGENCE_MODEL``: the analysis model."""
+    docling_url: str | None = None
+    """``EVOKAI_DOCLING_URL``: a docling-serve of the deployment's own (``http://docling:5001``)."""
+    docling_key: str | None = None
+    """``EVOKAI_DOCLING_KEY``: its ``DOCLING_SERVE_API_KEY``, sent as ``X-Api-Key``."""
+    rerank_model: str | None = None
+    """``EVOKAI_RERANK_MODEL``: ``provider:model`` of a reranker behind the Cohere v2 rerank API,
+    connected by its provider catalog endpoint (``evokai.knowledge.rerank``); a knowledge base
+    whose ``retrieval.rerank`` is on reorders its candidates with it. Unset: no reranking."""
 
     # Long-term memory (evokai.memory)
     memory_embedding_model: str = "bedrock:amazon.titan-embed-text-v2:0"
@@ -361,6 +393,14 @@ class Settings(BaseSettings):
     """``EVOKAI_CODE_ENABLED``: offer the ``code_run`` tool (Amazon Bedrock AgentCore Code
     Interpreter) to agents that ask for it, when their application is granted ``code``. Off by
     default."""
+    code_sandbox: Literal["agentcore", "azure"] = "agentcore"
+    """``EVOKAI_CODE_SANDBOX``: where ``code_run`` runs: Amazon Bedrock AgentCore Code Interpreter,
+    or an Azure Container Apps dynamic sessions pool (``EVOKAI_CODE_SESSION_POOL_ENDPOINT``)."""
+    code_session_pool_endpoint: str | None = None
+    """``EVOKAI_CODE_SESSION_POOL_ENDPOINT``: the Python code interpreter session pool's
+    ``poolManagementEndpoint`` (``https://<region>.dynamicsessions.io/subscriptions/.../
+    sessionPools/<name>``), in a European region; the managed identity needs the Azure
+    ContainerApps Session Executor role on it."""
     code_region: str | None = None
     """``EVOKAI_CODE_REGION``: where the code interpreter runs (default ``EVOKAI_AWS_REGION``). Only
     EU regions are accepted: any other region leaves the tool unavailable."""
@@ -409,6 +449,10 @@ class Settings(BaseSettings):
     """``EVOKAI_SUBAGENT_TIMEOUT_SECONDS``: what one subagent call may take."""
 
     # Observability
+    otel_exporter: Literal["otlp", "azure-monitor"] = "otlp"
+    """``EVOKAI_OTEL_EXPORTER``: where OpenTelemetry goes: OTLP (``OTEL_EXPORTER_OTLP_*``, a
+    collector of the deployment's own) or Azure Monitor Application Insights
+    (``APPLICATIONINSIGHTS_CONNECTION_STRING``, the ``azure`` extra)."""
     otel_enabled: bool = False
     """OpenTelemetry traces, metrics and logs. Off by default; exporters read OTEL_* variables."""
     service_name: str = "evokai"

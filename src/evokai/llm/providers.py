@@ -77,6 +77,40 @@ AWS_REGIONS: dict[str, tuple[str, str]] = {
 (https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html), for the
 in-region models and the services that run in the deployment's region."""
 
+AZURE_REGIONS: dict[str, tuple[str, str]] = {
+    "austriaeast": ("eu", "AT"),
+    "belgiumcentral": ("eu", "BE"),
+    "denmarkeast": ("eu", "DK"),
+    "francecentral": ("eu", "FR"),
+    "francesouth": ("eu", "FR"),
+    "germanynorth": ("eu", "DE"),
+    "germanywestcentral": ("eu", "DE"),
+    "italynorth": ("eu", "IT"),
+    "northeurope": ("eu", "IE"),
+    "norwayeast": ("eu", "NO"),
+    "norwaywest": ("eu", "NO"),
+    "polandcentral": ("eu", "PL"),
+    "spaincentral": ("eu", "ES"),
+    "swedencentral": ("eu", "SE"),
+    "switzerlandnorth": ("eu", "CH"),
+    "switzerlandwest": ("eu", "CH"),
+    "uksouth": ("eu", "GB"),
+    "ukwest": ("eu", "GB"),
+    "westeurope": ("eu", "NL"),
+    "eastus": ("us", "US"),
+    "eastus2": ("us", "US"),
+    "centralus": ("us", "US"),
+    "northcentralus": ("us", "US"),
+    "southcentralus": ("us", "US"),
+    "westcentralus": ("us", "US"),
+    "westus": ("us", "US"),
+    "westus2": ("us", "US"),
+    "westus3": ("us", "US"),
+}
+"""Azure regions and where they are (https://learn.microsoft.com/en-us/azure/reliability/regions-list,
+read 26 November 2026), for the Azure services that run in a region the deployment chose (the
+Container Apps session pool, Azure Monitor's ingestion)."""
+
 Retention = Literal["none", "abuse_monitoring", "stored"]
 ZeroRetention = Literal["default", "on_request", "no"]
 CachingStyle = Literal["explicit", "automatic", "implicit_and_explicit", "none"]
@@ -246,7 +280,15 @@ class Provider(BaseModel):
 
 
 ProcessorKind = Literal[
-    "embeddings", "classifier", "sandbox", "stt", "tts", "connection", "observability", "other"
+    "embeddings",
+    "classifier",
+    "sandbox",
+    "stt",
+    "tts",
+    "connection",
+    "observability",
+    "documents",
+    "other",
 ]
 
 
@@ -502,7 +544,7 @@ class ProviderCatalog:
     ) -> tuple[str | None, list[str] | None, list[str] | None]:
         if place.from_deployment_region:
             r = (region or self.aws_region).lower()
-            geo, country = AWS_REGIONS.get(r, (None, None))
+            geo, country = AWS_REGIONS.get(r) or AZURE_REGIONS.get(r) or (None, None)
             return geo, [country] if country else None, [r]
         return place.geography, place.countries, place.regions
 

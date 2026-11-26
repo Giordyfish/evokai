@@ -2631,6 +2631,79 @@ processors:
     are Amazon Bedrock''s: AgentCore''s own data terms were not read.'
   unknowns:
   - 'terms: AgentCore''s own retention terms were not read; Bedrock''s are shown'
+- id: azure-document-intelligence
+  kind: documents
+  title: Azure AI Document Intelligence (prebuilt-layout, text recognition of scanned PDFs)
+  provider: azure
+  api: 'POST {endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30&outputContentFormat=markdown,
+    body {base64Source}; 202 with Operation-Location; GET it until status succeeded (analyzeResult.content in Markdown);
+    DELETE it. Auth: Ocp-Apim-Subscription-Key or a Microsoft Entra ID token for https://cognitiveservices.azure.com/.default.'
+  place: {}
+  terms:
+    retention: stored
+    retention_days: 1
+    notes: 'Input documents and analyze results are processed in the region of the resource and stored temporarily
+      in Azure Storage in the same region, for 24 hours after the analysis, unless deleted earlier with Delete Analyze
+      Result (Evokai deletes each result as soon as it is read). Customers in a region share the temporary storage,
+      logically isolated by subscription and credentials.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/document-intelligence/data-privacy-security
+  checked: '2026-11-26'
+  notes: 'EVOKAI_DOCUMENT_READER=azure: only PDFs without a text layer (scans) are sent, and only when the application''s
+    profile allows this processor. Declare the resource''s region in EVOKAI_PROVIDERS_FILE (place.regions) so a residency
+    rule can pass. Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/analyze-document?view=rest-aiservices-v4.0%20(2024-11-30)
+  unknowns:
+  - 'place: the region is the resource''s own, which only the deployment knows'
+  - 'terms.training: inherited from the azure provider (Azure OpenAI''s page); the Document Intelligence data-privacy
+    page does not say whether documents are used for training'
+  - 'prices: the per-page price was not read'
+- id: docling
+  kind: documents
+  title: docling-serve (self-hosted text recognition, EVOKAI_DOCLING_URL)
+  declared_by: operator
+  checked: '2026-11-26'
+  notes: 'EVOKAI_DOCUMENT_READER=docling: a docling-serve of the deployment''s own; scanned PDFs only. Its facts are
+    what the deployment declares here (place, entity).'
+  sources:
+  - https://github.com/docling-project/docling-serve/blob/main/docs/usage.md
+- id: azure-container-apps-sessions
+  kind: sandbox
+  title: Azure Container Apps dynamic sessions (Python code interpreter session pool)
+  provider: azure
+  api: 'POST {poolManagementEndpoint}/executions?api-version=2025-10-02-preview&identifier={id} with {properties:{codeInputType:
+    inline, executionType: synchronous, code}}; answer {properties:{status, stdout, stderr, executionResult, executionTimeInMilliseconds}};
+    DELETE {poolManagementEndpoint}/session?api-version=2025-02-02-preview&identifier={id}. Bearer token with audience
+    https://dynamicsessions.io (Azure ContainerApps Session Executor role).'
+  place:
+    from_deployment_region: true
+  checked: '2026-11-26'
+  notes: 'code_run and skill_run with EVOKAI_CODE_SANDBOX=azure, in the region of EVOKAI_CODE_SESSION_POOL_ENDPOINT
+    (only European regions accepted). Each session is isolated by a Hyper-V boundary; Evokai uses a new session identifier
+    per call and deletes the session afterwards. Network egress is the pool''s setting (create it with egress disabled).
+    Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/azure/container-apps/sessions-code-interpreter
+  - https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-nodejs
+  unknowns:
+  - 'terms: the Container Apps sessions data terms were not read; the azure provider''s are shown'
+  - 'prices: session billing (per session duration) was not read; EVOKAI_CODE_USD_PER_SECOND is the deployment''s
+    estimate'
+- id: azure-monitor
+  kind: observability
+  title: Azure Monitor Application Insights (OpenTelemetry exporter, EVOKAI_OTEL_EXPORTER=azure-monitor)
+  provider: azure
+  place:
+    from_deployment_region: true
+  checked: '2026-11-26'
+  notes: 'Deployment-wide traces and metrics to the Application Insights resource of APPLICATIONINSIGHTS_CONNECTION_STRING
+    (its IngestionEndpoint names the region); Entra ID with APPLICATIONINSIGHTS_AUTHENTICATION_STRING. Subjects as keyed
+    hashes and content only as tracing_content allows, as for any exporter. Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/python/api/overview/azure/monitor-opentelemetry-exporter-readme
+  unknowns:
+  - 'terms: Application Insights retention is the workspace''s setting; the azure provider''s terms are shown'
 - id: observability-exporter
   kind: observability
   title: OpenTelemetry exporter (OTEL_*)

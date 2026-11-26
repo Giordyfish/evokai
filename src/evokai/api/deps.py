@@ -10,6 +10,7 @@ from starlette.requests import HTTPConnection
 from evokai.assistant import delegation
 from evokai.assistant.reset import own_write
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
+from evokai.db.repositories import GATEWAY
 from evokai.identity import console
 from evokai.identity.auth import bearer
 from evokai.identity.models import AppPrincipal, SessionPrincipal
@@ -68,6 +69,9 @@ async def _console(request: Request) -> AppPrincipal | None:
     role = login.role_for(app) if app is not None else None
     if app is None or role is None:
         raise NotFound("Unknown application.", code="unknown_application")
+    # A gateway answers only to its policy's routes; it is not an application anywhere else.
+    if app.kind == GATEWAY and not gateway_route(route_of(request, svc.settings.base_path)):
+        raise NotFound("Unknown application.", code="unknown_application")
     authorize(request, role, svc.settings.base_path)
     key_id = {"op": "operator", "sso": f"sso:{login.user_id}"}.get(login.kind) or login.key_id
     return AppPrincipal(
@@ -81,6 +85,25 @@ async def _console(request: Request) -> AppPrincipal | None:
             login.kind, login.user_id, login.key_id, login.application_id
         ),
     )
+
+
+GATEWAY_ROUTES: frozenset[str] = frozenset({
+    "/v1/admin/security",
+    "/v1/admin/security/events",
+    "/v1/admin/security/summary",
+    "/v1/admin/audit",
+})
+"""The application routes a gateway answers to (``X-Evokai-Application`` naming it), besides every
+``/v1/admin/policy/...`` route: its policy, its versions and tests, its events and its audit log."""
+
+
+def gateway_route(path: str) -> bool:
+    """Whether a console request may name a gateway (``evokai.gateway``) on this route.
+
+    Returns:
+        True for the routes of a gateway's policy, events and audit log.
+    """
+    return path in GATEWAY_ROUTES or path.startswith("/v1/admin/policy/")
 
 
 async def _delegated(request: Request, token: str) -> AppPrincipal:

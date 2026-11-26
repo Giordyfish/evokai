@@ -7,7 +7,7 @@ import { adminJson, consoleJson, EvokaiError } from './api'
 export type Outcome = 'allowed' | 'flagged' | 'blocked'
 export const OUTCOMES: readonly Outcome[] = ['allowed', 'flagged', 'blocked']
 /** The controls the guard's input checks run, the only ones a policy test can name. */
-export const TESTABLE = ['input.size', 'input.encoding', 'input.secrets', 'input.injection', 'scope', 'untrusted.injection'] as const
+export const TESTABLE = ['input.size', 'input.encoding', 'input.secrets', 'input.injection', 'scope', 'untrusted.injection', 'pii.model'] as const
 
 export interface PolicyContent {
   security: Record<string, unknown> | null

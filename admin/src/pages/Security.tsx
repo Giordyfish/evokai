@@ -16,6 +16,7 @@ import type {
   SecurityView,
 } from '@client/core/types'
 import { adminJson, describe, forApp } from '../api'
+import { GATEWAY_CONTROLS } from '../gateway'
 import { appPolicy, type PolicyTestResult, testFailures } from '../policy'
 import { CopyPolicy, PolicyHistory, PolicyTests, TestFailures } from './PolicyTools'
 import {
@@ -172,7 +173,10 @@ function GateForm({ app, a, reload }: { app: ConsoleApplication; a: Application;
 }
 
 /** An agent's own policy, edited as JSON; saving stores a new version of the agent. */
-function AgentPolicy(p: { app: ConsoleApplication; name: string; policy: SecurityPolicy | null; onSaved: () => Promise<void> }) {
+/** Whose policy a page edits: an application, or a gateway (stored as an application row, `src/gateway.ts`). */
+export type PolicyOwner = Pick<ConsoleApplication, 'id' | 'slug' | 'name' | 'role'>
+
+function AgentPolicy(p: { app: PolicyOwner; name: string; policy: SecurityPolicy | null; onSaved: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(JSON.stringify(p.policy ?? {}, null, 2))
   const [busy, setBusy] = useState(false)
@@ -222,17 +226,24 @@ function AgentPolicy(p: { app: ConsoleApplication; name: string; policy: Securit
   )
 }
 
-function Policy({
+/**
+ * The policy's controls and settings, saved as a new version. On a gateway only the controls a gateway runs are listed
+ * (`GATEWAY_CONTROLS`), and there is no classifier and no agent.
+ */
+export function Policy({
   app,
   view,
   onSaved,
   onReload,
+  gateway = false,
 }: {
-  app: ConsoleApplication
+  app: PolicyOwner
   view: SecurityView
   onSaved: (v: SecurityView) => void
   onReload: () => Promise<void>
+  gateway?: boolean
 }) {
+  const controls = gateway ? view.controls.filter((c) => (GATEWAY_CONTROLS as readonly string[]).includes(c.id)) : view.controls
   const [base, setBase] = useState<Choice>(view.policy.mode ?? INHERIT)
   const [modes, setModes] = useState<Record<string, Choice>>({ ...(view.policy.modes ?? {}) })
   const [json, setJson] = useState(JSON.stringify(settingsOf(view.policy), null, 2))
@@ -277,8 +288,8 @@ function Policy({
   return (
     <>
       <Hero
-        title={t('tab.security')}
-        sub={t('sec.sub')}
+        title={gateway ? t('gw.tab.policy') : t('tab.security')}
+        sub={gateway ? t('gw.policySub') : t('sec.sub')}
         actions={
           <span style="display:flex;gap:8px;align-items:center">
             <input class="in" style="max-width:240px" maxLength={500} value={note} placeholder={t('pol.note')} title={t('pol.noteHint')} onInput={(e) => setNote(e.currentTarget.value)} />
@@ -313,11 +324,11 @@ function Policy({
                 <th>{t('sec.control')}</th>
                 <th>OWASP</th>
                 <th>{t('sec.now')}</th>
-                <th>{t('sec.application')}</th>
+                <th>{gateway ? t('gw.thisGateway') : t('sec.application')}</th>
               </tr>
             </thead>
             <tbody>
-              {view.controls.map((c) => {
+              {controls.map((c) => {
                 const now = view.effective.modes[c.id] ?? c.default
                 return (
                   <tr key={c.id}>
@@ -354,7 +365,7 @@ function Policy({
           </table>
         </div>
       </Panel>
-      <ClassifierPanel view={view} json={json} setJson={setJson} />
+      {gateway ? null : <ClassifierPanel view={view} json={json} setJson={setJson} />}
       <div class="grid g2">
         <Panel title={t('sec.settings')}>
           <Field label={t('sec.policySettings')} hint={t('sec.policySettingsHint')}>
@@ -365,6 +376,12 @@ function Policy({
             <pre class="mono" style="white-space:pre-wrap;font-size:12px">{JSON.stringify(view.effective.settings, null, 2)}</pre>
           </details>
         </Panel>
+        {gateway ? (
+          <Panel title={t('gw.checksTitle')}>
+            <p class="hint">{t('gw.checksText')}</p>
+            <p class="hint">{t('gw.neverMask')}</p>
+          </Panel>
+        ) : (
         <Panel title={t('sec.agents')}>
           {view.agents.length ? (
             <ul class="plain">
@@ -403,6 +420,7 @@ function Policy({
               : t('sec.eventsKeptForever')}
           </p>
         </Panel>
+        )}
       </div>
     </>
   )
@@ -521,7 +539,7 @@ const CONTROL_FILTERS: Array<[string, TextKey]> = [
   ['turn.budget', 'sec.f.budget'],
 ]
 
-function Events({ app }: { app: ConsoleApplication }) {
+export function Events({ app }: { app: PolicyOwner }) {
   const api = forApp(app.id)
   const [q, setQ] = useState<SecurityEventQuery>({})
   const [more, setMore] = useState<SecurityEvent[]>([])
