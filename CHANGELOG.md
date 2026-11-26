@@ -141,6 +141,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   pack (`speech.hallucinations`, all seven languages) and dropped from the socket's `final` and `interim` and from
   `POST /v1/session/transcribe`, with each drop logged and counted (`evokai.stt.dropped_phrases`). On by default; the
   application setting `stt_filter: false` keeps every transcript as the engine gave it.
+- Release images with the voice stack: every release also publishes `<version>-voice` (lite with the voice stack), and
+  the `full` image now carries it too, so server speech runs from a released image; each image's smoke test checks
+  `voice=yes` or `voice=no` as built ([docs/deployment.md](docs/deployment.md#images-lite-lite-with-voice-full)).
 
 ### Fixed
 

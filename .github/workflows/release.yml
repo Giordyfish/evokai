@@ -1,7 +1,9 @@
 # A release, from a tag vX.Y.Z (see docs/releasing.md for the one-time setup):
 #   - every gate (the CI workflow), unless the CI workflow already passed on this very commit (the push to main that the
 #     tag points at): then that run is waited for and reused instead of running the same tests again;
-#   - the service image, lite and full, linux/amd64 and linux/arm64, to ghcr.io/giordyfish/evokai, signed (keyless);
+#   - the service image in three variants, linux/amd64 and linux/arm64, to ghcr.io/giordyfish/evokai, signed
+#     (keyless): lite (<version>, latest), lite with the voice stack (<version>-voice) and full, which carries the
+#     voice stack too (<version>-full);
 #   - the Python client (evokai-client) and its alias (evokai) to PyPI with trusted publishing: no token in the
 #     repository;
 #   - the npm packages @evokai/evokai-client, @evokai/evokai-ui and the alias evokai, with trusted publishing and
@@ -89,7 +91,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   image:
-    name: Image (${{ matrix.flavour }})
+    name: Image (${{ matrix.flavour }}${{ matrix.voice == '1' && ', voice' || '' }})
     needs: [versions, ci, gates]
     # Published only after tests passed: the CI run of this commit, or the gates here.
     if: ${{ !cancelled() && needs.versions.result == 'success' && needs.ci.result == 'success' && (needs.gates.result == 'success' || (needs.gates.result == 'skipped' && needs.ci.outputs.green == 'true')) }}
@@ -99,10 +101,16 @@ jobs:
       contents: read
       packages: write   # push to ghcr.io
       id-token: write   # keyless signing (Sigstore)
+    # Server speech (Pipecat, Silero, Smart Turn) needs the voice stack, which the lite image leaves out to stay small:
+    # lite with voice is an image of its own, and full, every extra that resolves, carries it. Voice stays off at run
+    # time until EVOKAI_VOICE_ENABLED=true, whatever the image.
     strategy:
       fail-fast: false
       matrix:
-        flavour: [lite, full]
+        include:
+          - {flavour: lite, voice: "0"}
+          - {flavour: lite, voice: "1"}
+          - {flavour: full, voice: "1"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,12 +128,15 @@ jobs:
         env:
           v: ${{ needs.versions.outputs.version }}
           FLAVOUR: ${{ matrix.flavour }}
+          VOICE: ${{ matrix.voice }}
         run: |
-          if [ "$FLAVOUR" = lite ]; then
+          if [ "$FLAVOUR" = full ]; then
+            tags="$IMAGE:$v-full"
+          elif [ "$VOICE" = 1 ]; then
+            tags="$IMAGE:$v-voice"
+          else
             tags="$IMAGE:$v"
             case "$v" in *-*) ;; *) tags="$tags,$IMAGE:latest" ;; esac
-          else
-            tags="$IMAGE:$v-full"
           fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
       - id: build
@@ -134,7 +145,9 @@ jobs:
           context: .
           target: runtime
           platforms: linux/amd64,linux/arm64
-          build-args: IMAGE=${{ matrix.flavour }}
+          build-args: |
+            IMAGE=${{ matrix.flavour }}
+            VOICE=${{ matrix.voice }}
           tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/Giordyfish/evokai
@@ -148,11 +161,14 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           FLAVOUR: ${{ matrix.flavour }}
+          VOICE: ${{ matrix.voice }}
         run: |
           ref="$IMAGE@$DIGEST"
+          voice=$([ "$VOICE" = 1 ] && echo yes || echo no)
           for platform in linux/amd64 linux/arm64; do
+            # selftest loads the voice models offline when the stack is there (voice=yes).
             docker run --rm --platform "$platform" --read-only --tmpfs /tmp --network none --cap-drop ALL \
-              --user 1001:1001 "$ref" selftest | tee /dev/stderr | grep -q "flavour=$FLAVOUR "
+              --user 1001:1001 "$ref" selftest | tee /dev/stderr | grep -q "flavour=$FLAVOUR voice=$voice "
           done
       - name: Sign the digest (keyless)
         env:

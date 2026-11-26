@@ -108,14 +108,21 @@ scripts/build-image.sh <registry/repo> <tag> [--flavour lite|full] [--cache-ref 
                                  # linux/arm64, smoke-tested read-only, pushed; prints the digest
 ```
 
-### Two images: lite and full
+### Images: lite, lite with voice, full
 
-Evokai ships two flavours of the same image, from one Dockerfile (`--build-arg IMAGE=lite|full`):
+Evokai ships two flavours of the same image, from one Dockerfile (`--build-arg IMAGE=lite|full`), and the voice stack
+(Pipecat, Silero, Smart Turn: what [server speech](voice.md) and the WebRTC voice sessions run on) with
+`--build-arg VOICE=1`. A release publishes three images:
 
-| Flavour | Installs | Tag | Size (linux/amd64, uncompressed, measured 17 November 2026) |
+| Image | Installs | Tag | Size (linux/amd64, uncompressed, measured 17 November 2026) |
 |---|---|---|---|
 | `lite` (default) | Evokai, the harness core with Code Mode, compaction and subagents, and every harness extra under 30 MB (`harness-lite` in pyproject.toml) | `<commit>` | 1.07 GB |
-| `full` | every harness extra that resolves (`harness`) | `<commit>-full` | 2.79 GB |
+| `lite` with voice | the same and the `voice` extra | `<commit>-voice` | not measured |
+| `full` | every harness extra that resolves (`harness`) and the `voice` extra | `<commit>-full` | 2.79 GB without the voice stack; not measured with it |
+
+The voice stack is installed, not switched on: speech stays off until `EVOKAI_VOICE_ENABLED=true`, whatever the image.
+Take `<version>-voice` for server speech on the small image, `<version>-full` for every capability and voice, and
+`<version>` when the browser's own speech is enough.
 
 The lite image leaves out the extras over 30 MB each, measured as their site-packages beyond Evokai's base: pixeltable
 (574 MB, with pyarrow, pandas and av), prompt-injection-defender-ml (186 MB, onnxruntime and numpy), playwright
@@ -124,9 +131,11 @@ are listed there with `installed: false` and the reason Â«not in the lite imageÂ
 left out of a run like any capability that is not installed. Every other extra is in both (the integrations about
 20 MB each, sharing their MCP client; e2b 27 MB; coder 27 MB; modal 26 MB; the rest smaller).
 
-`scripts/build-image.sh --flavour full` tags `<tag>-full`; the smoke test (read-only root, no network, no
-capabilities, uid 1001) runs on both, and `evokai selftest` prints the flavour (`ok flavour=lite ...`), which the
-build checks. The release workflow (`.github/workflows/release.yml`) publishes both.
+`scripts/build-image.sh --flavour full` tags `<tag>-full` (always with the voice stack), `--with-voice` on the lite
+flavour tags `<tag>-voice`; the smoke test (read-only root, no network, no capabilities, uid 1001) runs on each, and
+`evokai selftest` prints the flavour and whether the voice stack is there (`ok flavour=lite voice=yes ...`, after
+loading the Silero and Smart Turn models offline), which the build checks. The release workflow
+(`.github/workflows/release.yml`) publishes all three.
 `--no-push` builds and smoke-tests locally and prints the image's size. The capability worker image
 (`workers/capability`) is separate from both ([capabilities](capabilities.md#separate-workers)).
 
