@@ -2244,6 +2244,11 @@ class SecurityEventRepository(_Repo):
             return _rowcount(r)
 
 
+SYSTEM_AUDIT_MIN_DAYS = 30
+"""The shortest a system application keeps its audit log: no less than its conversations at most
+(``evokai.assistant.privacy.MAX_TTL_DAYS``)."""
+
+
 class AuditRepository(_Repo):
     """The audit log of changes."""
 
@@ -2300,6 +2305,10 @@ class AuditRepository(_Repo):
     async def purge(self, default_ttl_days: int | None, now: datetime | None = None) -> int:
         """Delete entries past their application's time to live (deployment entries: the default).
 
+        A system application keeps its entries ``SYSTEM_AUDIT_MIN_DAYS`` at least, whatever the
+        deployment's default: its owners' inspections of people's conversations live there, and
+        their authors must see them as long as the conversations exist.
+
         Returns:
             How many were deleted.
         """
@@ -2308,12 +2317,16 @@ class AuditRepository(_Repo):
         deleted = 0
         async with self.db.session() as s:
             apps = (
-                await s.execute(sa.select(m.Application.id, m.Application.audit_ttl_days))
+                await s.execute(
+                    sa.select(m.Application.id, m.Application.audit_ttl_days, m.Application.system)
+                )
             ).all()
-            for app_id, ttl in [*apps, (None, None)]:
+            for app_id, ttl, system in [*apps, (None, None, False)]:
                 days = ttl or default_ttl_days
                 if not days:
                     continue
+                if system:
+                    days = max(int(days), SYSTEM_AUDIT_MIN_DAYS)
                 owner = a.application_id.is_(None) if app_id is None else a.application_id == app_id
                 cutoff = now - timedelta(days=int(days))
                 r = await s.execute(sa.delete(a).where(owner, a.at < cutoff))

@@ -113,6 +113,14 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- A privacy export includes each conversation's prompt module choices with their values (`promptOptions`): a
+  free-text value is whatever the application wrote about the person, and it was erased but never exported. The
+  privacy page lists these settings.
+- An expired conversation no longer opens in the console (its detail and an owner's inspection) before the hourly
+  purge deletes it; the server API and the session already refused it.
+- The assistant's application keeps its audit log 30 days at least, whatever `EVOKAI_AUDIT_TTL_DAYS` says: the
+  owners' inspections of people's conversations live there, and their authors must see them while the conversations
+  exist.
 - A reloaded conversation lost its tool cards, its errors and the tool-call cap's sentence, split each answer into one
   message per model step, and showed a chart or a question after the whole answer's text instead of where it appeared.
   The chat panel reloads the stored copy after every turn, so this could show without a reload.
