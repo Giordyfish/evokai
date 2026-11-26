@@ -66,6 +66,19 @@ def test_map_and_count_helpers() -> None:
     )
 
 
+def test_map_finds_a_boolean_as_it_is_printed() -> None:
+    agent = AgentDef.model_validate({
+        "name": "helper",
+        "instructions": "x",
+        "model": "function:x",
+        "confirm_labels": {"ship": 'Ship {{map express "speed"}} ({{express}})'},
+        "confirm_values": {"speed": {"true": "by express courier", "false": "by post"}},
+        "template_syntax": "handlebars",
+    })
+    assert confirm_label(agent, "ship", {"express": True}) == "Ship by express courier (true)"
+    assert confirm_label(agent, "ship", {"express": False}) == "Ship by post (false)"
+
+
 def test_unknown_table_refused_on_save() -> None:
     check_labels({"order_refund": REFUND}, TABLES)
     with pytest.raises(BadRequest, match="refunds") as e:

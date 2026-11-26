@@ -128,7 +128,9 @@ class _Store:
 
 def _guard(shared: SharedState) -> Guard:
     settings = Settings(signing_key="s" * 32)
-    return Guard(_Store(), settings, Keyring(settings), shared)
+    guard = Guard(_Store(), settings, Keyring(settings), shared)
+    guard.clock = lambda: 1_800_000_030.0  # mid-minute: the counts never straddle two windows
+    return guard
 
 
 async def test_two_instances_share_concurrency_and_rate_through_redis() -> None:

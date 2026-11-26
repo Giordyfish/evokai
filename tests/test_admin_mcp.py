@@ -184,6 +184,34 @@ async def test_operator_changes_an_agent_and_audit_says_mcp(mcp: Env) -> None:
     assert other["actorKind"] == "admin_key"
 
 
+async def test_the_audit_keeps_the_mcp_callers_address(mcp: Env) -> None:
+    import sqlalchemy as sa
+
+    from evokai.db import models as m
+
+    app = mcp.client._transport.app  # ty: ignore[missing-attribute]
+    remote = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=("203.0.113.7", 50000)),
+        base_url="http://evokai",
+    )
+    async with remote:
+        owner = McpClient("evokai-admin", URL, remote, {"Authorization": f"Bearer {mcp.admin_key}"})
+        result = await owner.call_tool("put_prompt", {"name": "greeting", "text": "Hello."})
+        assert result.ok, result.text
+        # Sent from outside, the address header is not believed either.
+        r = await remote.put(
+            "/agent/v1/admin/prompts/other",
+            json={"text": "Hi."},
+            headers={**_admin(mcp), "X-Evokai-Via-Client": "198.51.100.1"},
+        )
+        assert r.status_code == 200, r.text
+    async with mcp.svc.store.db.session() as s:
+        rows = (await s.execute(sa.select(m.AuditEntry.target, m.AuditEntry.ip))).all()
+    ips = {target.split(" ")[0]: ip for target, ip in rows if target}
+    assert ips["greeting"] == "203.0.113.7"  # not 127.0.0.1, where the in-process call comes from
+    assert ips["other"] == "203.0.113.7"
+
+
 async def test_no_bearer_is_401(mcp: Env) -> None:
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     headers = {"Accept": "application/json, text/event-stream"}

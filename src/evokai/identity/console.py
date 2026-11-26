@@ -35,7 +35,8 @@ class ConsoleLogin:
     application_id: str | None
     expires_at: int
     key_id: str | None = None
-    """The admin key the login was made with (it ends with the key's revocation)."""
+    """The admin key the login was made with (it ends with the key's revocation); for the
+    operator key, its fingerprint (the login ends when the key is changed or removed)."""
     user_id: str | None = None
     """Single sign-on: the console user (a disabled user's login ends at once)."""
     email: str | None = None
@@ -85,6 +86,31 @@ def is_operator_key(presented: str, configured: str | None) -> bool:
         True for the operator key.
     """
     return bool(configured) and hmac.compare_digest(presented.encode(), str(configured).encode())
+
+
+def operator_fingerprint(keyring: Keyring, configured: str | None) -> str | None:
+    """A keyed fingerprint of the operator key, held by an operator login (``key_id``).
+
+    A login made with the operator key ends when the key is changed or removed: its fingerprint
+    no longer matches. It is keyed with the signing key, so it says nothing about the key itself.
+
+    Returns:
+        32 hex characters, or None without an operator key.
+    """
+    if not configured:
+        return None
+    mac = hmac.new(keyring.signing_key.encode(), f"evokai-operator:{configured}".encode(), "sha256")
+    return mac.hexdigest()[:32]
+
+
+def operator_current(keyring: Keyring, configured: str | None, key_id: str | None) -> bool:
+    """Whether an operator login was made with the operator key configured now.
+
+    Returns:
+        True when the login's fingerprint matches the current key's (constant time).
+    """
+    now = operator_fingerprint(keyring, configured)
+    return bool(now and key_id) and hmac.compare_digest(str(key_id).encode(), str(now).encode())
 
 
 def issue(keyring: Keyring, login: ConsoleLogin) -> str:

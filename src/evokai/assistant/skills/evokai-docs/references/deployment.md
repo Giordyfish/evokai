@@ -30,7 +30,8 @@ Production injects `EVOKAI_SIGNING_KEY`, `EVOKAI_ENCRYPTION_KEY` and `EVOKAI_OPE
 install without one sets `EVOKAI_STATE_DIR` to a persistent, private directory: on the first start (or
 `evokai init`) the three keys are generated into `keys.json` (mode 0600) and the operator key is printed once; later
 starts read them back. A key given in the environment always wins over the file. `evokai init
---rotate-operator-key` prints a new operator key (it applies from the next start).
+--rotate-operator-key` prints a new operator key (it applies from the next start, and then ends every console login
+and assistant delegation made with the old one).
 
 
 ## The admin console

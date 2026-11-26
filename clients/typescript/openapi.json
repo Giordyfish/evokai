@@ -4553,6 +4553,28 @@
         "title": "RegenerateBody",
         "type": "object"
       },
+      "Reset": {
+        "description": "The typed slug and the plan of the preview the person saw.",
+        "properties": {
+          "confirm": {
+            "maxLength": 60,
+            "title": "Confirm",
+            "type": "string"
+          },
+          "plan": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Plan",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "plan"
+        ],
+        "title": "Reset",
+        "type": "object"
+      },
       "Residency": {
         "additionalProperties": false,
         "description": "Where an application's data lives and where its models may run.",
@@ -8262,13 +8284,13 @@
     },
     "/agent/v1/admin/application/reset": {
       "post": {
-        "description": "Delete what the reset preview lists and apply the shipped definition again, locked (owner).\n\nReturns:\n    ok and deleted (how many items).\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).\n    Conflict: A system application this version of Evokai does not ship.",
+        "description": "Delete what the reset preview lists and apply the shipped definition again, locked (owner).\n\nReturns:\n    ok and deleted (how many items).\n\nRaises:\n    BadRequest: The typed slug is not the application's (400 ``confirm``).\n    Conflict: A system application this version of Evokai does not ship, or what the reset\n        would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).",
         "operationId": "reset_application_agent_v1_admin_application_reset_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Unlock"
+                "$ref": "#/components/schemas/Reset"
               }
             }
           },
@@ -8306,7 +8328,7 @@
     },
     "/agent/v1/admin/application/reset/preview": {
       "get": {
-        "description": "Everything a reset of the system application deletes or restores (owner).\n\nEach deleted item carries its definition without secrets (``item``), for the owner to keep\nbefore resetting.\n\nReturns:\n    slug and items (kind, name, action: ``delete`` or ``restore``, item).\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
+        "description": "Everything a reset of the system application deletes or restores (owner).\n\nEach deleted item carries its definition without secrets (``item``), for the owner to keep\nbefore resetting. ``plan`` fingerprints the items: the reset takes it back.\n\nReturns:\n    slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.\n\nRaises:\n    Conflict: A system application this version of Evokai does not ship.",
         "operationId": "reset_preview_agent_v1_admin_application_reset_preview_get",
         "responses": {
           "200": {
@@ -14990,7 +15012,7 @@
     },
     "/agent/v1/console/me": {
       "get": {
-        "description": "Who is logged in.\n\nReturns:\n    kind (``op``, ``adm`` or ``sso``), applicationId, expiresAt, keyId and keyPrefix (admin\n    logins), email, name and roles (single sign-on), whether it owns the deployment, and the\n    deployment's facts the console needs (model allow-list, voice enabled).\n\nRaises:\n    Unauthorized: Not logged in, the login's key was revoked or its user disabled.",
+        "description": "Who is logged in.\n\nReturns:\n    kind (``op``, ``adm`` or ``sso``), applicationId, expiresAt, keyId and keyPrefix (admin\n    logins), email, name and roles (single sign-on), whether it owns the deployment, and the\n    deployment's facts the console needs (model allow-list, voice enabled).\n\nRaises:\n    Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the\n        operator key changed.",
         "operationId": "me_agent_v1_console_me_get",
         "responses": {
           "200": {

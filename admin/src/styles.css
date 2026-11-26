@@ -386,6 +386,8 @@ td .seg{flex-wrap:nowrap}td .seg [data-v]{padding:0 9px;white-space:nowrap}
   .shell{grid-template-columns:minmax(0,1fr)}
   .side{position:fixed;inset:8px auto 8px 8px;width:min(290px,86vw);height:auto;margin:0;z-index:70;transform:translateX(-110%);transition:transform .25s}
   .shell.open .side{transform:none}
+  /* The open drawer is on top: on a phone the assistant's launcher (bottom right, above everything) covered its foot. */
+  body:has(.shell.open) evokai-chat{visibility:hidden}
   .content{padding:0 16px 80px}
   .content.withassistant{padding-bottom:150px}
   .topbar{margin:0 -16px 0;padding:0 16px}

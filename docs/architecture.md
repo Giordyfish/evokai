@@ -478,7 +478,8 @@ the headless client's `EvokaiConsole` from the repository's sources. Sign-in exc
 key) for a signed, short-lived cookie: `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, scoped to the API path; the
 key is never stored in the browser. Every request must also carry `X-Evokai-Console: 1`, a header a cross-site form
 cannot send, so the cookie alone authorises nothing (CSRF). An admin login is bound to its key and ends when the key
-is revoked; logout deletes the cookie. An admin key sees its own application; the operator key (`EVOKAI_OPERATOR_KEY`)
+is revoked; an operator login ends when the operator key is changed or removed (it holds a keyed fingerprint of the
+key), and so does the console assistant's delegation made from it; logout deletes the cookie. An admin key sees its own application; the operator key (`EVOKAI_OPERATOR_KEY`)
 sees every application and creates new ones. People can also sign in with single sign-on (OpenID Connect, code with
 PKCE, MFA required from the provider when configured); their roles (viewer, operator, owner, per application or for
 all of them) come from the provider's claims and are enforced by the service on every route, and every change lands

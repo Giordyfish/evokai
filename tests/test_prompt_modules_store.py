@@ -53,3 +53,26 @@ async def test_session_prompt_options_roundtrip(env: Env) -> None:
     plain, _ = await env.svc.store.sessions.create(w, "helper", "v1", "Books", [])
     got = await env.svc.store.sessions.get(w, plain.id)
     assert got is not None and got.prompt_options is None
+
+
+async def test_the_audit_of_a_prompt_save_holds_its_description_and_data(env: Env) -> None:
+    body = {
+        "text": "{{lookup data shelf}}",
+        "parameters": {
+            "type": "object",
+            "properties": {"shelf": {"type": "string", "enum": ["a", "b"]}},
+            "required": ["shelf"],
+        },
+        "description": "Which shelf the clerk looks after",
+        "data": {"a": "You look after crime.", "b": "You look after poetry."},
+    }
+    r = await env.client.put(
+        "/agent/v1/admin/prompts/shelf",
+        json=body,
+        headers={"Authorization": f"Bearer {env.admin_key}"},
+    )
+    assert r.status_code == 200, r.text
+    (entry,) = await env.svc.store.audit.query(env.app_id, action="prompt.put")
+    after = entry.after or {}
+    assert after["description"] == "Which shelf the clerk looks after"
+    assert after["data"] == body["data"]

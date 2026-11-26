@@ -143,6 +143,28 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - The reasoning of a step that called tools is sent back to the model with its calls, as the providers require
   (Anthropic thinking with its signature, OpenAI encrypted reasoning): every later request of the turn rebuilt the
   history without it. A confirmation carries the reasoning of the calls that waited (Evokai storage, kept server side).
+- A console login made with the operator key, its one-time sign-in code and the console assistant's delegation made
+  from it end when the operator key is changed or removed (they lasted until they expired). The login holds a keyed
+  fingerprint of the key; operators sign in again after this release.
+- A reset of the assistant's application deletes only what its preview showed: the preview's `plan` goes back with
+  the reset, and anything added or changed meanwhile answers `409 plan_changed` and the console shows the new preview.
+- A failed, capped or interrupted try of a model for the assistant no longer leaves the recorded server's credential
+  in the application's settings, and a finished try stores its numbers before it shows as done (the Assistant page
+  could find it done without them).
+- Audit entries made through the admin MCP server record the address of the MCP server's caller, not 127.0.0.1.
+- The guard's system prompt leak check covers the session's prompt modules, not only the instructions.
+- A version pinned at a turn's start no longer overwrites a choice of modules or a locale minted during the turn.
+- A session token that sends again a free-text module value the conversation already holds is not scanned again (one
+  guard event and one classification per value), and a mint refused for a closed conversation or its storage mode
+  scans nothing. A classifier's own event on a module value keeps its reason.
+- `locale: ""` on a session token clears the conversation's locale; the playground's "Application locale" sends it,
+  so switching back works.
+- The `prompt.put` audit entry holds the prompt's description and data table.
+- `{{map field "table"}}` in confirm labels finds a boolean under `true` and `false`, as the label prints it.
+- On a narrow screen the console assistant's launcher no longer covers the open sidebar drawer.
+- fastmcp is pinned below 3.5: the admin MCP server reads a private attribute of its OpenAPI provider.
+- A reset of the assistant's application revokes people's OAuth connections at the provider before deleting them, as
+  a disconnect or an erasure does: deleting the rows alone left the tokens valid at the provider.
 - The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
   named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
 - The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
@@ -151,11 +173,28 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   application's slug, a hash route (`#/apps/x`) is the same page, and a refused path tells the model the format.
 - With the assistant on, the Mascot preference offers animated or still (the assistant's mage); removing the mage is
   switching the assistant off.
+- Tests: the service suite no longer hangs at the end of a test until the CI's 20 minute limit. The leak guard now
+  also cancels the tasks that a cancellation starts (a cleanup in a task of its own, as `asyncio.shield` and
+  SQLAlchemy's close make), which the closing of the test's event loop then cancelled once and waited on for good; that
+  closing now waits 30 seconds at most and names the task that ignored it.
+- The gateway's shutdown no longer spins for good when a record has just been written: it waited again on
+  writes already done but not yet out of its set, which completes without giving the event loop a turn
+  (Python 3.12 and later), so they never left it. This was the CI hang at the end of a test on the Postgres
+  pass, not a record that never finished; `close()` now returns how many records it dropped, and a test
+  whose gateway records are still pending at its end fails with their stacks and the database's locks.
+- Tests: the tests that failed on slow CI runners no longer depend on timing. The voice barge-in and the spoken
+  confirmation wait for the agent's state instead of a pause, the classifier timeouts use a classifier that never
+  answers instead of a wall-clock bound, and the rate limit tests pin the clock the windows are cut on (a request
+  rate test failed when its requests straddled a minute).
 
 ### Changed
 
 - The ™ sign is gone from the console, the README and the NOTICE files; the name, logo and mascot stay trademarks as
   the NOTICE says.
+- `POST /v1/admin/application/reset` needs `plan`, the fingerprint its preview (`GET
+  /v1/admin/application/reset/preview`) returns: read the preview, then send its `plan` with the typed slug (400
+  without it, `409 plan_changed` when the preview is out of date). The console does this.
+
 
 ## [0.2.2] - 2026-11-24
 
