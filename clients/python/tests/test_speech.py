@@ -76,7 +76,20 @@ def test_transcribe_posts_the_recording(router: respx.MockRouter) -> None:
     request = route.calls.last.request
     assert request.headers["content-type"] == "audio/wav"
     assert request.url.params["language"] == "it-IT"
+    assert "hint" not in request.url.params
     assert request.content == b"RIFF...."
+
+
+async def test_a_transcription_hint_is_a_query_parameter(router: respx.MockRouter) -> None:
+    route = router.post("/v1/session/transcribe").mock(
+        return_value=httpx.Response(200, json={"text": "Evokai", "durationMs": 300, "engine": "x"})
+    )
+    with EvokaiSession(BASE, TOKEN) as s:
+        s.transcribe(b"RIFF....", hint="Evokai, Pipecat")
+    assert route.calls.last.request.url.params["hint"] == "Evokai, Pipecat"
+    async with AsyncEvokaiSession(BASE, TOKEN) as a:
+        await a.transcribe(b"RIFF....", hint="Silero")
+    assert route.calls.last.request.url.params["hint"] == "Silero"
 
 
 async def test_async_transcribe_refused(router: respx.MockRouter) -> None:

@@ -162,10 +162,13 @@ export function transcribeSocketUrl(session: Pick<SpeechSession, 'url'>): string
 export async function transcribe(
   session: SpeechSession,
   audio: Blob | Uint8Array,
-  opts: { language?: string; contentType?: string; signal?: AbortSignal } = {},
+  opts: { language?: string; hint?: string; contentType?: string; signal?: AbortSignal } = {},
 ): Promise<{ text: string; durationMs: number; engine: string }> {
   const type = opts.contentType ?? (audio instanceof Blob && audio.type ? audio.type : 'audio/wav')
-  const url = session.url('/v1/session/transcribe') + (opts.language ? `?language=${encodeURIComponent(opts.language)}` : '')
+  const query = new URLSearchParams()
+  if (opts.language) query.set('language', opts.language)
+  if (opts.hint) query.set('hint', opts.hint)
+  const url = session.url('/v1/session/transcribe') + (query.size ? `?${query}` : '')
   const send = async (force: boolean) =>
     session.fetchLike(url, {
       method: 'POST',
