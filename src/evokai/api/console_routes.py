@@ -619,16 +619,21 @@ async def conversation_subject(
     """The subject of a conversation of the application.
 
     Returns:
-        The subject, or None when there is no such conversation.
+        The subject, or None when there is no such conversation or it has expired (its time to
+        live ended: it is gone for every reader, even before the hourly purge deletes it).
     """
     async with svc.db.session() as s:
-        return (
+        subject = (
             await s.execute(
                 sa.select(m.Session.subject).where(
                     m.Session.id == conversation_id, m.Session.application_id == application_id
                 )
             )
         ).scalar_one_or_none()
+    if subject is None:
+        return None
+    alive = await svc.store.sessions.get(Who(application_id, subject), conversation_id)
+    return subject if alive is not None else None
 
 
 async def conversation_view(
@@ -640,7 +645,7 @@ async def conversation_view(
         The conversation.
 
     Raises:
-        NotFound: No such conversation.
+        NotFound: No such conversation, or it has expired.
     """
     async with svc.db.session() as s:
         row = (
@@ -665,6 +670,8 @@ async def conversation_view(
     if row is None:
         raise NotFound()
     who = Who(application_id, row.subject)
+    if await svc.store.sessions.get(who, row.id) is None:
+        raise NotFound()  # expired: its time to live ended, the purge has not run yet
     thread = await svc.store.sessions.thread(row.id)
     msgs = await svc.store.messages.recent(who, thread.id, 400)
     application = await svc.store.applications.get(application_id)

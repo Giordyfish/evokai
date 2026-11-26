@@ -275,6 +275,9 @@ async def export_subject(store: Store, who: Who, *, amounts: bool) -> dict[str, 
                 "storageMode": x.storage_mode,
                 "status": x.status,
                 "consent": x.consent,
+                # The prompt modules and locale chosen at mint, free-text values included (a
+                # name, a preference): the application may have written anything about the person.
+                "promptOptions": x.prompt_options,
                 "createdAt": _iso(x.created_at),
                 "updatedAt": _iso(x.updated_at),
                 "messages": by_session.get(x.id, []),

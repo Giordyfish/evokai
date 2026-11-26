@@ -12,6 +12,7 @@ application uses e-mail addresses as subjects, those are personal data in every 
 | Data | Table | When | Kept | Personal data |
 |---|---|---|---|---|
 | Conversations: title, agent and version, storage mode, consent record, kiosk exit code (hashed) | `evokai_sessions` | Evokai storage mode | `conversation_ttl_days` after the last message (else until deleted) | subject, title (first words of the first message) |
+| Conversation settings: the prompt modules a session token chose with their values (free text included), its locale, the client tools it declared | `evokai_sessions` | a session token sets them | as the conversation; with external storage until the conversation is deleted or the person erased | whatever the application wrote in a free-text value (exported with the conversation as `promptOptions`) |
 | Messages: what the model saw and what the user saw, events shown (in order: the text, the names of the tools that ran and their outcome, charts, questions, confirmations, citations, errors; never a tool's arguments or result) | `evokai_messages`, `evokai_threads` | Evokai storage mode | as the conversation | everything the user and the tools wrote (masked with `pii.history`) |
 | Attachments: the files a person attached to a chat message (images without their metadata), with name, type, size and hash | `evokai_attachments` | Evokai storage mode, an agent that takes attachments ([attachments](attachments.md)) | as the conversation | whatever the files hold |
 | Replay events (the stream as sent) | `evokai_events` | Evokai storage mode | as the conversation | as the messages |
@@ -115,7 +116,7 @@ the code sandbox, server speech and connections, and the GDPR pack lists every p
 | Conversations (Evokai storage) | `conversation_ttl_days` | kept |
 | Traces (every turn and server run) | `conversation_ttl_days` | kept |
 | Security events | `security_event_ttl_days`, else `EVOKAI_SECURITY_EVENT_TTL_DAYS` | 180 days |
-| Audit log | `audit_ttl_days`, else `EVOKAI_AUDIT_TTL_DAYS` (also for deployment-wide entries) | 400 days |
+| Audit log | `audit_ttl_days`, else `EVOKAI_AUDIT_TTL_DAYS` (also for deployment-wide entries); the assistant's application 30 days at least | 400 days |
 | Forwarded credentials | the session token's life | at most 15 minutes |
 | Pending confirmations (external storage) | fixed | one hour |
 | Session revocations | the longest token life plus a margin | 20 minutes |

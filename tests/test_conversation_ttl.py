@@ -90,6 +90,16 @@ async def test_an_expired_conversation_is_gone_on_reads_before_the_purge(env: En
         headers={"Authorization": f"Bearer {token}", "Origin": ORIGIN},
     )
     assert (chat.status_code, chat.json()["error"]) == (404, "expired_conversation")
+    # The console's reads too: the list, the conversation, its reviewers' notes.
+    adm = {"Authorization": f"Bearer {env.admin_key}"}
+    rows = await env.client.get("/agent/v1/admin/conversations", headers=adm)
+    assert cid not in rows.text
+    detail = await env.client.get(f"/agent/v1/admin/conversations/{cid}", headers=adm)
+    assert detail.status_code == 404
+    note = await env.client.post(
+        f"/agent/v1/admin/conversations/{cid}/notes", json={"note": "seen"}, headers=adm
+    )
+    assert note.status_code == 404, note.text
 
 
 async def test_the_purge_deletes_content_and_keeps_usage_unlinked(env: Env) -> None:
