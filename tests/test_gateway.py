@@ -779,7 +779,22 @@ async def test_a_record_that_never_finishes_does_not_hold_the_shutdown(
     gw = env.svc.gateway
     stuck = asyncio.Event()
     gw._later(stuck.wait())
-    t0 = time.monotonic()
-    await gw.close()
-    assert time.monotonic() - t0 < 2
+    assert await gw.close() == 1  # dropped and logged, the shutdown goes on
     assert not gw._writes
+
+
+async def test_a_finished_record_not_yet_out_of_the_set_does_not_hold_the_wait(env: Env) -> None:
+    """The CI "hang" at close: a write done, its done callback (which takes it out of the set)
+    not run yet. Waiting on done tasks completes without yielding (Python 3.12 gathers them
+    eagerly), so the callback never ran and the wait spun for good on the event loop."""
+
+    async def write() -> None:  # ruff: ignore[unused-async] (a write that ends at once)
+        return None
+
+    gw = env.svc.gateway
+    gw._later(write())
+    await asyncio.sleep(0)  # the write runs and ends; its done callback is only scheduled
+    (task,) = gw._writes
+    assert task.done()
+    assert await gw.idle(5) is True  # a spinning wait would never return (not even wait_for)
+    assert await gw.close() == 0

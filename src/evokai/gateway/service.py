@@ -98,28 +98,36 @@ class GatewayService:
             True when every record was written, False when some were still pending at the timeout.
         """
         deadline = None if timeout is None else time.monotonic() + timeout
-        while self._writes:
+        # Only the writes not done: a finished one leaves the set by a done callback, which runs
+        # on the loop's next turn. Waiting on it again (the earlier ``gather`` loop) completed at
+        # once without yielding, since Python 3.12 gathers done tasks eagerly, so that callback
+        # never ran and the wait spun forever: the CI "hang" at close, with no write pending.
+        while pending := [t for t in self._writes if not t.done()]:
             left = None if deadline is None else deadline - time.monotonic()
             if left is not None and left <= 0:
                 return False
-            _, pending = await asyncio.wait(list(self._writes), timeout=left)
-            if pending and deadline is not None and time.monotonic() >= deadline:
-                return False
+            await asyncio.wait(pending, timeout=left)
         return True
 
-    async def close(self) -> None:
+    async def close(self) -> int:
         """Finish the records being written and release the connections.
 
         It waits at most ``CLOSE_WAIT`` seconds: a write that hangs (a database that does not
         answer) must not hold the shutdown, so what is still pending is cancelled and logged.
+
+        Returns:
+            How many records were dropped (0 when every one was written).
         """
+        dropped = 0
         if not await self.idle(CLOSE_WAIT):
-            pending = list(self._writes)
-            log.warning("gateway_records_dropped", extra={"count": len(pending)})
+            pending = [t for t in self._writes if not t.done()]
+            dropped = len(pending)
+            log.warning("gateway_records_dropped", extra={"count": dropped})
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
         await self.client.aclose()
+        return dropped
 
     async def gateway(self, gateway_id: str) -> m.Application | None:
         """A gateway's row (cached for ``APP_TTL`` seconds).
