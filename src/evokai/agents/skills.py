@@ -38,7 +38,7 @@ MAX_BODY_CHARS = 20_000
 """The body of SKILL.md (what ``skill_load`` returns), front matter excluded."""
 MAX_READ_CHARS = 20_000
 """Characters of a file one ``skill_load`` returns; a longer file is read in pages (``offset``)."""
-MAX_SKILL_BYTES = 500_000
+MAX_SKILL_BYTES = 1_000_000
 """UTF-8 bytes of a whole skill: SKILL.md and every file."""
 MAX_SKILL_FILES = 50
 """Files of a skill besides SKILL.md."""
