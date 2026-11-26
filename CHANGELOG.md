@@ -125,6 +125,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Fixed
 
+- Gateway: a policy refusal on the Anthropic door is a 451, which Claude Code sends once and shows as it is; with a 400 it
+  resent the refused request 8 times (Codex sends its 400 once).
 - A privacy export includes each conversation's prompt module choices with their values (`promptOptions`): a
   free-text value is whatever the application wrote about the person, and it was erased but never exported. The
   privacy page lists these settings.
