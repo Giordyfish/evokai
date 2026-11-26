@@ -124,3 +124,54 @@ describe('ordered parts', () => {
     expect(msgs[1]!.parts.map((p) => p.kind)).toEqual(['text', 'tool', 'text', 'chart', 'text'])
   })
 })
+
+describe('reasoning and tool arguments (0.3)', () => {
+  const turn: EvokaiEvent[] = [
+    { type: 'conversation', id: 'c', turnStarted: true },
+    { type: 'reasoning', delta: 'I look up ' },
+    { type: 'reasoning', delta: 'October.' },
+    { type: 'tool', name: 'orders_month', id: 'a', status: 'args', args: {} },
+    { type: 'tool', name: 'orders_month', id: 'a', status: 'args', args: { period: '2026-10' } },
+    { type: 'tool', name: 'order_refund', id: 'r', status: 'args', args: { reason: 'dam' } },
+    { type: 'tool', name: 'orders_month', id: 'a', status: 'start' },
+    { type: 'tool', name: 'orders_month', id: 'a', status: 'done' },
+    { type: 'tool', name: 'order_refund', id: 'r', status: 'waiting' },
+    { type: 'done', conversationId: 'c', reason: 'confirm' },
+  ] as unknown as EvokaiEvent[]
+  /** As the service stores it (`evokai.sessions.parts`): consecutive reasoning joined, one card per call. */
+  const kept: StoredMessage[] = [
+    { id: 'u1', turnId: 't', role: 'user', text: 'Go', events: [], feedback: null },
+    {
+      id: 'a1',
+      turnId: 't',
+      role: 'assistant',
+      text: '',
+      events: [
+        { type: 'reasoning', delta: 'I look up October.' },
+        { type: 'tool', name: 'orders_month', id: 'a', status: 'done', args: { period: '2026-10' } },
+        { type: 'tool', name: 'order_refund', id: 'r', status: 'waiting', args: { reason: 'dam' } },
+      ],
+      feedback: null,
+    },
+  ] as unknown as StoredMessage[]
+
+  test('a reload shows the reasoning and the cards as they ended live', () => {
+    const now = streamed(turn)
+    expect(shown(fromStored(kept, null))).toEqual(shown(now.messages))
+    expect(now.messages[1]!.parts).toEqual([
+      { kind: 'reasoning', text: 'I look up October.' },
+      { kind: 'tool', name: 'orders_month', status: 'done', callId: 'a', args: { period: '2026-10' } },
+      { kind: 'tool', name: 'order_refund', status: 'waiting', callId: 'r', args: { reason: 'dam' } },
+    ])
+  })
+
+  test('a call still being written when the turn ends is dropped, as the service drops it', () => {
+    const cut = [
+      { type: 'conversation', id: 'c', turnStarted: true },
+      { type: 'text', delta: 'Wait.' },
+      { type: 'tool', name: 'orders_month', id: 'a', status: 'args', args: { per: null } },
+      { type: 'done', conversationId: 'c', reason: 'cancelled' },
+    ] as unknown as EvokaiEvent[]
+    expect(streamed(cut).messages[1]!.parts).toEqual([{ kind: 'text', text: 'Wait.' }])
+  })
+})

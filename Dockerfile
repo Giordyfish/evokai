@@ -8,7 +8,8 @@
 # Code Mode, compaction and subagents and every harness extra under 30 MB (the harness-lite extra);
 # full installs every harness extra that resolves (the harness extra). Whether a capability is used is
 # the deployment's, the grant's and the agent's choice (evokai.capabilities); one the lite image leaves
-# out shows as not installed, «not in the lite image».
+# out shows as not installed, «not in the lite image». Both flavours carry the otel and azure extras
+# (Microsoft Entra ID without keys, Claude in Microsoft Foundry; docs/azure.md).
 # The admin console (admin/) is built to static files and served at {EVOKAI_BASE_PATH}/admin/.
 # /data (owned by uid 1001) is where EVOKAI_STATE_DIR keeps generated keys when a volume is mounted.
 ARG PYTHON_VERSION=3.14
@@ -33,14 +34,14 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE NOTICE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     test "$IMAGE" = lite || test "$IMAGE" = full \
- && uv sync --locked --no-dev --no-install-project --extra otel \
+ && uv sync --locked --no-dev --no-install-project --extra otel --extra azure \
       --extra $([ "$IMAGE" = "full" ] && echo harness || echo harness-lite) \
       $([ "$VOICE" = "1" ] && echo --extra voice) $([ -n "$PROMPT_GUARD" ] && echo --extra prompt-guard)
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --extra otel \
+    uv sync --locked --no-dev --extra otel --extra azure \
       --extra $([ "$IMAGE" = "full" ] && echo harness || echo harness-lite) \
       $([ "$VOICE" = "1" ] && echo --extra voice) $([ -n "$PROMPT_GUARD" ] && echo --extra prompt-guard)
 

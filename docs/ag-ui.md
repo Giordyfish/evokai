@@ -36,10 +36,10 @@ abuse limit) is an HTTP error before the stream starts, with Evokai's usual `{er
 |---|---|
 | (start) | `RUN_STARTED`, then `STATE_SNAPSHOT` `{evokai: {conversationId, agent, turnId}}` |
 | `text` | `TEXT_MESSAGE_START` (role `assistant`), `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END` before a tool call or at the end |
-| `tool` start, done or error | `TOOL_CALL_START` and `TOOL_CALL_END` (no arguments are streamed), then `TOOL_CALL_RESULT` whose `content` is `{"status": "done"}` or `{"status": "error"}`: a tool's output never reaches the browser |
+| `tool` start, done or error | `TOOL_CALL_START` and `TOOL_CALL_END` (no arguments are streamed), then `TOOL_CALL_RESULT` whose `content` is `{"status": "done"}` or `{"status": "error"}`: a tool's output never reaches the browser. A call that has not run (`args`, `waiting`, `skipped`, an agent with `show_tool_args`) sends nothing |
 | `confirm` | `CUSTOM evokai.confirm` `{actionId, items}`, and an interrupt at the end of the run |
 | `ask` | `CUSTOM evokai.ask` `{askId, question, options, multiple, other}`, and an interrupt at the end of the run |
-| `chart`, `diagram`, `navigate`, `say`, `speech`, `citation` | `CUSTOM evokai.chart`, `evokai.diagram`, `evokai.citation` (a knowledge base passage the answer cites)... with the same payload as the session chat |
+| `chart`, `diagram`, `navigate`, `say`, `speech`, `citation`, `reasoning` | `CUSTOM evokai.chart`, `evokai.diagram`, `evokai.citation` (a knowledge base passage the answer cites), `evokai.reasoning` (an agent that [shows its reasoning](streaming.md))... with the same payload as the session chat |
 | `usage` | `CUSTOM evokai.usage` and `STATE_DELTA` `[{op: add, path: /evokai/usage, value}]`: shares of the caps (`dayPct`, `weekPct`, `monthPct`, `companyPct`, `monthOut`, `out`, `binding`, `resetsAt`, `caps`), never amounts |
 | `error` | `RUN_ERROR` `{message, code}` (`guard`, `limit`, `model`, `internal`...), the run's last event |
 | `done` | `RUN_FINISHED` with `result: {reason, conversationId, messages?}` (`messages` with external storage, to append to the application's copy) and `outcome` |

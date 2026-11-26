@@ -320,6 +320,16 @@
             ],
             "title": "Security"
           },
+          "show_reasoning": {
+            "default": false,
+            "title": "Show Reasoning",
+            "type": "boolean"
+          },
+          "show_tool_args": {
+            "default": false,
+            "title": "Show Tool Args",
+            "type": "boolean"
+          },
           "skills": {
             "anyOf": [
               {
@@ -4670,6 +4680,11 @@
             "title": "Mmr Lambda",
             "type": "number"
           },
+          "rerank": {
+            "default": false,
+            "title": "Rerank",
+            "type": "boolean"
+          },
           "top_k": {
             "default": 5,
             "maximum": 20.0,
@@ -7945,6 +7960,66 @@
           }
         },
         "summary": "Put Agent",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/agent/v1/admin/agents/{name}/types": {
+      "get": {
+        "description": "TypeScript declarations of the agent's tools: arguments and results, from their schemas.\n\nThe MCP tools the application is granted, the agent's custom client tools and its\n``output_schema`` (``evokai.tools.typescript``). A ``forward_user`` server lists its tools\nonly with a person's credential: send one (a test user's) as ``X-Evokai-Credential``, as a\nsession token would forward it; without it the server is named as not listed. The credential\nis used for this listing only, never kept.\n\nReturns:\n    The ``.d.ts`` text.\n\nRaises:\n    NotFound: Unknown application or agent.",
+        "operationId": "agent_types_agent_v1_admin_agents__name__types_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Evokai-Credential",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Evokai-Credential"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "A TypeScript .d.ts"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Types",
         "tags": [
           "admin"
         ]

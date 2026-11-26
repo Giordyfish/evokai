@@ -1,9 +1,15 @@
-"""Embedding models: Amazon Titan Text Embeddings v2 on Bedrock, behind an allow-list.
+"""Embedding models: Titan on Bedrock, Azure OpenAI, self-hosted servers, behind an allow-list.
 
 An embedding model is usable when it matches the deployment's ``EVOKAI_EMBEDDING_ALLOW`` and the
 application's data residency (``evokai.privacy.residency_allows``): an in-region Bedrock id such as
 ``amazon.titan-embed-text-v2:0`` runs in the deployment's region (``eu-north-1``), so an application
 whose models must stay in the EU can use it, and nothing else reaches it.
+
+Besides Bedrock, a model whose provider endpoint the provider catalog connects
+(``evokai.llm.providers``) embeds through the OpenAI embeddings API: ``api: azure`` (an Azure OpenAI
+or Foundry deployment such as ``text-embedding-3-large``, with its key or a Microsoft Entra ID
+token) and ``api: openai-compatible`` (a self-hosted server: Ollama, vLLM, Text Embeddings
+Inference). ``azure:<deployment>`` without a declared endpoint uses ``AZURE_OPENAI_ENDPOINT``.
 
 ``test:hash`` is a local model for tests and offline trials: hashed words and word pairs,
 normalised. It costs nothing and finds passages that share words with the question.
@@ -133,6 +139,101 @@ class BedrockEmbedder:
         return Embedded(vectors, tokens)
 
 
+class OpenAIEmbedder:
+    """An embedding model behind the OpenAI embeddings API: Azure OpenAI or a self-hosted server.
+
+    https://learn.microsoft.com/en-us/azure/ai-foundry/openai/reference#embeddings
+    """
+
+    def __init__(self, model: Any, dimensions: int, *, ask_dimensions: bool) -> None:
+        """Wrap a pydantic-ai embedding model.
+
+        Args:
+            model: ``pydantic_ai.embeddings.openai.OpenAIEmbeddingModel``.
+            dimensions: The base's vector size.
+            ask_dimensions: Send ``dimensions`` (text-embedding-3 shortens its vectors); a
+                self-hosted model makes its own size, which must be the base's.
+        """
+        self.model = model
+        self.dimensions = dimensions
+        self.ask_dimensions = ask_dimensions
+
+    async def embed(self, texts: Sequence[str], kind: InputType) -> Embedded:
+        """Embed texts, a batch at a time.
+
+        Returns:
+            Vectors and the tokens the provider counted.
+
+        Raises:
+            BadRequest: The model made vectors of another size than the base's.
+        """
+        vectors: list[list[float]] = []
+        tokens = 0
+        settings: Any = {"dimensions": self.dimensions} if self.ask_dimensions else None
+        for i in range(0, len(texts), BATCH):
+            r = await self.model.embed(
+                list(texts[i : i + BATCH]), input_type=kind, settings=settings
+            )
+            vectors += [list(map(float, v)) for v in r.embeddings]
+            tokens += r.usage.input_tokens or 0
+        if any(len(v) != self.dimensions for v in vectors):
+            raise BadRequest(
+                f"The embedding model makes vectors of {len(vectors[0])} dimensions, the knowledge "
+                f"base expects {self.dimensions}.",
+                code="dimensions",
+            )
+        return Embedded(vectors, tokens)
+
+
+def openai_embedder(name: str, dimensions: int, endpoint: Any) -> Embedder | None:
+    """The embedder of a model the provider catalog connects, or of ``azure:`` from the environment.
+
+    Args:
+        name: ``provider:model``.
+        dimensions: The base's vector size.
+        endpoint: Its catalog endpoint (``evokai.llm.providers.Endpoint``) or None.
+
+    Returns:
+        The embedder, or None when nothing connects the model.
+
+    Raises:
+        BadRequest: The endpoint lacks its base URL.
+    """
+    import os
+
+    from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
+
+    from evokai.llm.catalog import _key, azure_provider
+
+    provider, _, model = name.partition(":")
+    api = getattr(endpoint, "api", None)
+    if api in ("azure", "openai-compatible") and not endpoint.base_url:
+        raise BadRequest(f"The endpoint {endpoint.id} has no base_url.", code="embedding")
+    if api == "azure":
+        built = azure_provider(
+            endpoint.base_url, endpoint.api_version, _key(endpoint.api_key_env, provider)
+        )
+        return OpenAIEmbedder(
+            OpenAIEmbeddingModel(model, provider=built), dimensions, ask_dimensions=True
+        )
+    if api == "openai-compatible":
+        from pydantic_ai.providers.openai_compatible import OpenAICompatibleProvider
+
+        key = _key(endpoint.api_key_env, provider) or "none"
+        built = OpenAICompatibleProvider(provider, base_url=endpoint.base_url, api_key=key)
+        return OpenAIEmbedder(
+            OpenAIEmbeddingModel(model, provider=built), dimensions, ask_dimensions=False
+        )
+    if provider == "azure" and os.environ.get("AZURE_OPENAI_ENDPOINT"):
+        built = azure_provider(
+            os.environ["AZURE_OPENAI_ENDPOINT"], os.environ.get("OPENAI_API_VERSION"), None
+        )
+        return OpenAIEmbedder(
+            OpenAIEmbeddingModel(model, provider=built), dimensions, ask_dimensions=True
+        )
+    return None
+
+
 class EmbeddingCatalog:
     """Embedding models allowed in this deployment, built once and reused."""
 
@@ -215,7 +316,12 @@ class EmbeddingCatalog:
         elif name.startswith("bedrock:"):
             built = BedrockEmbedder(name, dimensions, self.region)
         else:
-            raise BadRequest(f"No embedding provider for {name}.", code="embedding")
+            from evokai.llm import providers
+
+            found = openai_embedder(name, dimensions, providers.current().endpoint_of(name))
+            if found is None:
+                raise BadRequest(f"No embedding provider for {name}.", code="embedding")
+            built = found
         self._built[key] = built
         return built
 

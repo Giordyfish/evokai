@@ -143,7 +143,27 @@ export interface MarkupView {
   cue?: { open: string; close: string }
   speech?: { open: string; close: string }
 }
-export interface ToolEvent extends EventMeta { type: 'tool'; name: string; status: 'start' | 'done' | 'error' }
+/**
+ * A tool call. `start`, then `done` or `error` when it runs. For an agent that shows its tools' arguments
+ * (`show_tool_args`), a call first comes with `status: 'args'` and the arguments written so far (`args`, the object
+ * parsed as far as it goes, through the output checks), then starts, or waits for the person's confirmation
+ * (`waiting`: a `confirm` event follows) or does not run (`skipped`). `id` (the call) ties a call's events together.
+ */
+export interface ToolEvent extends EventMeta {
+  type: 'tool'
+  name: string
+  status: ToolStatus
+  id?: string
+  args?: Record<string, unknown>
+  /** A provider's built-in tool (web search, code execution). */
+  builtin?: boolean
+}
+export type ToolStatus = 'start' | 'done' | 'error' | 'args' | 'waiting' | 'skipped'
+/**
+ * A piece of the model's reasoning while it works, for an agent that shows it (`show_reasoning`): a summary from most
+ * providers, through the output checks. Consecutive pieces make one block; show it collapsed.
+ */
+export interface ReasoningEvent extends EventMeta { type: 'reasoning'; delta: string }
 export interface ChartEvent extends EventMeta { type: 'chart'; chart: Chart }
 export interface DiagramEvent extends EventMeta { type: 'diagram'; diagram: Diagram }
 export interface AskEvent extends EventMeta {
@@ -161,12 +181,14 @@ export interface NavigateEvent extends EventMeta { type: 'navigate'; path: strin
  */
 /**
  * One tool's activity as a page draws it (`EvokaiSession.renderTool`, `<evokai-chat>` `toolRenderers`): only what the
- * events already carry. A server or MCP tool has its name and status (never its arguments or output); a client tool
- * also has its arguments and the result your own handler returned; `ui_chart` and `ui_diagram` have the visual.
+ * events already carry. A server or MCP tool has its name and status (never its output, and its arguments only for an
+ * agent that shows them, `show_tool_args`: then `status` may also be `args`, `waiting` or `skipped`, which mean it has
+ * not run); a client tool also has its arguments and the result your own handler returned; `ui_chart` and
+ * `ui_diagram` have the visual. `evokai types` gives the arguments' and results' types per tool.
  */
 export interface ToolPart {
   name: string
-  status: 'start' | 'done' | 'error'
+  status: ToolStatus
   callId?: string
   args?: Record<string, unknown>
   result?: unknown
@@ -291,7 +313,7 @@ export type ConnectionProvider = 'microsoft365' | 'google' | 'github' | 'linear'
 export interface ConnectEvent extends EventMeta { type: 'connect'; provider: ConnectionProvider; title: string; server: string }
 
 export type EvokaiEvent =
-  | ConversationEvent | TextEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
+  | ConversationEvent | TextEvent | ReasoningEvent | SayEvent | ToolEvent | ChartEvent | DiagramEvent | AskEvent | NavigateEvent
   | ConfirmEvent | ConfirmedEvent | UsageEvent | ErrorEvent | DoneEvent | SpeechEvent | CitationEvent | HandoffEvent
   | ConnectEvent | RewrittenEvent | ClientToolEvent
 

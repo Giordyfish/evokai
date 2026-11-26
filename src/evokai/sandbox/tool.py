@@ -283,7 +283,8 @@ class CodeService:
 
         Args:
             settings: ``EVOKAI_CODE_*`` settings.
-            interpreter: The interpreter (tests pass a fake); else AgentCore in the region.
+            interpreter: The interpreter (tests pass a fake); else AgentCore in the region, or
+                the Azure Container Apps session pool (``EVOKAI_CODE_SANDBOX=azure``).
         """
         self.settings = settings
         self.region = str(getattr(settings, "code_region", None) or settings.aws_region)
@@ -295,12 +296,47 @@ class CodeService:
             return
         if not settings.code_enabled:
             self.problem = "EVOKAI_CODE_ENABLED is off"
+        elif getattr(settings, "code_sandbox", "agentcore") == "azure":
+            from evokai.sandbox.interpreter import ContainerAppsInterpreter
+
+            endpoint = getattr(settings, "code_session_pool_endpoint", None)
+            if not endpoint:
+                self.problem = "EVOKAI_CODE_SESSION_POOL_ENDPOINT is not set"
+            else:
+                try:
+                    self.interpreter = ContainerAppsInterpreter(endpoint)
+                    self.region = self.interpreter.region
+                except ValueError as e:
+                    self.problem = str(e)
         elif not eu_region(self.region):
             self.problem = f"region {self.region} is outside the EU"
         else:
             from evokai.sandbox.interpreter import AgentCoreInterpreter
 
             self.interpreter = AgentCoreInterpreter(self.region, settings.code_interpreter_id)
+
+    @property
+    def processor(self) -> str:
+        """The sandbox's entry in the provider catalog.
+
+        Returns:
+            ``agentcore-code-interpreter`` or ``azure-container-apps-sessions``.
+        """
+        default = (
+            "azure-container-apps-sessions"
+            if getattr(self.settings, "code_sandbox", "agentcore") == "azure"
+            else "agentcore-code-interpreter"
+        )
+        return getattr(self.interpreter, "processor", default)
+
+    @property
+    def usage_model(self) -> str:
+        """The model name a sandbox session's usage record carries.
+
+        Returns:
+            ``agentcore:code-interpreter`` or ``azure:container-apps-sessions``.
+        """
+        return getattr(self.interpreter, "usage_model", USAGE_MODEL)
 
     @property
     def available(self) -> bool:

@@ -65,6 +65,33 @@ async def test_prompt_shields_sends_the_message_as_prompt_and_content_as_a_docum
     assert classifier_cost_micro_usd("azure-prompt-shields", 3) == 1125
 
 
+async def test_prompt_shields_without_a_key_sends_a_managed_identity_token() -> None:
+    import time
+
+    from azure.core.credentials import AccessToken
+
+    from evokai.core import azure
+
+    class Credential:
+        async def get_token(self, *scopes: str, **_: Any) -> AccessToken:
+            return AccessToken(f"tok:{scopes[0]}", int(time.time()) + 3600)
+
+    azure.set_credential(Credential())
+    try:
+        svc = Service(lambda _b: {"userPromptAnalysis": {"attackDetected": False}})
+        clf = hc.AzurePromptShields("https://cs.example", None, http=svc.client())
+        assert clf.status().available
+        await clf.warm_up()
+        r = await clf.classify("hello", source="user", budget=10_000)
+        assert r.error is None and r.calls == 1
+        headers = svc.requests[0][2]
+        assert headers["authorization"] == f"Bearer tok:{azure.COGNITIVE_SERVICES}"
+        assert "ocp-apim-subscription-key" not in headers
+        assert not hc.AzurePromptShields(None, None).status().available
+    finally:
+        azure.set_credential(None)
+
+
 async def test_content_safety_scores_the_worst_category() -> None:
     svc = Service(
         lambda _b: {

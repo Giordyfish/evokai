@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from evokai import audit
@@ -51,6 +52,7 @@ from evokai.privacy import Residency, residency_allows
 from evokai.protection import DataProtection, protection, stored_profile
 from evokai.sandbox.skill_scripts import unavailable_reason
 from evokai.services import Services
+from evokai.tools.typescript import ToolTypes, declarations
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 Svc = Annotated[Services, Depends(services)]
@@ -471,6 +473,51 @@ async def list_agents(svc: Svc, a: Admin) -> dict[str, Any]:
     return {
         "items": [{"template_syntax": "legacy", **r.definition, "version": r.version} for r in rows]
     }
+
+
+@router.get(
+    "/agents/{name}/types",
+    response_class=PlainTextResponse,
+    responses={200: {"content": {"text/plain": {}}, "description": "A TypeScript .d.ts"}},
+)
+async def agent_types(
+    name: str,
+    svc: Svc,
+    a: Admin,
+    credential: Annotated[str | None, Header(alias="X-Evokai-Credential", max_length=8192)] = None,
+) -> PlainTextResponse:
+    """TypeScript declarations of the agent's tools: arguments and results, from their schemas.
+
+    The MCP tools the application is granted, the agent's custom client tools and its
+    ``output_schema`` (``evokai.tools.typescript``). A ``forward_user`` server lists its tools
+    only with a person's credential: send one (a test user's) as ``X-Evokai-Credential``, as a
+    session token would forward it; without it the server is named as not listed. The credential
+    is used for this listing only, never kept.
+
+    Returns:
+        The ``.d.ts`` text.
+
+    Raises:
+        NotFound: Unknown application or agent.
+    """
+    app = await svc.store.applications.get(a.application_id)
+    if app is None:
+        raise NotFound()
+    agent = await svc.agents.active(a.application_id, name)
+    grants = await grants_of(svc.store, app)
+    box = await svc.mcp.toolbox(a.application_id, agent, credential or None, grants)
+    text = declarations(
+        agent.name,
+        agent.version,
+        [
+            ToolTypes(t.name, t.description, t.input_schema, t.output_schema, t.mutating)
+            for t in box.tools
+        ],
+        [ToolTypes(t.name, t.description, t.parameters) for t in agent.client_tools.custom],
+        agent.output_schema,
+        box.unavailable,
+    )
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
 
 
 def _check_builtin_tools(app: Any, body: AgentDef) -> None:

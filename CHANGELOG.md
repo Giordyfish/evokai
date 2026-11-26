@@ -24,6 +24,39 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   Codex backend for a ChatGPT login's token or to the OpenAI API for an API key (`sk-...`), with the same controls and
   usage read from `response.completed`; `GET /gw/openai/v1/models` passes Codex's model list through. The Connect
   page has the Codex snippets.
+- Azure without keys (the optional `azure` extra, in both images): every Azure connection without a configured key
+  uses a Microsoft Entra ID token of the managed identity (`DefaultAzureCredential`, `evokai.core.azure`). Azure
+  OpenAI endpoints take the `/openai/v1` base URL without an `api_version` (the Foundry models sold by Azure too), and
+  `azure:` models without a declared endpoint use `AZURE_OPENAI_ENDPOINT`. Not verified against a live Azure account.
+- Claude in Microsoft Foundry: the `anthropic-foundry:` provider (`api: anthropic-foundry`, the anthropic SDK's
+  Foundry client, key or Entra ID) and its catalog entry with the Hosted on Azure (Global, Data Zone US) and Hosted on
+  Anthropic infrastructure endpoints, Anthropic as the processor and no EU data zone, so a profile excludes or allows
+  it correctly. Not verified against a live Azure account.
+- Knowledge base embeddings beyond Bedrock: Azure OpenAI embeddings (`azure:`, key or Entra ID) and self-hosted
+  OpenAI-compatible servers (Ollama, vLLM, Text Embeddings Inference) through the provider catalog's endpoints.
+- Azure Content Safety (`azure_prompt_shields`, `azure_content_safety`) without `EVOKAI_AZURE_CONTENT_SAFETY_KEY`
+  sends an Entra ID token, fetched at start.
+- [Running on Azure](docs/azure.md): what runs where on AWS, on Azure and self-hosted.
+- Scanned PDFs in knowledge bases: a PDF without a text layer goes to the deployment's document reader
+  (`EVOKAI_DOCUMENT_READER`): Azure AI Document Intelligence `prebuilt-layout` (key or Entra ID; the result is deleted
+  as soon as it is read) or a self-hosted docling-serve, when the application's data protection profile allows the
+  processor. Both are in the provider catalog. Not verified against a live service.
+- Reranking for knowledge bases: `retrieval.rerank` reorders the fused candidates with the deployment's reranker
+  (`EVOKAI_RERANK_MODEL`, the Cohere v2 rerank API: Cohere Rerank in Foundry, vLLM, Infinity), connected and judged by
+  the provider catalog like any model; a failing reranker leaves the fused order. The console's knowledge base form
+  has the switch.
+- `code_run` and `skill_run` on Azure: `EVOKAI_CODE_SANDBOX=azure` runs them in an Azure Container Apps dynamic
+  sessions pool (`EVOKAI_CODE_SESSION_POOL_ENDPOINT`, European regions only, a new session per call deleted
+  afterwards, Entra ID token of the managed identity); the processor `azure-container-apps-sessions` is judged in the
+  pool's region. Not verified against a live Azure account.
+- Azure Monitor: `EVOKAI_OTEL_EXPORTER=azure-monitor` sends the OpenTelemetry traces and metrics to Application
+  Insights with Microsoft's exporter (now in the `azure` extra), Entra ID through
+  `APPLICATIONINSIGHTS_AUTHENTICATION_STRING`; the processor `azure-monitor` is judged in the region of its ingestion
+  endpoint.
+- Azure regions in the provider catalog, so an Azure service running in a region the deployment chose is placed by
+  country for the data protection profile.
+- The Azure Container Apps deployment guide in [Running on Azure](docs/azure.md): managed identity, Key Vault
+  references, Azure Database for PostgreSQL, Azure Monitor, and console sign-in with Microsoft Entra ID.
 
 - A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
   application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:
@@ -67,6 +100,20 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   clients and embedded panels keep working: they skip the new `text` and `tool` events of a stored message.
 - Python client: `StoredMessage.turn_id` and `StoredMessage.shown` (what a message showed, in order, older messages
   included); `ClientToolEvent.status`.
+- The model's reasoning while it works (`show_reasoning`, off by default): `reasoning` events through the output
+  checks, stored as a part and shown collapsed after a reload, in the chat panel and the playground; for Anthropic and
+  Bedrock Claude, OpenAI reasoning models (a summary is asked for), Gemini and OpenAI-compatible servers that return
+  reasoning ([streaming](docs/streaming.md)).
+- Tool arguments as the model writes them (`show_tool_args`, off by default, a change of what reaches a browser):
+  `tool` events with `status: "args"`, the call's `id` and the arguments parsed so far, through the output checks; a
+  call that did not run ends `waiting` (a confirmation follows) or `skipped`. Every `tool` event of a call now carries
+  its `id`.
+- A structured answer fills in over the streaming APIs: `evokai.output` chunks on the OpenAI-compatible API and
+  `artifact-update` frames on A2A `message/stream`, each the object so far, before the validated answer.
+- TypeScript types of an agent's tools: `GET /v1/admin/agents/{name}/types` and `evokai types --agent <name>` write a
+  `.d.ts` with each tool's arguments and results, the custom client tools' arguments and the `output_schema`.
+- Clients: `ReasoningEvent`, `ToolEvent.id`, `ToolEvent.args`, the `reasoning` part and the new tool statuses (TypeScript
+  and Python); the web component's `reasoning` and `tool-args` parts.
 
 ### Fixed
 
@@ -75,6 +122,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   The chat panel reloads the stored copy after every turn, so this could show without a reload.
 - With `pii.history` enforced, the charts, questions and confirmations stored with a message are masked like its text
   (they were masked only in the replay events).
+- The reasoning of a step that called tools is sent back to the model with its calls, as the providers require
+  (Anthropic thinking with its signature, OpenAI encrypted reasoning): every later request of the turn rebuilt the
+  history without it. A confirmation carries the reasoning of the calls that waited (Evokai storage, kept server side).
 - The console assistant's panel no longer opens with "Working on the application …" and a line about the voice that
   named the application: it is the platform's assistant. Only the online voice is named, since its text goes to Google.
 - The console assistant sits at the bottom right again (its launcher and panel had moved past the sidebar), and every
