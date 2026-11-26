@@ -577,7 +577,9 @@ export class EvokaiSession {
   }
 
   private renderEvent(e: EvokaiEvent): void {
-    if (e.type === 'tool') this.render({ name: e.name, status: e.status })
+    if (e.type === 'tool') {
+      this.render({ name: e.name, status: e.status, ...(e.id ? { callId: e.id } : {}), ...(e.args ? { args: e.args } : {}) })
+    }
     else if (e.type === 'client_tool') this.render({ name: e.name, status: e.wait ? 'start' : 'done', callId: e.callId, args: e.args })
     else if (e.type === 'chart') this.render({ name: 'ui_chart', status: 'done', result: e.chart })
     else if (e.type === 'diagram') this.render({ name: 'ui_diagram', status: 'done', result: e.diagram })
