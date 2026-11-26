@@ -27,6 +27,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy.exc import DBAPIError
 
+from evokai import policies
 from evokai.agents.bootstrap import bootstrap
 from evokai.core.config import Settings
 from evokai.core.security import generate_key
@@ -331,6 +332,8 @@ async def make_env(
     )
     script = Script()
     mcp = FakeMcp()
+    # The system policy is the process's one copy: every test starts without one.
+    policies.set_system(0, None)
     if http is None:
         http = httpx.AsyncClient(transport=httpx.MockTransport(mcp.handler))
     factory = script.model if models == "scripted" else models
@@ -357,6 +360,7 @@ async def make_env(
             app_id=app_id,
         )
     finally:
+        policies.set_system(0, None)
         await client.aclose()
         await svc.close()
         if schema:

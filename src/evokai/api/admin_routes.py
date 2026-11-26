@@ -345,7 +345,7 @@ async def patch_application(
                 defaults[key] = value
         fields["defaults"] = defaults
     if fields:
-        await svc.store.applications.update(a.application_id, **fields)
+        await svc.store.applications.update(a.application_id, by=audit.actor_of(a)[0], **fields)
     after = await get_application(svc, a)
     changed = [k for k in after if before.get(k) != after.get(k)]
     await audit.record(

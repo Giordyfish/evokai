@@ -2287,6 +2287,48 @@
         "title": "ContentPart",
         "type": "object"
       },
+      "CopyFrom": {
+        "additionalProperties": false,
+        "description": "Where to copy a policy from: the system policy or another application (by slug).",
+        "properties": {
+          "application": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "system": {
+            "default": false,
+            "title": "System",
+            "type": "boolean"
+          }
+        },
+        "title": "CopyFrom",
+        "type": "object"
+      },
       "CredentialValues": {
         "description": "A provider's values: a non-empty value replaces, an empty one keeps, null clears.",
         "properties": {
@@ -3864,6 +3906,65 @@
         "title": "PiiSettings",
         "type": "object"
       },
+      "PolicyTestBody": {
+        "additionalProperties": false,
+        "description": "A policy test: a text and the outcome it must get, overall or per control (or both).",
+        "properties": {
+          "controls": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "allowed",
+                    "flagged",
+                    "blocked"
+                  ],
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controls"
+          },
+          "input": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "allowed",
+                  "flagged",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          }
+        },
+        "required": [
+          "name",
+          "input"
+        ],
+        "title": "PolicyTestBody",
+        "type": "object"
+      },
       "Preferences": {
         "additionalProperties": false,
         "description": "One person's console preferences (version 2). JSON fields are camelCase.",
@@ -4804,6 +4905,76 @@
         "title": "RunUsage",
         "type": "object"
       },
+      "SaveOptions": {
+        "additionalProperties": false,
+        "description": "How to save a restored or copied content.",
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "SaveOptions",
+        "type": "object"
+      },
+      "SavePolicy": {
+        "additionalProperties": false,
+        "description": "A new version of a policy.",
+        "properties": {
+          "data_protection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataProtection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "security": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecurityPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "SavePolicy",
+        "type": "object"
+      },
       "ScopeSettings": {
         "additionalProperties": false,
         "description": "What the agent talks about.",
@@ -5655,6 +5826,38 @@
           "model"
         ],
         "title": "SwitchBody",
+        "type": "object"
+      },
+      "SystemCopy": {
+        "additionalProperties": false,
+        "description": "The application whose policy the system policy copies.",
+        "properties": {
+          "application": {
+            "title": "Application",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "application"
+        ],
+        "title": "SystemCopy",
         "type": "object"
       },
       "TextBlock": {
@@ -10846,6 +11049,427 @@
         ]
       }
     },
+    "/agent/v1/admin/policy/copy": {
+      "post": {
+        "description": "Copy another policy into the application's as a new version (owner).\n\nThe source is the system policy or an application the caller can see; the policy tests run\nfirst.\n\nReturns:\n    created, version.",
+        "operationId": "app_copy_agent_v1_admin_policy_copy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyFrom"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Copy Agent V1 Admin Policy Copy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Copy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/diff": {
+      "get": {
+        "description": "What changes between two versions of the application's policy (``to``: the current one).\n\nReturns:\n    from, to, changes: ``{path, change, before, after}`` per setting.",
+        "operationId": "app_diff_agent_v1_admin_policy_diff_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Diff Agent V1 Admin Policy Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Diff",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/tests": {
+      "get": {
+        "description": "The application's policy tests.\n\nReturns:\n    items: id, name, input, outcome, controls, updatedAt.",
+        "operationId": "app_tests_agent_v1_admin_policy_tests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Tests Agent V1 Admin Policy Tests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Tests",
+        "tags": [
+          "policies"
+        ]
+      },
+      "post": {
+        "description": "Add a policy test (owner): a text and the outcome the guard's input checks must give it.\n\nReturns:\n    The test.",
+        "operationId": "app_add_test_agent_v1_admin_policy_tests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Add Test Agent V1 Admin Policy Tests Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Add Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/tests/run": {
+      "post": {
+        "description": "Run the application's policy tests against its current policy (no model is called).\n\nReturns:\n    items (per test: id, name, passed, expected, got), passed, failed.",
+        "operationId": "app_run_tests_agent_v1_admin_policy_tests_run_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Run Tests Agent V1 Admin Policy Tests Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Run Tests",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/tests/{test_id}": {
+      "delete": {
+        "description": "Remove a policy test (owner).\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Unknown test.",
+        "operationId": "app_delete_test_agent_v1_admin_policy_tests__test_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response App Delete Test Agent V1 Admin Policy Tests  Test Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Delete Test",
+        "tags": [
+          "policies"
+        ]
+      },
+      "put": {
+        "description": "Replace a policy test (owner).\n\nReturns:\n    The test.",
+        "operationId": "app_put_test_agent_v1_admin_policy_tests__test_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Put Test Agent V1 Admin Policy Tests  Test Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Put Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/versions": {
+      "get": {
+        "description": "The versions of the application's policy (security and data protection), newest first.\n\nReturns:\n    items: number, createdAt, createdBy, note.",
+        "operationId": "app_versions_agent_v1_admin_policy_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Versions Agent V1 Admin Policy Versions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Versions",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/versions/{number}": {
+      "get": {
+        "description": "One version of the application's policy, with its content.\n\nReturns:\n    number, createdAt, createdBy, note, content (``security``, ``data_protection``).",
+        "operationId": "app_version_agent_v1_admin_policy_versions__number__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Version Agent V1 Admin Policy Versions  Number  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Version",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/admin/policy/versions/{number}/restore": {
+      "post": {
+        "description": "Save an older version's content as the application's new policy version (owner).\n\nThe policy tests run first, as for any save (409 ``policy_tests_failed`` unless ``force``).\n\nReturns:\n    created (false when the content is already the current one), version.",
+        "operationId": "app_restore_agent_v1_admin_policy_versions__number__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveOptions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Restore Agent V1 Admin Policy Versions  Number  Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Restore",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
     "/agent/v1/admin/prompts": {
       "get": {
         "description": "Every version of every prompt.\n\nReturns:\n    items: name, version, text, description, parameters (a module's schema, or null), data,\n    templateSyntax and createdAt.",
@@ -11101,8 +11725,37 @@
         ]
       },
       "put": {
-        "description": "Replace the application's security policy (unset fields follow the defaults).\n\nAgents may override it in their own definition (``security``). Effective from the next turn.\n\nReturns:\n    The security view.\n\nRaises:\n    BadRequest: ``pii.types`` names a type that is neither built-in nor declared.",
+        "description": "Replace the application's security policy (unset fields follow the defaults).\n\nAgents may override it in their own definition (``security``). Effective from the next turn.\nA change is a new version of the application's policy (``note`` is kept with it). The\napplication's policy tests run first: when one fails the policy is not saved (409\n``policy_tests_failed``, with ``failures``) unless ``force`` is true.\n\nReturns:\n    The security view (400 ``unknown_pii_types`` when ``pii.types`` names a type that is\n    neither built-in nor declared).",
         "operationId": "put_security_agent_v1_admin_security_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "note",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Note"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13935,6 +14588,493 @@
         "summary": "Put Sso Config",
         "tags": [
           "console"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy": {
+      "get": {
+        "description": "The system policy (deployment owners) and what an application that sets nothing gets.\n\nReturns:\n    version, content (``security``: minimum modes and default settings;\n    ``data_protection``: the profile every application's processors must also meet),\n    effective (modes, settings, floors), enabled, controls.",
+        "operationId": "get_system_policy_agent_v1_console_system_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get System Policy Agent V1 Console System Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get System Policy",
+        "tags": [
+          "policies"
+        ]
+      },
+      "put": {
+        "description": "Save the system policy as a new version (deployment owners).\n\nIts modes are minimums for every application's controls, its profile holds as well as each\napplication's, its settings are defaults. Its policy tests run first (409\n``policy_tests_failed`` unless ``force``). In force on this instance at once, on the others\nwithin ``REFRESH_SECONDS``.\n\nReturns:\n    The system policy, as ``GET`` shows it.",
+        "operationId": "put_system_policy_agent_v1_console_system_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put System Policy Agent V1 Console System Policy Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put System Policy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/copy": {
+      "post": {
+        "description": "Copy an application's policy into the system policy as a new version.\n\nIts browser declaration is left out: each application declares its own.\n\nReturns:\n    created, version.\n\nRaises:\n    NotFound: Unknown application.",
+        "operationId": "system_copy_agent_v1_console_system_policy_copy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemCopy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Copy Agent V1 Console System Policy Copy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Copy",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/diff": {
+      "get": {
+        "description": "What changes between two versions of the system policy (``to``: the current one).\n\nReturns:\n    from, to, changes.",
+        "operationId": "system_diff_agent_v1_console_system_policy_diff_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Diff Agent V1 Console System Policy Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Diff",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/tests": {
+      "get": {
+        "description": "The system policy's tests.\n\nReturns:\n    items.",
+        "operationId": "system_tests_agent_v1_console_system_policy_tests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Tests Agent V1 Console System Policy Tests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Tests",
+        "tags": [
+          "policies"
+        ]
+      },
+      "post": {
+        "description": "Add a test of the system policy.\n\nReturns:\n    The test.",
+        "operationId": "system_add_test_agent_v1_console_system_policy_tests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Add Test Agent V1 Console System Policy Tests Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Add Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/tests/run": {
+      "post": {
+        "description": "Run the system policy's tests against it, as an application that sets nothing gets it.\n\nReturns:\n    items, passed, failed.",
+        "operationId": "system_run_tests_agent_v1_console_system_policy_tests_run_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Run Tests Agent V1 Console System Policy Tests Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Run Tests",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/tests/{test_id}": {
+      "delete": {
+        "description": "Remove a test of the system policy.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Unknown test.",
+        "operationId": "system_delete_test_agent_v1_console_system_policy_tests__test_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response System Delete Test Agent V1 Console System Policy Tests  Test Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Delete Test",
+        "tags": [
+          "policies"
+        ]
+      },
+      "put": {
+        "description": "Replace a test of the system policy.\n\nReturns:\n    The test.",
+        "operationId": "system_put_test_agent_v1_console_system_policy_tests__test_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "test_id",
+            "required": true,
+            "schema": {
+              "title": "Test Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Put Test Agent V1 Console System Policy Tests  Test Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Put Test",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/versions": {
+      "get": {
+        "description": "The system policy's versions, newest first.\n\nReturns:\n    items: number, createdAt, createdBy, note.",
+        "operationId": "system_versions_agent_v1_console_system_policy_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Versions Agent V1 Console System Policy Versions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Versions",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/versions/{number}": {
+      "get": {
+        "description": "One version of the system policy, with its content.\n\nReturns:\n    number, createdAt, createdBy, note, content.",
+        "operationId": "system_version_agent_v1_console_system_policy_versions__number__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Version Agent V1 Console System Policy Versions  Number  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Version",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/agent/v1/console/system-policy/versions/{number}/restore": {
+      "post": {
+        "description": "Save an older version's content as the system policy's new version.\n\nReturns:\n    created, version.",
+        "operationId": "system_restore_agent_v1_console_system_policy_versions__number__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveOptions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Restore Agent V1 Console System Policy Versions  Number  Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System Restore",
+        "tags": [
+          "policies"
         ]
       }
     },

@@ -174,6 +174,15 @@ The older `residency` declaration (`model_regions`, `models`) keeps working besi
 why not (`reasons`: dimension and `outside`, `unknown`, `training` or `retained`). The console shows it on the Privacy
 page; the GDPR pack (section 2) states the profile and each processor's residency, jurisdiction and terms as known.
 
+### The system policy's profile
+
+The deployment's [system policy](security.md#the-system-policy) may set a profile too. It holds **as well as** each
+application's: a processor must meet both, and a reason the system profile gives carries `source: system` in
+`GET /v1/admin/data-protection` (which also returns the system profile as `systemProfile`). Unlike an application's,
+an unset `provider_tool_storage` in the system profile constrains nothing; `provider_tool_storage: false` or
+`retention: zero_retention` there keeps provider built-in tools from storing data for every application. The system
+profile has no `browser` declaration: what a browser sends is each application's choice.
+
 ## Regulatory spaces
 
 The profile is written with the European regulatory space in mind (the GDPR's transfers and processors, a provider

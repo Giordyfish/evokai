@@ -2010,6 +2010,212 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/policy/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * App Copy
+         * @description Copy another policy into the application's as a new version (owner).
+         *
+         *     The source is the system policy or an application the caller can see; the policy tests run
+         *     first.
+         *
+         *     Returns:
+         *         created, version.
+         */
+        post: operations["app_copy_agent_v1_admin_policy_copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Diff
+         * @description What changes between two versions of the application's policy (``to``: the current one).
+         *
+         *     Returns:
+         *         from, to, changes: ``{path, change, before, after}`` per setting.
+         */
+        get: operations["app_diff_agent_v1_admin_policy_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Tests
+         * @description The application's policy tests.
+         *
+         *     Returns:
+         *         items: id, name, input, outcome, controls, updatedAt.
+         */
+        get: operations["app_tests_agent_v1_admin_policy_tests_get"];
+        put?: never;
+        /**
+         * App Add Test
+         * @description Add a policy test (owner): a text and the outcome the guard's input checks must give it.
+         *
+         *     Returns:
+         *         The test.
+         */
+        post: operations["app_add_test_agent_v1_admin_policy_tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/tests/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * App Run Tests
+         * @description Run the application's policy tests against its current policy (no model is called).
+         *
+         *     Returns:
+         *         items (per test: id, name, passed, expected, got), passed, failed.
+         */
+        post: operations["app_run_tests_agent_v1_admin_policy_tests_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/tests/{test_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * App Put Test
+         * @description Replace a policy test (owner).
+         *
+         *     Returns:
+         *         The test.
+         */
+        put: operations["app_put_test_agent_v1_admin_policy_tests__test_id__put"];
+        post?: never;
+        /**
+         * App Delete Test
+         * @description Remove a policy test (owner).
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: Unknown test.
+         */
+        delete: operations["app_delete_test_agent_v1_admin_policy_tests__test_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Versions
+         * @description The versions of the application's policy (security and data protection), newest first.
+         *
+         *     Returns:
+         *         items: number, createdAt, createdBy, note.
+         */
+        get: operations["app_versions_agent_v1_admin_policy_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App Version
+         * @description One version of the application's policy, with its content.
+         *
+         *     Returns:
+         *         number, createdAt, createdBy, note, content (``security``, ``data_protection``).
+         */
+        get: operations["app_version_agent_v1_admin_policy_versions__number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/policy/versions/{number}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * App Restore
+         * @description Save an older version's content as the application's new policy version (owner).
+         *
+         *     The policy tests run first, as for any save (409 ``policy_tests_failed`` unless ``force``).
+         *
+         *     Returns:
+         *         created (false when the content is already the current one), version.
+         */
+        post: operations["app_restore_agent_v1_admin_policy_versions__number__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/prompts": {
         parameters: {
             query?: never;
@@ -2188,12 +2394,13 @@ export interface paths {
          * @description Replace the application's security policy (unset fields follow the defaults).
          *
          *     Agents may override it in their own definition (``security``). Effective from the next turn.
+         *     A change is a new version of the application's policy (``note`` is kept with it). The
+         *     application's policy tests run first: when one fails the policy is not saved (409
+         *     ``policy_tests_failed``, with ``failures``) unless ``force`` is true.
          *
          *     Returns:
-         *         The security view.
-         *
-         *     Raises:
-         *         BadRequest: ``pii.types`` names a type that is neither built-in nor declared.
+         *         The security view (400 ``unknown_pii_types`` when ``pii.types`` names a type that is
+         *         neither built-in nor declared).
          */
         put: operations["put_security_agent_v1_admin_security_put"];
         post?: never;
@@ -3341,6 +3548,249 @@ export interface paths {
          *         The configuration that applies now.
          */
         delete: operations["delete_sso_config_agent_v1_console_sso_config_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get System Policy
+         * @description The system policy (deployment owners) and what an application that sets nothing gets.
+         *
+         *     Returns:
+         *         version, content (``security``: minimum modes and default settings;
+         *         ``data_protection``: the profile every application's processors must also meet),
+         *         effective (modes, settings, floors), enabled, controls.
+         */
+        get: operations["get_system_policy_agent_v1_console_system_policy_get"];
+        /**
+         * Put System Policy
+         * @description Save the system policy as a new version (deployment owners).
+         *
+         *     Its modes are minimums for every application's controls, its profile holds as well as each
+         *     application's, its settings are defaults. Its policy tests run first (409
+         *     ``policy_tests_failed`` unless ``force``). In force on this instance at once, on the others
+         *     within ``REFRESH_SECONDS``.
+         *
+         *     Returns:
+         *         The system policy, as ``GET`` shows it.
+         */
+        put: operations["put_system_policy_agent_v1_console_system_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * System Copy
+         * @description Copy an application's policy into the system policy as a new version.
+         *
+         *     Its browser declaration is left out: each application declares its own.
+         *
+         *     Returns:
+         *         created, version.
+         *
+         *     Raises:
+         *         NotFound: Unknown application.
+         */
+        post: operations["system_copy_agent_v1_console_system_policy_copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Diff
+         * @description What changes between two versions of the system policy (``to``: the current one).
+         *
+         *     Returns:
+         *         from, to, changes.
+         */
+        get: operations["system_diff_agent_v1_console_system_policy_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Tests
+         * @description The system policy's tests.
+         *
+         *     Returns:
+         *         items.
+         */
+        get: operations["system_tests_agent_v1_console_system_policy_tests_get"];
+        put?: never;
+        /**
+         * System Add Test
+         * @description Add a test of the system policy.
+         *
+         *     Returns:
+         *         The test.
+         */
+        post: operations["system_add_test_agent_v1_console_system_policy_tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/tests/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * System Run Tests
+         * @description Run the system policy's tests against it, as an application that sets nothing gets it.
+         *
+         *     Returns:
+         *         items, passed, failed.
+         */
+        post: operations["system_run_tests_agent_v1_console_system_policy_tests_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/tests/{test_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * System Put Test
+         * @description Replace a test of the system policy.
+         *
+         *     Returns:
+         *         The test.
+         */
+        put: operations["system_put_test_agent_v1_console_system_policy_tests__test_id__put"];
+        post?: never;
+        /**
+         * System Delete Test
+         * @description Remove a test of the system policy.
+         *
+         *     Returns:
+         *         ok.
+         *
+         *     Raises:
+         *         NotFound: Unknown test.
+         */
+        delete: operations["system_delete_test_agent_v1_console_system_policy_tests__test_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Versions
+         * @description The system policy's versions, newest first.
+         *
+         *     Returns:
+         *         items: number, createdAt, createdBy, note.
+         */
+        get: operations["system_versions_agent_v1_console_system_policy_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Version
+         * @description One version of the system policy, with its content.
+         *
+         *     Returns:
+         *         number, createdAt, createdBy, note, content.
+         */
+        get: operations["system_version_agent_v1_console_system_policy_versions__number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/system-policy/versions/{number}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * System Restore
+         * @description Save an older version's content as the system policy's new version.
+         *
+         *     Returns:
+         *         created, version.
+         */
+        post: operations["system_restore_agent_v1_console_system_policy_versions__number__restore_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5456,6 +5906,26 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * CopyFrom
+         * @description Where to copy a policy from: the system policy or another application (by slug).
+         */
+        CopyFrom: {
+            /** Application */
+            application?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
+            /**
+             * System
+             * @default false
+             */
+            system?: boolean;
+        };
+        /**
          * CredentialValues
          * @description A provider's values: a non-empty value replaces, an empty one keeps, null clears.
          */
@@ -6113,6 +6583,22 @@ export interface components {
             types?: string[] | null;
         };
         /**
+         * PolicyTestBody
+         * @description A policy test: a text and the outcome it must get, overall or per control (or both).
+         */
+        PolicyTestBody: {
+            /** Controls */
+            controls?: {
+                [key: string]: "allowed" | "flagged" | "blocked";
+            } | null;
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Outcome */
+            outcome?: ("allowed" | "flagged" | "blocked") | null;
+        };
+        /**
          * Preferences
          * @description One person's console preferences (version 2). JSON fields are camelCase.
          */
@@ -6521,6 +7007,34 @@ export interface components {
             toolCalls: number;
         };
         /**
+         * SaveOptions
+         * @description How to save a restored or copied content.
+         */
+        SaveOptions: {
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * SavePolicy
+         * @description A new version of a policy.
+         */
+        SavePolicy: {
+            data_protection?: components["schemas"]["DataProtection"] | null;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
+            security?: components["schemas"]["SecurityPolicy"] | null;
+        };
+        /**
          * ScopeSettings
          * @description What the agent talks about.
          */
@@ -6823,6 +7337,21 @@ export interface components {
         SwitchBody: {
             /** Model */
             model: string;
+        };
+        /**
+         * SystemCopy
+         * @description The application whose policy the system policy copies.
+         */
+        SystemCopy: {
+            /** Application */
+            application: string;
+            /**
+             * Force
+             * @default false
+             */
+            force?: boolean;
+            /** Note */
+            note?: string | null;
         };
         /**
          * TextBlock
@@ -9983,6 +10512,316 @@ export interface operations {
             };
         };
     };
+    app_copy_agent_v1_admin_policy_copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyFrom"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_diff_agent_v1_admin_policy_diff_get: {
+        parameters: {
+            query: {
+                from: number;
+                to?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_tests_agent_v1_admin_policy_tests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    app_add_test_agent_v1_admin_policy_tests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_run_tests_agent_v1_admin_policy_tests_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    app_put_test_agent_v1_admin_policy_tests__test_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_delete_test_agent_v1_admin_policy_tests__test_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_versions_agent_v1_admin_policy_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    app_version_agent_v1_admin_policy_versions__number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_restore_agent_v1_admin_policy_versions__number__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveOptions"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_prompts_agent_v1_admin_prompts_get: {
         parameters: {
             query?: never;
@@ -10180,7 +11019,10 @@ export interface operations {
     };
     put_security_agent_v1_admin_security_put: {
         parameters: {
-            query?: never;
+            query?: {
+                note?: string | null;
+                force?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11836,6 +12678,373 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_system_policy_agent_v1_console_system_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_system_policy_agent_v1_console_system_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavePolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_copy_agent_v1_console_system_policy_copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemCopy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_diff_agent_v1_console_system_policy_diff_get: {
+        parameters: {
+            query: {
+                from: number;
+                to?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_tests_agent_v1_console_system_policy_tests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    system_add_test_agent_v1_console_system_policy_tests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_run_tests_agent_v1_console_system_policy_tests_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    system_put_test_agent_v1_console_system_policy_tests__test_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_delete_test_agent_v1_console_system_policy_tests__test_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_versions_agent_v1_console_system_policy_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    system_version_agent_v1_console_system_policy_versions__number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_restore_agent_v1_console_system_policy_versions__number__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveOptions"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

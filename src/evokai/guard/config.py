@@ -3,7 +3,10 @@
 Every control is ``off``, ``monitor`` (detect and record a security event, change nothing) or
 ``enforce`` (block, redact or mark, and record). The mode of a control is the first one set, from
 the most specific scope to the least: the agent's mode for that control, the agent's ``mode``, the
-application's mode for that control, the application's ``mode``, then the defaults below.
+application's mode for that control, the application's ``mode``, then the defaults below. The
+deployment's system policy (``evokai.policies``) then raises it to its minimum for that control,
+when it sets one: the effective mode is the stricter of the two. Its settings are defaults, read
+before the application's.
 
 The defaults keep existing agents working: everything in monitor, except what cannot break an
 answer and closes a real hole: secrets never leave in an answer, the tool policy (allow, deny,
@@ -13,7 +16,7 @@ and e-mails always reach the model marked as data.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -31,6 +34,8 @@ ClassifierChoice = Literal[
 ]
 """What ``injection.classifier`` may say (see ``evokai.guard.classifiers``)."""
 MODES: tuple[Mode, ...] = ("off", "monitor", "enforce")
+RANK: dict[str, int] = {m: i for i, m in enumerate(MODES)}
+"""off < monitor < enforce: the order a system policy's minimum compares modes in."""
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,13 @@ CONTROLS: tuple[Control, ...] = (
     ),
     Control(
         "input.size", "Input size", ("LLM10",), "monitor", "Inputs over the limit are refused."
+    ),
+    Control(
+        "input.secrets",
+        "Secrets and credentials in the user's input",
+        ("LLM02",),
+        "monitor",
+        "The turn is refused before the model sees it.",
     ),
     Control(
         "untrusted.spotlight",
@@ -465,6 +477,8 @@ class Effective:
 
     settings: SecurityPolicy
     modes: dict[str, Mode]
+    floors: dict[str, Mode] = field(default_factory=dict)
+    """The system policy's minimum per control (only the controls it raises above ``off``)."""
 
     def mode(self, control: str) -> Mode:
         """The mode of a control.
@@ -497,7 +511,24 @@ class Effective:
             modes and settings.
         """
         settings = self.settings.model_dump(mode="json", exclude={"mode", "modes"})
-        return {"modes": dict(self.modes), "settings": settings}
+        return {"modes": dict(self.modes), "settings": settings, "floors": dict(self.floors)}
+
+
+def floors(system: dict[str, Any] | SecurityPolicy | None) -> dict[str, Mode]:
+    """The minimum mode a system policy sets for each control.
+
+    The system policy's mode for a control, else its ``mode``; ``off`` is no minimum.
+
+    Returns:
+        Control id to its minimum (only controls with one).
+    """
+    s = parse(system)
+    out: dict[str, Mode] = {}
+    for c in CONTROLS:
+        m = (s.modes or {}).get(c.id) or s.mode
+        if m and m != "off":
+            out[c.id] = m
+    return out
 
 
 def resolve(
@@ -505,6 +536,7 @@ def resolve(
     agent: dict[str, Any] | SecurityPolicy | None = None,
     *,
     disabled: bool = False,
+    system: dict[str, Any] | SecurityPolicy | None = None,
 ) -> Effective:
     """The effective policy of an agent: defaults, then the application's, then the agent's.
 
@@ -512,18 +544,22 @@ def resolve(
         app: The application's policy.
         agent: The agent's policy.
         disabled: The deployment's kill switch (``EVOKAI_GUARD_ENABLED=false``): every control off.
+        system: The deployment's system policy: its modes are minimums (the stricter mode wins),
+            its settings are defaults under the application's.
 
     Returns:
         The effective policy.
     """
-    a, g = parse(app), parse(agent)
+    a, g, sp = parse(app), parse(agent), parse(system)
+    base = _merge(DEFAULT_SETTINGS.model_dump(exclude_none=True), sp.model_dump(exclude_none=True))
     merged = _merge(
-        _merge(DEFAULT_SETTINGS.model_dump(exclude_none=True), a.model_dump(exclude_none=True)),
+        _merge(base, a.model_dump(exclude_none=True)),
         g.model_dump(exclude_none=True),
     )
     merged.pop("mode", None)
     merged.pop("modes", None)
     settings = SecurityPolicy.model_validate(merged)
+    low = {} if disabled else floors(sp)
     modes: dict[str, Mode] = {}
     for c in CONTROLS:
         chain = (
@@ -533,8 +569,10 @@ def resolve(
             a.mode,
             c.default,
         )
-        modes[c.id] = "off" if disabled else next(m for m in chain if m is not None)
-    return Effective(settings, modes)
+        mode = "off" if disabled else next(m for m in chain if m is not None)
+        floor = low.get(c.id)
+        modes[c.id] = floor if floor and RANK[floor] > RANK[mode] else mode
+    return Effective(settings, modes, low)
 
 
 def catalogue() -> list[dict[str, Any]]:

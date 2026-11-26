@@ -7,14 +7,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from evokai import audit
+from evokai import audit, policies
 from evokai.api.deps import admin_app, services
 from evokai.assistant.privacy import lists_everyone, own_subject
-from evokai.core.errors import BadRequest, NotFound
+from evokai.core.errors import NotFound
 from evokai.db import models as m
-from evokai.guard import SecurityPolicy, catalogue, identifiers
-from evokai.guard.pii import PII_TYPES
+from evokai.guard import SecurityPolicy, catalogue
 from evokai.identity.models import AppPrincipal
+from evokai.protection import DataProtection
 from evokai.services import Services
 
 router = APIRouter(prefix="/v1/admin/security", tags=["security"])
@@ -33,7 +33,8 @@ async def security_view(svc: Services, app: m.Application) -> dict[str, Any]:
     """The application's policy as the console shows it.
 
     Returns:
-        enabled, policy (as set), effective (modes and settings), controls (the catalogue), agents
+        enabled, policy (as set), effective (modes, settings and the system policy's minimums
+        in ``floors``), version (the policy's current version), controls (the catalogue), agents
         (each agent's own policy and effective modes), eventTtlDays, defaultEventTtlDays,
         classifiers (each injection classifier and whether this deployment can use it) and
         defaultClassifier (what ``default`` means here, or None).
@@ -46,10 +47,12 @@ async def security_view(svc: Services, app: m.Application) -> dict[str, Any]:
             "security": own,
             "modes": svc.guard.policy(app, _Agent(own)).modes,
         })
+    latest = await svc.store.policies.latest(app.id)
     return {
         "enabled": svc.guard.enabled,
         "policy": app.security or {},
         "effective": svc.guard.policy(app).view(),
+        "version": latest.number if latest else 0,
         "controls": catalogue(),
         "agents": agents,
         "eventTtlDays": app.security_event_ttl_days,
@@ -82,28 +85,34 @@ async def get_security(svc: Svc, a: Admin) -> dict[str, Any]:
 
 @router.put("")
 async def put_security(
-    body: SecurityPolicy, svc: Svc, a: Admin, request: Request
+    body: SecurityPolicy,
+    svc: Svc,
+    a: Admin,
+    request: Request,
+    note: Annotated[str | None, Query(max_length=500)] = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Replace the application's security policy (unset fields follow the defaults).
 
     Agents may override it in their own definition (``security``). Effective from the next turn.
+    A change is a new version of the application's policy (``note`` is kept with it). The
+    application's policy tests run first: when one fails the policy is not saved (409
+    ``policy_tests_failed``, with ``failures``) unless ``force`` is true.
 
     Returns:
-        The security view.
-
-    Raises:
-        BadRequest: ``pii.types`` names a type that is neither built-in nor declared.
+        The security view (400 ``unknown_pii_types`` when ``pii.types`` names a type that is
+        neither built-in nor declared).
     """
     app = await _app(svc, a)
-    types = body.pii.types if body.pii else None
-    declared = {i.name for i in identifiers.of_app(app)}
-    if bad := [t for t in types or [] if t not in PII_TYPES and t not in declared]:
-        raise BadRequest(
-            f"Unknown personal data types: {', '.join(bad)}. An application's own identifiers "
-            "are declared in its config file (application.identifiers).",
-            code="unknown_pii_types",
-        )
-    await svc.store.applications.update(app.id, security=body.stored())
+    content = policies.PolicyContent(
+        security=body,
+        data_protection=DataProtection.from_stored(app.data_protection)
+        if app.data_protection
+        else None,
+    )
+    await policies.save_application(
+        svc, app, content, by=audit.actor_of(a)[0], note=note, force=force, parts=("security",)
+    )
     await audit.record(request, a, "security.policy", before=app.security, after=body.stored())
     return await security_view(svc, await _app(svc, a))
 

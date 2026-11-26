@@ -23,6 +23,9 @@ the application's choice, declared in ``browser`` and reported in the compliance
 
 The application's older ``residency`` declaration (``model_regions``, ``models``) keeps working
 beside it.
+
+The deployment's system policy (``evokai.policies``) may set a profile too: it holds as well as the
+application's (both must pass), and a reason it gives is marked ``source: system``.
 """
 
 from __future__ import annotations
@@ -179,16 +182,20 @@ class Reason:
     dimension: str
     code: str
     value: Any = None
+    source: str | None = None
+    """``system`` when the system policy's profile gives the reason, else None."""
 
     def view(self) -> dict[str, Any]:
         """The reason as the API shows it.
 
         Returns:
-            ``{dimension, code, value?}``.
+            ``{dimension, code, value?, source?}``.
         """
         out: dict[str, Any] = {"dimension": self.dimension, "code": self.code}
         if self.value is not None:
             out["value"] = self.value
+        if self.source is not None:
+            out["source"] = self.source
         return out
 
 
@@ -203,10 +210,14 @@ class Verdict:
 
 @dataclass(frozen=True)
 class Profile:
-    """What constrains an application: the profile and the older residency declaration."""
+    """What constrains an application: its profiles and the older residency declaration.
+
+    The system policy's profile (``system``) holds as well as the application's own (``rule``).
+    """
 
     rule: DataProtection | None = None
     legacy: dict[str, Any] | None = None
+    system: DataProtection | None = None
 
     @property
     def empty(self) -> bool:
@@ -216,9 +227,40 @@ class Profile:
             True without a profile or residency rule.
         """
         legacy = self.legacy or {}
-        return (self.rule is None or self.rule.empty) and not (
-            legacy.get("model_regions") or legacy.get("models")
+        return (
+            (self.rule is None or self.rule.empty)
+            and (self.system is None or self.system.empty)
+            and not (legacy.get("model_regions") or legacy.get("models"))
         )
+
+    def reasons(self, facts: providers.Facts | None) -> list[Reason]:
+        """Every rule of the application's and the system's profiles a processor breaks.
+
+        Returns:
+            The reasons (the system's marked ``source: system``), without repeats.
+        """
+        out = check(self.rule, facts)
+        for r in check(self.system, facts):
+            if not any(
+                (x.dimension, x.code, x.value) == (r.dimension, r.code, r.value) for x in out
+            ):
+                out.append(Reason(r.dimension, r.code, r.value, "system"))
+        return out
+
+
+SYSTEM_KEY = "system_protection"
+"""The key of :func:`protection`'s dict that carries the system policy's profile."""
+
+
+def system_profile() -> DataProtection | None:
+    """The system policy's data protection profile, as this process knows it.
+
+    Returns:
+        The profile, or None when the system policy sets none.
+    """
+    from evokai import policies
+
+    return policies.system_protection()
 
 
 def profile_of(source: Any) -> Profile:
@@ -233,16 +275,24 @@ def profile_of(source: Any) -> Profile:
         The profile.
     """
     if source is None:
-        return Profile()
+        return Profile(system=system_profile())
     if isinstance(source, Profile):
         return source
     if isinstance(source, dict):
         raw = source.get("data_protection")
-        legacy = {k: v for k, v in source.items() if k != "data_protection"} or None
-        return Profile(DataProtection.from_stored(raw) if raw else None, legacy)
+        legacy = {
+            k: v for k, v in source.items() if k not in ("data_protection", SYSTEM_KEY)
+        } or None
+        own = DataProtection.from_stored(raw) if raw else None
+        if SYSTEM_KEY in source:
+            sp = source[SYSTEM_KEY]
+            return Profile(own, legacy, DataProtection.from_stored(sp) if sp else None)
+        return Profile(own, legacy, system_profile())
     raw = getattr(source, "data_protection", None)
     return Profile(
-        DataProtection.from_stored(raw) if raw else None, getattr(source, "residency", None)
+        DataProtection.from_stored(raw) if raw else None,
+        getattr(source, "residency", None),
+        system_profile(),
     )
 
 
@@ -250,13 +300,17 @@ def protection(app: Any) -> dict[str, Any] | None:
     """An application's residency declaration with its profile, as one dict for the checks.
 
     Returns:
-        The residency keys and ``data_protection``, or None when there is neither.
+        The residency keys, ``data_protection`` and ``system_protection`` (the system policy's
+        profile, which holds as well), or None when there is none of them.
     """
     if app is None:
         return None
     legacy = dict(getattr(app, "residency", None) or {})
     if dp := getattr(app, "data_protection", None):
         legacy["data_protection"] = dp
+    sp = system_profile()
+    if sp is not None and not sp.empty:
+        legacy[SYSTEM_KEY] = sp.stored()
     return legacy or None
 
 
@@ -373,7 +427,7 @@ def model_verdict(source: Any, model: str, aws_region: str) -> Verdict:
     prof = profile_of(source)
     cat = providers.current()
     facts = cat.model_facts(model) if cat.aws_region == aws_region else _facts_in(model, aws_region)
-    reasons = _legacy_reasons(prof.legacy, model, aws_region) + check(prof.rule, facts)
+    reasons = _legacy_reasons(prof.legacy, model, aws_region) + prof.reasons(facts)
     return Verdict(not reasons, reasons, facts)
 
 
@@ -399,7 +453,7 @@ def processor_verdict(source: Any, pid: str, *, region: str | None = None) -> Ve
     """
     prof = profile_of(source)
     facts = providers.current().processor_facts(pid, region=region)
-    reasons = check(prof.rule, facts)
+    reasons = prof.reasons(facts)
     return Verdict(not reasons, reasons, facts)
 
 
@@ -556,8 +610,10 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
         for a in agents
         for t in a.definition.get("builtin_tools") or []
     ]
+    sp = system_profile()
     return {
         "profile": stored_profile(app.data_protection),
+        "systemProfile": sp.stored() if sp is not None and not sp.empty else None,
         "residency": app.residency,
         "empty": profile_of(app).empty,
         "processors": out,

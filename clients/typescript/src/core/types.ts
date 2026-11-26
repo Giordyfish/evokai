@@ -1254,8 +1254,13 @@ export interface SecurityView {
   enabled: boolean
   /** The application's policy as set. */
   policy: SecurityPolicy
-  /** What applies to the application (before agent overrides). */
-  effective: { modes: Record<string, SecurityMode>; settings: Record<string, unknown> }
+  /**
+   * What applies to the application (before agent overrides). `floors`: the deployment's system policy's minimum mode
+   * per control (only the controls it raises); the modes already include them.
+   */
+  effective: { modes: Record<string, SecurityMode>; settings: Record<string, unknown>; floors?: Record<string, SecurityMode> }
+  /** The number of the application's current policy version (security and data protection together). */
+  version?: number
   controls: SecurityControl[]
   /** Each agent's own policy and the modes that apply to it. */
   agents: Array<{ name: string; security: SecurityPolicy | null; modes: Record<string, SecurityMode> }>

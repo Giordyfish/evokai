@@ -322,7 +322,8 @@ async def create_application(body: NewApplication, svc: Svc, request: Request) -
     if await svc.store.applications.by_slug(body.slug):
         raise Conflict("An application with this slug already exists.", code="slug_taken")
     fields = body.model_dump(exclude={"slug", "name"}, exclude_none=True)
-    app = await svc.store.applications.create(body.slug, body.name, **fields)
+    actor = deployment_actor(request, svc)
+    app = await svc.store.applications.create(body.slug, body.name, by=actor.actor, **fields)
     keys = {}
     for kind in ("srv", "adm"):
         key = generate_key(kind)
@@ -330,7 +331,7 @@ async def create_application(body: NewApplication, svc: Svc, request: Request) -
         keys[kind] = key.value
     await audit.record(
         request,
-        deployment_actor(request, svc),
+        actor,
         "application.create",
         application_id=app.id,
         target=app.slug,

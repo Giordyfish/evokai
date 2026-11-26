@@ -43,6 +43,7 @@ SEVERITY = {
     "input.injection": "high",
     "input.encoding": "medium",
     "input.size": "low",
+    "input.secrets": "high",
     "untrusted.injection": "high",
     "pii.model": "medium",
     "pii.history": "medium",
@@ -153,6 +154,9 @@ class TurnGuard:
     """The application's inline markup made inert (``Markup.neutralise``): applied to what the
     person controls besides their typed text (attachment names and text, client tool results)
     on its way to the model, so nobody can write cues for the agent through them."""
+    offline: bool = False
+    """A policy test (``evokai.policies``): no classifier is asked, events are neither logged
+    nor traced (and never stored: nothing flushes them)."""
 
     # events
 
@@ -189,6 +193,8 @@ class TurnGuard:
             "details": details or {},
         }
         self.events.append(row)
+        if self.offline:
+            return
         if self.trace is not None:
             self.trace.event(
                 "guard",
@@ -251,6 +257,17 @@ class TurnGuard:
             )
             if enforce:
                 return InputDecision(text, blocked="input.size")
+        if p.on("input.secrets") and (found := secrets.find(text, self.guard.known_secrets)):
+            enforce = p.enforced("input.secrets")
+            self.record(
+                "input.secrets",
+                found[0].rule,
+                "blocked" if enforce else "logged",
+                details={"count": len(found), "rules": sorted({f.rule for f in found})},
+                direction="input",
+            )
+            if enforce:
+                return InputDecision(text, blocked="input.secrets")
         norm = normalize(text)
         if p.on("input.encoding") and (norm.invisible or norm.mixed_scripts or norm.decoded):
             enforce = p.enforced("input.encoding") and bool(norm.invisible)
@@ -336,7 +353,7 @@ class TurnGuard:
         """
         s = self.policy.settings.injection
         cid = self.guard.classifiers.resolve(s.classifier if s else None)
-        if cid is None:
+        if cid is None or self.offline:
             return
         clf = self.guard.classifiers.get(cid)
         status = clf.status() if clf is not None else None
@@ -427,7 +444,7 @@ class TurnGuard:
         p = self.policy
         s = p.settings.moderation
         cid = s.classifier if s else None
-        if not cid or cid == "none":
+        if not cid or cid == "none" or self.offline:
             return None
         control = "input.moderation"
         clf = self.guard.classifiers.get_moderation(cid)
@@ -1155,10 +1172,13 @@ class Guard:
         Returns:
             The policy.
         """
+        from evokai import policies
+
         return resolve(
             getattr(app, "security", None),
             getattr(agent, "security", None) if agent is not None else None,
             disabled=not self.enabled,
+            system=policies.system_security(),
         )
 
     def keyed(self, *parts: str) -> str:

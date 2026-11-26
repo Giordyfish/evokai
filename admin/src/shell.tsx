@@ -11,6 +11,7 @@ import { ALERTS_CHANGED, alertText, bannerAlert } from './costs'
 import { pl } from './format'
 import { BrandMark, Empty } from './magic'
 import { Access } from './pages/Access'
+import { SystemPolicy } from './pages/SystemPolicy'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
 import { Apps } from './pages/Apps'
@@ -112,6 +113,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
       return <Health />
     case 'access':
       return <Access />
+    case 'policy':
+      return <SystemPolicy />
     case 'assistant':
       return <Assistant />
     case 'preferences':
@@ -190,7 +193,7 @@ export function Shell({ route }: { route: Route }) {
   else if (route.view === 'setup') crumbs.push([t('page.applications'), '#/apps'], [t('page.setup')])
   else
     crumbs.push([
-      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
+      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), policy: t('page.systemPolicy'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
         t('page.notFound'),
     ])
 
@@ -270,6 +273,7 @@ export function Shell({ route }: { route: Route }) {
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
           {nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant')}
           {c.me.deploymentOwner ? nav('#/access', t('page.access'), 'access', route.view === 'access') : null}
+          {c.me.deploymentOwner ? nav('#/policy', t('page.systemPolicy'), 'security', route.view === 'policy') : null}
         </div>
         <div class="foot">
           <a

@@ -99,6 +99,9 @@ async def test_every_pack_generates_in_both_languages(env: Env) -> None:
     controls = await _pack(env, "controls", "en")
     assert "not a certification" in str(controls)
     assert controls["counts"]["iso27001"]["supported"] > 0
+    # ISO/IEC 42001 Annex A: its 38 controls, most of them the organisation's.
+    iso42001 = controls["counts"]["iso42001"]
+    assert sum(iso42001.values()) == 38 and iso42001["organisation"] >= 12
 
 
 async def test_every_statement_is_traceable_to_a_source(env: Env) -> None:

@@ -12,7 +12,14 @@ from typing import Any
 
 from evokai.compliance import classify as cls
 from evokai.compliance.model import Block, Item, Pack
-from evokai.compliance.texts import CONTROL_MAP, ISO_CONTROLS, NIST, SOC2_CONTROLS, Tx
+from evokai.compliance.texts import (
+    CONTROL_MAP,
+    ISO42001_MAP,
+    ISO_CONTROLS,
+    NIST,
+    SOC2_CONTROLS,
+    Tx,
+)
 from evokai.guard.pii import PII_TYPES
 
 PACKS = ("ai-act", "gdpr", "controls")
@@ -1546,6 +1553,13 @@ def _status(facts: dict[str, Any], rule: str) -> str:
             SUPPORTED if _mode_summary(facts, "pii.model")[0] == "enforce" else PARTIAL
         ),
         "otel": lambda: SUPPORTED if dep["otelEnabled"] else PARTIAL,
+        "systempolicy": lambda: SUPPORTED if dep.get("systemPolicy") else AVAILABLE,
+        "dataprotection": lambda: (
+            SUPPORTED
+            if (facts.get("dataProtection") or {}).get("profile")
+            or (facts.get("dataProtection") or {}).get("systemProfile")
+            else AVAILABLE
+        ),
         "partial": lambda: PARTIAL,
         "org": lambda: ORGANISATION,
     }
@@ -1553,7 +1567,7 @@ def _status(facts: dict[str, Any], rule: str) -> str:
 
 
 def controls(facts: dict[str, Any], tx: Tx, snapshot: dict[str, Any] | None = None) -> Pack:
-    """The ISO/IEC 27001 Annex A and SOC 2 mapping.
+    """The ISO/IEC 27001 Annex A, SOC 2 and ISO/IEC 42001 Annex A mapping.
 
     Returns:
         The pack.
@@ -1572,21 +1586,30 @@ def controls(facts: dict[str, Any], tx: Tx, snapshot: dict[str, Any] | None = No
         )
     )
     counts: dict[str, dict[str, int]] = {}
-    for sid, title, catalogue in (
-        ("iso27001", tx("ct.iso"), ISO_CONTROLS),
-        ("soc2", tx("ct.soc2"), SOC2_CONTROLS),
+    for sid, title, catalogue, mapping, prefix in (
+        ("iso27001", tx("ct.iso"), ISO_CONTROLS, CONTROL_MAP, "ctrl"),
+        ("soc2", tx("ct.soc2"), SOC2_CONTROLS, CONTROL_MAP, "ctrl"),
+        ("iso42001", tx("ct.iso42001"), tuple(ISO42001_MAP), ISO42001_MAP, "ctrl42"),
     ):
         sec = pk.section(sid, title)
+        if sid == "iso42001":
+            sec.add(_p(f"{sid}.note", tx("ct.iso42001.note"), ["code.ci"]))
         rows = []
         tally: dict[str, int] = {}
         for cid in catalogue:
-            feature, evidence, rule = CONTROL_MAP[cid]
+            feature, evidence, rule = mapping[cid]
             st = _status(facts, rule)
             tally[st] = tally.get(st, 0) + 1
             rows.append(
                 Item(
                     cid,
-                    cells=[cid, tx(f"ctrl.{cid}"), tx(f"feat.{feature}"), evidence, tx(f"st.{st}")],
+                    cells=[
+                        cid,
+                        tx(f"{prefix}.{cid}"),
+                        tx(f"feat.{feature}"),
+                        evidence,
+                        tx(f"st.{st}"),
+                    ],
                     sources=[f"map.{feature}"],
                     flag="human" if st == ORGANISATION else "warn" if st == AVAILABLE else None,
                 )

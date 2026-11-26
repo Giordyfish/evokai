@@ -87,10 +87,16 @@ SECRET_FIELDS = frozenset({"authorization_token", "headers"})
 def storage_allowed(profile: dict[str, Any] | None) -> bool:
     """Whether the application's data protection lets built-in tools keep data at the provider.
 
+    The system policy's profile (``system_protection``) holds as well: it forbids the storage
+    when it sets ``provider_tool_storage: false`` or ``retention: zero_retention``.
+
     Returns:
-        True only when ``provider_tool_storage`` is set.
+        True only when ``provider_tool_storage`` is set and the system policy does not forbid it.
     """
     dp = (profile or {}).get("data_protection") or {}
+    sp = (profile or {}).get("system_protection") or {}
+    if sp.get("provider_tool_storage") is False or sp.get("retention") == "zero_retention":
+        return False
     return bool(dp.get("provider_tool_storage"))
 
 

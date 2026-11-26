@@ -7,11 +7,22 @@ configuration of an application and its recent activity, never personal data. Th
 |---|---|---|
 | `ai-act` | Regulation (EU) 2024/1689 | the system and its intended purpose; the risk classification with its reasoning and the obligations that follow; technical documentation in the spirit of Annex IV (agents and versions, models and providers with their regions, tools and which change data, human oversight, red team and eval scores with trends, security controls with OWASP LLM Top 10 and NIST AI 600-1, logging and retention); the log of significant changes; what the organisation completes |
 | `gdpr` | Regulation (EU) 2016/679 | the record of processing for the AI processing (Art. 30), sub-processors and recipients with the data protection profile and every external processor's residency, jurisdiction and terms as the provider catalog knows them, transfers, retention per type of data, a DPIA template (WP248 screening, systematic description, risks with the measures in force, residual risks and sign-off left to complete), data subject rights and how each is fulfilled, the DPA annex of technical and organisational measures (Art. 28, 32) |
-| `controls` | ISO/IEC 27001:2022 Annex A, SOC 2 Trust Services Criteria | which controls Evokai's features support, with evidence pointers (settings, tables, endpoints, tests) and a status: supported, available but not configured, partly supported, or the organisation's |
+| `controls` | ISO/IEC 27001:2022 Annex A, SOC 2 Trust Services Criteria, ISO/IEC 42001:2023 Annex A | which controls Evokai's features support, with evidence pointers (settings, tables, endpoints, tests) and a status: supported, available but not configured, partly supported, or the organisation's |
 
 Every pack opens with the same disclaimer: it supports the controller's own assessment and is not legal advice. The
-control mapping says plainly that it is support, not a certification: ISO/IEC 27001 certifies an organisation's ISMS
-and SOC 2 reports on a service organisation's controls, never a piece of software.
+control mapping says plainly that it is support, not a certification: ISO/IEC 27001 certifies an organisation's ISMS,
+ISO/IEC 42001 its AI management system, and SOC 2 reports on a service organisation's controls, never a piece of
+software.
+
+ISO/IEC 42001:2023 Annex A lists 38 controls (A.2 to A.10). The pack gives each one a short title in our own words
+(the standard's text is copyrighted) and an honest status: most of them (the AI policy, objectives, people,
+societal impact, reporting to outside parties, data acquisition and quality, customers) are the organisation's own
+processes and are listed as such so the gap is visible. Evokai gives evidence where it has some: event logs (A.6.2.8),
+technical documentation through the AI Act pack (A.6.2.7), verification through evals, the red team and policy tests
+(A.6.2.4), the resources inventory (A.4.2, A.4.4), the DPIA template for impact assessments (A.5.2 to A.5.4, partly),
+policy versions for the review of policies (A.2.4, partly), responsible use through the system policy (A.9.2:
+supported once a system policy is saved) and suppliers through the provider catalog and the data protection profile
+(A.10.3: supported once a profile is set).
 
 ## Where each statement comes from
 
@@ -95,7 +106,7 @@ counts left out).
 
 ## Console
 
-The **Compliance** page of an application shows the pack chosen (AI Act, GDPR, ISO 27001 and SOC 2) in the console's
+The **Compliance** page of an application shows the pack chosen (AI Act, GDPR, and ISO 27001, SOC 2 and ISO 42001) in the console's
 language with its footnotes and flags, with Print (the HTML in a new tab) and downloads as HTML, Markdown and JSON; the
 profile form; the snapshots, a snapshot's HTML, and the comparison of two of them.
 

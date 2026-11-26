@@ -63,6 +63,51 @@ class _Repo:
     db: Database
 
 
+POLICY_FIELDS = frozenset({"security", "data_protection"})
+"""The application fields that make up its policy (each save of them is a new version)."""
+
+
+def policy_content(security: Any, data_protection: Any) -> dict[str, Any]:
+    """A policy's content as a version keeps it.
+
+    Returns:
+        ``{"security": ..., "data_protection": ...}`` (None for what is not set).
+    """
+    return {"security": security or None, "data_protection": data_protection or None}
+
+
+async def _add_version(
+    s: Any, owner_id: str, content: dict[str, Any], by: str, note: str | None
+) -> m.PolicyVersion | None:
+    """Write a new version of a policy in a session, unless the content is the latest's.
+
+    Returns:
+        The new version, or None when nothing changed.
+    """
+    q = (
+        sa
+        .select(m.PolicyVersion)
+        .where(m.PolicyVersion.owner_id == owner_id)
+        .order_by(m.PolicyVersion.number.desc())
+        .limit(1)
+    )
+    latest = (await s.execute(q)).scalar_one_or_none()
+    if latest is not None and latest.content == content:
+        return None
+    row = m.PolicyVersion(
+        id=new_id(),
+        owner_id=owner_id,
+        number=(latest.number if latest else 0) + 1,
+        content=content,
+        created_at=utcnow(),
+        created_by=by[:200],
+        note=note[:500] if note else None,
+    )
+    s.add(row)
+    await s.flush()
+    return row
+
+
 class ApplicationRepository(_Repo):
     """Applications and their keys."""
 
@@ -95,8 +140,10 @@ class ApplicationRepository(_Repo):
         async with self.db.session() as s:
             return await s.get(m.Application, application_id)
 
-    async def create(self, slug: str, name: str, **fields: Any) -> m.Application:
-        """Create an application.
+    async def create(
+        self, slug: str, name: str, *, by: str = "evokai", **fields: Any
+    ) -> m.Application:
+        """Create an application, with version 1 of its policy.
 
         Returns:
             The new application.
@@ -104,13 +151,42 @@ class ApplicationRepository(_Repo):
         async with self.db.session() as s:
             app = m.Application(id=new_id(), slug=slug, name=name, **fields)
             s.add(app)
+            content = policy_content(fields.get("security"), fields.get("data_protection"))
+            await _add_version(s, app.id, content, by, None)
             return app
 
-    async def update(self, application_id: str, **fields: Any) -> None:
-        """Change an application's settings (caps, origins, models)."""
+    async def update(
+        self, application_id: str, *, by: str = "evokai", note: str | None = None, **fields: Any
+    ) -> m.PolicyVersion | None:
+        """Change an application's settings (caps, origins, models).
+
+        A change of its policy (``security``, ``data_protection``) that makes it differ from its
+        latest version writes a new version, in the same transaction, whatever the path.
+
+        Args:
+            application_id: The application.
+            by: Who changes it (the audit log's actor), for the policy version.
+            note: The policy version's note.
+            fields: The columns to set.
+
+        Returns:
+            The new policy version, or None when the policy did not change.
+        """
         async with self.db.session() as s:
             q = sa.update(m.Application).where(m.Application.id == application_id)
             await s.execute(q.values(**fields))
+            if not POLICY_FIELDS & set(fields):
+                return None
+            row = (
+                await s.execute(
+                    sa.select(m.Application.security, m.Application.data_protection).where(
+                        m.Application.id == application_id
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                return None
+            return await _add_version(s, application_id, policy_content(*row), by, note)
 
     async def add_key(
         self, application_id: str, kind: str, prefix: str, secret_hash: str, label: str = ""
@@ -2311,6 +2387,136 @@ class ConsoleSettingRepository(_Repo):
             return _rowcount(r) > 0
 
 
+class PolicyRepository(_Repo):
+    """Versions and tests of policies.
+
+    The owner is ``system`` for the system policy, else the application's id.
+    """
+
+    async def add_version(
+        self, owner_id: str, content: dict[str, Any], by: str, note: str | None = None
+    ) -> m.PolicyVersion | None:
+        """Write a new version (the system policy's; an application's is written by its update).
+
+        Returns:
+            The new version, or None when the content is the latest's.
+        """
+        async with self.db.session() as s:
+            return await _add_version(s, owner_id, content, by, note)
+
+    async def latest(self, owner_id: str) -> m.PolicyVersion | None:
+        """The latest version of a policy.
+
+        Returns:
+            The version, or None when it has none.
+        """
+        async with self.db.session() as s:
+            q = (
+                sa
+                .select(m.PolicyVersion)
+                .where(m.PolicyVersion.owner_id == owner_id)
+                .order_by(m.PolicyVersion.number.desc())
+                .limit(1)
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def versions(self, owner_id: str, limit: int = 200) -> list[m.PolicyVersion]:
+        """A policy's versions, newest first.
+
+        Returns:
+            Versions.
+        """
+        async with self.db.session() as s:
+            q = (
+                sa
+                .select(m.PolicyVersion)
+                .where(m.PolicyVersion.owner_id == owner_id)
+                .order_by(m.PolicyVersion.number.desc())
+                .limit(limit)
+            )
+            return list((await s.execute(q)).scalars().all())
+
+    async def version(self, owner_id: str, number: int) -> m.PolicyVersion | None:
+        """One version of a policy.
+
+        Returns:
+            The version or None.
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.PolicyVersion).where(
+                m.PolicyVersion.owner_id == owner_id, m.PolicyVersion.number == number
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def tests(self, owner_id: str) -> list[m.PolicyTest]:
+        """A policy's tests, by name.
+
+        Returns:
+            Tests.
+        """
+        async with self.db.session() as s:
+            q = (
+                sa
+                .select(m.PolicyTest)
+                .where(m.PolicyTest.owner_id == owner_id)
+                .order_by(m.PolicyTest.name)
+            )
+            return list((await s.execute(q)).scalars().all())
+
+    async def test(self, owner_id: str, test_id: str) -> m.PolicyTest | None:
+        """One test of a policy.
+
+        Returns:
+            The test or None.
+        """
+        async with self.db.session() as s:
+            row = await s.get(m.PolicyTest, test_id)
+            return row if row is not None and row.owner_id == owner_id else None
+
+    async def by_name(self, owner_id: str, name: str) -> m.PolicyTest | None:
+        """A test of a policy by name.
+
+        Returns:
+            The test or None.
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.PolicyTest).where(
+                m.PolicyTest.owner_id == owner_id, m.PolicyTest.name == name
+            )
+            return (await s.execute(q)).scalar_one_or_none()
+
+    async def put_test(self, owner_id: str, test_id: str | None, **fields: Any) -> m.PolicyTest:
+        """Create a test (no id) or replace one.
+
+        Returns:
+            The test.
+        """
+        async with self.db.session() as s:
+            row = await s.get(m.PolicyTest, test_id) if test_id else None
+            if row is None or row.owner_id != owner_id:
+                row = m.PolicyTest(id=new_id(), owner_id=owner_id, created_at=utcnow())
+                s.add(row)
+            for k, v in fields.items():
+                setattr(row, k, v)
+            row.updated_at = utcnow()
+            await s.flush()
+            return row
+
+    async def delete_test(self, owner_id: str, test_id: str) -> bool:
+        """Remove a test.
+
+        Returns:
+            Whether it existed.
+        """
+        async with self.db.session() as s:
+            r = await s.execute(
+                sa.delete(m.PolicyTest).where(
+                    m.PolicyTest.id == test_id, m.PolicyTest.owner_id == owner_id
+                )
+            )
+            return _rowcount(r) > 0
+
+
 class ConsolePreferenceRepository(_Repo):
     """The console preferences of each console identity."""
 
@@ -2845,6 +3051,7 @@ class Store:
         self.console_users = ConsoleUserRepository(db)
         self.console_settings = ConsoleSettingRepository(db)
         self.console_preferences = ConsolePreferenceRepository(db)
+        self.policies = PolicyRepository(db)
         self.evals = EvalRepository(db)
         self.traces = TraceRepository(db)
         self.review_notes = ReviewNoteRepository(db)
