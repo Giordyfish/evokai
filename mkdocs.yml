@@ -119,6 +119,7 @@ nav:
   - Reference:
       - Configuration: configuration.md
       - Deployment: deployment.md
+      - Running on Azure: azure.md
       - Releasing: releasing.md
       - The pydantic-ai Agent: pydantic-ai-agent.md
   - Channels: channels/README.md

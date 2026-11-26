@@ -395,7 +395,7 @@ security:
 | `none` (the default) | rules only |
 | `bedrock_guardrails` | the prompt attack filter of Amazon Bedrock Guardrails, through `ApplyGuardrail` |
 | `prompt_guard` | Meta Llama Prompt Guard 2 86M, run on the service's own CPU |
-| `azure_prompt_shields` | Azure AI Content Safety Prompt Shields (`text:shieldPrompt`, API 2024-09-01): the person's message as the user prompt (jailbreaks), untrusted content as documents (indirect attacks); `EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT` and `_KEY`; billed per 1,000-character text record |
+| `azure_prompt_shields` | Azure AI Content Safety Prompt Shields (`text:shieldPrompt`, API 2024-09-01): the person's message as the user prompt (jailbreaks), untrusted content as documents (indirect attacks); `EVOKAI_AZURE_CONTENT_SAFETY_ENDPOINT` and `_KEY` (without a key, a Microsoft Entra ID token of the managed identity, [Azure](azure.md)); billed per 1,000-character text record |
 | `model_armor` | Google Model Armor `sanitizeUserPrompt` with a template whose prompt injection and jailbreak filter is on (`EVOKAI_MODEL_ARMOR_TEMPLATE`, the token from `EVOKAI_MODEL_ARMOR_TOKEN` or Application Default Credentials), at the template location's regional host |
 | `mistral_moderation` | the `jailbreaking` category of Mistral's moderation model (`/v1/moderations`, `MISTRAL_API_KEY`, `EVOKAI_MISTRAL_MODERATION_URL` for its EU endpoint); Mistral's guide documents the category, its API reference examples do not show it yet: without it the score is 0 |
 | `custom` | a third-party classifier loaded from `EVOKAI_GUARD_CLASSIFIER=module:factory` (an object with `async score(text) -> float`) |

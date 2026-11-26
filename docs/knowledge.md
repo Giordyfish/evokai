@@ -91,6 +91,19 @@ Bedrock id runs in the deployment's region, so an application whose models must 
 deployment is in the EU, and a residency outside it refuses it (400 `embedding_model`). `test:hash` is a local model
 for tests (hashed words, free).
 
+Any other model goes through the OpenAI embeddings API of the endpoint the [provider catalog](data-protection.md#a-deployments-own-entries)
+connects it to, and its facts there decide the residency:
+
+- `api: azure`: an Azure OpenAI or Foundry deployment (`azure:text-embedding-3-large`), with its key or, without one,
+  a Microsoft Entra ID token of the managed identity ([Azure](azure.md)); the base's dimensions are asked for
+  (`dimensions`). `azure:<deployment>` with no declared endpoint uses `AZURE_OPENAI_ENDPOINT` and
+  `OPENAI_API_VERSION`.
+- `api: openai-compatible`: a self-hosted server (Ollama, vLLM, Hugging Face Text Embeddings Inference) under a
+  provider id of the deployment's own (`our-tei:BAAI/bge-m3`); the model makes its own size, which must be the base's
+  (else the call fails with `dimensions`).
+
+Both need the model in `EVOKAI_EMBEDDING_ALLOW`.
+
 Every embedding call is a usage record of kind `embed` with its input tokens and cost: ingestion under the subject
 `system:knowledge` (tags `knowledge:<base>`), a search under the subject that asked (with its agent, conversation and
 turn), the console's test search under `console:knowledge`. The application's caps count them; ingestion stops a

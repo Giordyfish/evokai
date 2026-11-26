@@ -1422,6 +1422,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+azure = [
+    { name = "azure-identity" },
+    { name = "pydantic-ai-slim", extra = ["anthropic"] },
+]
 harness = [
     { name = "pydantic-ai-harness", extra = ["absurd", "acp", "anthropic", "aws-lambda", "azure-durable-task", "boxd", "boxlite", "cli", "codemode", "coder", "day-ai", "daytona", "dbos", "dynamic-workflow", "e2b", "exa", "github", "google-workspace", "grain", "ipython", "linear", "logfire", "logfire-mcp", "modal", "mongodb", "notion", "opensandbox", "ordinal", "pgtask", "pixeltable", "playwright", "posthog", "prompt-injection-defender", "prompt-injection-defender-ml", "pylon", "render", "repair-tool-arguments", "researcher", "skills", "slack", "smol", "sprites", "stackone", "temporal", "youdotcom"] },
 ]
@@ -1473,6 +1477,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "asyncpg", specifier = ">=0.32.0" },
+    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.27.0" },
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "fastapi", specifier = ">=0.164.0" },
     { name = "fastmcp", specifier = ">=3.4,<4" },
@@ -1491,6 +1496,7 @@ requires-dist = [
     { name = "pydantic-ai-harness", extras = ["absurd", "acp", "anthropic", "aws-lambda", "azure-durable-task", "boxd", "boxlite", "cli", "codemode", "coder", "day-ai", "daytona", "dbos", "dynamic-workflow", "e2b", "exa", "github", "google-workspace", "grain", "ipython", "linear", "logfire", "logfire-mcp", "modal", "mongodb", "notion", "opensandbox", "ordinal", "pgtask", "pixeltable", "playwright", "posthog", "prompt-injection-defender", "prompt-injection-defender-ml", "pylon", "render", "repair-tool-arguments", "researcher", "skills", "slack", "smol", "sprites", "stackone", "temporal", "youdotcom"], marker = "extra == 'harness'", specifier = "==0.69.0" },
     { name = "pydantic-ai-harness", extras = ["absurd", "acp", "anthropic", "aws-lambda", "azure-durable-task", "boxd", "cli", "codemode", "coder", "day-ai", "dbos", "dynamic-workflow", "e2b", "exa", "github", "google-workspace", "grain", "linear", "logfire", "logfire-mcp", "modal", "mongodb", "notion", "opensandbox", "ordinal", "pgtask", "posthog", "prompt-injection-defender", "pylon", "render", "repair-tool-arguments", "researcher", "skills", "slack", "sprites", "stackone", "youdotcom"], marker = "extra == 'harness-lite'", specifier = "==0.69.0" },
     { name = "pydantic-ai-harness", extras = ["codemode"], specifier = "==0.69.0" },
+    { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'azure'", specifier = "==2.69.0" },
     { name = "pydantic-ai-slim", extras = ["bedrock", "mistral", "openai"], specifier = "==2.69.0" },
     { name = "pydantic-handlebars", specifier = "==0.2.1" },
     { name = "pydantic-settings", specifier = ">=2.16.3" },
@@ -1502,7 +1508,7 @@ requires-dist = [
     { name = "tokenizers", marker = "extra == 'prompt-guard'", specifier = ">=0.22" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
-provides-extras = ["otel", "voice", "harness", "harness-lite", "prompt-guard"]
+provides-extras = ["otel", "voice", "azure", "harness", "harness-lite", "prompt-guard"]
 
 [package.metadata.requires-dev]
 dev = [

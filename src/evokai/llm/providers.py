@@ -167,7 +167,14 @@ class Price(BaseModel):
 
 
 Api = Literal[
-    "bedrock", "openai-compatible", "azure", "google-vertex", "anthropic", "mistral", "pydantic-ai"
+    "bedrock",
+    "openai-compatible",
+    "azure",
+    "anthropic-foundry",
+    "google-vertex",
+    "anthropic",
+    "mistral",
+    "pydantic-ai",
 ]
 
 
