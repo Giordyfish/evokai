@@ -23,6 +23,14 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - Azure Content Safety (`azure_prompt_shields`, `azure_content_safety`) without `EVOKAI_AZURE_CONTENT_SAFETY_KEY`
   sends an Entra ID token, fetched at start.
 - [Running on Azure](docs/azure.md): what runs where on AWS, on Azure and self-hosted.
+- Scanned PDFs in knowledge bases: a PDF without a text layer goes to the deployment's document reader
+  (`EVOKAI_DOCUMENT_READER`): Azure AI Document Intelligence `prebuilt-layout` (key or Entra ID; the result is deleted
+  as soon as it is read) or a self-hosted docling-serve, when the application's data protection profile allows the
+  processor. Both are in the provider catalog. Not verified against a live service.
+- Reranking for knowledge bases: `retrieval.rerank` reorders the fused candidates with the deployment's reranker
+  (`EVOKAI_RERANK_MODEL`, the Cohere v2 rerank API: Cohere Rerank in Foundry, vLLM, Infinity), connected and judged by
+  the provider catalog like any model; a failing reranker leaves the fused order. The console's knowledge base form
+  has the switch.
 
 - A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
   application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:

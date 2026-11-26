@@ -2631,6 +2631,43 @@ processors:
     are Amazon Bedrock''s: AgentCore''s own data terms were not read.'
   unknowns:
   - 'terms: AgentCore''s own retention terms were not read; Bedrock''s are shown'
+- id: azure-document-intelligence
+  kind: documents
+  title: Azure AI Document Intelligence (prebuilt-layout, text recognition of scanned PDFs)
+  provider: azure
+  api: 'POST {endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30&outputContentFormat=markdown,
+    body {base64Source}; 202 with Operation-Location; GET it until status succeeded (analyzeResult.content in Markdown);
+    DELETE it. Auth: Ocp-Apim-Subscription-Key or a Microsoft Entra ID token for https://cognitiveservices.azure.com/.default.'
+  place: {}
+  terms:
+    retention: stored
+    retention_days: 1
+    notes: 'Input documents and analyze results are processed in the region of the resource and stored temporarily
+      in Azure Storage in the same region, for 24 hours after the analysis, unless deleted earlier with Delete Analyze
+      Result (Evokai deletes each result as soon as it is read). Customers in a region share the temporary storage,
+      logically isolated by subscription and credentials.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/document-intelligence/data-privacy-security
+  checked: '2026-11-26'
+  notes: 'EVOKAI_DOCUMENT_READER=azure: only PDFs without a text layer (scans) are sent, and only when the application''s
+    profile allows this processor. Declare the resource''s region in EVOKAI_PROVIDERS_FILE (place.regions) so a residency
+    rule can pass. Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/analyze-document?view=rest-aiservices-v4.0%20(2024-11-30)
+  unknowns:
+  - 'place: the region is the resource''s own, which only the deployment knows'
+  - 'terms.training: inherited from the azure provider (Azure OpenAI''s page); the Document Intelligence data-privacy
+    page does not say whether documents are used for training'
+  - 'prices: the per-page price was not read'
+- id: docling
+  kind: documents
+  title: docling-serve (self-hosted text recognition, EVOKAI_DOCLING_URL)
+  declared_by: operator
+  checked: '2026-11-26'
+  notes: 'EVOKAI_DOCUMENT_READER=docling: a docling-serve of the deployment''s own; scanned PDFs only. Its facts are
+    what the deployment declares here (place, entity).'
+  sources:
+  - https://github.com/docling-project/docling-serve/blob/main/docs/usage.md
 - id: observability-exporter
   kind: observability
   title: OpenTelemetry exporter (OTEL_*)

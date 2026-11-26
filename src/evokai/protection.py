@@ -504,9 +504,10 @@ CONNECTIONS = {
 async def report(svc: Any, app: Any) -> dict[str, Any]:
     """Every external processor the application may use, and whether its profile allows each.
 
-    Models (the catalog's priced ones, the agents' own, the allow-list's), embeddings, guard
-    classifiers, the code sandbox, server speech, connections and the observability exporter; what
-    the browser may send is the application's declaration.
+    Models (the catalog's priced ones, the agents' own, the allow-list's), embeddings, the
+    document reader and the reranker of knowledge bases, guard classifiers, the code sandbox,
+    server speech, connections and the observability exporter; what the browser may send is the
+    application's declaration.
 
     Returns:
         profile, residency, empty, processors (``verdict_view`` each), browser.
@@ -564,6 +565,16 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
                 "sandbox",
                 processor_verdict(prof, "agentcore-code-interpreter", region=r),
             )
+        )
+    reader = getattr(knowledge, "reader", None)
+    if reader is not None:
+        out.append(
+            verdict_view(reader.processor, "documents", processor_verdict(prof, reader.processor))
+        )
+    reranker = getattr(knowledge, "reranker", None)
+    if reranker is not None:
+        out.append(
+            verdict_view(reranker.model, "rerank", model_verdict(prof, reranker.model, region))
         )
     if st.voice_enabled:
         from evokai.audio.choice import stt_engines, tts_engines

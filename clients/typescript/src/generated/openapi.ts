@@ -6881,6 +6881,11 @@ export interface components {
              */
             mmr_lambda?: number;
             /**
+             * Rerank
+             * @default false
+             */
+            rerank?: boolean;
+            /**
              * Top K
              * @default 5
              */

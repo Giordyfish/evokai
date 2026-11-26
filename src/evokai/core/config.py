@@ -312,6 +312,25 @@ class Settings(BaseSettings):
     """Lifetime in seconds of the signed links to a document that citations carry."""
     knowledge_workers: int = Field(default=2, ge=1, le=16)
     """Documents ingested at the same time by one process."""
+    document_reader: Literal["none", "azure", "docling"] = "none"
+    """``EVOKAI_DOCUMENT_READER``: who reads a scanned PDF (no text layer) with text recognition:
+    Azure AI Document Intelligence or a self-hosted docling-serve (``evokai.knowledge.readers``),
+    when the application's data protection profile allows it. ``none``: a scan fails."""
+    document_intelligence_endpoint: str | None = None
+    """``EVOKAI_DOCUMENT_INTELLIGENCE_ENDPOINT``: ``https://<resource>.cognitiveservices.azure.com``."""
+    document_intelligence_key: str | None = None
+    """``EVOKAI_DOCUMENT_INTELLIGENCE_KEY``: its key; unset, a Microsoft Entra ID token of the
+    managed identity."""
+    document_intelligence_model: str = "prebuilt-layout"
+    """``EVOKAI_DOCUMENT_INTELLIGENCE_MODEL``: the analysis model."""
+    docling_url: str | None = None
+    """``EVOKAI_DOCLING_URL``: a docling-serve of the deployment's own (``http://docling:5001``)."""
+    docling_key: str | None = None
+    """``EVOKAI_DOCLING_KEY``: its ``DOCLING_SERVE_API_KEY``, sent as ``X-Api-Key``."""
+    rerank_model: str | None = None
+    """``EVOKAI_RERANK_MODEL``: ``provider:model`` of a reranker behind the Cohere v2 rerank API,
+    connected by its provider catalog endpoint (``evokai.knowledge.rerank``); a knowledge base
+    whose ``retrieval.rerank`` is on reorders its candidates with it. Unset: no reranking."""
 
     # Long-term memory (evokai.memory)
     memory_embedding_model: str = "bedrock:amazon.titan-embed-text-v2:0"

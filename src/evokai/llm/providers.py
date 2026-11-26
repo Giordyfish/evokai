@@ -246,7 +246,15 @@ class Provider(BaseModel):
 
 
 ProcessorKind = Literal[
-    "embeddings", "classifier", "sandbox", "stt", "tts", "connection", "observability", "other"
+    "embeddings",
+    "classifier",
+    "sandbox",
+    "stt",
+    "tts",
+    "connection",
+    "observability",
+    "documents",
+    "other",
 ]
 
 

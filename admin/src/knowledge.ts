@@ -18,6 +18,7 @@ export interface Form {
   minScore: number
   hybrid: boolean
   mmr: boolean
+  rerank: boolean
   access: string
   link: string
   retention: string
@@ -40,6 +41,7 @@ export function formOf(b: KnowledgeBase | null, list: KnowledgeList): Form {
     minScore: b?.retrieval.min_score ?? 0,
     hybrid: b?.retrieval.hybrid ?? true,
     mmr: b?.retrieval.mmr ?? false,
+    rerank: b?.retrieval.rerank ?? false,
     access: (b?.access ?? []).join(', '),
     link: b?.linkTemplate ?? '',
     retention: b?.retentionDays != null ? String(b.retentionDays) : '',
@@ -57,7 +59,7 @@ export function bodyOf(f: Form, base: KnowledgeBase | null): Partial<KnowledgeBa
     dimensions: f.dimensions,
     language: f.language,
     chunking: { max_chars: f.maxChars, overlap_chars: f.overlap, table_max_chars: f.tableMax },
-    retrieval: { ...(base?.retrieval ?? {}), top_k: f.topK, min_score: f.minScore, hybrid: f.hybrid, mmr: f.mmr },
+    retrieval: { ...(base?.retrieval ?? {}), top_k: f.topK, min_score: f.minScore, hybrid: f.hybrid, mmr: f.mmr, rerank: f.rerank },
     access: groups(f.access),
     linkTemplate: f.link.trim() || null,
     retentionDays: f.retention.trim() ? Number(f.retention) : null,
