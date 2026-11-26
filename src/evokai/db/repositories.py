@@ -848,6 +848,44 @@ class SessionRepository(_Repo):
                 .values(prompt_options=options)
             )
 
+    async def pin_module_versions(
+        self, session_id: str, pins: dict[str, tuple[dict[str, Any], int]]
+    ) -> dict[str, Any] | None:
+        """Pin module versions on the session's stored choice, keeping whatever else it holds now.
+
+        The choice is read again in the same transaction (locked on Postgres): a mint that replaced
+        it while the turn ran keeps its modules, values and locale, and a version another turn
+        pinned first stays.
+
+        Args:
+            session_id: The conversation.
+            pins: Module name to (its entry when the choice has none, the version to pin).
+
+        Returns:
+            The stored choice after pinning, or None when the conversation is gone.
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.Session.prompt_options).where(m.Session.id == session_id)
+            found = (await s.execute(q.with_for_update())).first()
+            if found is None:
+                return None
+            options = dict(found[0] or {"modules": {}, "locale": None})
+            modules = dict(options.get("modules") or {})
+            for name, (fallback, version) in pins.items():
+                entry = modules.get(name)
+                if entry is None:
+                    modules[name] = {**fallback, "version": version}
+                elif entry.get("version") is None:
+                    modules[name] = {**entry, "version": version}
+            options["modules"] = modules
+            await s.execute(
+                sa
+                .update(m.Session)
+                .where(m.Session.id == session_id)
+                .values(prompt_options=options)
+            )
+            return options
+
     async def set_client_tools(self, session_id: str, tools: list[dict[str, Any]] | None) -> None:
         """Replace the custom client tools the session token declared."""
         async with self.db.session() as s:
@@ -1973,6 +2011,17 @@ class VoiceRepository(_Repo):
             v = m.VoiceRecord
             await s.execute(sa.delete(v).where(v.provider == provider, v.voice_id == voice_id))
             s.add(v(id=new_id(), provider=provider, voice_id=voice_id, **fields))
+
+    async def get(self, provider: str, voice_id: str) -> m.VoiceRecord | None:
+        """One voice of the catalogue.
+
+        Returns:
+            The record, or None.
+        """
+        async with self.db.session() as s:
+            v = m.VoiceRecord
+            q = sa.select(v).where(v.provider == provider, v.voice_id == voice_id)
+            return (await s.execute(q)).scalars().first()
 
     async def all(self, language: str | None = None) -> list[m.VoiceRecord]:
         """Voices, optionally for one language.

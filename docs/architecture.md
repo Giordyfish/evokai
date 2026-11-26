@@ -426,7 +426,9 @@ A session declares its **voice engine** (token claim, else the application defau
   says so. STT and TTS are pluggable (registered names or `module:factory`); EU-hosted providers
   plug in without touching the pipeline. Connections stay bound to their session. The engines are
   the session's (`speech` at token mint) or the deployment's, with the session's voice, and are the
-  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming). Server
+  same as for [server speech](voice.md) (synthesis with timings, transcription, streaming). A voice of
+  the deployment's catalogue speaks with its own [settings](voice.md#catalogue-voices) (model, speed,
+  the engine's options) in both, so an operator tunes it once for every application. Server
   recognition takes a vocabulary hint and drops the phrases recognisers make up from silence; its
   streaming socket reports where speech starts and ends and lets the client end utterances itself.
 
@@ -480,7 +482,8 @@ the headless client's `EvokaiConsole` from the repository's sources. Sign-in exc
 key) for a signed, short-lived cookie: `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, scoped to the API path; the
 key is never stored in the browser. Every request must also carry `X-Evokai-Console: 1`, a header a cross-site form
 cannot send, so the cookie alone authorises nothing (CSRF). An admin login is bound to its key and ends when the key
-is revoked; logout deletes the cookie. An admin key sees its own application; the operator key (`EVOKAI_OPERATOR_KEY`)
+is revoked; an operator login ends when the operator key is changed or removed (it holds a keyed fingerprint of the
+key), and so does the console assistant's delegation made from it; logout deletes the cookie. An admin key sees its own application; the operator key (`EVOKAI_OPERATOR_KEY`)
 sees every application and creates new ones. People can also sign in with single sign-on (OpenID Connect, code with
 PKCE, MFA required from the provider when configured); their roles (viewer, operator, owner, per application or for
 all of them) come from the provider's claims and are enforced by the service on every route, and every change lands

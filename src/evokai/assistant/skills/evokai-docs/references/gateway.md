@@ -94,12 +94,12 @@ In order, before anything is forwarded; the first that refuses ends them.
 | Check | Refusal |
 | --- | --- |
 | A personal key, not revoked, of an active gateway | 401 `authentication_error` |
-| The provider is enabled on the gateway | 400 (control `gateway.provider`) |
-| The model is allowed (the gateway's allowed models, globs such as `claude-sonnet-*`; none set: every model) | 400 (`gateway.model`) |
-| Data protection: the gateway's profile and the system policy's both let the provider have the data | 400 (`gateway.protection`, with the reasons) |
+| The provider is enabled on the gateway | 400, 451 on the Anthropic door (control `gateway.provider`) |
+| The model is allowed (the gateway's allowed models, globs such as `claude-sonnet-*`; none set: every model) | 400, 451 on the Anthropic door (`gateway.model`) |
+| Data protection: the gateway's profile and the system policy's both let the provider have the data | 400, 451 on the Anthropic door (`gateway.protection`, with the reasons) |
 | The person's requests per minute (`abuse.requests_per_minute` of the policy, control `abuse.rate`) | 429 with `retry-after` |
 | The person's token caps on this gateway, per day and per month (UTC), when set | 429 (`gateway.cap`) |
-| The guard's input checks on the new text: `input.size`, `input.secrets`, `pii.model`, `scope` | 400 (the control) |
+| The guard's input checks on the new text: `input.size`, `input.secrets`, `pii.model`, `scope` | 400, 451 on the Anthropic door (the control) |
 
 A token count (`count_tokens`) passes the key, provider, model and data protection checks only: it is not a model call,
 and its content is checked when it is sent for real.
@@ -109,14 +109,17 @@ A refusal is in the provider's error shape (Anthropic: `{"type": "error", "error
 message the person reads in their tool, for example:
 
 ```text
-API Error: 400 Evokai gateway: this request was not sent because it contains what looks like a secret or credential
+API Error: 451 Evokai gateway: this request was not sent because it contains what looks like a secret or credential
 (aws_access_key; control input.secrets). Remove it from the prompt, or keep the file that holds it out of what the
 tool reads, and try again.
 ```
 
-The message names the kind of finding, never the text. Claude Code resends a refused 400 a few times with some
-features removed (its recovery for capabilities a gateway rejects); each try is refused the same way and recorded as a
-request, and the security event is written once.
+The message names the kind of finding, never the text. A policy refusal on the Anthropic door is a **451** (refused
+for legal or policy reasons): Claude Code resends a refused 400 or 422 several times with features removed (its
+recovery for capabilities a gateway rejects; measured with Claude Code 2.1.332: 8 attempts, even with
+`x-should-retry: false`) and puts "Failed to authenticate" before a 401 or 403, while it sends a 451 once and shows its
+message as it is. Codex sends a 400 once, so the OpenAI door keeps 400. Every attempt is recorded as a request; the
+security event is written once.
 
 ### Which text is checked
 

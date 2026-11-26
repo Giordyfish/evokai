@@ -2951,6 +2951,7 @@ export const it: Messages = {
   "reset.noPreview": "Nessuna anteprima",
   "reset.doneToast": "Ripristino eseguito",
   "reset.notReset": "Non ripristinata",
+  "reset.planChanged": "Qualcosa è cambiato dopo l'anteprima: ecco quella nuova. Controllala, poi ripristina di nuovo.",
   "reset.kind.agent": "Agente",
   "reset.kind.mcp_server": "MCP server",
   "reset.kind.skill": "Skill",

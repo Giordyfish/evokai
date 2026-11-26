@@ -47,6 +47,39 @@ async def test_server_keys_and_wrong_keys_cannot_log_in_and_retries_are_capped(e
     assert (await _login(env, env.admin_key)).status_code == 429
 
 
+async def test_an_operator_login_ends_when_the_operator_key_changes(env: Env) -> None:
+    from evokai.assistant.delegation import mint_delegation
+
+    env.svc.settings.operator_key = OPERATOR_KEY
+    assert (await _login(env, OPERATOR_KEY)).status_code == 204
+    code = await env.client.post("/agent/v1/console/login-code", headers=_bearer(OPERATOR_KEY))
+    login = env.operator_login()
+    token = mint_delegation(env.svc.keyring, login, env.app_id, "owner")
+    assistant = {"Authorization": f"Bearer {token}"}
+    assert (await env.client.get("/agent/v1/console/me")).status_code == 200
+    assert (await env.client.get("/agent/v1/admin/application", headers=assistant)).is_success
+
+    # The key leaked and was rotated: the cookie, a pending sign-in code and the assistant's
+    # delegation made with the old key all stop at once, not when they expire.
+    env.svc.settings.operator_key = OPERATOR_KEY + "_rotated"
+    me = await env.client.get("/agent/v1/console/me")
+    assert (me.status_code, me.json()["error"]) == (401, "console")
+    r = await env.client.post("/agent/v1/console/login", json={"code": code.json()["code"]})
+    assert (r.status_code, r.json()["error"]) == (401, "login_code")
+    r = await env.client.get("/agent/v1/admin/application", headers=assistant)
+    assert (r.status_code, r.json()["error"]) == (401, "delegation")
+
+    env.svc.settings.operator_key = None  # removed altogether
+    assert (
+        await env.client.get("/agent/v1/admin/application", headers=assistant)
+    ).status_code == 401
+    assert (await _login(env, OPERATOR_KEY + "_rotated")).status_code == 401
+
+
+def _bearer(key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}
+
+
 async def test_the_operator_creates_applications_and_picks_one(env: Env) -> None:
     env.svc.settings.operator_key = OPERATOR_KEY
     assert (await _login(env, OPERATOR_KEY)).status_code == 204

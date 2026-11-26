@@ -1,6 +1,7 @@
 /**
  * Plays server speech (`session.speechEvents`) with the Web Audio API and emits its timings in step with what is
- * heard: `word`, `mark` and `viseme` fire when the audio reaches them, whatever order the stream delivered them in.
+ * heard: `word`, `char`, `mark` and `viseme` fire when the audio reaches them, whatever order the stream delivered them
+ * in (`char` only for a stream asked with `characters: true`, from engines that report them).
  * PCM only (ask for `format: 'pcm'`, the default).
  */
 import type { MarkTiming, SpeechStart, SpeechStreamEvent, VisemeTiming, WordTiming } from '../speech-server'
@@ -22,9 +23,17 @@ export interface PlaybackContext {
   resume?(): Promise<void>
 }
 
+/** A code point of the spoken text as it is heard: its offset in `spoken`, when it starts and ends (ms). */
+export interface CharTiming {
+  at: number
+  start: number
+  end: number
+}
+
 export interface PlayerEvents {
   start: SpeechStart
   word: WordTiming
+  char: CharTiming
   mark: MarkTiming
   viseme: VisemeTiming
   end: { cancelled: boolean }
@@ -117,6 +126,10 @@ export class TimedSpeechPlayer {
         } else if (e.type === 'word') {
           const { type: _t, ...w } = e
           at(w.start, () => this.events.emit('word', w))
+        } else if (e.type === 'chars') {
+          e.times.forEach(([start, end], i) => {
+            if (start >= 0) at(start, () => this.events.emit('char', { at: e.at + i, start, end }))
+          })
         } else if (e.type === 'mark') {
           const { type: _t, ...m } = e
           at(m.time, () => this.events.emit('mark', m))

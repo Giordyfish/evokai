@@ -110,7 +110,7 @@ async def test_unlock_needs_owner_and_typed_confirmation(env: Env) -> None:
     assert app is not None and not app.locked
     # The assistant itself never unlocks: a person does, in the console.
     await env.svc.store.applications.update(app_id, locked=True)
-    login = ConsoleLogin("op", None, int(time.time()) + 3600)
+    login = env.operator_login()
     token = mint_delegation(env.svc.keyring, login, app_id, "owner")
     r = await env.client.post(
         url, json={"confirm": SLUG}, headers={"Authorization": f"Bearer {token}"}
@@ -148,9 +148,9 @@ async def test_reset_restores_shipped_definition(env: Env) -> None:
     changed.pop("version", None)
     r = await env.client.put("/agent/v1/admin/agents/assistant", json=changed, headers=_on(app_id))
     assert r.status_code == 200, r.text
-    r = await env.client.post(
-        "/agent/v1/admin/application/reset", json={"confirm": SLUG}, headers=_on(app_id)
-    )
+    preview = await env.client.get("/agent/v1/admin/application/reset/preview", headers=_on(app_id))
+    body = {"confirm": SLUG, "plan": preview.json()["plan"]}
+    r = await env.client.post("/agent/v1/admin/application/reset", json=body, headers=_on(app_id))
     assert r.status_code == 200, r.text
     app = await env.svc.store.applications.get(app_id)
     agent = await env.svc.store.agents.active(app_id, "assistant")

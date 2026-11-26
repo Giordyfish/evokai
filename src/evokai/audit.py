@@ -18,7 +18,7 @@ from fastapi import Request
 from evokai.guard import secrets
 from evokai.identity.console import ConsoleLogin
 from evokai.identity.models import AppPrincipal
-from evokai.mcp_admin.via import via_mcp
+from evokai.mcp_admin.via import client_address, via_mcp
 from evokai.observability.correlation import get_correlation_id
 
 log = logging.getLogger("evokai.audit")
@@ -102,7 +102,7 @@ async def record(
             target=target[:300],
             before=scrub(before),
             after=scrub(after),
-            ip=(request.client.host if request.client else "")[:64],
+            ip=client_address(request.headers, request.client.host if request.client else None),
             correlation_id=(get_correlation_id() or "")[:64],
         )
     except Exception as e:

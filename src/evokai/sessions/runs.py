@@ -314,6 +314,7 @@ class AgentRunner:
         modules = protected(
             await resolve_modules(eng.store, app.id, agent, prompt_options), guard.protect_text
         )
+        guard.add_prompt_text(*(m.text for m in modules))  # the leak check covers them too
         if modules:
             # Which modules at which versions; never their parameters.
             trace.root.set(**{"prompt.modules": [f"{x.name}@{x.version}" for x in modules]})

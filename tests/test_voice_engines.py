@@ -61,7 +61,9 @@ async def test_real_engines_are_pipecat_services(monkeypatch: pytest.MonkeyPatch
         type(make_stt("openai-realtime", language="it-IT")).__name__ == "OpenAIRealtimeSTTService"
     )
     el = make_tts("elevenlabs", voice="v1", sample_rate=24_000)
-    assert type(el).__name__ == "ElevenLabsHttpTTSService"
+    from pipecat.services.elevenlabs.tts import ElevenLabsHttpTTSService
+
+    assert isinstance(el, ElevenLabsHttpTTSService)
     await close_service(el)
     stt = make_stt("elevenlabs", sample_rate=16_000)
     assert type(stt).__name__ == "ElevenLabsSTTService"

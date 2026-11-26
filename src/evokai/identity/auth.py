@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from collections.abc import Callable
 from datetime import UTC
 
 from evokai.core.errors import Forbidden, Unauthorized
@@ -62,6 +63,8 @@ class Authenticator:
         self._revoked: TtlCache[str, float] = TtlCache(max_items=10_000, ttl_seconds=5)
         self._epoch: str | None = None
         self._epoch_read = 0.0
+        self.clock: Callable[[], float] = time.time
+        """The wall clock that fixed rate windows are cut on (tests pin it to stay in a window)."""
 
     async def _sync(self) -> None:
         """Drop the caches of verified keys and users when another instance revoked something."""
@@ -201,7 +204,7 @@ class Authenticator:
             True while the window's count is at most ``limit``.
         """
         digest = hashlib.sha256(key.encode()).hexdigest()[:32]
-        bucket = f"auth:rate:{digest}:{int(time.time() // window_seconds)}"
+        bucket = f"auth:rate:{digest}:{int(self.clock() // window_seconds)}"
         n = await self.shared.incr(bucket, window_seconds * 2)
         return n <= limit
 

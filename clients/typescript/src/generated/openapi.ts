@@ -600,7 +600,8 @@ export interface paths {
          *
          *     Raises:
          *         BadRequest: The typed slug is not the application's (400 ``confirm``).
-         *         Conflict: A system application this version of Evokai does not ship.
+         *         Conflict: A system application this version of Evokai does not ship, or what the reset
+         *             would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).
          */
         post: operations["reset_application_agent_v1_admin_application_reset_post"];
         delete?: never;
@@ -621,10 +622,10 @@ export interface paths {
          * @description Everything a reset of the system application deletes or restores (owner).
          *
          *     Each deleted item carries its definition without secrets (``item``), for the owner to keep
-         *     before resetting.
+         *     before resetting. ``plan`` fingerprints the items: the reset takes it back.
          *
          *     Returns:
-         *         slug and items (kind, name, action: ``delete`` or ``restore``, item).
+         *         slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.
          *
          *     Raises:
          *         Conflict: A system application this version of Evokai does not ship.
@@ -2829,13 +2830,27 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Voice
+         * @description A voice of the deployment's catalog, with how its engine speaks with it (``settings``).
+         *
+         *     Returns:
+         *         provider, voiceId, language, name, gender, region, settings (null when the engine's
+         *         defaults apply).
+         *
+         *     Raises:
+         *         NotFound: No such voice.
+         */
+        get: operations["get_voice_agent_v1_admin_voices__provider___voice_id__get"];
         /**
          * Put Voice
          * @description Add or replace a voice in the deployment's catalog (owner).
          *
          *     Returns:
          *         ok.
+         *
+         *     Raises:
+         *         BadRequest: Settings its engine does not take.
          */
         put: operations["put_voice_agent_v1_admin_voices__provider___voice_id__put"];
         post?: never;
@@ -3571,7 +3586,8 @@ export interface paths {
          *         deployment's facts the console needs (model allow-list, voice enabled).
          *
          *     Raises:
-         *         Unauthorized: Not logged in, the login's key was revoked or its user disabled.
+         *         Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
+         *             operator key changed.
          */
         get: operations["me_agent_v1_console_me_get"];
         put?: never;
@@ -4806,10 +4822,13 @@ export interface paths {
          * Speech
          * @description Speak a text or a ``say`` segment with the session's speech engine.
          *
-         *     A segment that is not in this conversation is 404.
+         *     A segment that is not in this conversation is 404. The voice's catalogue settings (model,
+         *     speed, the engine's options) apply; a segment follows the earlier segments of its turn, a text
+         *     the speech named in ``after``.
          *
          *     Returns:
-         *         The event stream (``start``, ``audio``, ``word``, ``mark``, ``viseme``, ``done``).
+         *         The event stream (``start``, ``audio``, ``word``, ``chars``, ``mark``, ``viseme``,
+         *         ``done``).
          *
          *     Raises:
          *         BadRequest: Neither a text nor a segment, or a text over ``EVOKAI_SPEECH_MAX_CHARS``.
@@ -7029,6 +7048,16 @@ export interface components {
             page?: components["schemas"]["PageContext"] | null;
         };
         /**
+         * Reset
+         * @description The typed slug and the plan of the preview the person saw.
+         */
+        Reset: {
+            /** Confirm */
+            confirm: string;
+            /** Plan */
+            plan: string;
+        };
+        /**
          * Residency
          * @description Where an application's data lives and where its models may run.
          */
@@ -7456,6 +7485,13 @@ export interface components {
          * @description What to speak: a text, or a ``say`` segment of this conversation.
          */
         SpeechRequest: {
+            /** After */
+            after?: string[] | null;
+            /**
+             * Characters
+             * @default false
+             */
+            characters?: boolean;
             /**
              * Format
              * @default pcm
@@ -7464,6 +7500,8 @@ export interface components {
             format?: "pcm" | "opus";
             /** Index */
             index?: number | null;
+            /** Language */
+            language?: string | null;
             /**
              * Samplerate
              * @default 24000
@@ -7887,6 +7925,10 @@ export interface components {
             name: string;
             /** Region */
             region?: string | null;
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * VoiceDef
@@ -8798,7 +8840,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Unlock"];
+                "application/json": components["schemas"]["Reset"];
             };
         };
         responses: {
@@ -12026,6 +12068,40 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_voice_agent_v1_admin_voices__provider___voice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                voice_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

@@ -7,6 +7,7 @@ Neither route is a tool of the admin MCP server, and the assistant's delegation 
 
 from __future__ import annotations
 
+import hmac
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -41,6 +42,13 @@ class Unlock(BaseModel):
     """The application's slug, typed by the person who unlocks or resets it."""
 
     confirm: str = Field(max_length=60)
+
+
+class Reset(Unlock):
+    """The typed slug and the plan of the preview the person saw."""
+
+    plan: str = Field(min_length=64, max_length=64)
+    """``plan`` from ``GET /v1/admin/application/reset/preview``: the reset deletes only that."""
 
 
 async def _system_app(svc: Services, a: AppPrincipal) -> Any:
@@ -93,10 +101,10 @@ async def reset_preview(svc: Svc, a: Admin) -> dict[str, Any]:
     """Everything a reset of the system application deletes or restores (owner).
 
     Each deleted item carries its definition without secrets (``item``), for the owner to keep
-    before resetting.
+    before resetting. ``plan`` fingerprints the items: the reset takes it back.
 
     Returns:
-        slug and items (kind, name, action: ``delete`` or ``restore``, item).
+        slug, items (kind, name, action: ``delete`` or ``restore``, item) and plan.
 
     Raises:
         Conflict: A system application this version of Evokai does not ship.
@@ -104,11 +112,12 @@ async def reset_preview(svc: Svc, a: Admin) -> dict[str, Any]:
     app = await _system_app(svc, a)
     if app.slug != shipped.SLUG:
         raise Conflict("This version of Evokai does not ship this application.", code="not_system")
-    return {"slug": app.slug, "items": await reset.plan(svc, app.id)}
+    items = await reset.plan(svc, app.id)
+    return {"slug": app.slug, "items": items, "plan": reset.digest(items)}
 
 
 @router.post("/application/reset")
-async def reset_application(body: Unlock, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
+async def reset_application(body: Reset, svc: Svc, a: Admin, request: Request) -> dict[str, Any]:
     """Delete what the reset preview lists and apply the shipped definition again, locked (owner).
 
     Returns:
@@ -116,16 +125,23 @@ async def reset_application(body: Unlock, svc: Svc, a: Admin, request: Request) 
 
     Raises:
         BadRequest: The typed slug is not the application's (400 ``confirm``).
-        Conflict: A system application this version of Evokai does not ship.
+        Conflict: A system application this version of Evokai does not ship, or what the reset
+            would delete changed since the preview ``plan`` was taken from (409 ``plan_changed``).
     """
     app = await _system_app(svc, a)
     if app.slug != shipped.SLUG:
         raise Conflict("This version of Evokai does not ship this application.", code="not_system")
     if body.confirm != app.slug:
         raise BadRequest("Type the application's slug to confirm.", code="confirm")
+    planned = await reset.plan(svc, app.id)
+    if not hmac.compare_digest(reset.digest(planned), body.plan):
+        raise Conflict(
+            "What the reset deletes changed since the preview: look at the preview again.",
+            code="plan_changed",
+        )
     before = await svc.store.agents.active_all(app.id)
     model = (app.defaults or {}).get(shipped.MODEL_KEY)
-    items = await reset.reset(svc, app.id, model)
+    items = await reset.reset(svc, app.id, model, planned)
     for agent in before:
         svc.agents.invalidate(app.id, agent.name)
     svc.mcp.forget(app.id)

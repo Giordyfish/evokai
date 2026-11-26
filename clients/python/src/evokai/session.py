@@ -847,6 +847,9 @@ class EvokaiSession(_SessionBase):
         index: int | None = None,
         format: SpeechFormat = "pcm",
         sample_rate: int = 24_000,
+        language: str | None = None,
+        after: list[str] | None = None,
+        characters: bool = False,
     ) -> Speech:
         """Speak a text, or one ``say`` segment of this conversation, with the session's engine.
 
@@ -858,11 +861,18 @@ class EvokaiSession(_SessionBase):
             index: ...and its index.
             format: ``pcm`` (16-bit mono at ``sample_rate``) or ``opus`` (Ogg Opus, 48 kHz).
             sample_rate: The PCM sample rate.
+            language: The language spoken (BCP 47 or ISO 639-1; default the session's).
+            after: For a text, the ``speech_id`` of earlier speech it follows, oldest first (a
+                ``say`` segment follows the earlier segments of its turn by itself).
+            characters: Also collect character times, from engines that report them.
 
         Returns:
-            The audio and its timings (words, marks, visemes).
+            The audio and its timings (words, character times, marks, visemes).
         """
-        body = speech_body(text, turn_id, index, format, sample_rate)
+        body = speech_body(
+            text, turn_id, index, format, sample_rate,
+            language=language, after=after, characters=characters,
+        )  # fmt: skip
         out, parser = Speech(), SseParser()
         with self._transport.stream(SPEECH_PATH, body, self.token) as response:
             for chunk in response.iter_bytes():
@@ -1265,6 +1275,9 @@ class AsyncEvokaiSession(_SessionBase):
         index: int | None = None,
         format: SpeechFormat = "pcm",
         sample_rate: int = 24_000,
+        language: str | None = None,
+        after: list[str] | None = None,
+        characters: bool = False,
     ) -> Speech:
         """Speak a text, or one ``say`` segment of this conversation, with the session's engine.
 
@@ -1276,11 +1289,18 @@ class AsyncEvokaiSession(_SessionBase):
             index: ...and its index.
             format: ``pcm`` (16-bit mono at ``sample_rate``) or ``opus`` (Ogg Opus, 48 kHz).
             sample_rate: The PCM sample rate.
+            language: The language spoken (BCP 47 or ISO 639-1; default the session's).
+            after: For a text, the ``speech_id`` of earlier speech it follows, oldest first (a
+                ``say`` segment follows the earlier segments of its turn by itself).
+            characters: Also collect character times, from engines that report them.
 
         Returns:
-            The audio and its timings (words, marks, visemes).
+            The audio and its timings (words, character times, marks, visemes).
         """
-        body = speech_body(text, turn_id, index, format, sample_rate)
+        body = speech_body(
+            text, turn_id, index, format, sample_rate,
+            language=language, after=after, characters=characters,
+        )  # fmt: skip
         out, parser = Speech(), SseParser()
         async with self._transport.stream(SPEECH_PATH, body, self.token) as response:
             async for chunk in response.aiter_bytes():

@@ -164,8 +164,8 @@ def test_limits_are_enforced_with_errors_never_cut(tmp_path: Path) -> None:
     with pytest.raises(sk.SkillError, match="51 files"):
         sk.check_skill("a", "d", "b", [(f"r{i}.md", "x") for i in range(51)])
     big = "z" * 200_000
-    with pytest.raises(sk.SkillError, match="the limit is 500,000"):
-        sk.check_skill("a", "d", "b", [("a.md", big), ("b.md", big), ("c.md", big)])
+    with pytest.raises(sk.SkillError, match="the limit is 1,000,000"):
+        sk.check_skill("a", "d", "b", [(f"{c}.md", big) for c in "abcdef"])
     with pytest.raises(sk.SkillError, match="twice"):
         sk.check_skill("a", "d", "b", [("a.md", "1"), ("a.md", "2")])
     d = _folder(tmp_path, body="b")

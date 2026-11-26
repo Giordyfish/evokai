@@ -15,7 +15,9 @@ dependencies = [
     "asyncpg>=0.32.0",
     "cryptography>=50.0.2",
     "fastapi>=0.164.0",
-    "fastmcp>=3.4,<4",
+    # The admin MCP server reads a private attribute of its OpenAPI provider (src/evokai/mcp_admin):
+    # a minor release may change it, so a new one comes in by hand, with the admin MCP tests.
+    "fastmcp>=3.4,<3.5",
     "httpx>=0.28.1",
     "jsonschema>=4.26.0",
     "packaging>=24.0",

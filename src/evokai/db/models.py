@@ -554,6 +554,9 @@ class VoiceRecord(Base):
     gender: Mapped[str | None] = mapped_column(sa.String(16))
     region: Mapped[str | None] = mapped_column(sa.String(40))
     """Where synthesis runs (e.g. eu-north-1, local)."""
+    settings: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """How the engine speaks with this voice: ``model``, ``speed`` and the engine's own options
+    (``evokai.audio.speech.voice_settings``); None speaks with the engine's defaults."""
     __table_args__ = (sa.UniqueConstraint("provider", "voice_id", name="uq_evokai_voice"),)
 
 

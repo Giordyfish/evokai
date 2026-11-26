@@ -30,6 +30,7 @@ from evokai.agents.templates import check_agent_templates, check_prompt, syntax_
 from evokai.api.deps import admin_app, services
 from evokai.assistant.privacy import MAX_TTL_DAYS, lists_everyone, own_subject
 from evokai.audio.speech.markup import MarkupDef
+from evokai.audio.speech.voice_settings import check_voice_settings
 from evokai.connectors import URL_SCHEME as CONNECTOR_URL
 from evokai.connectors import describe as describe_connectors
 from evokai.connectors import validate as validate_connector
@@ -1152,7 +1153,12 @@ async def put_prompt(
         a,
         "prompt.put",
         target=f"{name} v{version}",
-        after={"text": body.text, "parameters": parameters},
+        after={
+            "text": body.text,
+            "parameters": parameters,
+            "description": description,
+            "data": data,  # a module's data table shapes its text as much as the text does
+        },
     )
     return {"version": version}
 
@@ -1238,6 +1244,11 @@ class VoiceBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     gender: str | None = Field(default=None, max_length=16)
     region: str | None = Field(default=None, max_length=40)
+    settings: dict[str, Any] | None = None
+    """How the engine speaks with this voice, for every application: ``model`` and ``speed``, and
+    the engine's own options under its name (``elevenlabs``: ``stability``, ``similarityBoost``,
+    ``style``, ``speakerBoost``; ``openai``: ``instructions``). Checked against the provider's
+    engine; anything it does not take is refused (400 ``settings``)."""
 
 
 @router.put("/voices/{provider}/{voice_id}")
@@ -1248,12 +1259,45 @@ async def put_voice(
 
     Returns:
         ok.
+
+    Raises:
+        BadRequest: Settings its engine does not take.
     """
+    try:
+        settings = check_voice_settings(provider, body.settings)
+    except ValueError as e:
+        raise BadRequest(f"Voice settings: {e}.", code="settings") from e
+    body = body.model_copy(update={"settings": settings})
     await svc.store.voices.put(provider, voice_id, **body.model_dump())
     await audit.record(
         request, a, "voice.put", target=f"{provider}/{voice_id}", after=body.model_dump()
     )
     return {"ok": True}
+
+
+@router.get("/voices/{provider}/{voice_id}")
+async def get_voice(provider: str, voice_id: str, svc: Svc, _a: Admin) -> dict[str, Any]:
+    """A voice of the deployment's catalog, with how its engine speaks with it (``settings``).
+
+    Returns:
+        provider, voiceId, language, name, gender, region, settings (null when the engine's
+        defaults apply).
+
+    Raises:
+        NotFound: No such voice.
+    """
+    v = await svc.store.voices.get(provider, voice_id)
+    if v is None:
+        raise NotFound("No such voice.")
+    return {
+        "provider": v.provider,
+        "voiceId": v.voice_id,
+        "language": v.language,
+        "name": v.name,
+        "gender": v.gender,
+        "region": v.region,
+        "settings": v.settings,
+    }
 
 
 @router.get("/bug-reports")

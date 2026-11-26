@@ -653,7 +653,7 @@ skills/returns-policy/
 | description | 1,024 characters | Anthropic's limit; it goes into every prompt, so keep it to a sentence or two |
 | SKILL.md body | 20,000 characters | what one `skill_load` returns; move detail into reference files |
 | one read of a file | 20,000 characters | a longer file is read in pages: the result names the `offset` to read on |
-| whole skill | 500,000 bytes, 50 files | SKILL.md and every file together |
+| whole skill | 1,000,000 bytes, 50 files | SKILL.md and every file together |
 | one script | 50,000 bytes | |
 | a path | 200 characters | |
 

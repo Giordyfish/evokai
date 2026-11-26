@@ -8,6 +8,12 @@ uv run evokai migrate               # SQLite ./evokai.db by default
 EVOKAI_CONFIG_FILE=config/bookshop.yaml uv run evokai serve   # http://localhost:8787/agent/health
 ```
 
+SQLite runs with a write-ahead log (`journal_mode=WAL`, `synchronous=NORMAL`) and waits up to 30 seconds for a write
+in progress (`busy_timeout`): a read never waits for a write, and concurrent writes take turns instead of failing with
+"database is locked". The database file then has two companions, `evokai.db-wal` and `evokai.db-shm`: back up the
+three together, or stop Evokai first. Keep it on a local disk (the write-ahead log does not work on network file
+systems); for more than one instance use Postgres.
+
 With Docker, two compose files:
 
 - `docker-compose.yml`, the [quick start](quickstart.md): Evokai and its own Postgres, keys generated on the first
@@ -30,7 +36,8 @@ Production injects `EVOKAI_SIGNING_KEY`, `EVOKAI_ENCRYPTION_KEY` and `EVOKAI_OPE
 install without one sets `EVOKAI_STATE_DIR` to a persistent, private directory: on the first start (or
 `evokai init`) the three keys are generated into `keys.json` (mode 0600) and the operator key is printed once; later
 starts read them back. A key given in the environment always wins over the file. `evokai init
---rotate-operator-key` prints a new operator key (it applies from the next start).
+--rotate-operator-key` prints a new operator key (it applies from the next start, and then ends every console login
+and assistant delegation made with the old one).
 
 
 ## The admin console
