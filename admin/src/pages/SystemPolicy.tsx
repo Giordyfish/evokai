@@ -122,6 +122,7 @@ function Editor({ view, onSaved }: { view: SystemView; onSaved: (v: SystemView) 
       {error ? <p class="hint" style="color:var(--s-bad);margin-bottom:12px">{error}</p> : null}
       {failures ? <TestFailures failures={failures} busy={saving} onForce={() => void save(null, true)} /> : null}
       <Panel
+        tour="sys-controls"
         title={t('sec.controls')}
         cls="flat"
         actions={

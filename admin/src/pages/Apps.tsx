@@ -26,7 +26,7 @@ export function Apps() {
     if (c.canCreate && !c.apps.length) go('#/setup')
   }, [c.canCreate, c.apps.length])
   const create = c.canCreate ? (
-    <span style="display:flex;gap:8px">
+    <span style="display:flex;gap:8px" data-tour="apps-new">
       <Btn kind="pri" href="#/setup">
         {t('apps.newApplication')}
       </Btn>
@@ -40,7 +40,7 @@ export function Apps() {
       <Hero title={t('page.applications')} sub={t('apps.sub')} actions={create} />
       {creating ? <NewApp onClose={() => setCreating(false)} /> : null}
       {!c.apps.length ? (
-        <Panel>
+        <Panel tour="apps-list">
           <Empty action={create}>
             <b>{t('apps.empty')}</b>
             <br />
@@ -48,7 +48,7 @@ export function Apps() {
           </Empty>
         </Panel>
       ) : (
-        <div class="grid g3">
+        <div class="grid g3" data-tour="apps-list">
           {c.apps.map((a) => {
             const used = a.usage.monthPct
             return (

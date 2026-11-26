@@ -7,15 +7,27 @@ paint, and keeps the copy here so it follows the person across browsers.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from evokai.identity.console import ConsoleLogin
 
 VERSION = 2
 """Version 2 made the logo the mascot's default (``hidden``); see ``Preferences._from_v1``."""
+
+MAX_TOURS = 20
+"""At most this many guided tours remembered (the console ships a handful)."""
+TourId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{1,39}$")]
+TourStep = Annotated[int, Field(ge=0, le=99)]
 
 
 class Preferences(BaseModel):
@@ -46,6 +58,11 @@ class Preferences(BaseModel):
     focus_always: bool = False
     """Show the focus outline on every focused control, also after a click."""
     underline_links: bool = False
+    tours: dict[TourId, TourStep] = Field(default_factory=dict, max_length=MAX_TOURS)
+    """Where each guided tour of the console stopped: its id and the step to resume at (0 is the
+    first; the number of steps means finished). Written when the person leaves or ends a tour."""
+    tour_invite: Literal["show", "dismissed"] = "show"
+    """The invite to the first tour, shown until the person dismisses it or starts a tour."""
 
     @model_validator(mode="before")
     @classmethod

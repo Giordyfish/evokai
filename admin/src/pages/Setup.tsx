@@ -194,7 +194,7 @@ export function Setup() {
         title={c.apps.length ? t('apps.newApplication') : t('setup.welcome')}
         sub={t('setup.sub')}
       />
-      <ol class="wsteps" aria-label={t('setup.steps')}>
+      <ol class="wsteps" aria-label={t('setup.steps')} data-tour="setup-steps">
         {STEPS.map((s, k) => (
           <li key={s} aria-current={k === step ? 'step' : undefined} class={k < step ? 'past' : ''}>
             <button type="button" disabled={!!progress || k > step || !can.slice(0, k).every(Boolean)} onClick={() => setStep(k)}>

@@ -264,6 +264,8 @@ describe('runs, console views and the console client', () => {
       contrast: 'more' as const,
       focusAlways: true,
       underlineLinks: false,
+      tours: { 'first-steps': 3 },
+      tourInvite: 'dismissed' as const,
     }
     const m = mockFetch({
       'GET /agent/v1/console/me/preferences': () => json({ preferences: { ...prefs, language: 'auto' }, updatedAt: null }),

@@ -1142,7 +1142,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
         </Panel>
       ) : null}
       <div class="ed">
-        <nav class="secnav" aria-label={t('ag.sections')}>
+        <nav class="secnav" aria-label={t('ag.sections')} data-tour="agent-sections">
           {secs.map(([k, l]) => (
             <a
               key={k}
@@ -1162,7 +1162,7 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
             {panes[sec]}
           </div>
         </div>
-        <aside class="panel preview">
+        <aside class="panel preview" data-tour="agent-preview">
           <div class="head">
             <img src={HAT} alt="" />
             <div>

@@ -4074,6 +4074,27 @@
             "title": "Timeformat",
             "type": "string"
           },
+          "tourInvite": {
+            "default": "show",
+            "enum": [
+              "show",
+              "dismissed"
+            ],
+            "title": "Tourinvite",
+            "type": "string"
+          },
+          "tours": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[a-z][a-z0-9-]{1,39}$": {
+                "maximum": 99.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "title": "Tours",
+            "type": "object"
+          },
           "underlineLinks": {
             "default": false,
             "title": "Underlinelinks",

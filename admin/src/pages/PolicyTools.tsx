@@ -117,7 +117,7 @@ export function PolicyHistory({ api, canEdit, onChanged, stamp }: { api: PolicyA
         const from = pair?.from ?? items[1]?.number ?? latest
         const to = pair?.to ?? latest
         return (
-          <Panel title={t('pol.history')} actions={latest ? <Tag>{t('pol.version', { n: latest })}</Tag> : undefined}>
+          <Panel tour="policy-history" title={t('pol.history')} actions={latest ? <Tag>{t('pol.version', { n: latest })}</Tag> : undefined}>
             <p class="hint">{t('pol.historySub')}</p>
             {restore.failures ? <TestFailures failures={restore.failures} onForce={restore.force} busy={restore.busy} /> : null}
             {items.length ? (
@@ -287,6 +287,7 @@ export function PolicyTests({ api, canEdit, stamp }: { api: PolicyApi; canEdit: 
     <Loads load={load} what={t('pol.tests')}>
       {({ items }) => (
         <Panel
+          tour="policy-tests"
           title={t('pol.tests')}
           actions={
             <span style="display:flex;gap:8px;align-items:center">

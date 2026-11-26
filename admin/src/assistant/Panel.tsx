@@ -20,6 +20,7 @@ import { pageContext, SKIN, sessionApp } from './launcher'
 import { assistantActive, type AssistantState } from './choice'
 import { type AssistantPrivacy, type LocalVoice, needsNotice, noticeLines, viewedLine, voiceKind, voiceOptions, voiceText } from './privacy'
 import { tokenFor } from './session'
+import { startTourTool, tourContext } from '../tours/run'
 import { locale, t } from '../i18n'
 import { LiveMascot } from '../mascot/LiveMascot'
 import { mascotFor, type MascotView } from '../mascot/state'
@@ -159,13 +160,16 @@ export function AssistantLauncher({ state, dark }: { state: AssistantState | nul
     defineElements()
     const el = document.createElement('evokai-chat')
     el.setAttribute('base-url', baseUrl)
-    // The page the person is on (its console path and title, never its text): "this application" is the one in it.
-    el.getPage = () => pageContext(location.hash, document.title)
+    // The page the person is on (its console path and title, never its text): "this application" is the one in it;
+    // while a guided tour runs, the tour and its step.
+    el.getPage = () => pageContext(location.hash, document.title, tourContext())
     // The playground in front of the person: the assistant types there and reads the agent's answer.
     el.tools = {
       playground: (args) => drivePlayground(args, go),
       read_page: () => readPage(),
       show_on_page: (args) => showOnPage(args),
+      // A guided tour, started in front of the person; its steps come back to the assistant.
+      start_tour: (args) => startTourTool(args),
     }
     el.skin = SKIN
     const onState = (e: Event) => {

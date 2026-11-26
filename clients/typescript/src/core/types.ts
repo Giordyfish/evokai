@@ -922,6 +922,13 @@ export interface ConsolePreferences {
   /** The focus outline on every focused control, also after a click. */
   focusAlways: boolean
   underlineLinks: boolean
+  /**
+   * Where each guided tour of the console stopped: its id and the step to resume at (0 the first; the number of steps
+   * means finished). At most 20, each step 0 to 99.
+   */
+  tours: Record<string, number>
+  /** The invite to the first guided tour: shown until the person dismisses it or starts a tour. */
+  tourInvite: 'show' | 'dismissed'
 }
 export interface ConsolePreferencesView {
   preferences: ConsolePreferences

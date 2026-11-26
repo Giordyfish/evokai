@@ -205,6 +205,14 @@ async def test_assistant_agent_has_no_forbidden_capabilities(env: Env) -> None:
     assert tools["diagram"] is False and tools["memory"] is False
     assert tools["ask"] is True and tools["chart"] is True
     assert tools["navigate"]["path_pattern"].startswith("^/")
+    custom = {t["name"]: t for t in tools["custom"]}
+    assert set(custom) == {"playground", "read_page", "show_on_page", "start_tour"}
+    # The console starts a guided tour and answers with its steps (or the tour ids): the turn waits.
+    tour = custom["start_tour"]
+    assert tour["wait"] is True
+    assert tour["parameters"]["required"] == ["tour"]
+    for tour_id in ("first-steps", "security", "usage-traces"):
+        assert tour_id in tour["description"]
     servers = await env.svc.store.mcp_servers.all(app_id)
     assert [(s.name, s.auth) for s in servers] == [("evokai-admin", "forward_user")]
     assert servers[0].url == f"{env.svc.settings.internal_base}/mcp/admin"

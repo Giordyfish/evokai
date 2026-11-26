@@ -345,7 +345,7 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET | `/v1/admin/agents/{name}/types` | console role or admin key | a TypeScript `.d.ts` of the agent's tools' arguments and results and its `output_schema` (`evokai types`, [streaming](streaming.md#typescript-types-of-an-agents-tools)) |
 | GET, POST, DELETE | `/v1/admin/conversations[/{id}[/notes[/{noteId}]]]` | console role or admin key (notes: operator) | conversation review with thumbs and notes filters, each turn's trace, reviewers' notes (audited) |
 | GET | `/v1/console/me`, `/applications`, `/health` | console cookie | who is logged in, its applications, health |
-| GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility), per console identity; audited |
+| GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility, where each guided tour stopped), per console identity; audited |
 
 Events: `conversation`, `text` (delta), `reasoning` (delta, an agent with [`show_reasoning`](streaming.md)), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (`{name, status, id?, args?}`: start/done/error; with [`show_tool_args`](streaming.md) also args/waiting/skipped),
 `chart` (a chart, or an `image` the agent's code drew), `diagram`, `ask`, `navigate`, `confirm` (`{actionId, items, why}`: `why[i]` says why

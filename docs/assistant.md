@@ -30,7 +30,7 @@ It runs on Evokai itself, as an agent of a **system application**, and acts only
   the admin MCP server, and the assistant itself is refused on all of them.
 - **Its agent** has two kinds of tools only: the admin MCP server `evokai-admin` (auth `forward_user`, at
   `EVOKAI_INTERNAL_URL/mcp/admin`) and the docs skill. Its client tools are `navigate` (console pages only),
-  `playground`, `read_page` and `show_on_page` (below), `ask` and `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
+  `playground`, `read_page`, `show_on_page` and `start_tour` (below), `ask` and `chart`. It has no web or egress tools, no code execution, no connectors, knowledge bases or capabilities, and no
   handoffs or subagents. The guard's injection detection and spotlighting are enforced.
 - **Its rights are the person's.** Opening the panel calls `POST /v1/console/assistant/session` with the console
   login. Evokai mints a **delegation token** valid on every application the login can see (`evk_cdt_`, its own issuer
@@ -208,6 +208,35 @@ rule, and whose browser declaration does not turn online voices off. Otherwise t
 of the operating system for the console's language when there is one, else Piper's `it_IT-serena-high` in the browser
 with `pitchShift 1.15` (synthesis stretched and playback sped up by the same factor, a small and bright voice). The
 chat names the voice only when it is the online one, the one whose text leaves the device. Speech recognition stays on the device in every case.
+
+## Guided tours
+
+The console has guided tours that work with or without the assistant. A tour dims the page except the place each
+step points at, and a card beside it gives the step's title, at most two lines of explanation, the progress ("3 of
+8") and Back, Next and Exit. The keyboard drives it: arrows or Enter move, Esc leaves, the focus stays in the card,
+and reduced motion is respected. A tour opens each step's page itself and waits for its place to appear; a place that
+does not appear within a few seconds (a page that shows nothing yet, a role that hides it) is skipped, and the card
+says how many steps were skipped. Steps that need something the person does not have (an application, the right to
+create one, owning the deployment) are left out from the start.
+
+| Tour | Steps |
+| --- | --- |
+| `first-steps` | the applications, creating one (wizard), the agents of an application, a new agent's sections and summary, the playground |
+| `security` | the system policy (deployment owners), an application's Security page: the mode of each control, versions, policy tests, events |
+| `usage-traces` | the usage of every application, an application's forecast and views, its traces, filters and version comparison |
+
+**Guides** in the top bar lists the tours with where each one stands (not started, stopped at a step, done) and
+starts, resumes or restarts them. On a first sign-in the console invites the person to `first-steps` until they start
+a tour or choose "Not now". A tour resumes where the person left it: the step is kept in this browser at every step
+and in the person's console preferences (`tours` and `tourInvite` in `/v1/console/me/preferences`) when they leave or
+finish it, one save per tour so the audit log gets no entry per step.
+
+**With the assistant.** The assistant's client tool `start_tour` (`{tour, restart?}`, it waits for the console's
+answer) starts a tour in front of the person and returns its steps (title and page) and the step it starts at, or an
+error listing the tour ids. While a tour runs, the page context the assistant receives names the tour, the step on
+screen and what the step says, so it can answer questions about that step. The tours are data in the console
+(`admin/src/tours/tours.ts`): each step is a route, the `data-tour` place it points at and its texts in English and
+Italian; a test checks that every place exists on the page its step opens.
 
 ## Configuration
 

@@ -10,6 +10,13 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- Guided tours in the console: `first-steps` (applications, an agent, the playground), `security` (system policy, an
+  application's modes, versions, policy tests, events) and `usage-traces` (usage, forecast, traces). A spotlight on
+  each step's place with a card (Back, Next, Exit, progress), full keyboard support, reduced motion, steps whose place
+  never appears are skipped, and each tour resumes where the person left it (console preferences `tours`). A
+  **Guides** menu in the top bar and an invite to the first tour on a first sign-in (`tourInvite`). The console
+  assistant starts a tour with its new `start_tour` client tool and is told the tour and step on screen.
+
 - Azure without keys (the optional `azure` extra, in both images): every Azure connection without a configured key
   uses a Microsoft Entra ID token of the managed identity (`DefaultAzureCredential`, `evokai.core.azure`). Azure
   OpenAI endpoints take the `/openai/v1` base URL without an `api_version` (the Foundry models sold by Azure too), and

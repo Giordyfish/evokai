@@ -6707,6 +6707,16 @@ export interface components {
              */
             timeFormat?: "auto" | "24h" | "12h";
             /**
+             * Tourinvite
+             * @default show
+             * @enum {string}
+             */
+            tourInvite?: "show" | "dismissed";
+            /** Tours */
+            tours?: {
+                [key: string]: number;
+            };
+            /**
              * Underlinelinks
              * @default false
              */

@@ -80,6 +80,12 @@ async def test_needs_the_console_login_and_its_header(env: Env) -> None:
         {"motion": None},
         {"version": 3},
         {"fontFamily": "Comic Sans"},
+        {"tours": {"First Steps": 1}},
+        {"tours": {"first-steps": -1}},
+        {"tours": {"first-steps": 100}},
+        {"tours": {"first-steps": "3"}},
+        {"tours": {f"tour-{n}": 0 for n in range(21)}},
+        {"tourInvite": "later"},
     ],
 )
 async def test_values_outside_the_allow_list_are_refused(
@@ -174,3 +180,16 @@ def test_identities() -> None:
     assert identity_of(console.ConsoleLogin("adm", "a1", 0)) == "admin-app:a1"
     sso = console.ConsoleLogin("sso", None, 0, user_id="u1", email="x@y")
     assert identity_of(sso) == "sso:u1"
+
+
+async def test_tour_progress_and_the_invite_are_kept(env: Env) -> None:
+    """The console's guided tours: where each stopped, and whether the invite was dismissed."""
+    assert DEFAULTS.document()["tours"] == {} and DEFAULTS.document()["tourInvite"] == "show"
+    await _login(env, env.admin_key)
+    tours = {"first-steps": 3, "security": 6}
+    doc = {**DEFAULTS.document(), "tours": tours, "tourInvite": "dismissed"}
+    put = await env.client.put(URL, json=doc, headers=CONSOLE)
+    assert put.status_code == 200
+    assert (await env.client.get(URL, headers=CONSOLE)).json()["preferences"] == doc
+    # A document saved before the tours existed reads with none started and the invite to show.
+    assert read({"version": 2, "theme": "dark"}).document()["tours"] == {}

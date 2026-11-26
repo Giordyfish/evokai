@@ -48,6 +48,8 @@ import { tabCounts, tabLabel, tabs, voiceLabel } from './nav'
 import { locale, t, tn } from './i18n'
 import { toggleTheme, useDark } from './theme'
 import { AppAvatar, Btn, Icon, type IconName } from './ui'
+import { GuidesMenu, TourInvite, TourOverlay } from './tours/Tour'
+import { setTourEnv } from './tours/run'
 
 function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
   if (route.view === 'app') {
@@ -138,6 +140,8 @@ export function Shell({ route }: { route: Route }) {
   const alerts = useCostAlerts(app)
   const assistant = useAssistantState(route.view === 'assistant')
   const assistantOn = assistantActive(assistant)
+  // The guided tours show the applications this person sees, with their rights.
+  setTourEnv({ slugs: c.apps.map((a) => a.slug), canCreate: c.canCreate, owner: !!c.me.deploymentOwner })
 
   useEffect(() => {
     setOpen(false)
@@ -319,8 +323,10 @@ export function Shell({ route }: { route: Route }) {
             <span>{t('shell.goTo')}</span>
             <kbd>Ctrl K</kbd>
           </button>
+          <GuidesMenu />
         </div>
         <main class={`enter ${app ? 'inapp' : ''} ${readOnly ? 'ro' : ''}`} key={route.view === 'app' ? `${route.app}/${route.tab}/${route.id}` : route.view}>
+          <TourInvite />
           {readOnly ? (
             <p class="hint rob" role="status">
               {t('shell.readOnly', { app: app!.name })}
@@ -332,6 +338,7 @@ export function Shell({ route }: { route: Route }) {
       </div>
       {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
       <AssistantLauncher state={assistant} dark={dark} />
+      <TourOverlay />
     </div>
   )
 }
