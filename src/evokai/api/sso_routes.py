@@ -361,7 +361,7 @@ async def deployment_audit(
     Raises:
         BadRequest: An unknown application slug.
     """
-    apps = await svc.store.applications.all()
+    apps = await svc.store.applications.all(kind=None)
     slugs = {x.id: x.slug for x in apps}
     app_id = None
     if application:

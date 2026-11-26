@@ -2712,6 +2712,139 @@
         "title": "FileRef",
         "type": "object"
       },
+      "GatewayChange": {
+        "additionalProperties": false,
+        "description": "A change of a gateway (unset fields stay as they are).",
+        "properties": {
+          "allowed_models": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Models"
+          },
+          "data_protection": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Protection"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "providers": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "anthropic",
+                    "openai"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providers"
+          },
+          "security": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecurityPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tokens_per_day": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Per Day"
+          },
+          "tokens_per_month": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Per Month"
+          }
+        },
+        "title": "GatewayChange",
+        "type": "object"
+      },
       "GdprAnswers": {
         "additionalProperties": false,
         "description": "GDPR statements and overrides of what the configuration suggests.",
@@ -3667,6 +3800,67 @@
           "name"
         ],
         "title": "NewApplication",
+        "type": "object"
+      },
+      "NewGateway": {
+        "additionalProperties": false,
+        "description": "A new gateway.",
+        "properties": {
+          "allowed_models": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "enum": [
+                "anthropic",
+                "openai"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Providers",
+            "type": "array"
+          },
+          "slug": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,40}$",
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "providers"
+        ],
+        "title": "NewGateway",
+        "type": "object"
+      },
+      "NewPerson": {
+        "additionalProperties": false,
+        "description": "A person of a gateway.",
+        "properties": {
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "NewPerson",
         "type": "object"
       },
       "NoteBody": {
@@ -10022,6 +10216,383 @@
         "summary": "Export",
         "tags": [
           "console"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways": {
+      "get": {
+        "description": "The gateways the caller can see.\n\nReturns:\n    items (with the caller's role and the count of active people), and whether the caller\n    may create gateways (a deployment owner).",
+        "operationId": "list_gateways_agent_v1_admin_gateways_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Gateways Agent V1 Admin Gateways Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Gateways",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "post": {
+        "description": "Create a gateway (deployment owners). It starts with a policy fit for coding tools.\n\nReturns:\n    The gateway.\n\nRaises:\n    Conflict: The slug is taken (by a gateway or an application).",
+        "operationId": "create_gateway_agent_v1_admin_gateways_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewGateway"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Gateway Agent V1 Admin Gateways Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Gateway",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}": {
+      "get": {
+        "description": "A gateway.\n\nReturns:\n    The gateway, with its data protection profile.",
+        "operationId": "get_gateway_agent_v1_admin_gateways__gateway_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Gateway Agent V1 Admin Gateways  Gateway Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Gateway",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "patch": {
+        "description": "Change a gateway (owners): its settings, and its policy as a new version.\n\nReturns:\n    The gateway.\n\nRaises:\n    BadRequest: An invalid data protection profile.",
+        "operationId": "patch_gateway_agent_v1_admin_gateways__gateway_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Patch Gateway Agent V1 Admin Gateways  Gateway Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Gateway",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}/people": {
+      "get": {
+        "description": "The people of a gateway: one personal key each (never its secret).\n\nReturns:\n    items: id, label, prefix, createdAt, lastUsedAt, revoked.",
+        "operationId": "list_people_agent_v1_admin_gateways__gateway_id__people_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List People Agent V1 Admin Gateways  Gateway Id  People Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List People",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "post": {
+        "description": "Give a person their personal gateway key (operators). The key is shown only now.\n\nReturns:\n    id, label, key.",
+        "operationId": "add_person_agent_v1_admin_gateways__gateway_id__people_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPerson"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Add Person Agent V1 Admin Gateways  Gateway Id  People Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Person",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}/people/{key_id}": {
+      "delete": {
+        "description": "Revoke a person's gateway key (operators): their requests are refused at once.\n\nReturns:\n    ok.\n\nRaises:\n    NotFound: Unknown or already revoked.",
+        "operationId": "revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Revoke Person Agent V1 Admin Gateways  Gateway Id  People  Key Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Person",
+        "tags": [
+          "gateways"
+        ]
+      }
+    },
+    "/agent/v1/admin/gateways/{gateway_id}/usage": {
+      "get": {
+        "description": "Tokens through a gateway, per person and per model, and its latest requests.\n\nNever an amount: the traffic is people's own subscriptions. Requests hold no content.\n\nReturns:\n    days, people, models, outcomes, recent (timings, sizes, outcome per request).",
+        "operationId": "gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 400,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gateway Usage Agent V1 Admin Gateways  Gateway Id  Usage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gateway Usage",
+        "tags": [
+          "gateways"
         ]
       }
     },

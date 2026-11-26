@@ -1340,6 +1340,65 @@ export interface SecurityEvent {
   snippet: string
   details: Record<string, unknown>
 }
+/** A gateway for coding tools (`/v1/admin/gateways`): Claude Code and Codex with people's own seats. */
+export type GatewayProvider = 'anthropic' | 'openai'
+export interface Gateway {
+  id: string
+  slug: string
+  name: string
+  status: 'active' | 'disabled'
+  providers: GatewayProvider[]
+  /** Model names or globs; empty: every model of the enabled providers. */
+  allowedModels: string[]
+  /** Input and output tokens per person per day and per month (UTC), when capped. */
+  tokensPerDay: number | null
+  tokensPerMonth: number | null
+  createdAt: string
+  role?: ConsoleRole
+  /** People with an active key. */
+  people?: number
+  dataProtection?: Record<string, unknown> | null
+}
+/** A person of a gateway: their personal key (`evk_gw_...`), never its secret. */
+export interface GatewayPerson {
+  id: string
+  label: string
+  prefix: string
+  createdAt: string
+  lastUsedAt: string | null
+  revoked: boolean
+}
+/** Requests and tokens of a person or a model through a gateway (never an amount). */
+export interface GatewayTokens {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  blocked: number
+}
+export interface GatewayUsage {
+  days: number
+  people: Array<GatewayTokens & { keyId: string | null; person: string }>
+  models: Array<GatewayTokens & { provider: GatewayProvider; model: string }>
+  /** `forwarded`, `upstream_error`, `blocked`, `failed`, `cancelled` to their counts. */
+  outcomes: Record<string, number>
+  /** The latest requests: who, what, outcome, timings and sizes (no content). */
+  recent: Array<{
+    at: string
+    person: string
+    provider: GatewayProvider
+    model: string
+    outcome: string
+    control: string | null
+    status: number
+    inputTokens: number
+    outputTokens: number
+    requestBytes: number
+    firstByteMs: number | null
+    durationMs: number
+  }>
+}
 export interface SecurityEventQuery {
   from?: Date | string
   to?: Date | string

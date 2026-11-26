@@ -68,6 +68,8 @@ class Services:
     """Per-user OAuth connections (``evokai.connections.service.ConnectionService``)."""
     channels: Any = None
     """E-mail, Teams and Slack (``evokai.channels.service.ChannelService``)."""
+    gateway: Any = None
+    """The gateways' doors for coding tools (``evokai.gateway.service.GatewayService``)."""
     housekeeping: dict[str, Any] = field(default_factory=dict)
     """The purge job's last run: lastRunAt, deleted, nextRunAt, error (epoch seconds)."""
 
@@ -91,6 +93,8 @@ class Services:
         self.guard.classifiers.close()
         if self.voice is not None:
             await self.voice.close()
+        if self.gateway is not None:
+            await self.gateway.close()
         await self.http.aclose()
         await self.shared.close()
         await self.db.close()
@@ -201,4 +205,7 @@ def build_services(
     from evokai.channels.service import ChannelService
 
     built.channels = ChannelService(built)
+    from evokai.gateway.service import GatewayService
+
+    built.gateway = GatewayService(built)
     return built

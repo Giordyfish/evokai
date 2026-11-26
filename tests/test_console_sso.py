@@ -359,6 +359,8 @@ async def test_a_viewer_is_refused_on_every_change(env: Env, idp: FakeIdp) -> No
             continue  # the viewer's own console preferences, not the deployment's
         if path in {"/agent/v1/console/assistant/session", "/agent/v1/console/assistant/privacy"}:
             continue  # the viewer's own assistant session and notice (the viewer's role)
+        if path.startswith("/agent/v1/admin/gateways/"):
+            continue  # a gateway the viewer has no role on is unknown (404, tests/test_gateway.py)
         for method in set(operations) - {"get", "head"}:
             r = await env.client.request(method.upper(), _fill(path), json={}, headers=_app(env))
             assert r.status_code in {401, 403}, (method, path, r.status_code, r.text)

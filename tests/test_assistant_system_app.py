@@ -76,6 +76,8 @@ async def test_any_write_on_locked_system_app_is_409(env: Env) -> None:
             continue
         if path.removeprefix("/agent") in READ_ONLY_POSTS:
             continue
+        if path.startswith("/agent/v1/admin/gateways"):
+            continue  # gateways are not an application's resources (tests/test_gateway.py)
         for method in set(operations) - {"get", "head"}:
             r = await env.client.request(method.upper(), _fill(path), json={}, headers=_on(app_id))
             assert r.status_code == 409, (method, path, r.status_code, r.text)

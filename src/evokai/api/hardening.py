@@ -44,6 +44,8 @@ SMALL_BODY_LIMIT = 256_000
 """Bytes: a text to speak (at most 20,000 characters, each escaped in JSON at most 6 bytes) or a
 client tool's result (at most 32 KB as JSON, with a reason of 2,000 characters)."""
 SMALL_BODY_PATHS = ("/v1/session/speech", "/v1/session/tool-results")
+GATEWAY_LIMIT = 32_000_000
+"""Bytes: a request through a gateway (the Anthropic Messages API takes up to 32 MB)."""
 UPLOAD_LIMIT = 200_000_000
 """Bytes: a knowledge document upload (the service applies ``EVOKAI_KNOWLEDGE_MAX_FILE_MB``)."""
 CORS_HEADERS = "authorization, content-type, accept, last-event-id, x-correlation-id"
@@ -121,6 +123,8 @@ class Hardening:
             limit = SMALL_BODY_LIMIT
         if path.startswith(f"{self.base}/v1/admin/knowledge/") and path.endswith("/documents"):
             limit = UPLOAD_LIMIT
+        elif path.startswith(f"{self.base}/gw/"):
+            limit = GATEWAY_LIMIT
         if length and length.isdigit() and int(length) > limit:
             await _too_large(send, https)
             return

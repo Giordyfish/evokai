@@ -63,6 +63,10 @@ class _Repo:
     db: Database
 
 
+APPLICATION = "agents"
+"""The kind of an application row that is an application (``gateway``: a gateway)."""
+GATEWAY = "gateway"
+
 POLICY_FIELDS = frozenset({"security", "data_protection"})
 """The application fields that make up its policy (each save of them is a new version)."""
 
@@ -111,24 +115,35 @@ async def _add_version(
 class ApplicationRepository(_Repo):
     """Applications and their keys."""
 
-    async def all(self) -> list[m.Application]:
-        """Every application (operator view).
+    async def all(self, kind: str | None = APPLICATION) -> list[m.Application]:
+        """Every application (operator view), never a gateway unless asked.
+
+        Args:
+            kind: ``agents`` (the default: applications only), ``gateway``, or None for both.
 
         Returns:
             Applications by name.
         """
         async with self.db.session() as s:
             q = sa.select(m.Application).order_by(m.Application.name)
+            if kind is not None:
+                q = q.where(m.Application.kind == kind)
             return list((await s.execute(q)).scalars().all())
 
-    async def by_slug(self, slug: str) -> m.Application | None:
-        """Find an application by slug.
+    async def by_slug(self, slug: str, kind: str | None = APPLICATION) -> m.Application | None:
+        """Find an application by slug (a gateway only when asked: slugs are shared).
+
+        Args:
+            slug: The slug.
+            kind: ``agents`` (the default), ``gateway``, or None for either.
 
         Returns:
             The application or None.
         """
         async with self.db.session() as s:
             q = sa.select(m.Application).where(m.Application.slug == slug)
+            if kind is not None:
+                q = q.where(m.Application.kind == kind)
             return (await s.execute(q)).scalar_one_or_none()
 
     async def get(self, application_id: str) -> m.Application | None:
@@ -3088,6 +3103,9 @@ class Store:
 
         self.capabilities = CapabilityRecordRepository(db)
         self.capability_credentials = CapabilityCredentialRepository(db)
+        from evokai.gateway.store import GatewayRepository
+
+        self.gateway = GatewayRepository(db)
 
 
 def _aware(value: datetime) -> datetime:

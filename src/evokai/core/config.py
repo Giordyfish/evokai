@@ -284,6 +284,13 @@ class Settings(BaseSettings):
     security_event_ttl_days: int | None = 180
     """Security events are deleted after this many days unless the application sets its own."""
 
+    # Gateways for coding tools (evokai.gateway)
+    gateway_anthropic_url: str = "https://api.anthropic.com"
+    """``EVOKAI_GATEWAY_ANTHROPIC_URL``: where a gateway forwards Anthropic Messages requests."""
+    gateway_timeout_seconds: float = 900.0
+    """``EVOKAI_GATEWAY_TIMEOUT_SECONDS``: the longest a gateway waits for the provider's next
+    bytes (a stream can think for minutes; the provider's pings keep it alive)."""
+
     # State shared by every instance (rate counters, concurrency, sign-in codes)
     redis_url: str | None = None
     """``EVOKAI_REDIS_URL``: Redis or Valkey (``redis://host:6379/0``, ``rediss://`` for TLS) for

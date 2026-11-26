@@ -30,6 +30,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.1.9",
     "uvicorn[standard]>=0.54.0",
     "num2words>=0.5.14",
+    "google-re2>=1.1.20251105",
 ]
 
 [project.optional-dependencies]
