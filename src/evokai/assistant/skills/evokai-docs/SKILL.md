@@ -41,6 +41,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/quickstart.md`: Quick start: Evokai in five minutes
 - `references/redteam.md`: Red team
 - `references/security.md`: Security of agents
+- `references/streaming.md`: Reasoning, tool arguments and tool types
 - `references/templates.md`: Templates
 - `references/voice.md`: Server speech
 - `references/workflows.md`: Workflows

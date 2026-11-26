@@ -53,6 +53,12 @@ export interface Strings {
   notHelpful: string
   toolFailed: string
   toolRunning: string
+  /** A call of an agent that shows its tools' arguments: being written, waiting for a confirmation, not run. */
+  toolPreparing: string
+  toolWaiting: string
+  toolSkipped: string
+  /** The model's reasoning, shown collapsed (`show_reasoning`). */
+  reasoning: string
   /** Knowledge: the sources under an answer, a passage's page, the search tool's label. */
   sources: string
   sourcePage: string
@@ -244,6 +250,10 @@ export const en: Strings = {
   notHelpful: 'Not helpful',
   toolFailed: 'failed',
   toolRunning: '…',
+  toolPreparing: 'being prepared',
+  toolWaiting: 'waiting for your confirmation',
+  toolSkipped: 'not run',
+  reasoning: 'Reasoning',
   sources: 'Sources',
   sourcePage: 'p. {page}',
   searching: 'Searching the documents',
@@ -406,6 +416,10 @@ export const it: Strings = {
   notHelpful: 'Risposta non utile',
   toolFailed: 'non riuscito',
   toolRunning: '…',
+  toolPreparing: 'in preparazione',
+  toolWaiting: 'in attesa della tua conferma',
+  toolSkipped: 'non eseguito',
+  reasoning: 'Ragionamento',
   sources: 'Fonti',
   sourcePage: 'p. {page}',
   searching: 'Ricerca nei documenti',

@@ -22,9 +22,10 @@ from pydantic_ai.messages import (
     ModelResponse,
     SystemPromptPart,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
 )
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolCall, FunctionModel
 from sqlalchemy.exc import DBAPIError
 
 from evokai import policies
@@ -42,8 +43,22 @@ MCP_URL = "http://app.test/mcp"
 class Tool:
     """A tool call in a scripted step."""
 
-    def __init__(self, name: str, args: dict[str, Any], call_id: str = "t1") -> None:
-        self.name, self.args, self.call_id = name, args, call_id
+    def __init__(
+        self,
+        name: str,
+        args: dict[str, Any],
+        call_id: str = "t1",
+        chunks: list[str] | None = None,
+    ) -> None:
+        """``chunks``: the arguments' JSON streamed in these pieces (they must join to ``args``)."""
+        self.name, self.args, self.call_id, self.chunks = name, args, call_id, chunks
+
+
+class Think:
+    """The model's reasoning in a scripted step, streamed in pieces (a signature at the end)."""
+
+    def __init__(self, *pieces: str, signature: str | None = None) -> None:
+        self.pieces, self.signature = pieces, signature
 
 
 def _resolve(step: Any, messages: list[ModelMessage]) -> Any:
@@ -84,13 +99,19 @@ class Script:
                     await self.gate.wait()
                     continue
                 if isinstance(item, Tool):
+                    chunks = item.chunks or [json.dumps(item.args)]
                     yield {
                         i: DeltaToolCall(
-                            name=item.name,
-                            json_args=json.dumps(item.args),
-                            tool_call_id=item.call_id,
+                            name=item.name, json_args=chunks[0], tool_call_id=item.call_id
                         )
                     }
+                    for chunk in chunks[1:]:
+                        yield {i: DeltaToolCall(json_args=chunk, tool_call_id=item.call_id)}
+                elif isinstance(item, Think):
+                    for piece in item.pieces:
+                        yield {i: DeltaThinkingPart(content=piece)}
+                    if item.signature:
+                        yield {i: DeltaThinkingPart(signature=item.signature)}
                 else:
                     yield item
 
@@ -104,7 +125,9 @@ class Script:
             if isinstance(step, BaseException):
                 raise step
             items: list[Any] = list(step)
-            parts: list[Any] = []
+            parts: list[Any] = [
+                ThinkingPart(content="".join(x.pieces)) for x in items if isinstance(x, Think)
+            ]
             text = "".join(x for x in items if isinstance(x, str) and x != "WAIT")
             if text:
                 parts.append(TextPart(content=text))

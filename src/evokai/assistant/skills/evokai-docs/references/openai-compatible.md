@@ -96,7 +96,9 @@ With `"stream": true` the answer is a stream of `chat.completion.chunk` events e
      output guard before it leaves, and the guard keeps the tail of what it already saw in its scan, so a secret split
      across two sentences is still caught whole;
    - **token by token** when every output control is `off` or `monitor` (monitor findings are recorded at the end);
-   - in **one chunk** for an agent with an `output_schema` (its JSON);
+   - in **one chunk** for an agent with an `output_schema` (its JSON); while the model writes it, chunks with an
+     empty `delta` carry the object so far as `evokai.output`, through the output checks and not validated yet, each
+     replacing the previous ([streaming](streaming.md#a-structured-answer-filling-in));
 4. a chunk with `finish_reason: "stop"` and the `evokai` extension;
 5. with `stream_options.include_usage`, a chunk with `choices: []` and `usage`.
 

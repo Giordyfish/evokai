@@ -162,6 +162,29 @@ describe('<evokai-chat>', () => {
     expect($('.tool')!.textContent).toBe('Cerco gli ordini, non riuscito')
   })
 
+  test('reasoning is collapsed; shown arguments say the call has not run', async () => {
+    const { el, $, $$ } = await mounted([
+      [
+        { type: 'reasoning', delta: 'I look up ' },
+        { type: 'reasoning', delta: 'the refund.' },
+        { type: 'tool', name: 'order_refund', id: 'r', status: 'args', args: { reason: 'dam' } },
+        { type: 'tool', name: 'order_refund', id: 'r', status: 'args', args: { reason: 'damaged', amount: 12 } },
+        { type: 'tool', name: 'order_refund', id: 'r', status: 'waiting' },
+      ],
+    ])
+    el.open()
+    await until(() => $('.panel'))
+    await el.send('refund')
+    await until(() => $('.tool.waiting'))
+    const details = $('details.reasoning') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    expect(details.querySelector('summary')!.textContent).toBe('Reasoning')
+    expect(details.querySelector('.reasoning-text')!.textContent).toBe('I look up the refund.')
+    expect($$('.tool').length).toBe(1)
+    expect($('.tool')!.textContent).toBe('order_refund, waiting for your confirmationreason: damaged, amount: 12')
+    expect($('.tool-args')!.textContent).toBe('reason: damaged, amount: 12')
+  })
+
   test('navigate events and relative links go through a cancelable evokai-navigate event', async () => {
     const { el, $ } = await mounted([[{ type: 'text', delta: 'See [the order](/orders/1042).' }, { type: 'navigate', path: '/orders' }]])
     const paths: string[] = []

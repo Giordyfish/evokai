@@ -281,6 +281,8 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "openai_confirm": False,
     "attachments": None,
     "markup": None,
+    "show_reasoning": False,
+    "show_tool_args": False,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -359,6 +361,15 @@ class AgentDef(BaseModel):
     attachments: AttachmentsDef | None = None
     """Files people may attach to chat messages, which kinds and how large (needs the grant
     ``attachments``)."""
+    show_reasoning: bool = False
+    """Stream a summary of the model's reasoning to the browser while it works (``reasoning``
+    events, shown collapsed), each piece through the output checks first. Only a model that
+    reasons and returns its reasoning sends one (``thinking`` in ``model_settings``; see
+    ``docs/streaming.md``)."""
+    show_tool_args: bool = False
+    """Send the arguments of the agent's tool calls to the browser as the model writes them
+    (``tool`` events with ``status: "args"``), through the output checks. Off by default: without
+    it a browser sees a tool's name and status only."""
 
     @field_validator("builtin_tools")
     @classmethod

@@ -83,13 +83,26 @@ class SayEvent(BaseEvent):
     filler: bool = False
 
 
+class ReasoningEvent(BaseEvent):
+    """A piece of the model's reasoning, for an agent that shows it (``show_reasoning``)."""
+
+    type: Literal["reasoning"] = "reasoning"
+    delta: str = ""
+
+
 class ToolEvent(BaseEvent):
-    """A tool call started, finished or failed."""
+    """A tool call: its arguments being written, started, finished, failed, waiting or skipped."""
 
     type: Literal["tool"] = "tool"
     name: str
     status: str
-    """``start``, ``done`` or ``error``."""
+    """``start``, ``done`` or ``error``; for an agent that shows its tools' arguments
+    (``show_tool_args``) also ``args`` (being written), ``waiting`` (for a confirmation) and
+    ``skipped`` (not run)."""
+    id: str | None = None
+    """The call: its events update one card."""
+    args: dict[str, Any] | None = None
+    """``args``: the arguments written so far (``show_tool_args``)."""
 
 
 class ChartEvent(BaseEvent):
@@ -267,6 +280,7 @@ class UnknownEvent(BaseEvent):
 KnownEvent = Annotated[
     ConversationEvent
     | TextEvent
+    | ReasoningEvent
     | SayEvent
     | ToolEvent
     | ChartEvent
@@ -289,6 +303,7 @@ KnownEvent = Annotated[
 Event = (
     ConversationEvent
     | TextEvent
+    | ReasoningEvent
     | SayEvent
     | ToolEvent
     | ChartEvent
@@ -312,6 +327,7 @@ _KNOWN: TypeAdapter[Any] = TypeAdapter(KnownEvent)
 _TYPES = frozenset({
     "conversation",
     "text",
+    "reasoning",
     "say",
     "tool",
     "chart",

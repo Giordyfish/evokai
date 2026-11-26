@@ -63,7 +63,7 @@ async def test_a_reloaded_turn_holds_what_was_shown_in_the_same_order(env: Env) 
     stored = [e for m in answers for e in m["events"]]
     assert stored == _parts(live)
     assert [e["type"] for e in stored] == ["text", "tool", "text", "chart", "text"]
-    assert stored[1] == {"type": "tool", "name": "orders_month", "status": "done"}
+    assert stored[1] == {"type": "tool", "name": "orders_month", "status": "done", "id": "a"}
     # Nothing a browser was not shown: never the tool's arguments or result.
     assert "2026-10" not in json.dumps(stored) and "24" not in json.dumps(stored[1])
     # Each answer keeps its own text as before, for readers of the older shape.

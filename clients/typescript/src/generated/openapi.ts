@@ -452,6 +452,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/v1/admin/agents/{name}/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Types
+         * @description TypeScript declarations of the agent's tools: arguments and results, from their schemas.
+         *
+         *     The MCP tools the application is granted, the agent's custom client tools and its
+         *     ``output_schema`` (``evokai.tools.typescript``). A ``forward_user`` server lists its tools
+         *     only with a person's credential: send one (a test user's) as ``X-Evokai-Credential``, as a
+         *     session token would forward it; without it the server is named as not listed. The credential
+         *     is used for this listing only, never kept.
+         *
+         *     Returns:
+         *         The ``.d.ts`` text.
+         *
+         *     Raises:
+         *         NotFound: Unknown application or agent.
+         */
+        get: operations["agent_types_agent_v1_admin_agents__name__types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/v1/admin/agents/{name}/version-stats": {
         parameters: {
             query?: never;
@@ -5124,6 +5156,16 @@ export interface components {
             security?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Show Reasoning
+             * @default false
+             */
+            show_reasoning?: boolean;
+            /**
+             * Show Tool Args
+             * @default false
+             */
+            show_tool_args?: boolean;
             /** Skills */
             skills?: string[] | null;
             /** Subagents */
@@ -8343,6 +8385,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: boolean;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_types_agent_v1_admin_agents__name__types_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Evokai-Credential"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A TypeScript .d.ts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
                 };
             };
             /** @description Validation Error */
