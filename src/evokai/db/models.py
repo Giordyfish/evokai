@@ -83,6 +83,14 @@ class Application(Base):
     it; shipped updates are applied only while it is locked."""
     system_version: Mapped[str | None] = mapped_column(sa.String(64))
     """The hash of the shipped definition a system application was last set from."""
+    kind: Mapped[str] = mapped_column(sa.String(16), default="agents", server_default="agents")
+    """``agents`` (an application) or ``gateway`` (a gateway for coding tools, ``evokai.gateway``):
+    a gateway is stored as an application row so roles, audit, security events, retention and
+    data protection apply to it unchanged, and every path that lists or serves applications
+    leaves it out."""
+    gateway: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON)
+    """A gateway's own settings: ``providers`` (``anthropic``, ``openai``) and the optional token
+    caps per person (``tokens_per_day``, ``tokens_per_month``). None on an application."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
 
 
@@ -464,6 +472,48 @@ class UsageRecord(Base):
         sa.Index("ix_evokai_usage_app_time", "application_id", "created_at"),
         sa.Index("ix_evokai_usage_subject_time", "application_id", "subject", "created_at"),
         sa.Index("ux_evokai_usage_dedup", "dedup_key", unique=True),
+    )
+
+
+class GatewayRequest(Base):
+    """One request through a gateway: who, which provider and model, tokens, timings, outcome.
+
+    Never the content: no prompt, no answer, no header value. No amount either: gateway traffic
+    is the person's own subscription.
+    """
+
+    __tablename__ = "evokai_gateway_requests"
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(ID)
+    """The gateway."""
+    key_id: Mapped[str | None] = mapped_column(ID)
+    """The person's gateway key (None when no valid key was presented)."""
+    person: Mapped[str] = mapped_column(sa.String(120), default="")
+    """The key's label (the person's name or e-mail) when the request was made."""
+    provider: Mapped[str] = mapped_column(sa.String(16))
+    model: Mapped[str] = mapped_column(sa.String(120), default="")
+    outcome: Mapped[str] = mapped_column(sa.String(16))
+    """``forwarded`` (the provider answered 2xx), ``upstream_error`` (it answered an error),
+    ``blocked`` (a control refused it), ``failed`` (the provider could not be reached or the
+    stream broke)."""
+    control: Mapped[str | None] = mapped_column(sa.String(40))
+    """The control that refused it (``blocked``)."""
+    status: Mapped[int] = mapped_column(sa.Integer, default=0)
+    """The HTTP status the tool got."""
+    input_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    """Every input token, the cached ones included."""
+    output_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(sa.Integer, default=0)
+    request_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
+    response_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
+    first_byte_ms: Mapped[int | None] = mapped_column(sa.Integer)
+    """From the request's arrival to the first byte of the provider's answer."""
+    duration_ms: Mapped[int] = mapped_column(sa.Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    __table_args__ = (
+        sa.Index("ix_evokai_gateway_requests_time", "application_id", "created_at"),
+        sa.Index("ix_evokai_gateway_requests_key", "key_id", "created_at"),
     )
 
 

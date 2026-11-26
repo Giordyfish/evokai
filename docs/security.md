@@ -311,7 +311,7 @@ A policy test is a text and the outcome the guard must give it: for the whole te
 (`controls`), each `allowed` (no control acts), `flagged` (a control records or changes the text, none refuses it) or
 `blocked` (a control refuses it). A test may name the controls the input checks run: `input.size`, `input.encoding`,
 `input.secrets`, `input.injection`, `scope`, and `untrusted.injection` when the policy treats the person's input as
-data. They run those checks only, offline, with the effective policy (an application's: its own with the system
+data; a [gateway](gateway.md)'s tests run the gateway's own checks, and may also name `pii.model`. They run those checks only, offline, with the effective policy (an application's: its own with the system
 policy's minimums and defaults; the system policy's: what an application that sets nothing gets): never a model and
 never a classifier (the injection classifier and `input.moderation` are not asked), so they cost nothing and store
 no event. A blocking control ends the checks as in a turn: the controls after it are not reached.

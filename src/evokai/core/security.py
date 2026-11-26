@@ -74,6 +74,35 @@ def generate_key(kind: str) -> NewKey:
     return NewKey(f"evk_{kind}_{prefix}_{secret}", kind, prefix, hash_secret(secret))
 
 
+GATEWAY_KEY = "gw"
+"""The kind in a person's gateway key (``evk_gw_...``, ``evokai.gateway``). Stored with the kind
+``gateway``; never a server or admin key, so ``parse_key`` does not read it."""
+GATEWAY_KIND = "gateway"
+
+
+def generate_gateway_key() -> NewKey:
+    """Create a person's gateway key.
+
+    Returns:
+        The key (``evk_gw_<prefix>_<secret>``), to be shown once; its kind is ``gateway``.
+    """
+    prefix = secrets.token_hex(6)
+    secret = secrets.token_urlsafe(32)
+    return NewKey(f"evk_{GATEWAY_KEY}_{prefix}_{secret}", GATEWAY_KIND, prefix, hash_secret(secret))
+
+
+def parse_gateway_key(value: str) -> tuple[str, str] | None:
+    """Split a gateway key into prefix and secret.
+
+    Returns:
+        (prefix, secret), or None if it is not a gateway key.
+    """
+    parts = value.strip().split("_", 3)
+    if len(parts) != 4 or parts[0] != "evk" or parts[1] != GATEWAY_KEY or not parts[3]:
+        return None
+    return parts[2], parts[3]
+
+
 def parse_key(value: str) -> tuple[str, str, str] | None:
     """Split a key into kind, prefix and secret.
 

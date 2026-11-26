@@ -4,6 +4,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'preact/hoo
 
 import type { ConsoleApplication, ConsoleMe } from '@client/core/types'
 import { loggedOut } from './api'
+import { GW_TABS, type GwTab } from './gateway'
 import { progress } from './magic'
 import { t } from './i18n'
 
@@ -12,6 +13,7 @@ export type Tab =
   | 'usage' | 'traces' | 'conversations' | 'security' | 'privacy' | 'providers' | 'compliance' | 'audit'
 export type Route =
   | { view: 'app'; app: string; tab: Tab; id: string | null; q: URLSearchParams }
+  | { view: 'gateways'; gateway: string | null; tab: GwTab; q: URLSearchParams }
   | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'policy' | 'assistant' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
 
 const TABS: Tab[] = ['overview', 'agents', 'evals', 'perms', 'mcp', 'connections', 'channels', 'skills', 'prompts', 'knowledge', 'workflows', 'approvals', 'keys', 'limits', 'usage', 'traces', 'conversations', 'security', 'privacy', 'providers', 'compliance', 'audit']
@@ -24,6 +26,11 @@ export function parseRoute(hash = location.hash): Route {
     const tab = (p[2] || 'overview') as Tab
     if (!TABS.includes(tab)) return { view: 'missing', q }
     return { view: 'app', app: p[1], tab, id: p[3] ?? null, q }
+  }
+  if (p[0] === 'gateways') {
+    const tab = (p[2] || 'people') as GwTab
+    if (!GW_TABS.includes(tab)) return { view: 'missing', q }
+    return { view: 'gateways', gateway: p[1] || null, tab, q }
   }
   const view = p[0] as Route['view']
   if (p[0] === 'me') return { view: 'preferences', q }

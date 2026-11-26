@@ -30,6 +30,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/deployment.md`: Running and deploying Evokai
 - `references/evals.md`: Evals
 - `references/features.md`: Features
+- `references/gateway.md`: Gateways for coding tools
 - `references/index.md`: Evokai
 - `references/knowledge.md`: Knowledge bases
 - `references/markup.md`: Inline markup

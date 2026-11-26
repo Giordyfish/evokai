@@ -110,6 +110,7 @@ nav:
           - A2A: a2a.md
   - Security & compliance:
       - Security of agents: security.md
+      - Gateways for coding tools: gateway.md
       - Red team: redteam.md
       - Data protection: data-protection.md
       - Privacy: privacy.md

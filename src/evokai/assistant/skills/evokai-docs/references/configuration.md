@@ -93,6 +93,8 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_CODE_TIMEOUT_SECONDS` | `60` | What one `code_run` call may take; past it the sandbox session is stopped |
 | `EVOKAI_CODE_USD_PER_SECOND` | `0.00003` | Estimated cost of a sandbox second, recorded for the caps (never shown) |
 | `EVOKAI_SECURITY_EVENT_TTL_DAYS` | `180` | Security events are deleted after this many days unless the application sets `security_event_ttl_days` |
+| `EVOKAI_GATEWAY_ANTHROPIC_URL` | `https://api.anthropic.com` | Where a [gateway](gateway.md) forwards Anthropic Messages requests |
+| `EVOKAI_GATEWAY_TIMEOUT_SECONDS` | `900` | The longest a gateway waits for the provider's next bytes |
 | `LOG_LEVEL`, `LOG_FORMAT` | `INFO`, `json` | Logging |
 
 ### `EVOKAI_BOOTSTRAP_APPS`

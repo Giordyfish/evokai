@@ -7,11 +7,17 @@ import time
 from datetime import UTC
 
 from evokai.core.errors import Forbidden, Unauthorized
-from evokai.core.security import Keyring, parse_key, secret_matches
+from evokai.core.security import (
+    GATEWAY_KIND,
+    Keyring,
+    parse_gateway_key,
+    parse_key,
+    secret_matches,
+)
 from evokai.core.shared import MemoryState, SharedState
 from evokai.core.util import TtlCache
-from evokai.db.repositories import Store
-from evokai.identity.models import AppPrincipal, SessionPrincipal
+from evokai.db.repositories import APPLICATION, GATEWAY, Store
+from evokai.identity.models import AppPrincipal, GatewayPerson, SessionPrincipal
 from evokai.privacy import revoked_at, subject_key
 
 EPOCH_KEY = "auth:epoch"
@@ -52,6 +58,7 @@ class Authenticator:
         self.revocation_ttl = revocation_ttl
         self._keys: TtlCache[str, AppPrincipal] = TtlCache(max_items=1_000, ttl_seconds=30)
         self._alive: TtlCache[str, bool] = TtlCache(max_items=1_000, ttl_seconds=30)
+        self._gateway_keys: TtlCache[str, GatewayPerson] = TtlCache(max_items=2_000, ttl_seconds=30)
         self._revoked: TtlCache[str, float] = TtlCache(max_items=10_000, ttl_seconds=5)
         self._epoch: str | None = None
         self._epoch_read = 0.0
@@ -67,6 +74,7 @@ class Authenticator:
             self._epoch = epoch
             self._keys.clear()
             self._alive.clear()
+            self._gateway_keys.clear()
 
     async def _bump(self) -> None:
         """Tell every instance to re-read keys and users."""
@@ -98,7 +106,8 @@ class Authenticator:
             if not row or row.kind != kind or not secret_matches(secret, row.secret_hash):
                 raise Unauthorized("Invalid key.", code="key")
             app = await self.store.applications.get(row.application_id)
-            if not app or app.status != "active":
+            # A gateway's row never answers to an application key (it has none, by design).
+            if not app or app.status != "active" or app.kind != APPLICATION:
                 raise Unauthorized("Application not active.", code="application")
             hit = AppPrincipal(
                 application_id=row.application_id,
@@ -110,6 +119,37 @@ class Authenticator:
             await self.store.applications.touch_key(row.id)
         if admin and hit.kind != "adm":
             raise Forbidden("An admin key is required.", code="admin_key")
+        return hit
+
+    async def gateway(self, presented: str) -> GatewayPerson:
+        """Authenticate a person's gateway key (``evk_gw_...``), cached like application keys.
+
+        Args:
+            presented: The ``x-evokai-key`` header's value.
+
+        Returns:
+            The person and their gateway.
+
+        Raises:
+            Unauthorized: A missing, malformed, unknown or revoked key (``key``), or a gateway that
+                is not active (``gateway``).
+        """
+        await self._sync()
+        hit = self._gateway_keys.get(presented)
+        if hit is None:
+            parsed = parse_gateway_key(presented)
+            if not parsed:
+                raise Unauthorized("Invalid gateway key.", code="key")
+            prefix, secret = parsed
+            row = await self.store.applications.key_by_prefix(prefix)
+            if not row or row.kind != GATEWAY_KIND or not secret_matches(secret, row.secret_hash):
+                raise Unauthorized("Invalid gateway key.", code="key")
+            app = await self.store.applications.get(row.application_id)
+            if not app or app.kind != GATEWAY or app.status != "active":
+                raise Unauthorized("This gateway is not active.", code="gateway")
+            hit = GatewayPerson(application_id=app.id, key_id=row.id, label=row.label)
+            self._gateway_keys.set(presented, hit)
+            await self.store.applications.touch_key(row.id)
         return hit
 
     async def _revoked_at(self, application_id: str, subject: str) -> float:
@@ -169,6 +209,7 @@ class Authenticator:
         """Drop the verified-key cache, on every instance (after a revocation)."""
         self._keys.clear()
         self._alive.clear()
+        self._gateway_keys.clear()
         await self._bump()
 
     async def key_alive(self, key_id: str, application_id: str) -> bool:
@@ -200,7 +241,7 @@ class Authenticator:
         """
         claims = self.keyring.verify(token)
         app = await self.store.applications.get(claims.application_id)
-        if not app or app.status != "active":
+        if not app or app.status != "active" or app.kind != APPLICATION:
             raise Unauthorized("Application not active.", code="application")
         if claims.issued_at <= await self._revoked_at(claims.application_id, claims.subject):
             raise Unauthorized("Session revoked.", code="token")

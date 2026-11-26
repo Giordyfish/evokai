@@ -10,6 +10,17 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- Gateways for coding tools ([docs/gateway.md](docs/gateway.md)): Claude Code passes through Evokai with each person's
+  own claude.ai seat, under the organisation's controls. A gateway is stored as an application row
+  (`applications.kind = "gateway"`, migration 0036) but is never an application: its own console section
+  (**Gateways**: people, policy, usage, events, connect snippets, the employee notice) and admin API
+  (`/v1/admin/gateways`), never listed or served among applications. Each person has a personal key (`evk_gw_...`,
+  sent in `x-evokai-key`). The door `POST /gw/anthropic/v1/messages` (and `/count_tokens`) forwards headers, body
+  and the SSE stream byte for byte; before that it checks the provider, the model, data protection, the person's rate
+  and token caps, and runs `input.size`, `input.secrets`, `pii.model` and `scope` on the new text only, with linear-time
+  matching (RE2), blocking or recording, never masking. One row per request: tokens, timings, outcome, never content
+  or amounts.
+
 - A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
   application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:
   a minimum mode per control (the stricter of the minimum and the resolved mode applies), a data protection profile

@@ -84,7 +84,10 @@ async def _put_test(
 async def _run(svc: Services, owner_id: str, security: Any) -> dict[str, Any]:
     rows = await svc.store.policies.tests(owner_id)
     results = await policies.run_tests(
-        svc.guard, policies.effective(svc.guard, owner_id, security), rows
+        svc.guard,
+        policies.effective(svc.guard, owner_id, security),
+        rows,
+        gateway=await policies.is_gateway(svc, owner_id),
     )
     failed = sum(1 for r in results if not r["passed"])
     return {"items": results, "passed": len(results) - failed, "failed": failed}
@@ -204,7 +207,7 @@ async def _may_copy(
         sp = policies.system()
         content = policies.PolicyContent(security=sp.security, data_protection=sp.data_protection)
         return content, "the system policy"
-    src = await svc.store.applications.by_slug(body.application or "")
+    src = await svc.store.applications.by_slug(body.application or "", kind=None)
     visible = src is not None and (
         src.id == a.application_id or (login is not None and login.role_for(src) is not None)
     )
@@ -436,7 +439,7 @@ async def system_copy(body: SystemCopy, svc: Svc, request: Request) -> dict[str,
     Raises:
         NotFound: Unknown application.
     """
-    src = await svc.store.applications.by_slug(body.application)
+    src = await svc.store.applications.by_slug(body.application, kind=None)
     if src is None:
         raise NotFound("Unknown application.", code="unknown_application")
     content = _app_content(src)

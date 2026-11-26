@@ -24,6 +24,7 @@ import jwt
 
 from evokai.core.errors import BadRequest, Unauthorized
 from evokai.core.security import Keyring
+from evokai.db.repositories import APPLICATION
 from evokai.identity.console import ConsoleLogin
 from evokai.identity.models import AppPrincipal
 from evokai.identity.roles import RANK, Role, highest
@@ -193,7 +194,8 @@ async def _named(svc: Services, name: str | None) -> Any:
             code="application_required",
         )
     app = await svc.store.applications.get(name) or await svc.store.applications.by_slug(name)
-    if app is None or app.status != "active":
+    # A gateway is never an application the assistant acts on (evokai.gateway).
+    if app is None or app.status != "active" or app.kind != APPLICATION:
         raise Unauthorized(f"No active application {name[:60]}.", code="application")
     return app
 
@@ -219,7 +221,7 @@ async def principal(svc: Services, token: str, application: str | None = None) -
         app = await _named(svc, application)
     else:
         app = await svc.store.applications.get(str(claims["app"]))
-    if app is None or app.status != "active":
+    if app is None or app.status != "active" or app.kind != APPLICATION:
         raise Unauthorized("Application not active.", code="application")
     live = await _live_role(svc, claims, app)
     claimed = str(claims["role"])

@@ -83,6 +83,7 @@ FRESH: dict[str, Any] = {
     "data_protection": None,
     "security_event_ttl_days": None,
     "audit_ttl_days": None,
+    "gateway": None,
 }
 """Every application setting as a new application has it: a reset sets them all back before the
 shipped definition sets its own (a test keeps this list complete as columns are added)."""
@@ -94,6 +95,7 @@ IDENTITY = frozenset({
     "system",
     "locked",
     "system_version",
+    "kind",
     "created_at",
 })
 """Columns that say which application it is, not how it is set."""
