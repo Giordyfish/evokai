@@ -11,6 +11,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/ai-sdk.md`: Use Evokai from the AI SDK
 - `references/assistant.md`: The console assistant
 - `references/attachments.md`: Attachments
+- `references/azure.md`: Running on Azure
 - `references/builtin-tools.md`: Provider built-in tools
 - `references/capabilities.md`: Capabilities
 - `references/channels-readme.md`: Channels beyond the web panel: e-mail, Microsoft Teams, Slack

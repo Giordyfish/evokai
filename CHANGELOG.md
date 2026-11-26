@@ -10,6 +10,20 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- Azure without keys (the optional `azure` extra, in both images): every Azure connection without a configured key
+  uses a Microsoft Entra ID token of the managed identity (`DefaultAzureCredential`, `evokai.core.azure`). Azure
+  OpenAI endpoints take the `/openai/v1` base URL without an `api_version` (the Foundry models sold by Azure too), and
+  `azure:` models without a declared endpoint use `AZURE_OPENAI_ENDPOINT`. Not verified against a live Azure account.
+- Claude in Microsoft Foundry: the `anthropic-foundry:` provider (`api: anthropic-foundry`, the anthropic SDK's
+  Foundry client, key or Entra ID) and its catalog entry with the Hosted on Azure (Global, Data Zone US) and Hosted on
+  Anthropic infrastructure endpoints, Anthropic as the processor and no EU data zone, so a profile excludes or allows
+  it correctly. Not verified against a live Azure account.
+- Knowledge base embeddings beyond Bedrock: Azure OpenAI embeddings (`azure:`, key or Entra ID) and self-hosted
+  OpenAI-compatible servers (Ollama, vLLM, Text Embeddings Inference) through the provider catalog's endpoints.
+- Azure Content Safety (`azure_prompt_shields`, `azure_content_safety`) without `EVOKAI_AZURE_CONTENT_SAFETY_KEY`
+  sends an Entra ID token, fetched at start.
+- [Running on Azure](docs/azure.md): what runs where on AWS, on Azure and self-hosted.
+
 - A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
   application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:
   a minimum mode per control (the stricter of the minimum and the resolved mode applies), a data protection profile

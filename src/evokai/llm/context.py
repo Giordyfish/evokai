@@ -10,7 +10,8 @@ Mapping of Evokai ids to the snapshot's tables:
 - ``bedrock:<id>``: the ``bedrock`` table, by the id as written and then without its inference
   profile prefix (``eu.anthropic.claude-haiku-4-5-20251001-v1:0`` is read as
   ``anthropic.claude-haiku-4-5-20251001-v1:0``);
-- ``openai:``, ``openai-chat:``, ``openai-responses:``, ``azure:``: ``openai``; ``anthropic:``;
+- ``openai:``, ``openai-chat:``, ``openai-responses:``, ``azure:``: ``openai``; ``anthropic:`` and
+  ``anthropic-foundry:``: ``anthropic``;
   ``mistral:``; ``google-gla:`` and ``google-vertex:``: ``google``; ``ollama:``: ``ollama`` (the
   models.dev Ollama Cloud windows, the model's maximum: a local server truncates at its own
   ``num_ctx``, so set those models in ``EVOKAI_CONTEXT_WINDOWS``);
@@ -39,6 +40,7 @@ TABLES = {
     "openai-responses": "openai",
     "azure": "openai",
     "anthropic": "anthropic",
+    "anthropic-foundry": "anthropic",
     "mistral": "mistral",
     "google-gla": "google",
     "google-vertex": "google",

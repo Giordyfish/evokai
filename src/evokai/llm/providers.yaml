@@ -1041,6 +1041,89 @@ providers:
     sources:
     - https://platform.claude.com/docs/en/about-claude/pricing
     checked: '2026-11-19'
+- id: anthropic-foundry
+  title: Claude in Microsoft Foundry (Anthropic models sold through Azure Marketplace)
+  entity:
+    name: Anthropic, PBC
+    country: US
+    controlled_from: US
+    eu_contracting_entity: null
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/claude-models/data-privacy
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models-hosting-comparison
+  terms:
+    training: null
+    zero_retention: null
+    notes: 'Data retention on both hosting options is governed by Anthropic''s Data Processing Addendum and Commercial
+      Terms of Service, not by Azure''s data-privacy terms. Foundry troubleshooting: Covered Models (Anthropic''s
+      list) require data retention; a subscription with zero data retention gets a 400 and ZDR is managed by Anthropic
+      per subscription, not by Microsoft. Anthropic safety systems are active on both options.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models-hosting-comparison
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude
+  caching:
+    style: explicit
+    reports_usage: true
+    notes: 'The Messages API with Anthropic''s prompt caching (5 min and 1 h) and automatic prompt caching on both
+      hosting options.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models
+  checked: '2026-11-26'
+  notes: 'Anthropic is the seller of record, the operator and an independent data processor for prompts and outputs
+    on both hosting options; Microsoft provides the Foundry experience, Azure infrastructure and billing (Claude Consumption
+    Units on the Azure invoice). Messages API at https://{resource}.services.ai.azure.com/anthropic/v1/messages (anthropic-version 2023-06-01),
+    model = deployment name. Auth: the resource key in x-api-key, or a Microsoft Entra ID token for scope https://ai.azure.com/.default
+    (Cognitive Services User role); Mythos models take Entra ID only. Evokai connects with api: anthropic-foundry
+    (the anthropic SDK''s AsyncAnthropicFoundry). Not verified against a live Azure account.'
+  sources:
+  - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude
+  - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models
+  unknowns:
+  - 'terms.training / retention / zero_retention: Microsoft''s pages defer to Anthropic''s Commercial Terms and DPA,
+    which were not read for the Foundry offer specifically (the anthropic entry has the direct API''s terms)'
+  - 'entity.eu_contracting_entity: the Marketplace offer''s contracting party for an EU customer was not read'
+  - 'endpoints: the per-model Azure regions (models-from-partners region table) were not read'
+  - 'prices: Claude Consumption Units per token were not read'
+  endpoints:
+  - id: foundry-claude-azure-global
+    kind: global
+    how_to_select: 'model version "2: Hosted on Azure", Region scope Global (Global Standard)'
+    place:
+      geography: global
+    data_at_rest: resource's Azure geography
+    notes: 'Prompts and outputs are processed on Azure infrastructure (ingress, API, GPU inference) and never leave
+      Azure; processing is scoped to the global deployment option, data at rest stays in the selected Azure geography.
+      Hosted on Azure: Opus 5.5 (and Fast), Opus 5, Opus 4.8, Sonnet 5.5, Sonnet 5, Haiku 5.5, Haiku 4.5. No EU data
+      zone is offered for Claude.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/claude-models/data-privacy
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models-hosting-comparison
+    checked: '2026-11-26'
+  - id: foundry-claude-azure-datazone-us
+    kind: data zone
+    how_to_select: 'model version "2: Hosted on Azure", Region scope Data Zone (Data Zone Standard US)'
+    place:
+      geography: us
+      countries:
+      - US
+    data_at_rest: resource's Azure geography
+    notes: 'Hosted on Azure versions of claude-haiku-4-5, claude-haiku-5-5, claude-opus-5-5 (and Fast), claude-opus-5,
+      claude-opus-4-8, claude-sonnet-5, claude-sonnet-5-5. Prompts and outputs never leave Azure.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models
+    checked: '2026-11-26'
+  - id: foundry-claude-anthropic-hosted
+    kind: global
+    how_to_select: 'model version "1: Hosted on Anthropic infrastructure" (Global Standard only)'
+    place:
+      geography: global
+    data_at_rest: null
+    notes: 'Prompts and outputs are processed on Anthropic hosted infrastructure, possibly outside Azure and outside
+      the selected Azure geography. The only option for Fable, Mythos and older Claude models; adds the Files API.'
+    sources:
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/claude-models/data-privacy
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models-hosting-comparison
+    checked: '2026-11-26'
 - id: cohere
   title: Cohere API
   entity:

@@ -262,7 +262,8 @@ class Settings(BaseSettings):
     ``azure_content_safety``; declare its region in ``EVOKAI_PROVIDERS_FILE`` for the data
     protection profile."""
     azure_content_safety_key: str | None = None
-    """``EVOKAI_AZURE_CONTENT_SAFETY_KEY``: its key."""
+    """``EVOKAI_AZURE_CONTENT_SAFETY_KEY``: its key; unset, a Microsoft Entra ID token of the
+    managed identity (``evokai.core.azure``)."""
     model_armor_template: str | None = None
     """``EVOKAI_MODEL_ARMOR_TEMPLATE``: ``projects/{p}/locations/{l}/templates/{t}`` of a Google
     Model Armor template (prompt injection and jailbreak filter, responsible AI filters) for
