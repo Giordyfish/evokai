@@ -497,12 +497,13 @@ async def _trial(
             "budgetPct": budget,
             "passRate": totals.get("passRate"),
         }
-        with contextlib.suppress(Exception):
-            await asyncio.shield(store.evals.finish_run(run.id, status, summary))
-        # The recorded server's token goes whatever the outcome (a failed, capped or interrupted
-        # try kept it); a try still running holds its own copy, read when it started.
+        # The numbers first, then the run's status: whoever sees the try done (the console polls
+        # it) finds its numbers. The recorded server's token goes whatever the outcome (a failed,
+        # capped or interrupted try kept it); a try still running holds its own copy.
         with contextlib.suppress(Exception):
             await asyncio.shield(_record(svc, app_id, model, numbers if status == "done" else None))
+        with contextlib.suppress(Exception):
+            await asyncio.shield(store.evals.finish_run(run.id, status, summary))
 
 
 async def _record(svc: Services, app_id: str, model: str, numbers: dict[str, Any] | None) -> None:

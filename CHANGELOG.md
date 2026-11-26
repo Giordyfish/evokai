@@ -131,7 +131,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - A reset of the assistant's application deletes only what its preview showed: the preview's `plan` goes back with
   the reset, and anything added or changed meanwhile answers `409 plan_changed` and the console shows the new preview.
 - A failed, capped or interrupted try of a model for the assistant no longer leaves the recorded server's credential
-  in the application's settings.
+  in the application's settings, and a finished try stores its numbers before it shows as done (the Assistant page
+  could find it done without them).
 - Audit entries made through the admin MCP server record the address of the MCP server's caller, not 127.0.0.1.
 - The guard's system prompt leak check covers the session's prompt modules, not only the instructions.
 - A version pinned at a turn's start no longer overwrites a choice of modules or a locale minted during the turn.
