@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     NativeToolCallPart,
     TextContent,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -227,3 +228,170 @@ def _result(tool_use_id: str, name: str, ok: bool, text: str) -> dict[str, Any]:
             "ok": ok,
         }
     }
+
+
+# ── reasoning sent back ───────────────────────────────────────────────────────────────────────────
+# A model's reasoning (``ThinkingPart``) is never part of the stored history the model sees again,
+# with one exception the providers require: while a tool-use step is not over, its reasoning goes
+# back with its calls, unchanged (Anthropic's thinking blocks with their signatures, OpenAI's
+# encrypted reasoning). That is every later request of the same turn, and the turn that carries out
+# a confirmation (the calls it waited on are still that step's).
+
+
+def _thinks(response: ModelResponse) -> bool:
+    return any(isinstance(p, ThinkingPart) for p in response.parts) and any(
+        isinstance(p, ToolCallPart) for p in response.parts
+    )
+
+
+def with_reasoning(rebuilt: ModelResponse, original: ModelResponse) -> ModelResponse:
+    """A response rebuilt from stored blocks, with the reasoning of the response it came from.
+
+    The parts keep the original order (reasoning, text, calls), the text and the calls are the
+    rebuilt ones (protected as the history is), and the provider's fields say whose reasoning it is.
+
+    Returns:
+        The response.
+    """
+    calls = {p.tool_call_id: p for p in rebuilt.parts if isinstance(p, ToolCallPart)}
+    texts = [p for p in rebuilt.parts if isinstance(p, TextPart)]
+    out: list[Any] = []
+    for p in original.parts:
+        if isinstance(p, ThinkingPart):
+            out.append(p)
+        elif isinstance(p, TextPart) and texts:
+            out += texts
+            texts = []
+        elif isinstance(p, ToolCallPart) and p.tool_call_id in calls:
+            out.append(calls.pop(p.tool_call_id))
+    out += texts + list(calls.values())
+    return ModelResponse(
+        parts=out,
+        model_name=original.model_name,
+        provider_name=original.provider_name,
+        provider_url=original.provider_url,
+        canonical_system=original.canonical_system,
+    )
+
+
+def keep_reasoning(messages: list[ModelMessage], rebuilt: list[ModelMessage]) -> list[ModelMessage]:
+    """The rebuilt history of a request, with the reasoning of its responses that called tools.
+
+    Args:
+        messages: The run's messages (pydantic-ai's, with their reasoning).
+        rebuilt: The same history as the model receives it (from stored blocks, without it).
+
+    Returns:
+        ``rebuilt``, each response that called tools paired with its original by call id.
+    """
+    by_call = {
+        p.tool_call_id: m
+        for m in messages
+        if isinstance(m, ModelResponse) and _thinks(m)
+        for p in m.parts
+        if isinstance(p, ToolCallPart)
+    }
+    if not by_call:
+        return rebuilt
+    out: list[ModelMessage] = []
+    for m in rebuilt:
+        if isinstance(m, ModelResponse):
+            first = next((p for p in m.parts if isinstance(p, ToolCallPart)), None)
+            original = by_call.get(first.tool_call_id) if first is not None else None
+            if original is not None:
+                m = with_reasoning(m, original)
+        out.append(m)
+    return out
+
+
+def reasoning_block(response: ModelResponse) -> dict[str, Any] | None:
+    """The reasoning of a response that waits for a confirmation, as a stored block.
+
+    Kept only so the turn that carries the confirmation out can send it back with the calls
+    (``resume_reasoning``); never shown, never sent with any other message.
+
+    Returns:
+        ``{"reasoning": {...}}``, or None when the response has no reasoning or no calls.
+    """
+    if not _thinks(response):
+        return None
+    parts: list[dict[str, Any]] = []
+    for p in response.parts:
+        if isinstance(p, ThinkingPart):
+            parts.append({
+                "thinking": p.content,
+                "signature": p.signature,
+                "id": p.id,
+                "provider": p.provider_name,
+                "details": p.provider_details,
+            })
+        elif isinstance(p, TextPart):
+            parts.append({"text": True})
+        elif isinstance(p, ToolCallPart):
+            parts.append({"call": p.tool_call_id})
+    return {
+        "reasoning": {
+            "model": response.model_name,
+            "provider": response.provider_name,
+            "url": response.provider_url,
+            "system": response.canonical_system,
+            "parts": parts,
+        }
+    }
+
+
+def stored_reasoning(block: dict[str, Any]) -> ModelResponse:
+    """A stored reasoning block back as the response it was taken from (calls without arguments).
+
+    Returns:
+        A response to pair with the rebuilt one (``with_reasoning``).
+    """
+    r = block.get("reasoning") or {}
+    parts: list[Any] = []
+    for p in r.get("parts") or []:
+        if "thinking" in p:
+            parts.append(
+                ThinkingPart(
+                    content=p.get("thinking") or "",
+                    id=p.get("id"),
+                    signature=p.get("signature"),
+                    provider_name=p.get("provider"),
+                    provider_details=p.get("details"),
+                )
+            )
+        elif p.get("text"):
+            parts.append(TextPart(content=""))
+        elif p.get("call"):
+            parts.append(ToolCallPart(tool_name="", args={}, tool_call_id=p["call"]))
+    return ModelResponse(
+        parts=parts,
+        model_name=r.get("model"),
+        provider_name=r.get("provider"),
+        provider_url=r.get("url"),
+        canonical_system=r.get("system"),
+    )
+
+
+def resume_reasoning(history: list[ModelMessage], stored: list[Any]) -> list[ModelMessage]:
+    """The history of a confirmation being carried out, its waiting calls with their reasoning.
+
+    Args:
+        history: The rebuilt history, ending on the response whose calls waited.
+        stored: The stored messages it was rebuilt from (``Stored``).
+
+    Returns:
+        The history (the same list when no reasoning was kept).
+    """
+    last = next((m for m in reversed(stored) if m.role == "assistant"), None)
+    block = next(
+        (b for b in (last.content if last else []) if isinstance(b, dict) and "reasoning" in b),
+        None,
+    )
+    at = next(
+        (i for i in range(len(history) - 1, -1, -1) if isinstance(history[i], ModelResponse)), None
+    )
+    if block is None or at is None:
+        return history
+    rebuilt = history[at]
+    assert isinstance(rebuilt, ModelResponse)  # ruff: ignore[assert] (found above)
+    return [*history[:at], with_reasoning(rebuilt, stored_reasoning(block)), *history[at + 1 :]]

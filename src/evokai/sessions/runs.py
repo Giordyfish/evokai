@@ -83,6 +83,7 @@ from evokai.sandbox.tool import NOTE as CODE_NOTE
 from evokai.sandbox.tool import TOOL_NAME as CODE_TOOL
 from evokai.sandbox.tool import tool_def as code_tool
 from evokai.sessions.limits import cap_state, limit_message
+from evokai.sessions.live import LiveStep
 from evokai.tools import custom
 from evokai.tools.client_tools import SKILL_LOAD
 from evokai.tools.labels import confirm_label
@@ -102,7 +103,9 @@ token (the session's subject, credential and caps), or an e-mail to an agent's m
 (``evokai.channels.email``)."""
 
 OnEvent = Callable[[dict[str, Any]], None]
-"""Progress of a run, for the streaming standards: ``{"type": "tool", "name", "status"}``."""
+"""Progress of a run, for the streaming standards: ``{"type": "tool", "name", "status"}``, and
+for an agent with an ``output_schema`` its answer as it is written: ``{"type": "output", "runId",
+"partial"}`` (the object so far, through the output checks, not validated yet)."""
 
 
 class LimitReached(AppError):
@@ -228,7 +231,8 @@ class AgentRunner:
                 with ``forward_user``.
             limits: The session token's caps (``browser`` only); the subject's caps apply only
                 with it (None for a server run: the application's caps alone).
-            on_event: Called with the run's progress (tool calls).
+            on_event: Called with the run's progress (tool calls) and, with an ``output_schema``,
+                the structured answer as it is written (``output`` events).
             model: The primary model a session token chose, if the agent offers it.
             groups: The subject's groups, for knowledge bases restricted to some groups.
             origin: ``workflow`` for a workflow's agent step: it does not fire the «agent run
@@ -657,6 +661,21 @@ class AgentRunner:
                     guard.after_output(gate.filter)
                     raise stopped
 
+        def partial(e: dict[str, Any]) -> None:
+            assert on_event is not None  # ruff: ignore[assert] (set with the handler)
+            on_event({"type": "output", "runId": run_id, "partial": e["args"]})
+
+        async def structured(_ctx: Any, events: Any) -> None:
+            # The structured answer as the model writes it, through the output checks: an object
+            # replaced by the next one, not validated yet (the final answer is).
+            step = LiveStep(guard, partial, reasoning=False, args_of=frozenset({OUTPUT_TOOL}))
+            async for ev in events:
+                step.event(ev)
+            step.finish()
+
+        handler = stream if gate is not None else None
+        if schema and on_event is not None:
+            handler = structured
         try:
             with ToolManager.parallel_execution_mode("sequential"):
                 answer = await runner.run(
@@ -667,7 +686,7 @@ class AgentRunner:
                     usage_limits=UsageLimits(
                         request_limit=agent.max_tool_calls_per_turn + MAX_SCHEMA_RETRIES + 1
                     ),
-                    event_stream_handler=stream if gate is not None else None,
+                    event_stream_handler=handler,
                     deferred_tool_results=deferred,
                 )
         except UsageLimitExceeded as e:
