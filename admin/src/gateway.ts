@@ -65,3 +65,22 @@ export function claudeUser(key = KEY_PLACEHOLDER): string {
 export function claudeShell(key = KEY_PLACEHOLDER): string {
   return [`export ANTHROPIC_BASE_URL=${doorUrl('anthropic')}`, `export ANTHROPIC_CUSTOM_HEADERS="x-evokai-key: ${key}"`, 'claude'].join('\n')
 }
+
+/** Codex: a model provider in `~/.codex/config.toml` that keeps the person's ChatGPT login and sends their key. */
+export function codexConfig(): string {
+  return [
+    'model_provider = "evokai"',
+    '',
+    '[model_providers.evokai]',
+    'name = "Evokai"',
+    `base_url = "${doorUrl('openai')}/v1"`,
+    'wire_api = "responses"',
+    'requires_openai_auth = true',
+    'env_http_headers = { "x-evokai-key" = "EVOKAI_GATEWAY_KEY" }',
+  ].join('\n')
+}
+
+/** The key Codex reads from the environment (its config names the variable, never the key). */
+export function codexShell(key = KEY_PLACEHOLDER): string {
+  return [`export EVOKAI_GATEWAY_KEY=${key}`, 'codex'].join('\n')
+}

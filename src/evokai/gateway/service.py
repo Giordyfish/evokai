@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -21,7 +23,7 @@ from evokai.core.util import TtlCache, utcnow
 from evokai.db import models as m
 from evokai.db.repositories import GATEWAY
 from evokai.gateway import checks
-from evokai.gateway.checks import ANTHROPIC, PROVIDER_NAMES, Block
+from evokai.gateway.checks import ANTHROPIC, OPENAI, PROVIDER_NAMES, Block
 from evokai.gateway.relay import (
     KEY_HEADER,
     Relay,
@@ -35,6 +37,10 @@ from evokai.identity.models import GatewayPerson
 
 log = logging.getLogger("evokai.gateway")
 
+CHATGPT = "chatgpt"
+"""The upstream of a Codex request made with a ChatGPT login (provider ``openai``)."""
+CHATGPT_CLAIM = "https://api.openai.com/auth"
+"""The claim a ChatGPT login's token carries (with ``chatgpt_account_id``)."""
 APP_TTL = 5
 """Seconds a process trusts its copy of a gateway's settings and policy."""
 EVENT_ONCE_SECONDS = 300
@@ -60,7 +66,11 @@ class GatewayService:
             limits=httpx.Limits(max_connections=None, max_keepalive_connections=256),
             follow_redirects=False,
         )
-        self.upstreams: dict[str, str] = {ANTHROPIC: s.gateway_anthropic_url.rstrip("/")}
+        self.upstreams: dict[str, str] = {
+            ANTHROPIC: s.gateway_anthropic_url.rstrip("/"),
+            OPENAI: s.gateway_openai_url.rstrip("/"),
+            CHATGPT: s.gateway_chatgpt_url.rstrip("/"),
+        }
         self._apps: TtlCache[str, m.Application] = TtlCache(max_items=500, ttl_seconds=APP_TTL)
         self._used: TtlCache[str, int] = TtlCache(max_items=10_000, ttl_seconds=USED_TTL)
         self._verdicts: TtlCache[str, protection.Verdict] = TtlCache(
@@ -196,6 +206,66 @@ class GatewayService:
             )
 
         return Relay(answer, usage, done)
+
+    async def openai_models(self, request: Request) -> Response:
+        """Codex's list of models, from the upstream its login goes to (no content, no record).
+
+        Only a live key of a gateway with OpenAI enabled is asked for: the list is the person's
+        own seat's, and a model they pick is checked when they use it.
+
+        Returns:
+            The provider's answer, or the gateway's refusal.
+        """
+        try:
+            person = await self.svc.auth.gateway(request.headers.get(KEY_HEADER, ""))
+        except Unauthorized as e:
+            return openai_error(401, "authentication", _key_message(OPENAI, e.code))
+        gw = await self.gateway(person.application_id)
+        if gw is None or gw.status != "active":
+            return openai_error(
+                401, "authentication", "Evokai gateway: this gateway is not active."
+            )
+        kind = openai_login(request.headers.get("authorization", ""))
+        if kind is None or OPENAI not in ((gw.gateway or {}).get("providers") or []):
+            return openai_error(404, "invalid_request", "Evokai gateway: no models here.")
+        query = request.url.query
+        url = f"{self.upstreams[kind]}/models" + (f"?{query}" if query else "")
+        req = build_request(self.client, url, request.headers.raw, b"", method="GET")
+        try:
+            answer = await self.client.send(req, stream=True)
+        except httpx.HTTPError as e:
+            return openai_error(
+                502, "api", f"Evokai gateway: OpenAI could not be reached ({type(e).__name__})."
+            )
+
+        async def done(_outcome: str) -> None:  # ruff: ignore[unused-async] (no record)
+            return None
+
+        return Relay(answer, Usage(OPENAI, "text/plain"), done)
+
+    async def openai(self, request: Request) -> Response:
+        """Codex's Responses request: to ChatGPT's Codex backend or to the OpenAI API, by its token.
+
+        A ChatGPT login's token (a JWT whose claims hold ``https://api.openai.com/auth``) goes to
+        ``EVOKAI_GATEWAY_CHATGPT_URL``; an API key (``sk-...``) to ``EVOKAI_GATEWAY_OPENAI_URL``.
+        The token is only looked at, never verified, logged or kept: the provider checks it.
+
+        Returns:
+            The provider's answer, streamed, or the gateway's refusal.
+        """
+        kind = openai_login(request.headers.get("authorization", ""))
+        if kind is None:
+            try:
+                await self.svc.auth.gateway(request.headers.get(KEY_HEADER, ""))
+            except Unauthorized as e:
+                return openai_error(401, "authentication", _key_message(OPENAI, e.code))
+            return openai_error(
+                401,
+                "authentication",
+                "Evokai gateway: Codex must send its own login: sign in with ChatGPT "
+                "(requires_openai_auth = true in the provider) or use an OpenAI API key.",
+            )
+        return await self.relay(request, OPENAI, "/responses", upstream=self.upstreams[kind])
 
     # The controls
 
@@ -482,3 +552,22 @@ def _reason_text(r: protection.Reason) -> str:
     value = f" ({r.value})" if r.value not in (None, "", []) else ""
     source = " [system policy]" if r.source == "system" else ""
     return f"{r.dimension} {r.code}{value}{source}"
+
+
+def openai_login(authorization: str) -> str | None:
+    """Which login a Codex request carries, from its ``Authorization`` header.
+
+    Returns:
+        ``chatgpt`` (a ChatGPT login's token), ``openai`` (an API key), or None.
+    """
+    token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    if token.startswith("sk-"):
+        return OPENAI
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except (ValueError, binascii.Error):
+        return None
+    return CHATGPT if isinstance(claims, dict) and CHATGPT_CLAIM in claims else None

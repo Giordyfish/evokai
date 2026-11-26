@@ -286,6 +286,12 @@ class Settings(BaseSettings):
     # Gateways for coding tools (evokai.gateway)
     gateway_anthropic_url: str = "https://api.anthropic.com"
     """``EVOKAI_GATEWAY_ANTHROPIC_URL``: where a gateway forwards Anthropic Messages requests."""
+    gateway_openai_url: str = "https://api.openai.com/v1"
+    """``EVOKAI_GATEWAY_OPENAI_URL``: where a gateway forwards OpenAI Responses requests made with
+    an OpenAI API key (``sk-...``)."""
+    gateway_chatgpt_url: str = "https://chatgpt.com/backend-api/codex"
+    """``EVOKAI_GATEWAY_CHATGPT_URL``: where a gateway forwards Codex's requests made with a ChatGPT
+    login (the token of a ChatGPT Business or Enterprise seat)."""
     gateway_timeout_seconds: float = 900.0
     """``EVOKAI_GATEWAY_TIMEOUT_SECONDS``: the longest a gateway waits for the provider's next
     bytes (a stream can think for minutes; the provider's pings keep it alive)."""
