@@ -2716,15 +2716,14 @@ class TurnEngine:
         """Whether the application's data protection profile lets data reach the code sandbox.
 
         Returns:
-            True without a profile, or when AgentCore in its region meets it.
+            True without a profile, or when the sandbox (AgentCore, Azure sessions) in its region
+            meets it.
         """
         if not guard.protection or self.code is None:
             return True
         from evokai.protection import processor_allows
 
-        return processor_allows(
-            guard.protection, "agentcore-code-interpreter", region=self.code.region
-        )
+        return processor_allows(guard.protection, self.code.processor, region=self.code.region)
 
     def skill_run_offered(
         self, agent: AgentDef, grants: Grants, guard: TurnGuard, skills: dict[str, Skill]
@@ -2832,13 +2831,15 @@ class TurnEngine:
                 session_id=session_id,
                 turn_id=turn_id,
                 kind="eval" if evaluation else CODE_KIND,
-                model=CODE_MODEL,
+                model=getattr(self.code, "usage_model", CODE_MODEL),
                 characters=out.code_chars,
                 latency_ms=out.session_ms,
                 cost_micro_usd=cost,
                 tool_calls=1,
             )
-            telemetry.record("model_cost", cost, model=CODE_MODEL)
+            telemetry.record(
+                "model_cost", cost, model=getattr(self.code, "usage_model", CODE_MODEL)
+            )
 
     async def _knowledge_bases(self, run: TurnRun) -> list[m.KnowledgeBase]:
         """The knowledge bases the turn's agent may search (existing and granted).

@@ -44,9 +44,11 @@ voice = [
     "pipecat-ai[silero,webrtc]>=1.16.0",
 ]
 # Azure without keys and Claude in Microsoft Foundry: a Microsoft Entra ID token from the managed
-# identity (evokai.core.azure) and the anthropic SDK's Foundry client. See docs/azure.md.
+# identity (evokai.core.azure), the anthropic SDK's Foundry client and the Azure Monitor
+# OpenTelemetry exporter (EVOKAI_OTEL_EXPORTER=azure-monitor). See docs/azure.md.
 azure = [
     "azure-identity>=1.27.0",
+    "azure-monitor-opentelemetry-exporter>=1.0.0b59",
     "pydantic-ai-slim[anthropic]==2.69.0",
 ]
 # Every pydantic-ai-harness capability's dependencies (the catalog, evokai.capabilities), in the

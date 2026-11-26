@@ -31,6 +31,18 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   (`EVOKAI_RERANK_MODEL`, the Cohere v2 rerank API: Cohere Rerank in Foundry, vLLM, Infinity), connected and judged by
   the provider catalog like any model; a failing reranker leaves the fused order. The console's knowledge base form
   has the switch.
+- `code_run` and `skill_run` on Azure: `EVOKAI_CODE_SANDBOX=azure` runs them in an Azure Container Apps dynamic
+  sessions pool (`EVOKAI_CODE_SESSION_POOL_ENDPOINT`, European regions only, a new session per call deleted
+  afterwards, Entra ID token of the managed identity); the processor `azure-container-apps-sessions` is judged in the
+  pool's region. Not verified against a live Azure account.
+- Azure Monitor: `EVOKAI_OTEL_EXPORTER=azure-monitor` sends the OpenTelemetry traces and metrics to Application
+  Insights with Microsoft's exporter (now in the `azure` extra), Entra ID through
+  `APPLICATIONINSIGHTS_AUTHENTICATION_STRING`; the processor `azure-monitor` is judged in the region of its ingestion
+  endpoint.
+- Azure regions in the provider catalog, so an Azure service running in a region the deployment chose is placed by
+  country for the data protection profile.
+- The Azure Container Apps deployment guide in [Running on Azure](docs/azure.md): managed identity, Key Vault
+  references, Azure Database for PostgreSQL, Azure Monitor, and console sign-in with Microsoft Entra ID.
 
 - A system policy for the whole deployment (deployment owners: the operator key or a console owner of every
   application; `GET`/`PUT /v1/console/system-policy`, the **System policy** page). It can only make things stricter:
