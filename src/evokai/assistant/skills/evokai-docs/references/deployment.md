@@ -65,6 +65,11 @@ form. Codes live in the shared state: with `EVOKAI_REDIS_URL` any instance redee
 in the memory of the instance that issued it, so with several tasks behind a load balancer the browser must reach the
 same one (the port-forward to one task does).
 
+## On Azure
+
+[Running on Azure](azure.md) has the Azure Container Apps guide: managed identity, Key Vault references for the keys,
+Azure Database for PostgreSQL, Azure Monitor, and the self-hosted alternative of every Azure piece.
+
 ## More than one instance
 
 Evokai keeps no state of its own outside the database, except what must be counted across requests. To run several

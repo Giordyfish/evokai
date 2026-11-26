@@ -490,6 +490,23 @@ def verdict_view(name: str, kind: str, v: Verdict) -> dict[str, Any]:
     }
 
 
+def insights_region() -> str:
+    """The Azure region of the Application Insights resource Azure Monitor exports to.
+
+    Read from ``IngestionEndpoint`` in ``APPLICATIONINSIGHTS_CONNECTION_STRING``
+    (``https://swedencentral-1.in.applicationinsights.azure.com/``).
+
+    Returns:
+        The region, or ``unknown`` (which no residency rule accepts).
+    """
+    import os
+    import re
+
+    conn = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
+    m = re.search(r"IngestionEndpoint=https://([a-z0-9]+?)(?:-\d+)?\.in\.applicationinsights", conn)
+    return m.group(1) if m else "unknown"
+
+
 CONNECTIONS = {
     "microsoft365": "connection:microsoft",
     "google": "connection:google",
@@ -504,9 +521,10 @@ CONNECTIONS = {
 async def report(svc: Any, app: Any) -> dict[str, Any]:
     """Every external processor the application may use, and whether its profile allows each.
 
-    Models (the catalog's priced ones, the agents' own, the allow-list's), embeddings, guard
-    classifiers, the code sandbox, server speech, connections and the observability exporter; what
-    the browser may send is the application's declaration.
+    Models (the catalog's priced ones, the agents' own, the allow-list's), embeddings, the
+    document reader and the reranker of knowledge bases, guard classifiers, the code sandbox,
+    server speech, connections and the observability exporter; what the browser may send is the
+    application's declaration.
 
     Returns:
         profile, residency, empty, processors (``verdict_view`` each), browser.
@@ -558,12 +576,17 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
     code = getattr(svc, "code", None)
     if st.code_enabled:
         r = getattr(code, "region", None) or st.code_region or region
+        pid = getattr(code, "processor", None) or "agentcore-code-interpreter"
+        out.append(verdict_view(pid, "sandbox", processor_verdict(prof, pid, region=r)))
+    reader = getattr(knowledge, "reader", None)
+    if reader is not None:
         out.append(
-            verdict_view(
-                "agentcore-code-interpreter",
-                "sandbox",
-                processor_verdict(prof, "agentcore-code-interpreter", region=r),
-            )
+            verdict_view(reader.processor, "documents", processor_verdict(prof, reader.processor))
+        )
+    reranker = getattr(knowledge, "reranker", None)
+    if reranker is not None:
+        out.append(
+            verdict_view(reranker.model, "rerank", model_verdict(prof, reranker.model, region))
         )
     if st.voice_enabled:
         from evokai.audio.choice import stt_engines, tts_engines
@@ -577,13 +600,12 @@ async def report(svc: Any, app: Any) -> dict[str, Any]:
         row["processor"] = pid
         out.append(row)
     if st.otel_enabled:
-        out.append(
-            verdict_view(
-                "observability-exporter",
-                "observability",
-                processor_verdict(prof, "observability-exporter"),
-            )
-        )
+        if getattr(st, "otel_exporter", "otlp") == "azure-monitor":
+            v = processor_verdict(prof, "azure-monitor", region=insights_region())
+            out.append(verdict_view("azure-monitor", "observability", v))
+        else:
+            v = processor_verdict(prof, "observability-exporter")
+            out.append(verdict_view("observability-exporter", "observability", v))
     from types import SimpleNamespace
 
     from evokai.engine.builtin_tools import REACHING, STORING, storage_allowed

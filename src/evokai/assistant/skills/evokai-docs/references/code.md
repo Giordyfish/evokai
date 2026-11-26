@@ -3,7 +3,8 @@
 An agent can run Python for analysis of data the conversation already has (a CSV a tool returned, numbers in a
 message, a file attached to a server run) and show the results and charts it computed. The code never runs inside
 Evokai: it runs in **Amazon Bedrock AgentCore Code Interpreter**, an AWS-managed sandbox, in the deployment's EU
-region.
+region, or in an **Azure Container Apps dynamic sessions** pool in a European Azure region (see
+[Azure Container Apps sessions](#azure-container-apps-sessions)).
 
 ## Availability
 
@@ -33,6 +34,27 @@ The task role needs `bedrock-agentcore:StartCodeInterpreterSession`, `InvokeCode
 | `EVOKAI_CODE_INTERPRETER_ID` | `aws.codeinterpreter.v1` | The AWS-managed interpreter, or a custom one |
 | `EVOKAI_CODE_TIMEOUT_SECONDS` | `60` | What one call may take, start and file transfers included |
 | `EVOKAI_CODE_USD_PER_SECOND` | `0.00003` | Estimated cost of a sandbox second (1 vCPU, 2 GB), recorded for the caps |
+
+### Azure Container Apps sessions
+
+`EVOKAI_CODE_SANDBOX=azure` runs `code_run` and `skill_run` in a Python code interpreter **session pool** of Azure
+Container Apps instead of AgentCore. Each call takes a new session identifier (each session is isolated by a Hyper-V
+boundary), writes the input files under `/mnt/data/input/`, runs the code as it was sent, reads back `output/` within
+the same caps, and deletes the session. Evokai authenticates with a Microsoft Entra ID token of its managed identity
+(audience `https://dynamicsessions.io`), which needs the **Azure ContainerApps Session Executor** role on the pool.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EVOKAI_CODE_SANDBOX` | `agentcore` | `azure` for a session pool |
+| `EVOKAI_CODE_SESSION_POOL_ENDPOINT` | none | The pool's `poolManagementEndpoint` (`https://<region>.dynamicsessions.io/subscriptions/.../sessionPools/<name>`); European regions only |
+
+Create the pool with network egress disabled (`az containerapp sessionpool create --container-type PythonLTS
+--network-status EgressDisabled`): the pool, not Evokai, decides whether code reaches the internet. One execution runs
+at most 220 seconds; `EVOKAI_CODE_TIMEOUT_SECONDS` still bounds the whole call. Set `EVOKAI_CODE_USD_PER_SECOND` to the
+pool's own price. The data protection profile judges the processor `azure-container-apps-sessions` in the pool's
+region. Not verified against a live Azure account.
+Sources: [code interpreter sessions](https://learn.microsoft.com/en-us/azure/container-apps/sessions-code-interpreter),
+[the executions API](https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-nodejs).
 
 ## The tool
 

@@ -666,6 +666,24 @@ async def _stream(
                 continue
             if e is None:
                 break
+            if e["type"] == "output":
+                # The structured answer as it is written: the artifact so far, replaced by the
+                # next update (``append: false``) and by the validated one at the end.
+                yield frame(
+                    "artifact-update",
+                    {
+                        "taskId": t.id,
+                        "contextId": t.context_id,
+                        "artifact": {
+                            "artifactId": f"answer-{e['runId']}",
+                            "name": "answer",
+                            "parts": [d.part(e["partial"])],
+                        },
+                        "append": False,
+                        "lastChunk": False,
+                    },
+                )
+                continue
             yield status(False, tool={"name": e["name"], "status": e["status"]})
         try:
             result = task.result()

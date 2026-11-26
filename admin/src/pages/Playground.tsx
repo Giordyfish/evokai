@@ -21,7 +21,17 @@ type Item =
   | { kind: 'user'; text: string }
   | { kind: 'think' }
   | { kind: 'ai'; text: string; visuals: Array<{ chart?: Chart; diagram?: Diagram }>; interrupted?: boolean; cites?: Citation[] }
-  | { kind: 'tool'; name: string; status: 'start' | 'done' | 'error' | 'waiting'; ms?: number; t0: number }
+  | { kind: 'reasoning'; text: string }
+  | {
+      kind: 'tool'
+      name: string
+      status: 'start' | 'done' | 'error' | 'waiting' | 'args' | 'skipped'
+      ms?: number
+      t0: number
+      /** The call, when the agent shows its tools' arguments (show_tool_args). */
+      id?: string
+      args?: Record<string, unknown>
+    }
   | { kind: 'confirm'; actionId: string; items: string[]; state: 'open' | 'approved' | 'rejected' }
   | { kind: 'ask'; question: string; options: string[]; answered?: boolean }
   | { kind: 'note'; text: string; tone?: 'bad' | 'mu' }
@@ -39,6 +49,7 @@ interface Ev {
 const KIND: Record<string, 'meta' | 'tool' | 'text' | 'chart' | 'confirm' | 'usage' | 'bad'> = {
   tool: 'tool',
   text: 'text',
+  reasoning: 'text',
   say: 'text',
   chart: 'chart',
   diagram: 'chart',
@@ -52,6 +63,14 @@ const KIND: Record<string, 'meta' | 'tool' | 'text' | 'chart' | 'confirm' | 'usa
 const COL = { meta: 'var(--e-meta)', tool: 'var(--e-tool)', text: 'var(--e-text)', chart: 'var(--e-chart)', confirm: 'var(--e-confirm)', usage: 'var(--e-usage)', bad: 'var(--s-bad)' }
 const GL = { meta: '○', tool: '◆', text: '●', chart: '▮', confirm: '▲', usage: '■', bad: '⊘' }
 
+/** A call's arguments on one line, cut short (show_tool_args). */
+function argsLine(args: Record<string, unknown>): string {
+  const text = Object.entries(args)
+    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join(', ')
+  return text.length > 200 ? `${text.slice(0, 199)}…` : text
+}
+
 function label(e: Record<string, unknown>): string {
   switch (e.type) {
     case 'conversation':
@@ -59,6 +78,7 @@ function label(e: Record<string, unknown>): string {
     case 'tool':
       return `${e.status} ${e.name}`
     case 'text':
+    case 'reasoning':
       return JSON.stringify(e.delta).slice(0, 60)
     case 'say':
       return `${e.filler ? t('pg.ev.filler') : ''}${String(e.text).slice(0, 60)}`
@@ -284,7 +304,7 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
         const at = Math.round(performance.now() - t0)
         const ev: Ev = { seq: Number(e.seq ?? evs.length + 1), type: String(e.type), t: at, label: label(e), raw: e }
         if (e.type === 'tool' && e.status === 'start') openTools.set(String(e.name), evs.length)
-        if (e.type === 'tool' && e.status !== 'start') {
+        if (e.type === 'tool' && (e.status === 'done' || e.status === 'error')) {
           const i = openTools.get(String(e.name))
           if (i != null) evs[i]!.end = at
         }
@@ -314,10 +334,35 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             })
             break
           }
+          case 'reasoning':
+            push((l) => {
+              const last = l[l.length - 1]
+              if (last?.kind === 'reasoning') return [...l.slice(0, -1), { ...last, text: last.text + String(e.delta) }]
+              return [...unthink(l), { kind: 'reasoning', text: String(e.delta) }, { kind: 'think' }]
+            })
+            break
           case 'tool': {
             const name = String(e.name)
-            if (e.status === 'start') reply.tools.push(name)
-            if (e.status === 'start') push((l) => [...unthink(l), { kind: 'tool', name, status: 'start', t0: at }, { kind: 'think' }])
+            const status = e.status as Extract<Item, { kind: 'tool' }>['status']
+            if (status === 'start') reply.tools.push(name)
+            const id = typeof e.id === 'string' ? e.id : undefined
+            const args = e.args && typeof e.args === 'object' ? { args: e.args as Record<string, unknown> } : {}
+            if (id && status !== 'start') {
+              // A call the agent shows as it is written (show_tool_args): one chip from its arguments to its end.
+              push((l) => {
+                const at0 = l.findIndex((x) => x.kind === 'tool' && x.id === id)
+                if (at0 < 0) return [...unthink(l), { kind: 'tool', name, status, t0: at, id, ...args }, { kind: 'think' }]
+                return l.map((x, k) =>
+                  k === at0 && x.kind === 'tool' ? { ...x, status, ...args, ...(x.status === 'start' ? { ms: at - x.t0 } : {}) } : x,
+                )
+              })
+            } else if (id && status === 'start') {
+              push((l) => {
+                const at0 = l.findIndex((x) => x.kind === 'tool' && x.id === id)
+                if (at0 < 0) return [...unthink(l), { kind: 'tool', name, status: 'start', t0: at, id }, { kind: 'think' }]
+                return l.map((x, k) => (k === at0 && x.kind === 'tool' ? { ...x, status: 'start', t0: at } : x))
+              })
+            } else if (status === 'start') push((l) => [...unthink(l), { kind: 'tool', name, status: 'start', t0: at }, { kind: 'think' }])
             else
               push((l) =>
                 l.map((x) => (x.kind === 'tool' && x.name === name && x.status === 'start' ? { ...x, status: e.status as 'done', ms: at - x.t0 } : x)),
@@ -447,16 +492,27 @@ function Pg({ app, agentName, onApp }: { app: ConsoleApplication; agentName: str
             </div>
           </div>
         )
+      case 'reasoning':
+        return (
+          <details key={i} class="pgreason">
+            <summary>{t('pg.reasoning')}</summary>
+            <div>{x.text}</div>
+          </details>
+        )
       case 'tool':
         return (
-          <span key={i} class="toolchip">
-            {x.status === 'start' ? (
+          <span key={i} class="toolchip" data-status={x.status}>
+            {x.status === 'start' || x.status === 'args' ? (
               <Motes />
             ) : (
-              <span class="ok" style={x.status === 'error' ? 'background:var(--s-bad)' : ''} />
+              <span class="ok" style={x.status === 'error' ? 'background:var(--s-bad)' : x.status === 'done' ? '' : 'background:var(--mu)'} />
             )}
             {x.name}
+            {x.status === 'args' ? <span>{t('pg.toolArgs')}</span> : null}
+            {x.status === 'waiting' ? <span>{t('pg.toolWaiting')}</span> : null}
+            {x.status === 'skipped' ? <span>{t('pg.toolSkipped')}</span> : null}
             {x.ms != null ? <span>{x.ms} ms</span> : null}
+            {x.args ? <code class="toolargs">{argsLine(x.args)}</code> : null}
           </span>
         )
       case 'confirm':

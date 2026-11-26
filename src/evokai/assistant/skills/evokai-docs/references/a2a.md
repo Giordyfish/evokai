@@ -59,7 +59,9 @@ stored.
 
 - **Input**: text parts are the message; data parts and inline text files (`text/*` or JSON, base64) become
   attachments. A file by URL or a binary file is refused (`-32005`).
-- **Output**: one artifact, `answer`, with a text part, or a data part when the agent has an `output_schema`. The
+- **Output**: one artifact, `answer`, with a text part, or a data part when the agent has an `output_schema` (over
+  `message/stream` its data fills in as it is written: `artifact-update` frames with `append: false` and
+  `lastChunk: false`, each replacing the previous, before the final one; see [streaming](streaming.md)). The
   answer is also the last message of the task's `history`. The task's `metadata.evokai` carries the run id, the
   number of tool calls and, when the agent searched a knowledge base, the passages it cites (`citations`).
 - **States**: a task goes `submitted`, `working`, then `completed`, `failed` (a cap, a model failure, an invalid

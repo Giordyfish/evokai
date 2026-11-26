@@ -209,8 +209,10 @@ answer is kept and marked as interrupted).
 ### What a reload shows
 
 A stored message keeps what the person was shown with it as ordered parts (`evokai.sessions.parts`): its `events` are
-every event that drew something, in the order it was shown, with consecutive `text` deltas joined, a tool's `start`
-and end as one `tool` event with its last status, a `client_tool` that waited with `status` (`done` or `error`), and
+every event that drew something, in the order it was shown, with consecutive `text` deltas joined (and `reasoning`
+deltas, for an agent that [shows its reasoning](streaming.md)), a tool's `start` and end as one `tool` event with its
+last status (and, for an agent that shows its tools' arguments, the last arguments shown; a call still being written
+when the turn ends is dropped), a `client_tool` that waited with `status` (`done` or `error`), and
 `chart`, `diagram`, `ask`, `navigate`, `connect`, `confirm`, `citation`, `handoff` and `error` as they were sent. Each
 assistant message of a turn (one per model step) takes what was shown since the previous one; what comes after the
 last one (the tool-call cap's sentence, an error) joins it. `GET /v1/session/conversation` and
@@ -219,7 +221,8 @@ order, through the same code as the live stream: a reload shows the same tool ca
 citations and errors, in the same place, as one answer per turn. External storage returns the same events in
 `done.messages`, and the application sends them back with its history.
 
-Only what a browser was sent is kept: never a tool's arguments or result, never what a page answered to a client tool
+Only what a browser was sent is kept: never a tool's result, nor its arguments unless the agent sends them
+(`show_tool_args`), never what a page answered to a client tool
 (the page has it; the model reads it in the message's `content`), never usage or speech segments. With `pii.history`
 enforced the stored parts are masked like the stored text. They live in the message's row, so the conversation's time
 to live, its deletion, the privacy export and the erasure cover them.
@@ -339,11 +342,12 @@ Mounted under `EVOKAI_BASE_PATH` (`/agent` by default). OpenAPI at `{base}/opena
 | GET, POST | `/v1/admin/costs/...`, `/v1/admin/agents/{agent}/model-recommendations`, `/switch-model` | console role or admin key | month-end forecasts and alerts, the cheapest model that passes, prompt cache hints, as shares ([costs](costs.md)) |
 | GET, PUT, POST | `/v1/admin/compliance/{pack}`, `/profile`, `/snapshots[/{id}/{pack}]`, `/snapshots/diff` | console role or admin key (profile: owner) | the compliance packs as JSON, Markdown or HTML in English or Italian, the controller's statements, snapshots and their diff ([compliance](compliance.md)) |
 | GET | `/v1/admin/traces[/{id}]`, `/v1/admin/agents/{name}/version-stats` | console role or admin key | traces with filters and their spans; each version of an agent side by side (shares, never amounts) |
+| GET | `/v1/admin/agents/{name}/types` | console role or admin key | a TypeScript `.d.ts` of the agent's tools' arguments and results and its `output_schema` (`evokai types`, [streaming](streaming.md#typescript-types-of-an-agents-tools)) |
 | GET, POST, DELETE | `/v1/admin/conversations[/{id}[/notes[/{noteId}]]]` | console role or admin key (notes: operator) | conversation review with thumbs and notes filters, each turn's trace, reviewers' notes (audited) |
 | GET | `/v1/console/me`, `/applications`, `/health` | console cookie | who is logged in, its applications, health |
 | GET, PUT, DELETE | `/v1/console/me/preferences` | console cookie | the signed-in person's console preferences (language, appearance, accessibility), per console identity; audited |
 
-Events: `conversation`, `text` (delta), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (start/done/error),
+Events: `conversation`, `text` (delta), `reasoning` (delta, an agent with [`show_reasoning`](streaming.md)), `say` (`{index, text, spoken?, tagged?, marks?, filler?}`, [inline markup](markup.md)), `tool` (`{name, status, id?, args?}`: start/done/error; with [`show_tool_args`](streaming.md) also args/waiting/skipped),
 `chart` (a chart, or an `image` the agent's code drew), `diagram`, `ask`, `navigate`, `confirm` (`{actionId, items, why}`: `why[i]` says why
 `items[i]` waits, an i18n key and an [ask rule](security.md#ask-rules)'s label), `rewritten` (`{replaced, messageId, replacedFrom?}`, the
 last question was [rewritten](#rewriting-the-last-question)), `citation` (`{index, kb, documentId, title,

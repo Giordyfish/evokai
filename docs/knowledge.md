@@ -69,9 +69,20 @@ upload / address / connector ─▶ document (queued) ─▶ worker: read ─▶
 | Text | Evokai | headings recognised as in PDFs |
 | CSV | the standard library | one table, its header repeated in every chunk |
 
-There is no OCR: a scanned PDF without a text layer fails with the reason «the PDF has no text layer (a scan?): text
-recognition (OCR) is not available». Amazon Textract is not available in `eu-north-1`; a local OCR engine (for example
-Tesseract in the image) could be added later as one more extractor, without changing the rest of the pipeline.
+Evokai itself does no OCR. A scanned PDF without a text layer goes to the deployment's **document reader** when it
+has one (`EVOKAI_DOCUMENT_READER`) and the application's [data protection profile](data-protection.md) allows that
+processor; otherwise it fails with the reason «the PDF has no text layer (a scan?): text recognition (OCR) is not
+available» (or that the profile does not allow it). Documents with a text layer never leave the process.
+
+| Reader | `EVOKAI_DOCUMENT_READER` | Settings | Processor |
+|---|---|---|---|
+| Azure AI Document Intelligence, `prebuilt-layout` with Markdown output (REST 2024-11-30) | `azure` | `EVOKAI_DOCUMENT_INTELLIGENCE_ENDPOINT`, `_KEY` (unset: a Microsoft Entra ID token of the managed identity), `_MODEL` | `azure-document-intelligence` |
+| docling-serve of the deployment's own (`POST /v1/convert/file`, OCR on) | `docling` | `EVOKAI_DOCLING_URL`, `EVOKAI_DOCLING_KEY` (`X-Api-Key`) | `docling` (declared by the operator) |
+
+Both answer Markdown with page breaks, read page by page like any Markdown document (Document Intelligence's HTML
+tables as tables). Document Intelligence keeps a document and its result for 24 hours unless the result is deleted:
+Evokai deletes it as soon as it has read it. Amazon Textract is not available in `eu-north-1`. Neither reader has been
+run against a live service yet ([Azure](azure.md)).
 
 ### Chunking
 
@@ -91,6 +102,19 @@ Bedrock id runs in the deployment's region, so an application whose models must 
 deployment is in the EU, and a residency outside it refuses it (400 `embedding_model`). `test:hash` is a local model
 for tests (hashed words, free).
 
+Any other model goes through the OpenAI embeddings API of the endpoint the [provider catalog](data-protection.md#a-deployments-own-entries)
+connects it to, and its facts there decide the residency:
+
+- `api: azure`: an Azure OpenAI or Foundry deployment (`azure:text-embedding-3-large`), with its key or, without one,
+  a Microsoft Entra ID token of the managed identity ([Azure](azure.md)); the base's dimensions are asked for
+  (`dimensions`). `azure:<deployment>` with no declared endpoint uses `AZURE_OPENAI_ENDPOINT` and
+  `OPENAI_API_VERSION`.
+- `api: openai-compatible`: a self-hosted server (Ollama, vLLM, Hugging Face Text Embeddings Inference) under a
+  provider id of the deployment's own (`our-tei:BAAI/bge-m3`); the model makes its own size, which must be the base's
+  (else the call fails with `dimensions`).
+
+Both need the model in `EVOKAI_EMBEDDING_ALLOW`.
+
 Every embedding call is a usage record of kind `embed` with its input tokens and cost: ingestion under the subject
 `system:knowledge` (tags `knowledge:<base>`), a search under the subject that asked (with its agent, conversation and
 turn), the console's test search under `console:knowledge`. The application's caps count them; ingestion stops a
@@ -106,13 +130,52 @@ shares, never amounts.
    (Postgres full text in the base's language, or BM25), `candidates` (40) each.
 3. Reciprocal rank fusion: a chunk scores the sum of `1 / (60 + rank)` over the lists it is in. A chunk found only by
    meaning must reach `min_score` (cosine similarity; 0 keeps them all).
-4. Optional maximal marginal relevance (`mmr`, `mmr_lambda` 0.7): chunks are picked one by one, trading relevance for
+4. Optional reranking (`rerank`): the deployment's reranker scores the fused candidates against the question, and its
+   scores (0 to 1) replace the fused ones. A reranker that fails, times out or is not allowed by the application's
+   profile leaves the fused order: a search never fails because of it.
+5. Optional maximal marginal relevance (`mmr`, `mmr_lambda` 0.7): chunks are picked one by one, trading relevance for
    difference from the ones already picked, so near-duplicates give way; the picked ones are shown by relevance.
-5. The best `top_k` (5); the agent can set its own `top_k`.
+6. The best `top_k` (5); the agent can set its own `top_k`.
 
-Settings per base (`retrieval`): `top_k`, `min_score`, `hybrid` (the word search on), `mmr`, `mmr_lambda`,
-`candidates`. Each result carries a relevance from 0 to 1 (its fused score as a share of the best possible), its
-cosine similarity and its rank in each search.
+Settings per base (`retrieval`): `top_k`, `min_score`, `hybrid` (the word search on), `rerank`, `mmr`, `mmr_lambda`,
+`candidates`. Each result carries a relevance from 0 to 1 (its fused score as a share of the best possible, or the
+reranker's score), its cosine similarity and its rank in each search.
+
+### Reranking
+
+`EVOKAI_RERANK_MODEL` names the reranker as `provider:model`; its endpoint in the
+[provider catalog](data-protection.md#a-deployments-own-entries) gives the base URL, the key (`api_key_env`, sent as
+a bearer token) and the facts the profile reads, as for any model. Evokai speaks one API, the Cohere v2 rerank shape
+(`POST {base_url}/rerank` with `model`, `query`, `documents`, `top_n`; `results` with `index` and
+`relevance_score`):
+
+```yaml
+providers:
+  - id: azure
+    title: Azure
+    endpoints:
+      - id: ours-rerank                    # Cohere Rerank sold by Azure in a Foundry resource
+        like: azure-datazone-eu
+        models: ["azure:Cohere-rerank-*"]
+        api: azure                         # no key: a Microsoft Entra ID token of the managed identity
+        base_url: https://ours.services.ai.azure.com/providers/cohere/v2
+        declared_by: operator
+  - id: our-vllm                           # self-hosted: vLLM (/v2/rerank) or Infinity (/rerank)
+    title: Our vLLM
+    self_hosted: true
+    entity: {name: ACME S.p.A., country: IT, controlled_from: IT}
+    endpoints:
+      - id: milan
+        models: ["our-vllm:*"]
+        api: openai-compatible
+        base_url: http://vllm.internal:8000/v2
+        place: {geography: eu, countries: [IT]}
+        declared_by: operator
+```
+
+Reranking calls are not recorded as usage and do not count against the application's caps. The Foundry rerank path
+is not in Microsoft's API reference (only in Foundry's endpoint panel); it is not verified against a live Azure
+account.
 
 ## Access
 

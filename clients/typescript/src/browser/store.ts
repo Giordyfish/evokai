@@ -19,6 +19,7 @@ import type {
   RewrittenEvent,
   SessionConversation,
   StoredMessage,
+  ToolStatus,
   TurnPhase,
   UsageShares,
   VoiceActivity,
@@ -29,13 +30,21 @@ export type ConfirmState = 'open' | 'approved' | 'rejected' | 'closed'
 
 export type Part =
   | { kind: 'text'; text: string }
+  /** The model's reasoning (`show_reasoning`): show it collapsed. */
+  | { kind: 'reasoning'; text: string }
   | {
       kind: 'tool'
+      /**
+       * `start`, `done`, `error`; for an agent that shows its tools' arguments also `args` (being written), `waiting`
+       * (for the person's confirmation) and `skipped` (not run). Only `start`, `done` and `error` mean it ran.
+       */
+      status: ToolStatus
       name: string
-      status: 'start' | 'done' | 'error'
       /** A custom client tool: its call, arguments and (once your handler answered) result or error. */
       client?: true
+      /** The call (a client tool's, or any call the service names). */
       callId?: string
+      /** A client tool's arguments, or the arguments the agent shows (`show_tool_args`). */
       args?: Record<string, unknown>
       result?: unknown
       error?: string
@@ -233,13 +242,27 @@ const addCitation = (c: Citation) => (m: ChatMessage): ChatMessage => ({ ...m, c
 function partUpdate(e: EvokaiEvent): ((m: ChatMessage) => ChatMessage) | null {
   switch (e.type) {
     case 'text':
+    case 'reasoning': {
+      const kind = e.type
       return (m) => {
         const last = m.parts[m.parts.length - 1]
-        if (last?.kind === 'text') return { ...m, parts: [...m.parts.slice(0, -1), { kind: 'text', text: last.text + e.delta }] }
-        return { ...m, parts: [...m.parts, { kind: 'text', text: e.delta }] }
+        if (last?.kind === kind) return { ...m, parts: [...m.parts.slice(0, -1), { kind, text: last.text + e.delta }] }
+        return { ...m, parts: [...m.parts, { kind, text: e.delta }] }
       }
+    }
     case 'tool':
       return (m) => {
+        const args = e.args !== undefined ? { args: e.args } : {}
+        if (e.id) {
+          // A call with an id: its arguments, its start and its end update one card.
+          const at = m.parts.findIndex((p) => p.kind === 'tool' && !p.client && p.callId === e.id)
+          if (at >= 0) {
+            const parts = [...m.parts]
+            parts[at] = { ...(m.parts[at] as Extract<Part, { kind: 'tool' }>), status: e.status, ...args }
+            return { ...m, parts }
+          }
+          return { ...m, parts: [...m.parts, { kind: 'tool', name: e.name, status: e.status, callId: e.id, ...args }] }
+        }
         const idx = m.parts.findIndex((p) => p.kind === 'tool' && p.name === e.name && p.status === 'start')
         if (e.status !== 'start' && idx >= 0) {
           const parts = [...m.parts]
@@ -374,6 +397,8 @@ function withRegenerable(messages: ChatMessage[], regenerable: boolean | undefin
   })
 }
 
+const unfinished = (p: Part): boolean => p.kind === 'tool' && !p.client && p.status === 'args'
+
 function applyDone(state: SessionState, e: DoneEvent): SessionState {
   const turnId = e.turnId ?? null
   let messages = state.messages
@@ -382,6 +407,8 @@ function applyDone(state: SessionState, e: DoneEvent): SessionState {
       .map((m) => {
         if (m.turnId !== turnId) return m
         const { local: _local, ...rest } = m
+        // A call still being written when the turn ended never ran: the service does not keep it either.
+        if (rest.parts.some(unfinished)) rest.parts = rest.parts.filter((p) => !unfinished(p))
         return INTERRUPTED.has(String(e.reason)) && m.role === 'assistant' ? { ...rest, interrupted: true } : rest
       })
       .filter((m) => m.role === 'user' || m.parts.length > 0)

@@ -764,6 +764,13 @@ class TurnGuard:
             return pii.mask(t, types, self.declared) if spans and p.enforced("pii.history") else t
 
         blocks = [_stored_block(b, scan) for b in content_blocks]
+        # A model's reasoning kept for a confirmation is sent back unchanged or not at all (its
+        # signature covers it): masked, it is dropped.
+        blocks = [
+            b
+            for b, before in zip(blocks, content_blocks, strict=True)
+            if not (isinstance(b, dict) and "reasoning" in b and b != before)
+        ]
         text = scan(text) if text else text
         self._pii_event("pii.history", found, add=True)
         return blocks, text

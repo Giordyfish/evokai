@@ -20,7 +20,8 @@ Mapping (see ``docs/ag-ui.md``):
   A ``CUSTOM`` event (``evokai.confirm``, ``evokai.ask``) carries the same payload for frontends
   that render human-in-the-loop with their own components;
 - ``chart``, ``diagram``, ``navigate``, ``say``, ``speech``, ``citation`` (a knowledge base passage
-  the answer cites) → ``CUSTOM`` (``evokai.<type>``);
+  the answer cites), ``reasoning`` (``show_reasoning``) → ``CUSTOM`` (``evokai.<type>``); a
+  ``tool`` event about a call that has not run (``args``, ``waiting``, ``skipped``) is not sent;
 - ``usage`` → ``CUSTOM evokai.usage`` and a ``STATE_DELTA`` of ``/evokai/usage`` (shares of the
   caps, never amounts); the run starts with a ``STATE_SNAPSHOT`` of ``{evokai: {conversationId,
   agent, turnId}}``;
@@ -56,7 +57,10 @@ CONFIRM_SCHEMA = {
     "properties": {"approved": {"type": "boolean"}},
     "required": ["approved"],
 }
-CUSTOM_EVENTS = ("chart", "diagram", "navigate", "say", "speech", "citation")
+UNRUN = frozenset({"args", "waiting", "skipped"})
+"""Statuses of a ``tool`` event about a call that has not run (``show_tool_args``)."""
+
+CUSTOM_EVENTS = ("chart", "diagram", "navigate", "say", "speech", "citation", "reasoning")
 
 
 class AguiMessage(BaseModel):
@@ -247,6 +251,9 @@ class Translator:
             return out
         if kind == "tool":
             name = str(e.get("name") or "")
+            if e.get("status") in UNRUN:
+                # A call being written, waiting for a confirmation or not run: no AG-UI call yet.
+                return []
             if e.get("status") == "start":
                 self.calls += 1
                 call_id = self.tools[name] = f"{self.turn_id}-t{self.calls}"

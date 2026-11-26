@@ -15,6 +15,7 @@ from evokai import (
     DoneEvent,
     ErrorEvent,
     NavigateEvent,
+    ReasoningEvent,
     SayEvent,
     SpeechEvent,
     TextEvent,
@@ -61,6 +62,12 @@ CASES: list[tuple[dict[str, Any], type, dict[str, Any]]] = [
         ToolEvent,
         {"name": "crm_search", "status": "done"},
     ),
+    (
+        {"type": "tool", "name": "crm_search", "status": "args", "id": "c1", "args": {"q": "Ro"}},
+        ToolEvent,
+        {"name": "crm_search", "status": "args", "id": "c1", "args": {"q": "Ro"}},
+    ),
+    ({"type": "reasoning", "delta": "Looking up."}, ReasoningEvent, {"delta": "Looking up."}),
     (
         {"type": "chart", "chart": {"type": "kpi", "title": "T", "subtitle": "", "items": []}},
         ChartEvent,

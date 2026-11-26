@@ -1,11 +1,13 @@
-"""Command line: serve, migrate, bootstrap, generate keys."""
+"""Command line: serve, migrate, bootstrap, generate keys, types of an agent's tools."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 from evokai.core.config import Settings, get_settings
 
@@ -81,8 +83,6 @@ def _connectors(args: argparse.Namespace) -> int:
     Returns:
         Exit code.
     """
-    import os
-
     import yaml
 
     from evokai.agents.bootstrap import expand_env
@@ -121,6 +121,37 @@ def _connectors(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{args.token_env} is empty\n")
         return 2
     uvicorn.run(mcp_app(connector, token), host=args.host, port=args.port, log_config=None)
+    return 0
+
+
+def _types(args: argparse.Namespace) -> int:
+    """``evokai types``: the ``.d.ts`` of an agent's tools (``GET /v1/admin/agents/{name}/types``).
+
+    Returns:
+        Exit code.
+    """
+    import httpx
+
+    key = os.environ.get(args.key_env, "")
+    if not key:
+        sys.stderr.write(f"{args.key_env} is empty: set it to the application's admin key\n")
+        return 2
+    url = f"{args.url.rstrip('/')}/v1/admin/agents/{quote(args.agent, safe='')}/types"
+    headers = {"Authorization": f"Bearer {key}"}
+    if args.credential_env:
+        headers["X-Evokai-Credential"] = os.environ.get(args.credential_env, "")
+    try:
+        r = httpx.get(url, headers=headers, timeout=60)
+    except httpx.HTTPError as e:
+        sys.stderr.write(f"{url}: {type(e).__name__}\n")
+        return 1
+    if r.status_code != 200:
+        sys.stderr.write(f"{url}: {r.status_code} {r.text[:500]}\n")
+        return 1
+    if args.out:
+        Path(args.out).write_text(r.text, encoding="utf-8")
+    else:
+        sys.stdout.write(r.text)
     return 0
 
 
@@ -168,6 +199,25 @@ def main(argv: list[str] | None = None) -> int:
             c.add_argument("--port", type=int, default=8790)
             c.add_argument("--host", default="127.0.0.1")
             c.add_argument("--token-env", help="require this variable's value as a bearer token")
+    types = sub.add_parser(
+        "types", help="TypeScript types of an agent's tools, from a running Evokai (admin key)"
+    )
+    types.add_argument("--agent", required=True, help="the agent's name")
+    types.add_argument("--out", help="write to this file instead of stdout")
+    types.add_argument(
+        "--url",
+        default=os.environ.get("EVOKAI_URL", "http://localhost:8787/agent"),
+        help="Evokai's base URL, with its path prefix (default $EVOKAI_URL or the local one)",
+    )
+    types.add_argument(
+        "--credential-env",
+        help="a variable holding a person's credential, for MCP servers that forward it",
+    )
+    types.add_argument(
+        "--key-env",
+        default="EVOKAI_ADMIN_KEY",
+        help="the variable that holds the application's admin key (default EVOKAI_ADMIN_KEY)",
+    )
     spec = sub.add_parser("openapi", help="print the OpenAPI schema (voice routes included)")
     spec.add_argument("--out", help="write to this file instead of stdout")
     args = parser.parse_args(argv)
@@ -253,6 +303,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "connectors":
         return _connectors(args)
+    if args.cmd == "types":
+        return _types(args)
     if args.cmd == "openapi":
         import json
 

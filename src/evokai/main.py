@@ -358,6 +358,11 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     app.router.routes.append(Route(app.state.admin_mcp.path, app.state.admin_mcp))
     if settings.admin_ui_enabled:
         mount_console(app, settings)
-    setup_telemetry(app, enabled=settings.otel_enabled, service_name=settings.service_name)
+    setup_telemetry(
+        app,
+        enabled=settings.otel_enabled,
+        service_name=settings.service_name,
+        exporter=settings.otel_exporter,
+    )
     logging.getLogger("evokai").debug("app_created")
     return app

@@ -22,7 +22,7 @@ import { spotOf, TravelOrb, type TravelHandle } from './travel'
 import { Icon, type IconName } from './icons'
 import { ConnectCard, ConnectionsView } from './connections'
 import { MemoryAsk, MemoryView } from './memory'
-import { fill } from './strings'
+import { fill, type Strings } from './strings'
 import type { OrbColors, OrbImages } from './theme'
 import { UsageRing } from './usage'
 import { AskCard, ChartView, ConfirmCard, DiagramView } from './visuals'
@@ -149,6 +149,32 @@ function OwnPart({ render, part, children }: { render: ToolRenderer; part: ToolP
   return el ? <Own el={el} /> : children
 }
 
+/** What a tool card says after its name: running, failed, or (shown arguments) not run yet. */
+function toolStatus(s: Strings, status: ToolPart['status']): string {
+  switch (status) {
+    case 'start':
+      return s.toolRunning
+    case 'error':
+      return `, ${s.toolFailed}`
+    case 'args':
+      return `, ${s.toolPreparing}`
+    case 'waiting':
+      return `, ${s.toolWaiting}`
+    case 'skipped':
+      return `, ${s.toolSkipped}`
+    default:
+      return ''
+  }
+}
+
+/** A call's arguments on one line, cut short (the agent shows them: show_tool_args). */
+function argsText(args: Record<string, unknown>): string {
+  const text = Object.entries(args)
+    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join(', ')
+  return text.length > 240 ? `${text.slice(0, 239)}…` : text
+}
+
 function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string | null; c: Controller; st: ControllerState; keyTarget: EventTarget | null } }) {
   const { s, toolLabel, toolRenderer } = useUi()
   // A page's own card for this tool (`toolRenderers`), else the default view.
@@ -173,15 +199,31 @@ function Parts({ m, p }: { m: ChatMessage; p: { busy: boolean; openAsk: string |
         switch (part.kind) {
           case 'text':
             return <Markdown key={i} text={stripMarkup(part.text, p.st.markup)} cites={cites} cite={(c, k) => <Cite key={k} c={c} />} />
+          case 'reasoning':
+            // The model's reasoning (show_reasoning): collapsed, the answer stays in front.
+            return (
+              <details key={i} class="reasoning" part="reasoning">
+                <summary>{s.reasoning}</summary>
+                <div class="reasoning-text">{part.text}</div>
+              </details>
+            )
           case 'tool': {
             const { kind: _k, client: _c, ...shown } = part
+            const args = !part.client && part.args ? argsText(part.args) : ''
             return mine(
               i,
               shown,
               <div key={i} class={`tool ${part.status}`} part="tool" data-status={part.status}>
                 <i aria-hidden="true" />
-                {label(part.name)}
-                {part.status === 'start' ? s.toolRunning : part.status === 'error' ? `, ${s.toolFailed}` : ''}
+                <span>
+                  {label(part.name)}
+                  {toolStatus(s, part.status)}
+                </span>
+                {args ? (
+                  <code class="tool-args" part="tool-args">
+                    {args}
+                  </code>
+                ) : null}
               </div>,
             )
           }

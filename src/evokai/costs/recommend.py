@@ -151,7 +151,11 @@ def cache_suggestion(
     if prompt_cache != "off":
         return None
     name = normalize(model)
-    if provider_of(name) not in ("bedrock", "anthropic") or not anthropic_family(name):
+    if provider_of(name) not in (
+        "bedrock",
+        "anthropic",
+        "anthropic-foundry",
+    ) or not anthropic_family(name):
         return None
     tokens = round(stable_chars / CHARS_PER_TOKEN)
     minimum = min_cache_tokens(model)

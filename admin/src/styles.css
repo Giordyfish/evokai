@@ -224,6 +224,11 @@ td .seg{flex-wrap:nowrap}td .seg [data-v]{padding:0 9px;white-space:nowrap}
 .who img{width:22px}
 .toolchip{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;padding:5px 10px 5px 6px;border-radius:99px;background:var(--glass2);border:1px solid var(--hair2);font:12.5px var(--mono);color:var(--mu)}
 .toolchip .ok{width:8px;height:8px;margin:0 4px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 20%,transparent)}
+.toolchip:has(.toolargs){flex-wrap:wrap;border-radius:var(--r-md)}
+.toolargs{flex-basis:100%;padding-left:18px;font:11.5px/1.4 var(--mono);color:var(--mu);white-space:pre-wrap;overflow-wrap:anywhere}
+.pgreason{align-self:stretch;font-size:12.5px;color:var(--mu)}
+.pgreason summary{cursor:pointer;width:max-content;max-width:100%}
+.pgreason > div{margin-top:6px;padding-left:10px;border-left:2px solid var(--hair2);white-space:pre-wrap;overflow-wrap:anywhere}
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 6px}
 .kpis div{padding:10px 12px;border-radius:var(--r-md);background:var(--glass2);border:1px solid var(--hair2)}
 .kpis span{font-size:12px;color:var(--mu)}.kpis b{display:block;font:600 22px var(--disp);letter-spacing:-.02em}.kpis em{font:500 12px var(--ui);font-style:normal;color:var(--ok)}.kpis em.dn{color:var(--bad)}

@@ -374,7 +374,9 @@ class Trace:
 _PROVIDERS = {
     "bedrock": "aws.bedrock",
     "openai": "openai",
+    "azure": "azure.ai.openai",
     "anthropic": "anthropic",
+    "anthropic-foundry": "anthropic",
     "mistral": "mistral_ai",
     "google-gla": "gcp.gemini",
     "google-vertex": "gcp.vertex_ai",

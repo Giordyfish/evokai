@@ -450,7 +450,9 @@ async def _stream(
     security policy rewrites text, else sentence by sentence, each sentence through the output
     guard first (``evokai.guard.output.SentenceGate``). A sentence the guard stops (the agent's
     instructions repeated) ends the stream with an error chunk. A structured answer
-    (``output_schema``) comes in one chunk at the end.
+    (``output_schema``) comes in one chunk at the end; while the model writes it, chunks with an
+    empty delta carry the object so far as ``evokai.output`` (through the output checks, not
+    validated yet: each replaces the previous one).
 
     Yields:
         Server-sent events.
@@ -491,6 +493,11 @@ async def _stream(
                 streamed = True
                 shown += e["delta"]
                 yield chunk({"content": e["delta"]})
+                continue
+            if e["type"] == "output":
+                # A structured answer as it is written: the object so far (``evokai.output``),
+                # replaced by the next; the final content chunk carries the validated one.
+                yield chunk({}, evokai={"output": e["partial"]})
                 continue
             yield chunk({}, evokai={"tool": {"name": e["name"], "status": e["status"]}})
         try:
