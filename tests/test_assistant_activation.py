@@ -261,11 +261,10 @@ async def test_try_runs_suite_against_fake_mcp_and_records_numbers(trial_env: En
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["runId"]
-    for _ in range(400):
-        run = await env.svc.store.evals.run(app_id, run_id)
-        if run is not None and run.status != "running":
-            break
-        await asyncio.sleep(0.05)
+    # The try's own task ends after its numbers are stored: polling the run's status raced it
+    # (the run is marked done first, the numbers follow), and failed once on CI Postgres.
+    await asyncio.wait_for(asyncio.gather(*env.svc.evals.tasks), 60)
+    run = await env.svc.store.evals.run(app_id, run_id)
     assert run is not None and run.status == "done", run and run.summary
     results = await env.svc.store.evals.results(run_id)
     assert len(results) == len(suite())
