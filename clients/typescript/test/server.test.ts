@@ -264,7 +264,7 @@ describe('runs, console views and the console client', () => {
       contrast: 'more' as const,
       focusAlways: true,
       underlineLinks: false,
-      tours: { 'first-steps': 3 },
+      tours: { 'first-steps': { step: 3, at: 1764000000000 } },
       tourInvite: 'dismissed' as const,
     }
     const m = mockFetch({

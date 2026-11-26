@@ -8,7 +8,7 @@ import { t, tn } from '../i18n'
 import { onPrefs, prefs, reducedMotion, setPrefs } from '../prefs'
 import { Btn, Icon } from '../ui'
 import { type Box, placeCard, spotlight } from './engine'
-import { exitTour, guides, moveTour, onTour, openTour, type TourRun, tourRun, tourText } from './run'
+import { exitTour, guides, moveTour, onTour, openTour, refreshGateways, type TourRun, tourRun, tourText } from './run'
 import { FIRST_TOUR } from './tours'
 
 /** The run as it changes. */
@@ -25,6 +25,17 @@ const boxOf = (el: Element): Box => {
 const sameBox = (a: Box | null, b: Box) => !!a && Math.abs(a.top - b.top) < 0.5 && Math.abs(a.left - b.left) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5
 const view = () => ({ width: innerWidth, height: innerHeight })
 
+/**
+ * Where the assistant's open chat panel starts on the left (it sits above everything at the right of the screen), or
+ * null when it is closed or covers the whole screen (a phone). The card is placed in the room left of it.
+ */
+function chatEdge(): number | null {
+  const chat = document.querySelector('evokai-chat')
+  if (!chat?.hasAttribute('open')) return null
+  const r = chat.shadowRoot?.querySelector('[part~="panel"]')?.getBoundingClientRect()
+  return r && r.width && r.left > 240 ? Math.round(r.left) : null
+}
+
 /** Focusable controls of the card, in order (the focus stays among them while the tour runs). */
 const focusables = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('button:not([disabled]),a[href]')]
 
@@ -37,7 +48,8 @@ export function TourOverlay() {
   const card = useRef<HTMLElement>(null)
   const next = useRef<HTMLButtonElement | null>(null)
   const [box, setBox] = useState<Box | null>(null)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [edge, setEdge] = useState<number | null>(null)
+  const [lay, setLay] = useState<{ top: number; left: number; spot: Box } | null>(null)
   const target = run?.target ?? null
   const moving = run?.moving ?? false
 
@@ -49,7 +61,7 @@ export function TourOverlay() {
     for (const el of behind) el.inert = true
     return () => {
       for (const el of behind) el.inert = false
-      setPos(null)
+      setLay(null)
       setBox(null)
     }
   }, [on])
@@ -61,11 +73,18 @@ export function TourOverlay() {
     target.scrollIntoView({ block: tall ? 'start' : 'center', inline: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' })
     let frame = 0
     let last: Box | null = null
+    let lastEdge: number | null = null
     const follow = () => {
       const b = boxOf(target)
       if (!sameBox(last, b)) {
         last = b
         setBox(b)
+      }
+      // The assistant's panel may open or close meanwhile: the card moves out of its way.
+      const e = chatEdge()
+      if (e !== lastEdge) {
+        lastEdge = e
+        setEdge(e)
       }
       frame = requestAnimationFrame(follow)
     }
@@ -73,15 +92,19 @@ export function TourOverlay() {
     return () => cancelAnimationFrame(frame)
   }, [target])
 
-  // The card beside the spotlight, once its size is known.
-  // While the next page opens there is no spotlight: the page is dimmed and the card waits where it was.
+  // The card beside the spotlight once its size is known, in the room the assistant's panel leaves. While the next
+  // page opens there is no spotlight: the page is dimmed and the card waits where it was.
   const spot = box && !moving ? spotlight(box, view()) : null
   useLayoutEffect(() => {
     const c = card.current
     if (!c || !spot) return
-    const p = placeCard(spot, { width: c.offsetWidth, height: c.offsetHeight }, view(), run?.steps[run.index]?.placement)
-    if (!pos || Math.abs(pos.top - p.top) > 0.5 || Math.abs(pos.left - p.left) > 0.5) setPos({ top: p.top, left: p.left })
+    const room = edge != null ? { width: edge - 8, height: innerHeight } : view()
+    const p = placeCard(spot, { width: c.offsetWidth, height: c.offsetHeight }, room, run?.steps[run.index]?.placement)
+    const same = lay && Math.abs(lay.top - p.top) < 0.5 && Math.abs(lay.left - p.left) < 0.5 && sameBox(lay.spot, p.spot)
+    if (!same) setLay({ top: p.top, left: p.left, spot: p.spot })
   })
+  const lit = spot && lay ? lay.spot : spot
+  const pos = lay
 
   // Each step shown: the focus on Next (unless the person is typing to the assistant).
   useEffect(() => {
@@ -135,8 +158,8 @@ export function TourOverlay() {
     <div class={`tour ${moving ? 'moving' : ''}`}>
       {/* The dim page: a click there does nothing (Exit leaves). */}
       <div class="tour-block" aria-hidden="true" />
-      {spot ? (
-        <div class="tour-spot" aria-hidden="true" style={{ top: `${spot.top}px`, left: `${spot.left}px`, width: `${spot.width}px`, height: `${spot.height}px` }} />
+      {lit ? (
+        <div class="tour-spot" aria-hidden="true" style={{ top: `${lit.top}px`, left: `${lit.left}px`, width: `${lit.width}px`, height: `${lit.height}px` }} />
       ) : (
         <div class="tour-dim" aria-hidden="true" />
       )}
@@ -190,6 +213,8 @@ export function GuidesMenu() {
   useEffect(() => onPrefs(() => setN((x) => x + 1)), [])
   useEffect(() => {
     if (!open) return
+    // The gateway tour's steps depend on the gateways this person sees.
+    void refreshGateways().then(() => setN((x) => x + 1))
     pop.current?.querySelector<HTMLElement>('button')?.focus()
     const away = (e: MouseEvent) => {
       if (!(e.target as Element).closest('.guides')) setOpen(false)
@@ -242,7 +267,7 @@ export function GuidesMenu() {
                   kind={status.kind === 'stopped' ? 'pri' : ''}
                   onClick={() => {
                     setOpen(false)
-                    openTour(tour.id, status.kind === 'done')
+                    void openTour(tour.id, status.kind === 'done')
                   }}
                 >
                   {status.kind === 'stopped' ? t('tour.resume') : status.kind === 'done' ? t('tour.again') : t('tour.start')}
@@ -270,7 +295,7 @@ export function TourInvite() {
         <p>{t('tour.invite.text')}</p>
       </div>
       <span class="x">
-        <Btn sm kind="pri" onClick={() => openTour(FIRST_TOUR)}>
+        <Btn sm kind="pri" onClick={() => void openTour(FIRST_TOUR)}>
           {t('tour.invite.start')}
         </Btn>
         <Btn sm kind="ghost" onClick={() => setPrefs({ tourInvite: 'dismissed' })}>

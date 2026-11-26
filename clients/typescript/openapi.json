@@ -4281,9 +4281,7 @@
             "maxProperties": 20,
             "patternProperties": {
               "^[a-z][a-z0-9-]{1,39}$": {
-                "maximum": 99.0,
-                "minimum": 0.0,
-                "type": "integer"
+                "$ref": "#/components/schemas/TourProgress"
               }
             },
             "title": "Tours",
@@ -6588,6 +6586,30 @@
           "toolUse"
         ],
         "title": "ToolUseBlock",
+        "type": "object"
+      },
+      "TourProgress": {
+        "additionalProperties": false,
+        "description": "Where one guided tour stopped, and when (so the most recent copy wins on resume).",
+        "properties": {
+          "at": {
+            "maximum": 10000000000000.0,
+            "minimum": 0.0,
+            "title": "At",
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 99.0,
+            "minimum": 0.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "at"
+        ],
+        "title": "TourProgress",
         "type": "object"
       },
       "Transcript": {

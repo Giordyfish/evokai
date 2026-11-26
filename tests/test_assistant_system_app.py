@@ -213,7 +213,7 @@ async def test_assistant_agent_has_no_forbidden_capabilities(env: Env) -> None:
     tour = custom["start_tour"]
     assert tour["wait"] is True
     assert tour["parameters"]["required"] == ["tour"]
-    for tour_id in ("first-steps", "security", "usage-traces"):
+    for tour_id in ("first-steps", "security", "usage-traces", "gateway"):
         assert tour_id in tour["description"]
     servers = await env.svc.store.mcp_servers.all(app_id)
     assert [(s.name, s.auth) for s in servers] == [("evokai-admin", "forward_user")]

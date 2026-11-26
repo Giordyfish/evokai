@@ -212,24 +212,28 @@ chat names the voice only when it is the online one, the one whose text leaves t
 ## Guided tours
 
 The console has guided tours that work with or without the assistant. A tour dims the page except the place each
-step points at, and a card beside it gives the step's title, at most two lines of explanation, the progress ("3 of
+step points at, and a card beside it (never under the assistant's open panel, and never over a place taller than the screen: the light
+then stops above the card) gives the step's title, at most two lines of explanation, the progress ("3 of
 8") and Back, Next and Exit. The keyboard drives it: arrows or Enter move, Esc leaves, the focus stays in the card,
 and reduced motion is respected. A tour opens each step's page itself and waits for its place to appear; a place that
 does not appear within a few seconds (a page that shows nothing yet, a role that hides it) is skipped, and the card
 says how many steps were skipped. Steps that need something the person does not have (an application, the right to
-create one, owning the deployment) are left out from the start.
+create one, owning the deployment, a gateway, the right to create one) are left out from the start. A tour shows the
+application or gateway that is open, else the first one listed.
 
 | Tour | Steps |
 | --- | --- |
 | `first-steps` | the applications, creating one (wizard), the agents of an application, a new agent's sections and summary, the playground |
 | `security` | the system policy (deployment owners), an application's Security page: the mode of each control, versions, policy tests, events |
 | `usage-traces` | the usage of every application, an application's forecast and views, its traces, filters and version comparison |
+| `gateway` | the gateways, creating one, a gateway's people and personal keys, its policy (controls, versions, tests), usage, events, the snippets that connect Claude Code and Codex, the notice to the people |
 
 **Guides** in the top bar lists the tours with where each one stands (not started, stopped at a step, done) and
 starts, resumes or restarts them. On a first sign-in the console invites the person to `first-steps` until they start
-a tour or choose "Not now". A tour resumes where the person left it: the step is kept in this browser at every step
-and in the person's console preferences (`tours` and `tourInvite` in `/v1/console/me/preferences`) when they leave or
-finish it, one save per tour so the audit log gets no entry per step.
+a tour or choose "Not now". A tour resumes where the person left it: the step and its time are kept in this browser
+at every step and in the person's console preferences (`tours`, each `{step, at}`, and `tourInvite` in
+`/v1/console/me/preferences`) when they leave or finish it, one save per tour so the audit log gets no entry per step;
+the more recent of the two copies wins.
 
 **With the assistant.** The assistant's client tool `start_tour` (`{tour, restart?}`, it waits for the console's
 answer) starts a tour in front of the person and returns its steps (title and page) and the step it starts at, or an

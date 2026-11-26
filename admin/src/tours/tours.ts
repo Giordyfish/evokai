@@ -1,6 +1,6 @@
 /**
  * The console's guided tours, as data. A tour is an id and its steps; a step is a console route (a hash path, where
- * `{app}` is the current application's slug), the place it points at (an element marked `data-tour="..."` on that
+ * `{app}` is the current application's slug, `{gateway}` the current gateway's), the place it points at (an element marked `data-tour="..."` on that
  * page, or `tour="..."` on a Panel or Btn) and an optional side for the card. Its texts are in the dictionaries:
  * `tour.<tour>.title`, `tour.<tour>.sub` and, per step, `tour.<tour>.<step>.title` and `tour.<tour>.<step>.body`
  * (at most two short lines).
@@ -11,12 +11,15 @@
 
 export type Placement = 'auto' | 'top' | 'bottom' | 'left' | 'right'
 
-/** What a step needs to make sense: an application to show, the right to create one, owning the deployment. */
-export type Need = 'app' | 'create' | 'owner'
+/**
+ * What a step needs to make sense: an application to show, the right to create one, owning the deployment, a gateway
+ * to show, the right to create one.
+ */
+export type Need = 'app' | 'create' | 'owner' | 'gateway' | 'createGateway'
 
 export interface TourStep {
   id: string
-  /** A console route: `/apps`, `/apps/{app}/security`, `/playground?app={app}`. */
+  /** A console route: `/apps`, `/apps/{app}/security`, `/playground?app={app}`, `/gateways/{gateway}/usage`. */
   route: string
   /** The `data-tour` value of the element the step points at. */
   target: string
@@ -67,8 +70,21 @@ export const TOURS: Tour[] = [
       { id: 'versions', route: '/apps/{app}/traces', target: 'traces-views' },
     ],
   },
-  // The gateway tour goes here once the gateway pages exist (create a gateway, its keys, connecting Claude Code and
-  // Codex): id 'gateway', its steps pointing at `data-tour` places on those pages, its texts under `tour.gateway.*`.
+  {
+    id: 'gateway',
+    steps: [
+      { id: 'list', route: '/gateways', target: 'gw-list' },
+      { id: 'create', route: '/gateways', target: 'gw-create', needs: ['createGateway'] },
+      { id: 'people', route: '/gateways/{gateway}', target: 'gw-people' },
+      { id: 'policy', route: '/gateways/{gateway}/policy', target: 'sec-controls' },
+      { id: 'versions', route: '/gateways/{gateway}/policy', target: 'policy-history' },
+      { id: 'tests', route: '/gateways/{gateway}/policy', target: 'policy-tests' },
+      { id: 'usage', route: '/gateways/{gateway}/usage', target: 'gw-usage' },
+      { id: 'events', route: '/gateways/{gateway}/events', target: 'sec-events' },
+      { id: 'connect', route: '/gateways/{gateway}/connect', target: 'gw-connect' },
+      { id: 'notice', route: '/gateways/{gateway}/notice', target: 'gw-notice' },
+    ],
+  },
 ]
 
 /** The tour invited to on a first sign-in. */

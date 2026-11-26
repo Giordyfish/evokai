@@ -7,7 +7,8 @@
  */
 import { has, type TextKey, t } from '../i18n'
 import { toast } from '../magic'
-import { prefs, sanitizeTours, setPrefs } from '../prefs'
+import { gateways as gatewayApi } from '../gateway'
+import { prefs, sanitizeTours, setPrefs, type TourProgress } from '../prefs'
 import { go } from '../state'
 import {
   atRoute,
@@ -23,6 +24,7 @@ import {
   type TourEnv,
   type TourStatus,
   tourApp,
+  tourGateway,
   tourLine,
   unknownTour,
   waitFor,
@@ -48,21 +50,39 @@ export const tourText = (tour: string, rest: string): string => {
   return has(key) ? t(key as TextKey) : key
 }
 
-// What decides the steps: the applications listed and the person's rights, set by the shell.
+// What decides the steps: the applications listed and the person's rights (set by the shell), and the gateways
+// (read from the service when a tour starts or the Guides menu opens).
 
 let env: { slugs: string[]; canCreate: boolean; owner: boolean } = { slugs: [], canCreate: false, owner: false }
+let gw: { slugs: string[]; canCreate: boolean } = { slugs: [], canCreate: false }
 
 export function setTourEnv(e: typeof env): void {
   env = e
 }
 
-const envNow = (): TourEnv => ({ app: tourApp(location.hash, env.slugs), canCreate: env.canCreate, owner: env.owner })
+/** Read the gateways this person sees (a failure counts as none). */
+export async function refreshGateways(): Promise<void> {
+  try {
+    const l = await gatewayApi.list()
+    gw = { slugs: l.items.map((g) => g.slug), canCreate: l.canCreate }
+  } catch {
+    gw = { slugs: [], canCreate: false }
+  }
+}
+
+const envNow = (): TourEnv => ({
+  app: tourApp(location.hash, env.slugs),
+  canCreate: env.canCreate,
+  owner: env.owner,
+  gateway: tourGateway(location.hash, gw.slugs),
+  canCreateGateway: gw.canCreate,
+})
 
 // Where each tour stopped.
 
 const LOCAL = 'evk-tours'
 
-function readLocal(): Record<string, number> {
+function readLocal(): Record<string, TourProgress> {
   try {
     return sanitizeTours(JSON.parse(localStorage.getItem(LOCAL) ?? '{}'))
   } catch {
@@ -70,17 +90,18 @@ function readLocal(): Record<string, number> {
   }
 }
 
-function writeLocal(id: string, step: number): void {
+function writeLocal(id: string, p: TourProgress): void {
   try {
-    localStorage.setItem(LOCAL, JSON.stringify(sanitizeTours({ ...readLocal(), [id]: step })))
+    localStorage.setItem(LOCAL, JSON.stringify(sanitizeTours({ ...readLocal(), [id]: p })))
   } catch {
     /* storage blocked: the preferences keep the step when the tour is left */
   }
 }
 
 function keep(id: string, step: number): void {
-  writeLocal(id, step)
-  setPrefs({ tours: { ...prefs().tours, [id]: step }, tourInvite: 'dismissed' })
+  const p = { step, at: Date.now() }
+  writeLocal(id, p)
+  setPrefs({ tours: { ...prefs().tours, [id]: p }, tourInvite: 'dismissed' })
 }
 
 /** The tours a person can take, with their steps and where they stand. */
@@ -142,7 +163,7 @@ async function show(from: number, dir: Direction): Promise<void> {
     return finish()
   }
   run = { ...r, index: found.index, target: el, moving: false, skipped: found.skipped.length }
-  writeLocal(r.tour.id, found.index)
+  writeLocal(r.tour.id, { step: found.index, at: Date.now() })
   emit()
 }
 
@@ -158,9 +179,10 @@ function end(): void {
  * @returns The tour's steps and where it starts.
  * @throws When there is no such tour, or it has no step for this person.
  */
-export function startTour(id: string, opts: { restart?: boolean } = {}): ReturnType<typeof describeTour> {
+export async function startTour(id: string, opts: { restart?: boolean } = {}): Promise<ReturnType<typeof describeTour>> {
   const tour = tourById(id)
   if (!tour) throw new Error(unknownTour(id, TOURS.map((x) => x.id)))
+  if (tour.steps.some((s) => s.route.includes('{gateway}') || s.needs?.includes('createGateway'))) await refreshGateways()
   const steps = stepsFor(tour, envNow())
   if (!steps.length) throw new Error(`The tour "${id}" has no step this person can see: its pages need an application or a role they do not have.`)
   const at = opts.restart ? 0 : resumeAt(savedStep(id, readLocal(), prefs().tours), steps.length)
@@ -177,9 +199,9 @@ export function startTour(id: string, opts: { restart?: boolean } = {}): ReturnT
 }
 
 /** Start a tour from the console (the Guides menu, the invite): a tour with nothing to show says so. */
-export function openTour(id: string, restart = false): void {
+export async function openTour(id: string, restart = false): Promise<void> {
   try {
-    startTour(id, { restart })
+    await startTour(id, { restart })
   } catch {
     toast(t('tour.nothing'), t('tour.nothingSub'), null)
   }
@@ -227,7 +249,7 @@ export function tourContext(): string | null {
 }
 
 /** The assistant's `start_tour` client tool: start the tour asked for, in front of the person. */
-export function startTourTool(args: { tour?: unknown; restart?: unknown }): ReturnType<typeof describeTour> {
+export function startTourTool(args: { tour?: unknown; restart?: unknown }): Promise<ReturnType<typeof describeTour>> {
   const id = typeof args.tour === 'string' ? args.tour.trim() : ''
   return startTour(id, { restart: args.restart === true })
 }

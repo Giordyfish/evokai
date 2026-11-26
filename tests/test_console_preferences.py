@@ -80,11 +80,14 @@ async def test_needs_the_console_login_and_its_header(env: Env) -> None:
         {"motion": None},
         {"version": 3},
         {"fontFamily": "Comic Sans"},
-        {"tours": {"First Steps": 1}},
-        {"tours": {"first-steps": -1}},
-        {"tours": {"first-steps": 100}},
-        {"tours": {"first-steps": "3"}},
-        {"tours": {f"tour-{n}": 0 for n in range(21)}},
+        {"tours": {"First Steps": {"step": 1, "at": 1}}},
+        {"tours": {"first-steps": {"step": -1, "at": 1}}},
+        {"tours": {"first-steps": {"step": 100, "at": 1}}},
+        {"tours": {"first-steps": {"step": "3", "at": 1}}},
+        {"tours": {"first-steps": 3}},
+        {"tours": {"first-steps": {"step": 3}}},
+        {"tours": {"first-steps": {"step": 3, "at": 1, "extra": True}}},
+        {"tours": {f"tour-{n}": {"step": 0, "at": 1} for n in range(21)}},
         {"tourInvite": "later"},
     ],
 )
@@ -186,7 +189,7 @@ async def test_tour_progress_and_the_invite_are_kept(env: Env) -> None:
     """The console's guided tours: where each stopped, and whether the invite was dismissed."""
     assert DEFAULTS.document()["tours"] == {} and DEFAULTS.document()["tourInvite"] == "show"
     await _login(env, env.admin_key)
-    tours = {"first-steps": 3, "security": 6}
+    tours = {"first-steps": {"step": 3, "at": 1764000000000}, "security": {"step": 6, "at": 1}}
     doc = {**DEFAULTS.document(), "tours": tours, "tourInvite": "dismissed"}
     put = await env.client.put(URL, json=doc, headers=CONSOLE)
     assert put.status_code == 200

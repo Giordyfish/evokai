@@ -45,17 +45,24 @@ export const CHOICES = {
 
 const FLAGS = ['focusAlways', 'underlineLinks'] as const
 
-/** The service's limits on the guided tours' progress: an id, a step from 0 to 99, at most 20 tours. */
+/** The service's limits on the guided tours' progress: an id, a step from 0 to 99 and when, at most 20 tours. */
 const TOUR_ID = /^[a-z][a-z0-9-]{1,39}$/
 const MAX_TOURS = 20
+export type TourProgress = { step: number; at: number }
 
-/** Tour progress from anything: only valid ids and steps, at most `MAX_TOURS`, sorted by id (compared as JSON). */
-export function sanitizeTours(x: unknown): Record<string, number> {
+const isProgress = (v: unknown): v is TourProgress => {
+  if (!v || typeof v !== 'object') return false
+  const { step, at } = v as Record<string, unknown>
+  return Number.isInteger(step) && (step as number) >= 0 && (step as number) <= 99 && Number.isInteger(at) && (at as number) >= 0 && (at as number) <= 1e13
+}
+
+/** Tour progress from anything: only valid ids and progress, at most `MAX_TOURS`, sorted by id (compared as JSON). */
+export function sanitizeTours(x: unknown): Record<string, TourProgress> {
   if (!x || typeof x !== 'object' || Array.isArray(x)) return {}
-  const out: Record<string, number> = {}
+  const out: Record<string, TourProgress> = {}
   for (const [k, v] of Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (Object.keys(out).length >= MAX_TOURS) break
-    if (TOUR_ID.test(k) && Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 99) out[k] = v as number
+    if (TOUR_ID.test(k) && isProgress(v)) out[k] = { step: v.step, at: v.at }
   }
   return out
 }

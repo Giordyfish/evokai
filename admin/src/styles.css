@@ -782,11 +782,13 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 .tour-invite p{margin:2px 0 0;font-size:13px;color:var(--mu)}
 .tour-invite .x{display:flex;gap:8px;flex:none}
 [data-tour]{scroll-margin:72px 0 24px}
-.tour{position:fixed;inset:0;z-index:75;--tour-dim:rgba(15,10,35,.42)}
-:root[data-theme=dark] .tour{--tour-dim:rgba(4,2,12,.62)}
+.tour{position:fixed;inset:0;z-index:75;--tour-dim:rgba(22,14,52,.6)}
+:root[data-theme=dark] .tour{--tour-dim:rgba(0,0,0,.68)}
+/* No toast over the card while a tour runs (a finished tour's message would cover its buttons on a phone). */
+:root:has(.tour) .toast{visibility:hidden}
 .tour-block,.tour-dim{position:absolute;inset:0}
 .tour-dim{background:var(--tour-dim)}
-.tour-spot{position:fixed;border-radius:var(--r-lg);box-shadow:0 0 0 200vmax var(--tour-dim),0 0 0 2px var(--vi);pointer-events:none}
+.tour-spot{position:fixed;border-radius:var(--r-lg);box-shadow:0 0 0 2px var(--vi),0 0 0 7px color-mix(in srgb,var(--vi) 30%,transparent),0 0 0 200vmax var(--tour-dim);pointer-events:none}
 .tour-card{position:fixed;width:min(360px,calc(100vw - 32px));background:var(--solid);color:var(--tx);border-radius:var(--r-xl);box-shadow:0 30px 80px -24px rgba(0,0,0,.5),0 0 0 1px var(--hair);padding:14px 16px 12px}
 .tour-card.centred{top:50%;left:50%;transform:translate(-50%,-50%)}
 .tour-card:focus{outline:0}
@@ -806,5 +808,5 @@ a.src-t:hover{color:var(--vi);text-decoration:underline}
 @media (max-width:640px){
   .guidesbtn span{display:none}
   .tour-invite{flex-wrap:wrap}
-  .tour-card,.tour-card.centred{left:16px!important;right:16px;top:auto!important;bottom:16px;width:auto;transform:none}
+  .tour-card.centred{left:16px;right:16px;top:auto;bottom:16px;width:auto;transform:none}
 }

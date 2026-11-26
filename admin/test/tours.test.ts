@@ -22,6 +22,8 @@ import {
   statusOf,
   stepsFor,
   tourApp,
+  tourGateway,
+  type TourEnv,
   tourLine,
   unknownTour,
   waitFor,
@@ -48,6 +50,8 @@ const FILE: Record<string, string> = { AllUsage: 'Usage', AppUsage: 'Usage' }
 
 function pageOf(route: string): string {
   const p = route.split('?')[0]!.replace(/^\//, '').split('/')
+  // Every gateway page, its list and each of its tabs, is drawn by pages/Gateways.tsx.
+  if (p[0] === 'gateways') return 'Gateways'
   if (p[0] === 'apps' && p[1]) {
     const tab = TAB_PAGE[p[2] ?? 'overview']
     if (!tab) throw new Error(`no page known for ${route}`)
@@ -90,6 +94,7 @@ describe('the tours', () => {
     expect(shell).toMatch(/case 'security':\s*return <Security\b/)
     expect(shell).toMatch(/case 'usage':\s*return <AppUsage\b/)
     expect(shell).toMatch(/case 'traces':\s*return <Traces\b/)
+    expect(shell).toMatch(/route\.view === 'gateways'\) return <Gateways\b/)
   })
 
   it('have every text in English and Italian, two short lines at most', () => {
@@ -111,7 +116,7 @@ describe('the tours', () => {
     expect(new Set(ids).size).toBe(ids.length)
     for (const t of TOURS) expect(new Set(t.steps.map((s) => s.id)).size).toBe(t.steps.length)
     expect(tourById(FIRST_TOUR)).toBeTruthy()
-    expect(ids).toEqual(['first-steps', 'security', 'usage-traces'])
+    expect(ids).toEqual(['first-steps', 'security', 'usage-traces', 'gateway'])
     for (const id of ids) expect(id).toMatch(/^[a-z][a-z0-9-]{1,39}$/)
   })
 })
@@ -124,20 +129,31 @@ const TOUR: Tour = {
     { id: 'c', route: '/apps/{app}/security', target: 'z' },
     { id: 'd', route: '/policy', target: 'w', needs: ['owner'] },
     { id: 'e', route: '/playground?app={app}', target: 'v' },
+    { id: 'f', route: '/gateways', target: 'u', needs: ['createGateway'] },
+    { id: 'g', route: '/gateways/{gateway}/usage', target: 't' },
   ],
 }
+const env = (e: Partial<TourEnv>): TourEnv => ({ app: null, canCreate: false, owner: false, gateway: null, canCreateGateway: false, ...e })
 
 describe('the steps a person gets', () => {
   it('drop what needs an application, the right to create, or the deployment', () => {
     expect(needsOf(TOUR.steps[2]!)).toEqual(['app'])
-    expect(stepsFor(TOUR, { app: 'shop', canCreate: true, owner: true }).map((s) => s.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
-    expect(stepsFor(TOUR, { app: 'shop', canCreate: false, owner: false }).map((s) => s.id)).toEqual(['a', 'c', 'e'])
-    expect(stepsFor(TOUR, { app: null, canCreate: true, owner: false }).map((s) => s.id)).toEqual(['a', 'b'])
+    expect(needsOf(TOUR.steps[6]!)).toEqual(['gateway'])
+    expect(stepsFor(TOUR, env({ app: 'shop', canCreate: true, owner: true })).map((s) => s.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(stepsFor(TOUR, env({ app: 'shop' })).map((s) => s.id)).toEqual(['a', 'c', 'e'])
+    expect(stepsFor(TOUR, env({ canCreate: true })).map((s) => s.id)).toEqual(['a', 'b'])
   })
-  it('fill in the application', () => {
-    const steps = stepsFor(TOUR, { app: 'shop', canCreate: false, owner: false })
-    expect(steps.map((s) => s.path)).toEqual(['/apps', '/apps/shop/security', '/playground?app=shop'])
+  it('drop what needs a gateway, or the right to create one', () => {
+    expect(stepsFor(TOUR, env({ canCreateGateway: true })).map((s) => s.id)).toEqual(['a', 'f'])
+    expect(stepsFor(TOUR, env({ gateway: 'devs' })).map((s) => s.id)).toEqual(['a', 'g'])
+  })
+  it('fill in the application and the gateway', () => {
+    const steps = stepsFor(TOUR, env({ app: 'shop', gateway: 'devs' }))
+    expect(steps.map((s) => s.path)).toEqual(['/apps', '/apps/shop/security', '/playground?app=shop', '/gateways/devs/usage'])
     expect(fillRoute('/apps/{app}', 'a b')).toBe('/apps/a%20b')
+    expect(tourGateway('#/gateways/devs/policy', ['ops', 'devs'])).toBe('devs')
+    expect(tourGateway('#/gateways', ['ops', 'devs'])).toBe('ops')
+    expect(tourGateway('#/apps/devs', [])).toBeNull()
   })
   it('show the open application, else the first', () => {
     expect(tourApp('#/apps/books/usage', ['shop', 'books'])).toBe('books')
@@ -220,38 +236,59 @@ describe('resuming', () => {
     expect(statusOf(5, 5)).toEqual({ kind: 'done' })
   })
   it("reads this browser's copy first, then the preferences", () => {
-    expect(savedStep('a', { a: 2 }, { a: 4 })).toBe(2)
-    expect(savedStep('a', {}, { a: 4 })).toBe(4)
+    // The most recent copy wins: this browser's (every step) or the preferences' (another browser, on leaving).
+    expect(savedStep('a', { a: { step: 2, at: 200 } }, { a: { step: 4, at: 100 } })).toBe(2)
+    expect(savedStep('a', { a: { step: 2, at: 100 } }, { a: { step: 4, at: 200 } })).toBe(4)
+    expect(savedStep('a', {}, { a: { step: 4, at: 1 } })).toBe(4)
+    expect(savedStep('a', { a: { step: 1, at: 1 } }, {})).toBe(1)
     expect(savedStep('a', {}, {})).toBeUndefined()
   })
   it('keeps in the preferences only what the service accepts', () => {
-    expect(sanitizeTours({ 'first-steps': 3, Bad: 1, 'x-y': -1, ok: 100, half: 1.5, security: 0 })).toEqual({ 'first-steps': 3, security: 0 })
+    const p = (step: unknown, at: unknown = 5) => ({ step, at })
+    expect(
+      sanitizeTours({ 'first-steps': p(3), Bad: p(1), 'x-y': p(-1), ok: p(100), half: p(1.5), old: 2, noat: { step: 1 }, security: p(0, 0) }),
+    ).toEqual({ 'first-steps': { step: 3, at: 5 }, security: { step: 0, at: 0 } })
+    expect(sanitizeTours({ a1: { step: 1, at: 2, extra: true } })).toEqual({ a1: { step: 1, at: 2 } })
     expect(sanitizeTours(null)).toEqual({})
     expect(sanitizeTours([1, 2])).toEqual({})
-    expect(Object.keys(sanitizeTours(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`tour-${i}`, 1]))))).toHaveLength(20)
+    expect(Object.keys(sanitizeTours(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`tour-${i}`, p(1)]))))).toHaveLength(20)
     expect(DEFAULTS.tours).toEqual({})
     expect(DEFAULTS.tourInvite).toBe('show')
     expect(sanitize({ ...DEFAULTS, tourInvite: 'later' }).tourInvite).toBe('show')
-    expect(sanitize({ ...DEFAULTS, tourInvite: 'dismissed', tours: { security: 2 } })).toMatchObject({ tourInvite: 'dismissed', tours: { security: 2 } })
+    expect(sanitize({ ...DEFAULTS, tourInvite: 'dismissed', tours: { security: { step: 2, at: 9 } } })).toMatchObject({
+      tourInvite: 'dismissed',
+      tours: { security: { step: 2, at: 9 } },
+    })
   })
 })
 
 describe('the card', () => {
   const view = { width: 1200, height: 800 }
   const card = { width: 360, height: 180 }
+  const small = { top: 100, left: 200, width: 300, height: 100 }
   it('goes below the place, else above, right or left', () => {
-    expect(placeCard({ top: 100, left: 200, width: 300, height: 100 }, card, view)).toEqual({ side: 'bottom', top: 214, left: 200 })
-    expect(placeCard({ top: 560, left: 200, width: 300, height: 100 }, card, view)).toEqual({ side: 'top', top: 366, left: 200 })
+    expect(placeCard(small, card, view)).toEqual({ side: 'bottom', top: 214, left: 200, spot: small })
+    expect(placeCard({ ...small, top: 560 }, card, view)).toMatchObject({ side: 'top', top: 366, left: 200 })
     expect(placeCard({ top: 100, left: 100, width: 300, height: 650 }, card, view).side).toBe('right')
     expect(placeCard({ top: 100, left: 700, width: 480, height: 650 }, card, view).side).toBe('left')
   })
   it('takes the side asked for when it fits', () => {
-    expect(placeCard({ top: 100, left: 200, width: 300, height: 100 }, card, view, 'right')).toEqual({ side: 'right', left: 514, top: 100 })
-    expect(placeCard({ top: 100, left: 200, width: 300, height: 100 }, card, view, 'left').side).toBe('bottom')
+    expect(placeCard(small, card, view, 'right')).toMatchObject({ side: 'right', left: 514, top: 100 })
+    expect(placeCard(small, card, view, 'left').side).toBe('bottom')
   })
-  it('stays inside the screen, over a place larger than it', () => {
-    expect(placeCard({ top: 100, left: 1000, width: 150, height: 40 }, card, view)).toEqual({ side: 'bottom', top: 154, left: 824 })
-    expect(placeCard({ top: 4, left: 4, width: 1190, height: 790 }, card, view)).toEqual({ side: 'over', top: 604, left: 824 })
+  it('stays inside the screen', () => {
+    expect(placeCard({ top: 100, left: 1000, width: 150, height: 40 }, card, view)).toMatchObject({ side: 'bottom', top: 154, left: 824 })
+  })
+  it('never covers a place larger than the screen: the light stops above the card', () => {
+    const tall = { top: 66, left: 290, width: 1100, height: 830 }
+    const p = placeCard(tall, card, view)
+    expect(p).toEqual({ side: 'inside', top: 604, left: 290, spot: { ...tall, height: 604 - 14 - 66 } })
+    expect(p.spot.top + p.spot.height).toBeLessThan(p.top)
+  })
+  it('keeps out of the room the assistant takes', () => {
+    // The assistant's panel from x = 800: the card is placed in the 792 pixels left of it.
+    const p = placeCard({ top: 100, left: 300, width: 600, height: 100 }, card, { width: 792, height: 800 })
+    expect(p.left + card.width).toBeLessThanOrEqual(792 - 16)
   })
   it('lights the place with room around it, inside the screen', () => {
     expect(spotlight({ top: 100, left: 200, width: 300, height: 100 }, view)).toEqual({ top: 94, left: 194, width: 312, height: 112 })

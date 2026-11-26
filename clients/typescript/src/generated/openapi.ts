@@ -6914,7 +6914,7 @@ export interface components {
             tourInvite?: "show" | "dismissed";
             /** Tours */
             tours?: {
-                [key: string]: number;
+                [key: string]: components["schemas"]["TourProgress"];
             };
             /**
              * Underlinelinks
@@ -7756,6 +7756,16 @@ export interface components {
          */
         ToolUseBlock: {
             toolUse: components["schemas"]["ToolUse"];
+        };
+        /**
+         * TourProgress
+         * @description Where one guided tour stopped, and when (so the most recent copy wins on resume).
+         */
+        TourProgress: {
+            /** At */
+            at: number;
+            /** Step */
+            step: number;
         };
         /**
          * Transcript

@@ -27,7 +27,17 @@ VERSION = 2
 MAX_TOURS = 20
 """At most this many guided tours remembered (the console ships a handful)."""
 TourId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{1,39}$")]
-TourStep = Annotated[int, Field(ge=0, le=99)]
+
+
+class TourProgress(BaseModel):
+    """Where one guided tour stopped, and when (so the most recent copy wins on resume)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    step: int = Field(ge=0, le=99)
+    """The step to resume at (0 is the first; the number of steps means finished)."""
+    at: int = Field(ge=0, le=10**13)
+    """When, in milliseconds since the epoch (the browser's clock)."""
 
 
 class Preferences(BaseModel):
@@ -58,9 +68,9 @@ class Preferences(BaseModel):
     focus_always: bool = False
     """Show the focus outline on every focused control, also after a click."""
     underline_links: bool = False
-    tours: dict[TourId, TourStep] = Field(default_factory=dict, max_length=MAX_TOURS)
-    """Where each guided tour of the console stopped: its id and the step to resume at (0 is the
-    first; the number of steps means finished). Written when the person leaves or ends a tour."""
+    tours: dict[TourId, TourProgress] = Field(default_factory=dict, max_length=MAX_TOURS)
+    """Where each guided tour of the console stopped and when, by tour id. Written when the
+    person leaves or ends a tour."""
     tour_invite: Literal["show", "dismissed"] = "show"
     """The invite to the first tour, shown until the person dismisses it or starts a tour."""
 

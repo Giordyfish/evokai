@@ -3,6 +3,7 @@
  * resuming, waiting for a page's place to appear (skipping a step whose place never does), where the card goes, and
  * what the assistant is told about the step on screen.
  */
+import type { TourProgress } from '../prefs'
 import type { Need, Placement, Tour, TourStep } from './tours'
 
 /** What decides which steps a person gets. */
@@ -11,36 +12,54 @@ export interface TourEnv {
   app: string | null
   canCreate: boolean
   owner: boolean
+  /** The slug of the gateway the tour shows: the one open, or the first; null when there is none. */
+  gateway: string | null
+  canCreateGateway: boolean
 }
 
-/** A step ready to run: its route with the application filled in. */
+/** A step ready to run: its route with the application and the gateway filled in. */
 export interface ResolvedStep extends TourStep {
   path: string
 }
 
-/** What a step needs: its own list, and an application when its route names one. */
+/** What a step needs: its own list, and an application or a gateway when its route names one. */
 export function needsOf(step: TourStep): Need[] {
-  const own = step.needs ?? []
-  return step.route.includes('{app}') && !own.includes('app') ? ['app', ...own] : own
+  const out = [...(step.needs ?? [])]
+  if (step.route.includes('{gateway}') && !out.includes('gateway')) out.unshift('gateway')
+  if (step.route.includes('{app}') && !out.includes('app')) out.unshift('app')
+  return out
 }
 
-const met = (need: Need, env: TourEnv): boolean => (need === 'app' ? !!env.app : need === 'create' ? env.canCreate : env.owner)
+const MET: Record<Need, (env: TourEnv) => boolean> = {
+  app: (e) => !!e.app,
+  create: (e) => e.canCreate,
+  owner: (e) => e.owner,
+  gateway: (e) => !!e.gateway,
+  createGateway: (e) => e.canCreateGateway,
+}
 
-/** A route with `{app}` replaced by the application's slug. */
-export const fillRoute = (route: string, app: string | null): string => route.replaceAll('{app}', encodeURIComponent(app ?? ''))
+/** A route with `{app}` and `{gateway}` replaced by their slugs. */
+export const fillRoute = (route: string, app: string | null, gateway: string | null = null): string =>
+  route.replaceAll('{app}', encodeURIComponent(app ?? '')).replaceAll('{gateway}', encodeURIComponent(gateway ?? ''))
 
 /** The steps of a tour this person gets, in order, their routes filled in. */
 export function stepsFor(tour: Tour, env: TourEnv): ResolvedStep[] {
-  return tour.steps.filter((s) => needsOf(s).every((n) => met(n, env))).map((s) => ({ ...s, path: fillRoute(s.route, env.app) }))
+  return tour.steps.filter((s) => needsOf(s).every((n) => MET[n](env))).map((s) => ({ ...s, path: fillRoute(s.route, env.app, env.gateway) }))
 }
 
-/** The application a tour shows: the one in the open route (`/apps/{slug}/...`), else the first listed. */
-export function tourApp(hash: string, slugs: string[]): string | null {
-  const m = /^#?\/apps\/([^/?]+)/.exec(hash)
+/** The item a tour shows: the one in the open route (`/apps/{slug}/...`, `/gateways/{slug}/...`), else the first listed. */
+function openOrFirst(hash: string, section: 'apps' | 'gateways', slugs: string[]): string | null {
+  const m = new RegExp(`^#?/${section}/([^/?]+)`).exec(hash)
   const open = m ? decodeURIComponent(m[1]!) : null
   if (open && slugs.includes(open)) return open
   return slugs[0] ?? null
 }
+
+/** The application a tour shows: the one in the open route, else the first listed. */
+export const tourApp = (hash: string, slugs: string[]): string | null => openOrFirst(hash, 'apps', slugs)
+
+/** The gateway a tour shows: the one in the open route, else the first listed. */
+export const tourGateway = (hash: string, slugs: string[]): string | null => openOrFirst(hash, 'gateways', slugs)
 
 /**
  * Whether the console already shows a step's route: the same path, and every query parameter of the route with the
@@ -126,9 +145,15 @@ export function statusOf(saved: number | undefined, total: number): TourStatus {
   return { kind: 'stopped', step: saved + 1 }
 }
 
-/** The step a tour resumes at, from this browser's copy (written at every step) or else the person's preferences. */
-export function savedStep(id: string, local: Record<string, number>, prefs: Record<string, number>): number | undefined {
-  return local[id] ?? prefs[id]
+/**
+ * The step a tour resumes at: the most recent of this browser's copy (written at every step) and the person's
+ * preferences (written when they leave or finish a tour, from any browser).
+ */
+export function savedStep(id: string, local: Record<string, TourProgress>, prefs: Record<string, TourProgress>): number | undefined {
+  const a = local[id]
+  const b = prefs[id]
+  if (!a || !b) return (a ?? b)?.step
+  return b.at > a.at ? b.step : a.step
 }
 
 // Placing the card
@@ -145,7 +170,8 @@ export interface Size {
   height: number
 }
 
-export type Side = Exclude<Placement, 'auto'> | 'over'
+/** `inside`: the place is taller or wider than the room around it, the card sits inside its lit part. */
+export type Side = Exclude<Placement, 'auto'> | 'inside'
 
 /** The spotlight: the place with some room around it, kept inside the screen. */
 export function spotlight(target: Box, view: Size, pad = 6): Box {
@@ -158,32 +184,43 @@ export function spotlight(target: Box, view: Size, pad = 6): Box {
 
 /**
  * Where the card goes beside the spotlight: the side asked for when it fits, else the first that fits of below,
- * above, right and left; when none does (a place larger than the screen), over the place at the bottom of the screen.
- * Always inside the screen, `margin` from its edges.
+ * above, right and left. When none does (a place about as large as the screen, shown from its top), the card goes at
+ * the bottom of the screen and the spotlight stops above it (`spot`): the place's top and the card are both in view,
+ * never one over the other. Always inside the screen, `margin` from its edges.
  */
-export function placeCard(spot: Box, card: Size, view: Size, prefer: Placement = 'auto', gap = 14, margin = 16): { top: number; left: number; side: Side } {
+export function placeCard(
+  spot: Box,
+  card: Size,
+  view: Size,
+  prefer: Placement = 'auto',
+  gap = 14,
+  margin = 16,
+): { top: number; left: number; side: Side; spot: Box } {
   const room = {
     bottom: view.height - (spot.top + spot.height) - gap - margin,
     top: spot.top - gap - margin,
     right: view.width - (spot.left + spot.width) - gap - margin,
     left: spot.left - gap - margin,
   }
-  const fits = (s: Exclude<Side, 'over'>) => (s === 'top' || s === 'bottom' ? room[s] >= card.height : room[s] >= card.width)
-  const order: Array<Exclude<Side, 'over'>> = ['bottom', 'top', 'right', 'left']
+  const fits = (s: Exclude<Placement, 'auto'>) => (s === 'top' || s === 'bottom' ? room[s] >= card.height : room[s] >= card.width)
+  const order: Array<Exclude<Placement, 'auto'>> = ['bottom', 'top', 'right', 'left']
   const side = prefer !== 'auto' && fits(prefer) ? prefer : order.find(fits)
   const clampX = (x: number) => Math.min(Math.max(margin, x), Math.max(margin, view.width - card.width - margin))
   const clampY = (y: number) => Math.min(Math.max(margin, y), Math.max(margin, view.height - card.height - margin))
   switch (side) {
     case 'bottom':
-      return { side, top: spot.top + spot.height + gap, left: clampX(spot.left) }
+      return { side, spot, top: spot.top + spot.height + gap, left: clampX(spot.left) }
     case 'top':
-      return { side, top: spot.top - gap - card.height, left: clampX(spot.left) }
+      return { side, spot, top: spot.top - gap - card.height, left: clampX(spot.left) }
     case 'right':
-      return { side, left: spot.left + spot.width + gap, top: clampY(spot.top) }
+      return { side, spot, left: spot.left + spot.width + gap, top: clampY(spot.top) }
     case 'left':
-      return { side, left: spot.left - gap - card.width, top: clampY(spot.top) }
-    default:
-      return { side: 'over', top: clampY(view.height - card.height - margin), left: clampX(view.width - card.width - margin) }
+      return { side, spot, left: spot.left - gap - card.width, top: clampY(spot.top) }
+    default: {
+      const top = clampY(view.height - card.height - margin)
+      const bottom = Math.max(spot.top + 24, Math.min(spot.top + spot.height, top - gap))
+      return { side: 'inside', top, left: clampX(spot.left), spot: { ...spot, height: bottom - spot.top } }
+    }
   }
 }
 
