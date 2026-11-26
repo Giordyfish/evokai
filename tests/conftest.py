@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json
 import os
 import sys
@@ -377,6 +378,10 @@ async def make_env(
     factory = script.model if models == "scripted" else models
     catalog = ModelCatalog(settings.model_allow, settings.aws_region, factory=factory)
     svc = build_services(settings, http=http, catalog=catalog)
+    # Rate windows are cut on the wall clock's minute (hour): a test that counts requests up to a
+    # limit failed when its requests straddled a boundary. The test stays in the minute it began.
+    start = time.time()
+    svc.guard.clock = svc.auth.clock = lambda: start
     if schema:
         async with svc.db.engine.begin() as c:
             await c.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
@@ -400,9 +405,57 @@ async def make_env(
     finally:
         policies.set_system(0, None)
         await client.aclose()
+        hung = await _gateway_writes_hung(svc)
         await svc.close()
         if schema:
             await _drop_schema(settings, schema)
+        if hung:
+            # The gateway's close drops (cancels and logs) records still pending after its wait:
+            # in a test that is a bug to find, never a record silently lost.
+            print(hung, file=sys.__stderr__, flush=True)
+            pytest.fail(hung, pytrace=False)
+
+
+async def _gateway_writes_hung(svc: Services) -> str | None:
+    """What the gateway is still writing at the end of a test, if it does not finish in time.
+
+    Returns:
+        None when every record was written; else the pending writes with where they wait and,
+        on Postgres, the sessions and the locks nobody was granted.
+    """
+    gw = svc.gateway
+    if gw is None or not gw._writes or await gw.idle(GATEWAY_WAIT_SECONDS):
+        return None
+    lines = [
+        f"{os.environ.get('PYTEST_CURRENT_TEST', '?')}: {len(gw._writes)} gateway record(s) still "
+        f"being written after {GATEWAY_WAIT_SECONDS:.0f} s (the service's close drops them):"
+    ]
+    for t in gw._writes:
+        buf = io.StringIO()
+        t.print_stack(file=buf)
+        lines += [f"  {_describe(t)}", buf.getvalue()]
+    if svc.db.engine.dialect.name == "postgresql":
+        try:
+            async with svc.db.engine.connect() as c:
+                for row in await c.execute(sa.text(PG_SESSIONS)):
+                    lines.append(f"  session {tuple(row)}")
+                for row in await c.execute(sa.text(PG_WAITING_LOCKS)):
+                    lines.append(f"  waiting lock {tuple(row)}")
+        except Exception as e:  # the diagnosis must not hide the failure
+            lines.append(f"  (no pg_stat_activity: {type(e).__name__})")
+    return "\n".join(lines)
+
+
+GATEWAY_WAIT_SECONDS = 8.0
+"""How long the end of a test waits for the gateway's records (its close waits 10 s)."""
+PG_SESSIONS = (
+    "select pid, state, wait_event_type, wait_event, now() - xact_start, left(query, 160) "
+    "from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()"
+)
+PG_WAITING_LOCKS = (
+    "select pid, locktype, mode, relation::regclass::text, transactionid::text "
+    "from pg_locks where not granted"
+)
 
 
 LEAK_WAIT_SECONDS = 5.0
@@ -431,13 +484,29 @@ async def _cancel_hard(tasks: list[asyncio.Task[Any]], seconds: float) -> set[as
     Returns:
         The tasks still running.
     """
+    return await _cancel_until_quiet(lambda: {t for t in tasks if not t.done()}, seconds)
+
+
+async def _cancel_until_quiet(
+    running: Callable[[], set[asyncio.Task[Any]]], seconds: float
+) -> set[asyncio.Task[Any]]:
+    """Cancel what ``running`` finds, again and again, until it finds nothing or time runs out.
+
+    ``running`` is asked again after each round, so a task started by another's cancellation (a
+    cleanup that runs in a task of its own, ``asyncio.shield``, SQLAlchemy closing a connection)
+    is cancelled too, instead of being left for the event loop's closing to wait on.
+
+    Returns:
+        The tasks still running.
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + seconds
-    pending = {t for t in tasks if not t.done()}
+    pending = running()
     while pending and loop.time() < deadline:
         for t in pending:
             t.cancel()
-        _, pending = await asyncio.wait(pending, timeout=min(0.5, max(0.0, deadline - loop.time())))
+        await asyncio.wait(pending, timeout=min(0.5, max(0.0, deadline - loop.time())))
+        pending = running()
     return pending
 
 
@@ -446,19 +515,24 @@ async def _no_task_outlives_its_test(request: pytest.FixtureRequest) -> AsyncIte
     """After a test and its fixtures, the tasks it left running are cancelled, hard, within seconds.
 
     A task that kept ignoring its cancellation used to hang the event loop's closing for good: the
-    suite stopped at its 20 minute limit and no test was named (seen once in CI). The task is
-    now cancelled until it ends; one that still runs is named at once on stderr, before the loop
-    closes, and fails its test. ``EVOKAI_TEST_LEAKS=report`` prints every task a test left behind.
+    suite stopped at its 20 minute limit and no test was named (seen in CI). The task is now
+    cancelled until it ends, and so is every task its cancellation starts; one that still runs is
+    named at once on stderr, before the loop closes, and fails its test.
+    ``EVOKAI_TEST_LEAKS=report`` prints every task a test left behind.
     """
     before = set(asyncio.all_tasks())
     yield
     me = asyncio.current_task()
-    left = [t for t in asyncio.all_tasks() if t is not me and t not in before and not t.done()]
+
+    def running() -> set[asyncio.Task[Any]]:
+        return {t for t in asyncio.all_tasks() if t is not me and t not in before and not t.done()}
+
+    left = running()
     if not left:
         return
     if os.environ.get("EVOKAI_TEST_LEAKS") == "report":
         print(f"\nLEFT RUNNING by {request.node.nodeid}:\n  " + "\n  ".join(map(_describe, left)))
-    stuck = await _cancel_hard(left, LEAK_WAIT_SECONDS)
+    stuck = await _cancel_until_quiet(running, LEAK_WAIT_SECONDS)
     if stuck:
         text = (
             f"{request.node.nodeid}: {len(stuck)} task(s) still running after "
@@ -466,6 +540,50 @@ async def _no_task_outlives_its_test(request: pytest.FixtureRequest) -> AsyncIte
         )
         print(text, file=sys.__stderr__, flush=True)
         pytest.fail(text, pytrace=False)
+
+
+CLOSE_WAIT_SECONDS = 30.0
+"""How long the closing of a test's event loop waits for the tasks it cancels."""
+
+
+def _bounded_loop_close() -> None:
+    """Make the closing of an event loop wait for its cancelled tasks a bounded time, naming them.
+
+    ``asyncio.Runner.close`` (pytest-asyncio closes every test's loop with it) cancels the tasks
+    still there once and then waits for them without a limit: a task that swallows that one
+    cancellation held the whole run until its 20 minute limit, and the faulthandler's dump showed
+    only ``_cancel_all_tasks``, never which task. The guard above leaves nothing for that wait in
+    the cases known; this is the net for the others: past ``CLOSE_WAIT_SECONDS`` the tasks are
+    named on stderr and the test's teardown fails, so the run goes on.
+    """
+    import asyncio.runners as runners
+
+    original = getattr(runners, "_cancel_all_tasks", None)
+    if original is None or getattr(original, "evokai_bounded", False):
+        return
+
+    def cancel_all(loop: asyncio.AbstractEventLoop) -> None:
+        tasks = asyncio.all_tasks(loop)
+        if tasks:
+            for t in tasks:
+                t.cancel()
+            _, pending = loop.run_until_complete(asyncio.wait(tasks, timeout=CLOSE_WAIT_SECONDS))
+            if pending:
+                text = (
+                    f"{len(pending)} task(s) ignored the event loop's closing for "
+                    f"{CLOSE_WAIT_SECONDS:.0f} s:\n  " + "\n  ".join(map(_describe, pending))
+                )
+                print(text, file=sys.__stderr__, flush=True)
+                pytest.fail(text, pytrace=False)
+        original(loop)  # what is left: nothing pending, the exceptions reported as asyncio does
+
+    cancel_all.evokai_bounded = True  # ty: ignore[missing-attribute]
+    runners._cancel_all_tasks = cancel_all  # ty: ignore[missing-attribute]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    del config
+    _bounded_loop_close()
 
 
 @pytest.fixture

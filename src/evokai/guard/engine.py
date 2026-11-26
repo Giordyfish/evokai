@@ -1185,6 +1185,8 @@ class Guard:
         self.known_secrets: tuple[str, ...] = tuple(s for s in known if s and len(s) >= 12)
         self.classifiers = Classifiers(settings)
         self.shared: SharedState = shared or MemoryState()
+        self.clock: Callable[[], float] = time.time
+        """The wall clock that rate windows are cut on, a minute each (tests pin it)."""
 
     def policy(self, app: m.Application, agent: Any = None) -> Effective:
         """The effective policy of an agent of an application.
@@ -1278,7 +1280,7 @@ class Guard:
         Returns:
             The minute's count.
         """
-        bucket = str(int(time.time() // 60))
+        bucket = str(int(self.clock() // 60))
         return await self.shared.incr(self._shared_key(*key, bucket), 120)
 
     async def _note(

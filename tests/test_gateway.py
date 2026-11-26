@@ -593,14 +593,23 @@ async def test_slugs_are_shared_and_only_owners_create_gateways(gate: Gate) -> N
     ],
 )
 def test_the_scanner_is_linear_on_one_megabyte(unit: str) -> None:
-    text = (unit * (1_000_000 // len(unit) + 1))[:1_000_000]
     deny = ["weapons", "(?i)bomb(s)?", "foo(?=bar)"]
-    started = time.perf_counter()
-    scan.find_secrets(text)
-    scan.find_pii(text)
-    scan.find_pii(text, limit=checks.PII_LIMIT)
-    scan.denied_topic(text, deny)
-    assert time.perf_counter() - started < 3.0
+
+    def cpu_seconds(size: int) -> float:
+        text = (unit * (size // len(unit) + 1))[:size]
+        started = time.process_time()
+        scan.find_secrets(text)
+        scan.find_pii(text)
+        scan.find_pii(text, limit=checks.PII_LIMIT)
+        scan.denied_topic(text, deny)
+        return time.process_time() - started
+
+    cpu_seconds(10_000)  # patterns compiled, caches warm
+    small, big = cpu_seconds(125_000), cpu_seconds(1_000_000)
+    # Eight times the text: linear costs about 8 times as much, a quadratic scan 64 times. The
+    # process's own CPU time, compared with itself, does not depend on how loaded the runner is
+    # (a wall-clock bound of 3 s failed on CI at 5.5 s).
+    assert big < 24 * small + 0.05, (small, big)
 
 
 def test_the_scanner_finds_what_the_guard_finds() -> None:
@@ -778,7 +787,22 @@ async def test_a_record_that_never_finishes_does_not_hold_the_shutdown(
     gw = env.svc.gateway
     stuck = asyncio.Event()
     gw._later(stuck.wait())
-    t0 = time.monotonic()
-    await gw.close()
-    assert time.monotonic() - t0 < 2
+    assert await gw.close() == 1  # dropped and logged, the shutdown goes on
     assert not gw._writes
+
+
+async def test_a_finished_record_not_yet_out_of_the_set_does_not_hold_the_wait(env: Env) -> None:
+    """The CI "hang" at close: a write done, its done callback (which takes it out of the set)
+    not run yet. Waiting on done tasks completes without yielding (Python 3.12 gathers them
+    eagerly), so the callback never ran and the wait spun for good on the event loop."""
+
+    async def write() -> None:  # ruff: ignore[unused-async] (a write that ends at once)
+        return None
+
+    gw = env.svc.gateway
+    gw._later(write())
+    await asyncio.sleep(0)  # the write runs and ends; its done callback is only scheduled
+    (task,) = gw._writes
+    assert task.done()
+    assert await gw.idle(5) is True  # a spinning wait would never return (not even wait_for)
+    assert await gw.close() == 0

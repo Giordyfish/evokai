@@ -12,6 +12,7 @@ import asyncio
 import itertools
 import json
 import os
+import threading
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -225,15 +226,16 @@ def test_a_prompt_attack_maps_to_a_score() -> None:
 class FakeBedrock:
     """A ``bedrock-runtime`` client: answers by a function of the text, records the requests."""
 
-    def __init__(self, answer: Any = None, delay: float = 0.0) -> None:
+    def __init__(self, answer: Any = None, hold: threading.Event | None = None) -> None:
         self.requests: list[dict[str, Any]] = []
         self.answer = answer or (lambda text: _response("HIGH" if "evil" in text else None))
-        self.delay = delay
+        self.hold = hold
+        """A call blocks until this is set (a guardrail that does not answer in time)."""
 
     def apply_guardrail(self, **kw: Any) -> dict[str, Any]:
         self.requests.append(kw)
-        if self.delay:
-            time.sleep(self.delay)
+        if self.hold is not None:
+            self.hold.wait(30)
         r = self.answer(kw["content"][0]["text"]["text"])
         if isinstance(r, Exception):
             raise r
@@ -283,10 +285,14 @@ async def test_bedrock_fails_open_with_what_it_has() -> None:
 
 
 async def test_bedrock_times_out_and_counts_what_was_sent() -> None:
-    clf = _bedrock(FakeBedrock(delay=0.5), timeout=0.1)
-    t0 = time.perf_counter()
-    r = await clf.classify("evil " * 10, source="user", budget=10_000)
-    assert time.perf_counter() - t0 < 0.4
+    # The call does not answer while the classifier waits: only the classifier's own timeout can
+    # end the wait, so the test does not depend on how fast the runner is.
+    hold = threading.Event()
+    clf = _bedrock(FakeBedrock(hold=hold), timeout=0.1)
+    try:
+        r = await asyncio.wait_for(clf.classify("evil " * 10, source="user", budget=10_000), 30)
+    finally:
+        hold.set()
     assert (
         r.error == "timeout" and r.score == pytest.approx(0.0) and r.units == 1
     )  # the request left: billed
@@ -382,21 +388,29 @@ async def test_a_failing_classifier_never_blocks_a_turn(env: Env) -> None:
 
 
 async def test_a_slow_classifier_times_out_and_the_turn_goes_on(env: Env) -> None:
-    class Slow(FakeClassifier):
+    # The classifier never answers: the turn can only end through the guard's timeout, so the test
+    # does not measure wall time (a loaded runner once took 4.7 s for the whole turn).
+    abandoned = asyncio.Event()
+
+    class Silent(FakeClassifier):
         async def classify(self, text: str, *, source: str, budget: int) -> Result:
             del text, source, budget
-            await asyncio.sleep(5)
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                abandoned.set()
+                raise
             return Result()
 
-    clf = Slow()
+    clf = Silent()
     clf.timeout = 0.05
     env.svc.guard.classifiers.register(clf)
     await _policy(env, {"injection": {"classifier": "bedrock_guardrails"}})
     env.script.add("function:primary", ["Ciao."])
     tok = await env.token()
-    t0 = time.perf_counter()
-    events = await env.chat(tok["token"], text="Hallo")
-    assert events[-1]["reason"] == "end_turn" and time.perf_counter() - t0 < 2
+    events = await asyncio.wait_for(env.chat(tok["token"], text="Hallo"), 60)
+    assert events[-1]["reason"] == "end_turn"
+    assert abandoned.is_set()  # the call was given up on, not awaited
     (e,) = await _events(env, rule="classifier_unavailable")
     assert e["details"]["reason"] == "timeout"
 

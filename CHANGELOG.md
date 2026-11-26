@@ -171,6 +171,19 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   application's slug, a hash route (`#/apps/x`) is the same page, and a refused path tells the model the format.
 - With the assistant on, the Mascot preference offers animated or still (the assistant's mage); removing the mage is
   switching the assistant off.
+- Tests: the service suite no longer hangs at the end of a test until the CI's 20 minute limit. The leak guard now
+  also cancels the tasks that a cancellation starts (a cleanup in a task of its own, as `asyncio.shield` and
+  SQLAlchemy's close make), which the closing of the test's event loop then cancelled once and waited on for good; that
+  closing now waits 30 seconds at most and names the task that ignored it.
+- The gateway's shutdown no longer spins for good when a record has just been written: it waited again on
+  writes already done but not yet out of its set, which completes without giving the event loop a turn
+  (Python 3.12 and later), so they never left it. This was the CI hang at the end of a test on the Postgres
+  pass, not a record that never finished; `close()` now returns how many records it dropped, and a test
+  whose gateway records are still pending at its end fails with their stacks and the database's locks.
+- Tests: the tests that failed on slow CI runners no longer depend on timing. The voice barge-in and the spoken
+  confirmation wait for the agent's state instead of a pause, the classifier timeouts use a classifier that never
+  answers instead of a wall-clock bound, and the rate limit tests pin the clock the windows are cut on (a request
+  rate test failed when its requests straddled a minute).
 
 ### Changed
 
