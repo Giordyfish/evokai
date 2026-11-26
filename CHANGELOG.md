@@ -8,6 +8,11 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Fixed
+
+- Releases publish the `evokai` alias on PyPI again: since the release reuses the CI run, its "Gates" job is skipped
+  and the alias job, which had no condition of its own, was skipped with it (0.3.0's alias was not published).
+
 ## [0.3.0] - 2026-11-26
 
 ### Added
