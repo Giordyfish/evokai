@@ -74,7 +74,7 @@ from evokai.knowledge.tool import (
 from evokai.knowledge.tool import TOOL_NAME as KNOWLEDGE_TOOL
 from evokai.knowledge.tool import tool_def as knowledge_tool
 from evokai.llm.catalog import bare
-from evokai.llm.policy import agent_settings, request_settings
+from evokai.llm.policy import agent_settings, output_cap, request_settings
 from evokai.llm.prices import call_cost_micro_usd, estimate_call_usd
 from evokai.mcp.client import ToolResult
 from evokai.sandbox.skill_scripts import TOOL_NAME as SKILL_RUN
@@ -485,7 +485,9 @@ class AgentRunner:
             eng.skill_run_offered(agent, grants, guard, skills) if SKILL_RUN not in names else []
         )
         result = RunResult(run_id=run_id, output=None, text="", model=candidates[0])
-        settings = request_settings(agent_settings(agent), eng.settings.max_output_tokens)
+        settings = request_settings(
+            agent_settings(agent), output_cap(app, eng.settings.max_output_tokens)
+        )
         rs = RunState(
             guard=guard,
             trace=guard.trace,

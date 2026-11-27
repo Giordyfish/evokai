@@ -10,6 +10,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Added
 
+- Each application sets the longest answer of a model call, `max_output_tokens` (64 to 128000 tokens), in its YAML,
+  with `PATCH /v1/admin/application` or on the console's Limits page; an agent's own `max_tokens` still wins, and an
+  application without it keeps the deployment's `EVOKAI_MAX_OUTPUT_TOKENS`.
 - The deployment's bare address (`/`) and the API's base (`/agent`) redirect to the console when it is on, instead of
   answering 404.
 

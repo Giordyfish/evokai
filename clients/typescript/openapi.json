@@ -829,6 +829,19 @@
               }
             ]
           },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "maximum": 128000.0,
+                "minimum": 64.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
           "memory_mode": {
             "anyOf": [
               {

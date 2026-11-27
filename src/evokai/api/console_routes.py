@@ -1109,6 +1109,7 @@ async def export(svc: Svc, a: Admin) -> dict[str, str]:
         ("markup", d.get("markup") or None),
         ("tracing", {"content": d["tracing_content"]} if d.get("tracing_content") else None),
         ("stt_filter", d.get("stt_filter")),
+        ("max_output_tokens", d.get("max_output_tokens")),
     )
     # An old *_usd field whose cap ``caps`` sets does not apply: left out, or the file would set
     # the same cap twice.

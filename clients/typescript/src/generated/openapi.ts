@@ -5497,6 +5497,8 @@ export interface components {
             /** Locale */
             locale?: string | null;
             markup?: components["schemas"]["MarkupDef"] | null;
+            /** Max Output Tokens */
+            max_output_tokens?: number | null;
             /** Memory Mode */
             memory_mode?: ("off" | "ask" | "on") | null;
             /** Memory Ttl Days */

@@ -70,6 +70,25 @@ def check_agent_settings(settings: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
+MAX_OUTPUT_TOKENS_RANGE = (64, 128_000)
+"""What an application's ``max_output_tokens`` may be."""
+
+
+def output_cap(app: Any, default: int) -> int:
+    """The output cap of one model call of an application.
+
+    Args:
+        app: The application (its ``defaults``), or None.
+        default: The deployment's ``EVOKAI_MAX_OUTPUT_TOKENS``.
+
+    Returns:
+        The application's ``max_output_tokens`` when it sets one, else the deployment's. An
+        agent's own ``max_tokens`` (in ``model_settings``) still wins over both.
+    """
+    value = (getattr(app, "defaults", None) or {}).get("max_output_tokens")
+    return value if isinstance(value, int) and not isinstance(value, bool) else default
+
+
 def request_settings(agent_settings: dict[str, Any], max_tokens: int) -> dict[str, Any]:
     """The settings of one model request: the agent's options, then the enforced ones.
 

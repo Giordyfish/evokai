@@ -295,6 +295,7 @@ function Form({ app, a, reload }: { app: ConsoleApplication; a: Application; rel
   const [currency, setCurrency] = useState(a.currency ?? 'USD')
   const [rate, setRate] = useState(plain(a.exchange_rate ?? null))
   const [ttl, setTtl] = useState(a.conversation_ttl_days == null ? '' : String(a.conversation_ttl_days))
+  const [outCap, setOutCap] = useState(a.max_output_tokens == null ? '' : String(a.max_output_tokens))
   const [origins, setOrigins] = useState<string[]>(a.allowed_origins.length ? a.allowed_origins : [])
   const [messages, setMessages] = useState<Partial<Record<LimitMessageKey, string>>>({ ...a.messages })
   const [saving, setSaving] = useState(false)
@@ -312,10 +313,16 @@ function Form({ app, a, reload }: { app: ConsoleApplication; a: Application; rel
       setError(t('limits.ttlWhole'))
       return
     }
+    const cap = num(outCap)
+    if (cap != null && (!Number.isInteger(cap) || cap < 64 || cap > 128000)) {
+      setError(t('limits.outputWhole'))
+      return
+    }
     const clean = Object.fromEntries(Object.entries(messages).filter(([, v]) => v && v.trim())) as AppPatch['messages']
     const patch: AppPatch = {
       ...caps.patch,
       conversation_ttl_days: days,
+      max_output_tokens: cap,
       allowed_origins: origins.map((o) => o.trim()).filter(Boolean),
       messages: clean,
     }
@@ -354,6 +361,20 @@ function Form({ app, a, reload }: { app: ConsoleApplication; a: Application; rel
             <div class="affix">
               <input class="in num" inputMode="numeric" value={ttl} placeholder={t('limits.keptPh')} onInput={(e) => setTtl(e.currentTarget.value)} />
               <span>{t('limits.daysAfter')}</span>
+            </div>
+          </Field>
+        </Panel>
+        <Panel title={t('limits.answers')}>
+          <Field label={t('limits.output')} hint={t('limits.outputHint')}>
+            <div class="affix">
+              <input
+                class="in num"
+                inputMode="numeric"
+                value={outCap}
+                placeholder={a.maxOutputTokensDefault != null ? String(a.maxOutputTokensDefault) : ''}
+                onInput={(e) => setOutCap(e.currentTarget.value)}
+              />
+              <span>{t('limits.tokens')}</span>
             </div>
           </Field>
         </Panel>
