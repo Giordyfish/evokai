@@ -486,7 +486,7 @@ class AgentRunner:
         )
         result = RunResult(run_id=run_id, output=None, text="", model=candidates[0])
         settings = request_settings(
-            agent_settings(agent), output_cap(app, eng.settings.max_output_tokens)
+            agent_settings(agent), output_cap(app, eng.settings.max_output_tokens, agent)
         )
         rs = RunState(
             guard=guard,

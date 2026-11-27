@@ -1162,7 +1162,7 @@ class TurnEngine:
             label=lambda name, args: confirm_label(agent, name, args, run.app),
             health=self.model_health,
             operation="stream",
-            max_tokens=output_cap(run.app, settings.max_output_tokens),
+            max_tokens=output_cap(run.app, settings.max_output_tokens, agent),
             op_tags={"turnId": run.turn_id},
             prompt_cache=agent.prompt_cache,
             locale=locale_of(run.app, run.session),
@@ -1328,7 +1328,7 @@ class TurnEngine:
             t0,
             max_calls=guard.max_calls(agent.max_tool_calls_per_turn),
             model_settings=request_settings(
-                agent_settings(agent), output_cap(run.app, settings.max_output_tokens)
+                agent_settings(agent), output_cap(run.app, settings.max_output_tokens, agent)
             ),
         )
 
@@ -1661,7 +1661,7 @@ class TurnEngine:
                 before_call=parent.before_call,
                 health=self.model_health,
                 operation=parent.operation,
-                max_tokens=output_cap(scope.app, self.settings.max_output_tokens),
+                max_tokens=output_cap(scope.app, self.settings.max_output_tokens, target),
                 op_tags={**parent.op_tags, "subagent": target.name},
             )
             result = RunResult(run_id=parent.run_id, output=None, text="", model=candidates[0])

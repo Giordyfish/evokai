@@ -283,6 +283,7 @@ _LATER_DEFAULTS: dict[str, Any] = {
     "markup": None,
     "show_reasoning": False,
     "show_tool_args": False,
+    "max_output_tokens": None,
 }
 """Options added after the first versions, with their defaults (see ``AgentDef.content``)."""
 
@@ -327,6 +328,10 @@ class AgentDef(BaseModel):
     confirm_values: dict[str, dict[str, str]] = Field(default_factory=dict)
     """Tables of words for ``{{map field "table"}}`` in the label templates."""
     max_tool_calls_per_turn: int = 6
+    max_output_tokens: int | None = Field(default=None, ge=64, le=128_000)
+    """The longest answer of one model call, in tokens; None inherits the application's
+    ``max_output_tokens``, then the deployment's ``EVOKAI_MAX_OUTPUT_TOKENS``. A ``max_tokens`` in
+    ``model_settings`` is the most specific and wins over all three."""
     model_settings: dict[str, Any] = Field(default_factory=dict)
     """Sampling, reasoning effort, priority processing (evokai.llm.policy.ALLOWED_SETTINGS)."""
     voice: VoiceDef = Field(default_factory=VoiceDef)

@@ -5286,6 +5286,8 @@ export interface components {
             instructions?: string;
             knowledge?: components["schemas"]["KnowledgeDef"] | null;
             markup?: components["schemas"]["MarkupDef"] | null;
+            /** Max Output Tokens */
+            max_output_tokens?: number | null;
             /**
              * Max Tool Calls Per Turn
              * @default 6

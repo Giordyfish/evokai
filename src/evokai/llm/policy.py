@@ -74,19 +74,29 @@ MAX_OUTPUT_TOKENS_RANGE = (64, 128_000)
 """What an application's ``max_output_tokens`` may be."""
 
 
-def output_cap(app: Any, default: int) -> int:
-    """The output cap of one model call of an application.
+def _whole(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def output_cap(app: Any, default: int, agent: Any = None) -> int:
+    """The output cap of one model call: the agent's, else its application's, else the deployment's.
 
     Args:
         app: The application (its ``defaults``), or None.
         default: The deployment's ``EVOKAI_MAX_OUTPUT_TOKENS``.
+        agent: The agent (its ``max_output_tokens``), or None.
 
     Returns:
-        The application's ``max_output_tokens`` when it sets one, else the deployment's. An
-        agent's own ``max_tokens`` (in ``model_settings``) still wins over both.
+        The most specific cap set. A ``max_tokens`` in the agent's ``model_settings`` still wins
+        over all of them (``request_settings``).
     """
-    value = (getattr(app, "defaults", None) or {}).get("max_output_tokens")
-    return value if isinstance(value, int) and not isinstance(value, bool) else default
+    for value in (
+        getattr(agent, "max_output_tokens", None),
+        (getattr(app, "defaults", None) or {}).get("max_output_tokens"),
+    ):
+        if (cap := _whole(value)) is not None:
+            return cap
+    return default
 
 
 def request_settings(agent_settings: dict[str, Any], max_tokens: int) -> dict[str, Any]:

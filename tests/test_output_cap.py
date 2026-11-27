@@ -18,6 +18,21 @@ def test_the_application_cap_wins_over_the_deployment() -> None:
     assert output_cap(SimpleNamespace(defaults={"max_output_tokens": True}), 1200) == 1200
 
 
+def test_an_agent_inherits_unless_it_sets_its_own() -> None:
+    from evokai.agents.definitions import AgentDef
+
+    app = SimpleNamespace(defaults={"max_output_tokens": 4000})
+    plain = AgentDef(name="a", instructions="x", model="function:x")
+    own = plain.model_copy(update={"max_output_tokens": 9000})
+    assert output_cap(app, 1200, plain) == 4000
+    assert output_cap(app, 1200, own) == 9000
+    assert output_cap(None, 1200, own) == 9000
+    assert output_cap(SimpleNamespace(defaults={}), 1200, plain) == 1200
+    # An agent saved before the field keeps its version.
+    assert "max_output_tokens" not in plain.content()
+    assert plain.with_version().version != own.with_version().version
+
+
 def _spy(env: Env) -> list[dict[str, Any]]:
     seen: list[dict[str, Any]] = []
     original = env.script.model

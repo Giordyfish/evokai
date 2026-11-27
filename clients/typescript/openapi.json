@@ -214,6 +214,19 @@
               }
             ]
           },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "maximum": 128000.0,
+                "minimum": 64.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
           "max_tool_calls_per_turn": {
             "default": 6,
             "title": "Max Tool Calls Per Turn",
