@@ -41,6 +41,7 @@ from evokai.db.repositories import Store
 from evokai.grants import explicit_client_tools, from_yaml, grants_of
 from evokai.guard import identifiers
 from evokai.guard.ask import check_rules
+from evokai.llm.policy import MAX_OUTPUT_TOKENS_RANGE
 from evokai.observability.tracing import CONTENT_MODES
 
 log = logging.getLogger("evokai.bootstrap")
@@ -120,6 +121,12 @@ async def bootstrap(
         if not isinstance(spec["stt_filter"], bool):
             raise ConfigError("bootstrap: stt_filter must be true or false")
         in_defaults["stt_filter"] = spec["stt_filter"]
+    if spec.get("max_output_tokens") is not None:
+        low, high = MAX_OUTPUT_TOKENS_RANGE
+        cap = spec["max_output_tokens"]
+        if isinstance(cap, bool) or not isinstance(cap, int) or not low <= cap <= high:
+            raise ConfigError(f"bootstrap: max_output_tokens must be a whole number {low}-{high}")
+        in_defaults["max_output_tokens"] = cap
     if spec.get("markup") is not None:
         try:
             markup = MarkupDef.model_validate(spec["markup"])

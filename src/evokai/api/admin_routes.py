@@ -49,6 +49,7 @@ from evokai.evals.redteam.service import gate_of
 from evokai.grants import explicit_client_tools, grants_of
 from evokai.i18n import locale_of, pack
 from evokai.identity.models import AppPrincipal
+from evokai.llm.policy import MAX_OUTPUT_TOKENS_RANGE
 from evokai.privacy import Residency, residency_allows
 from evokai.protection import DataProtection, protection, stored_profile
 from evokai.sandbox.skill_scripts import unavailable_reason
@@ -152,6 +153,11 @@ class AppPatch(BaseModel):
     stt_filter: bool | None = None
     """Drop the phrases speech recognisers make up from silence or noise («Thanks for watching»,
     subtitle credits) from transcripts: true (the default) or false."""
+    max_output_tokens: int | None = Field(
+        default=None, ge=MAX_OUTPUT_TOKENS_RANGE[0], le=MAX_OUTPUT_TOKENS_RANGE[1]
+    )
+    """The longest answer of one model call, in tokens, for every agent of the application
+    (an agent's own ``max_tokens`` wins); null: the deployment's ``EVOKAI_MAX_OUTPUT_TOKENS``."""
 
 
 EVAL_KEYS = ("eval_monthly_usd", "eval_judge_model", "eval_on_save", "eval_credential")
@@ -180,6 +186,7 @@ DEFAULT_KEYS = frozenset({
     "tracing_content",
     "markup",
     "stt_filter",
+    "max_output_tokens",
 })
 """Application settings kept in its defaults."""
 
@@ -268,6 +275,8 @@ async def get_application(svc: Svc, a: Admin) -> dict[str, Any]:
         "tracing_content": (app.defaults or {}).get("tracing_content", "masked"),
         "markup": (app.defaults or {}).get("markup"),
         "stt_filter": (app.defaults or {}).get("stt_filter", True),
+        "max_output_tokens": (app.defaults or {}).get("max_output_tokens"),
+        "maxOutputTokensDefault": svc.settings.max_output_tokens,
         "memory_mode": (app.defaults or {}).get("memory_mode", "on"),
         "memory_ttl_days": (app.defaults or {}).get("memory_ttl_days"),
         "redteam_gate": (app.defaults or {}).get("redteam_gate", "off"),

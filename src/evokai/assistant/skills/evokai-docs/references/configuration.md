@@ -27,7 +27,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PROVIDERS_FILE` | unset | A YAML file merged over the built-in provider catalog: the deployment's own endpoints (an Azure resource, a Vertex location, a self-hosted server with its declared residency and jurisdiction), facts its contracts change, its own prices ([data protection](data-protection.md#the-provider-catalog)) |
 | `EVOKAI_PRICE_EUR_USD` | `1.2` | Dollars per euro for the catalog's prices in euros, so every cost is recorded in USD; an assumption that errs high, set your own ([costs](costs.md#prices)) |
 | `EVOKAI_HISTORY_MESSAGES` / `_CHARS` | `30` / `60000` | History window sent to the model |
-| `EVOKAI_MAX_OUTPUT_TOKENS` | `1200` | Output cap per model call |
+| `EVOKAI_MAX_OUTPUT_TOKENS` | `1200` | Output cap per model call, inherited by applications and agents that do not set their own `max_output_tokens` ([answer length](#answer-length)) |
 | `EVOKAI_CLIENT_TOOL_TIMEOUT_SECONDS` | `120` | How long a turn waits for the result of a custom client tool that waits ([client tools](client-tools.md)) |
 | `EVOKAI_FILLER_AFTER_MS` | `700` | Spoken filler when a tool is slow (voice) |
 | `EVOKAI_VOICE_ENABLED` | `false` | Server voice (Pipecat over WebRTC); needs the `voice` extra |
@@ -140,8 +140,19 @@ full are registered (never moved between applications); omitted fields are left 
 stored ones. The same settings in an application YAML go under `application:` as `caps`,
 `currency`, `exchange_rate`, `monthly_cap_usd`, `daily_cap_usd`, `subject_monthly_usd`,
 `subject_daily_usd`, `conversation_ttl_days`, `locale`, `timezone`, `messages`,
-`storage_mode`, `voice_engine`, `allowed_origins`. `grants` has the shape of the YAML section below.
+`storage_mode`, `voice_engine`, `allowed_origins`, `max_output_tokens`. `grants` has the shape of the YAML section below.
 
+
+## Answer length
+
+The longest answer of one model call is inherited, from the most specific level that sets it:
+
+1. the agent's `model_settings.max_tokens`, the provider option as it is;
+2. the agent's `max_output_tokens` (its definition, or the console's agent editor under Model);
+3. the application's `max_output_tokens` (its YAML, `PATCH /v1/admin/application`, or the console's Limits page);
+4. the deployment's `EVOKAI_MAX_OUTPUT_TOKENS`.
+
+Both `max_output_tokens` take 64 to 128000 tokens; leaving one out inherits the next level.
 
 ## Limits
 
@@ -559,6 +570,7 @@ application:
   storage_mode: evokai
   voice_engine: browser
   stt_filter: true              # drop the phrases recognisers make up from silence (docs/voice.md)
+  max_output_tokens: 4000       # the longest answer of one model call (64-128000); default EVOKAI_MAX_OUTPUT_TOKENS
   locale: en
   timezone: Europe/Dublin
   messages: {limit.app: "..."}
