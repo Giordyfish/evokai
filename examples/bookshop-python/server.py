@@ -13,7 +13,7 @@ import json
 import os
 import secrets
 from pathlib import Path
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
 from catalogue import BOOKS, search
 from dotenv import load_dotenv
@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from evokai import EvokaiError, EvokaiServer
+from evokai import AsyncEvokaiServer, EvokaiError
 
 # 1. Load configuration from .env or environment
 HERE = Path(__file__).parent
@@ -35,9 +35,9 @@ MCP_SECRET = os.environ.get("BOOKSHOP_MCP_SECRET", "")
 SERVER_KEY = os.environ.get("EVOKAI_SERVER_KEY")
 
 if not SERVER_KEY:
-    raise RuntimeError("EVOKAI_SERVER_KEY is not set: run `python setup.py` first.")
+    raise RuntimeError("EVOKAI_SERVER_KEY is not set: run `setup_app.py` first.")
 
-evokai = EvokaiServer(base_url=EVOKAI_URL, server_key=SERVER_KEY)
+evokai = AsyncEvokaiServer(base_url=EVOKAI_URL, server_key=SERVER_KEY)
 
 # Paths to shared static files and vendor files
 BOOKSHOP_APP_DIR = HERE.parent / "bookshop-app"
@@ -50,7 +50,11 @@ app = FastAPI(title="Inkwell Books")
 
 
 def current_user() -> dict[str, str]:
-    """A real application takes the user from sign-in. Here every visitor is the same demo reader."""
+    """A real application takes user from sign-in. Here every visitor is the same demo reader.
+
+    Returns:
+        The current user dict with id.
+    """
     return {"id": "reader-1"}
 
 
@@ -67,7 +71,7 @@ async def get_index():
 
 @app.get("/api/books")
 async def get_books():
-    return {"items": [b.model_dump() for b in BOOKS]}
+    return {"items": BOOKS}
 
 
 # 3. Evokai Token & Conversation routes
@@ -76,12 +80,15 @@ class TokenRequest(BaseModel):
 
 
 @app.post("/api/agent/token")
-async def mint_token(req: Optional[TokenRequest] = None, detailed: bool = Query(False)):
+async def mint_token(
+    req: Optional[TokenRequest] = None,
+    detailed: Annotated[bool, Query()] = False,
+):
     conversation_id = req.conversationId if req else None
     modules = {"tone": {"params": {"style": "detailed"}}} if detailed else None
 
-    def mint(conv_id: Optional[str]):
-        return evokai.mint_session_token(
+    async def mint(conv_id: Optional[str]):
+        return await evokai.mint_session_token(
             subject=current_user()["id"],
             agent=AGENT,
             conversation_id=conv_id,
@@ -90,7 +97,7 @@ async def mint_token(req: Optional[TokenRequest] = None, detailed: bool = Query(
         )
 
     try:
-        t = mint(conversation_id)
+        t = await mint(conversation_id)
         return {
             "token": t.token,
             "expiresAt": t.expires_at,
@@ -101,7 +108,7 @@ async def mint_token(req: Optional[TokenRequest] = None, detailed: bool = Query(
     except EvokaiError as e:
         # If the browser remembers an old/erased conversation, start a fresh one
         if conversation_id and e.status == 404:
-            new_t = mint(None)
+            new_t = await mint(None)
             return {
                 "token": new_t.token,
                 "expiresAt": new_t.expires_at,
@@ -111,20 +118,24 @@ async def mint_token(req: Optional[TokenRequest] = None, detailed: bool = Query(
                 "restarted": True,
             }
         raise HTTPException(
-            status_code=e.status or 502, detail={"error": e.code, "message": e.message}
-        )
+            status_code=e.status or 502,
+            detail={"error": e.code, "message": e.message},
+        ) from e
 
 
 @app.get("/api/agent/conversations")
 async def get_conversations():
-    convs = evokai.conversations.list(subject=current_user()["id"], limit=30)
+    convs = await evokai.conversations.list(subject=current_user()["id"], limit=30)
     return {"items": convs}
 
 
 # 4. MCP Server endpoint (Streamable JSON-RPC 2.0 for tools)
 SEARCH_TOOL = {
     "name": "catalogue_search",
-    "description": "Search the Inkwell Books catalogue by title, author or genre. Returns id, title, author, genre, price in euros and copies in stock.",
+    "description": (
+        "Search the Inkwell Books catalogue by title, author or genre. "
+        "Returns id, title, author, genre, price in euros and copies in stock."
+    ),
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -132,7 +143,10 @@ SEARCH_TOOL = {
                 "type": "string",
                 "description": "Words to look for; empty lists every book.",
             },
-            "in_stock_only": {"type": "boolean", "description": "Only books with copies in stock."},
+            "in_stock_only": {
+                "type": "boolean",
+                "description": "Only books with copies in stock.",
+            },
         },
     },
     "annotations": {"readOnlyHint": True},
@@ -147,13 +161,28 @@ def is_authorized(authorization: Optional[str]) -> bool:
 
 
 @app.post("/mcp")
-async def mcp_endpoint(request: Request, authorization: Optional[str] = Header(None)):
+async def mcp_endpoint(
+    request: Request,
+    authorization: Annotated[Optional[str], Header()] = None,
+):
     if not is_authorized(authorization):
         return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED, content={"error": "unauthorized"}
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "unauthorized"},
         )
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "Parse error"},
+            },
+        )
+
     msg_id = body.get("id")
     if msg_id is None:
         # JSON-RPC Notification: acknowledge with HTTP 202
@@ -217,4 +246,4 @@ if __name__ == "__main__":
     print(
         f"Inkwell Books starting on http://localhost:{PORT} (Evokai at {EVOKAI_URL}, agent {AGENT})"
     )
-    uvicorn.run("server:app", host="0.0.0.0", port=PORT, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=PORT)  # noqa: S104
