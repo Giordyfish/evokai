@@ -8,6 +8,8 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-27
+
 ### Added
 
 - The longest answer of a model call is inherited from deployment to application to agent: applications and agents
