@@ -8,6 +8,15 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Fixed
+
+- The `azure` extra installs `aiohttp`: the keyless Azure credential (`azure.identity.aio`) needs it and
+  `azure-identity` does not require it, so `pip install "evokai[azure]"` alone failed every turn on an `azure:` model
+  with "aiohttp package is not installed". The images were not affected (another extra brings it).
+- The chat panel keeps the error of a turn that failed before the model wrote anything: the conversation reloaded
+  after every turn has no assistant message for that turn, and the reload removed the error the person had just seen,
+  leaving the question without an answer.
+
 ## [0.4.0] - 2026-11-27
 
 ### Added
