@@ -91,6 +91,15 @@ def locale_of(app: Any, session: Any = None) -> str:
     return str(((app.defaults if app is not None else None) or {}).get("locale") or DEFAULT_LOCALE)
 
 
+def speech_redaction(app: Any) -> bool:
+    """Whether an application's speech says personal identifiers as neutral words.
+
+    Returns:
+        True unless the application set ``speech_redaction: false``.
+    """
+    return ((app.defaults if app is not None else None) or {}).get("speech_redaction") is not False
+
+
 def message(app: Any, key: str, *, session: Any = None, **params: Any) -> str:
     """A user-facing message: the application's own text, else its locale's, else English.
 
@@ -133,11 +142,16 @@ class SpeechRules:
     ordinals: dict[str, int]
     locale: str = DEFAULT_LOCALE
     identifiers: tuple[Identifier, ...] = ()
+    redact: bool = True
+    """Whether speech replaces personal identifiers with neutral words (the application's
+    ``speech_redaction``, on)."""
 
 
 @lru_cache(maxsize=512)
 def speech_rules(
-    locale: str = DEFAULT_LOCALE, identifiers: tuple[Identifier, ...] = ()
+    locale: str = DEFAULT_LOCALE,
+    identifiers: tuple[Identifier, ...] = (),
+    redact: bool = True,
 ) -> SpeechRules:
     """The speech rules of a locale, with an application's own identifiers.
 
@@ -154,4 +168,5 @@ def speech_rules(
         ordinals=dict(s["ordinals"]),
         locale=locale,
         identifiers=identifiers,
+        redact=redact,
     )

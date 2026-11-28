@@ -5561,6 +5561,8 @@ export interface components {
             residency?: components["schemas"]["Residency"] | null;
             /** Security Event Ttl Days */
             security_event_ttl_days?: number | null;
+            /** Speech Redaction */
+            speech_redaction?: boolean | null;
             /** Storage Mode */
             storage_mode?: ("evokai" | "external") | null;
             /** Stt Filter */

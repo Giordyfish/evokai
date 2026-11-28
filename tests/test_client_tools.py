@@ -422,3 +422,29 @@ async def test_a_step_waiting_for_a_confirmation_never_announces_its_client_call
     ev = await asyncio.wait_for(env.chat(token, text="Light and refund"), 5)
     assert ev[-1]["reason"] == "confirm"
     assert not [e for e in ev if e["type"] == "client_tool"]
+
+
+async def test_calls_that_wait_together_name_their_batch(env: Env) -> None:
+    token = await _session(env, {**LIGHT, "wait": True})
+    env.script.add(
+        "function:primary",
+        [
+            Tool("client_kiosk_light", {"on": True}, "c1"),
+            Tool("client_kiosk_light", {"on": False}, "c2"),
+        ],
+        ["Done."],
+    )
+    turn = asyncio.create_task(env.chat(token, text="On and off"))
+    await _waiting(env)
+    for _ in range(200):
+        if len(env.svc.engine.client_calls.waiting()) == 2:
+            break
+        await asyncio.sleep(0.01)
+    url = "/agent/v1/session/tool-results"
+    for cid in ("c1", "c2"):
+        r = await env.client.post(url, json={"callId": cid, "result": "ok"}, headers=_h(token))
+        assert r.status_code == 200, r.text
+    ev = await asyncio.wait_for(turn, 5)
+    calls = [e for e in ev if e["type"] == "client_tool"]
+    assert [c["callId"] for c in calls] == ["c1", "c2"]
+    assert all(c["batch"] == ["c1", "c2"] for c in calls)

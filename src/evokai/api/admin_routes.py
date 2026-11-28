@@ -153,6 +153,9 @@ class AppPatch(BaseModel):
     stt_filter: bool | None = None
     """Drop the phrases speech recognisers make up from silence or noise («Thanks for watching»,
     subtitle credits) from transcripts: true (the default) or false."""
+    speech_redaction: bool | None = None
+    """Speak e-mails, phone numbers, IBANs and tax codes as neutral words (true, the default) or
+    as written (false). The application's own identifiers are said as they ask either way."""
     max_output_tokens: int | None = Field(
         default=None, ge=MAX_OUTPUT_TOKENS_RANGE[0], le=MAX_OUTPUT_TOKENS_RANGE[1]
     )
@@ -186,6 +189,7 @@ DEFAULT_KEYS = frozenset({
     "tracing_content",
     "markup",
     "stt_filter",
+    "speech_redaction",
     "max_output_tokens",
 })
 """Application settings kept in its defaults."""
@@ -275,6 +279,7 @@ async def get_application(svc: Svc, a: Admin) -> dict[str, Any]:
         "tracing_content": (app.defaults or {}).get("tracing_content", "masked"),
         "markup": (app.defaults or {}).get("markup"),
         "stt_filter": (app.defaults or {}).get("stt_filter", True),
+        "speech_redaction": (app.defaults or {}).get("speech_redaction", True),
         "max_output_tokens": (app.defaults or {}).get("max_output_tokens"),
         "maxOutputTokensDefault": svc.settings.max_output_tokens,
         "memory_mode": (app.defaults or {}).get("memory_mode", "on"),

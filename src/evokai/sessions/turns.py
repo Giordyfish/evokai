@@ -102,7 +102,7 @@ from evokai.engine.workspace import NoLocalWorkspace
 from evokai.grants import Grants, NotGranted, grants_of
 from evokai.guard import Guard, TurnGuard, identifiers
 from evokai.guard.ask import REASON_WRITES
-from evokai.i18n import SpeechRules, locale_of, message, speech_rules
+from evokai.i18n import SpeechRules, locale_of, message, speech_redaction, speech_rules
 from evokai.identity.models import SessionPrincipal
 from evokai.knowledge.tool import CITE_NOTE, format_results, record_found, retrieval_span
 from evokai.knowledge.tool import TOOL_NAME as KNOWLEDGE_TOOL
@@ -446,7 +446,9 @@ class TurnEngine:
             files=attached,
             guard=guard,
             trace=guard.trace,
-            rules=speech_rules(locale_of(app, session), identifiers.of_app(app)),
+            rules=speech_rules(
+                locale_of(app, session), identifiers.of_app(app), redact=speech_redaction(app)
+            ),
             markup=markup,
             threads=threads,
             grants=grants,
@@ -830,6 +832,7 @@ class TurnEngine:
         )
         said = {"n": 0, "dropped": 0}
         carried: list[dict[str, Any]] = []
+        carried_raw: list[str] = []
         trace = self._trace(run, inp)
         voice_span: dict[str, Span | None] = {"span": None}
 
@@ -842,6 +845,8 @@ class TurnEngine:
                 return
             shown, spoken = text, None
             extra: dict[str, Any] = {}
+            # With markup the segments come as written (Markdown, markup, identifiers).
+            raw = " ".join([*carried_raw, text]) if run.markup is not None else None
             if run.markup is not None:
                 # Cues become marks; a segment of cues alone hands them to the next one.
                 f = run.markup.forms(text, run.rules)
@@ -851,7 +856,9 @@ class TurnEngine:
                 carried.clear()
                 if not f.text and not last:
                     carried.extend(marks)
+                    carried_raw[:] = [raw] if raw else []
                     return
+                carried_raw.clear()
                 shown, spoken = f.text, f.spoken
                 extra = {"marks": marks} if marks else {}
                 if f.tagged:
@@ -868,6 +875,10 @@ class TurnEngine:
             # What is shown keeps its digits; the speech engine gets the numbers in words.
             if spoken is None:
                 spoken = spell_numbers(shown, run.rules.locale)
+            # The segment as the model wrote it (Markdown, markup, identifiers), for a client that
+            # shows the answer as written and speaks the segments.
+            if raw is not None and raw.strip() and raw.strip() != shown:
+                extra["raw"] = raw.strip()
             emit({
                 "type": "say",
                 "index": said["n"],
@@ -2553,10 +2564,13 @@ class TurnEngine:
         announce: dict[str, dict[str, Any]] = rs.extra.setdefault("clientAnnounce", {})
 
         def announced(cids: list[str]) -> None:
+            # Each call names the calls the turn now waits for together: a client can run them
+            # all before it answers.
+            batch = [cid for cid in cids if cid in announce]
             for cid in cids:
                 event = announce.pop(cid, None)
                 if event is not None and rs.emit is not None:
-                    rs.emit(event)
+                    rs.emit({**event, "batch": batch})
 
         def timed_out(cids: list[str]) -> None:
             for cid in cids:

@@ -19,6 +19,12 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 - `evokai module purge <applications|gateway>` deletes the data of a module that is off: it counts what would go,
   offers a JSON export, asks for confirmation (`--yes` for scripts, `--dry-run` to count only), revokes the module's
   keys, deletes its rows and writes one audit row.
+- A spoken segment (`say`, with markup) carries `raw`, the segment as the model wrote it, when it differs from its
+  subtitle: a client can show the answer as written one segment at a time ([markup](docs/markup.md)).
+- A `client_tool` event that waits carries `batch`, the calls the turn waits for together
+  ([client tools](docs/client-tools.md)).
+- Application setting `speech_redaction` (default true): `false` speaks e-mails, phone numbers, IBANs and tax codes as
+  written instead of neutral words ([voice](docs/voice.md)).
 - `/v1/console/me` tells which modules are on (`modules`) and whether the configuration pins them (`modulesPinned`);
   the TypeScript client reads the nested error shape (`{"error": {"code", "message"}}`) as well as the flat one.
 - The gateway proxy (preview): `evokai proxy`, a TLS-inspecting forward proxy that applies a gateway's rules to apps

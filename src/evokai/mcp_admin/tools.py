@@ -43,6 +43,7 @@ APPLICATION_FIELDS = (
     "conversation_ttl_days",
     "voice_engine",
     "stt_filter",
+    "speech_redaction",
     "max_output_tokens",
     "locale",
     "timezone",
