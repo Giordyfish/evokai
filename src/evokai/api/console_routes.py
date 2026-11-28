@@ -30,6 +30,7 @@ from evokai.api.trace_routes import note_view
 from evokai.api.trace_routes import summary as trace_summary
 from evokai.assistant import bootstrap as shipped
 from evokai.assistant.privacy import lists_everyone, own_subject
+from evokai.core import modules
 from evokai.core.caps import LEGACY
 from evokai.core.errors import AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized
 from evokai.core.security import generate_key
@@ -48,6 +49,8 @@ from evokai.sessions.limits import app_shares, caps_set, month_cap_usd, share_pc
 from evokai.version import __version__
 
 router = APIRouter(tags=["console"])
+APPS = Depends(modules.require_module(modules.APPLICATIONS))
+"""The routes of this file that belong to the applications module (the rest are core)."""
 Svc = Annotated[Services, Depends(services)]
 Admin = Annotated[AppPrincipal, Depends(admin_app)]
 ConsoleUser = Annotated[console.ConsoleLogin, Depends(console_login)]
@@ -237,7 +240,8 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
     Returns:
         kind (``op``, ``adm`` or ``sso``), applicationId, expiresAt, keyId and keyPrefix (admin
         logins), email, name and roles (single sign-on), whether it owns the deployment, and the
-        deployment's facts the console needs (model allow-list, voice enabled).
+        deployment's facts the console needs (model allow-list, voice enabled, the modules that
+        are on and whether the configuration pins them).
 
     Raises:
         Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
@@ -269,6 +273,8 @@ async def me(request: Request, svc: Svc) -> dict[str, Any]:
         "deploymentOwner": who.deployment_owner,
         "modelAllow": svc.settings.model_allow,
         "voiceEnabled": svc.settings.voice_enabled,
+        "modules": sorted(await modules.enabled(svc)),
+        "modulesPinned": modules.pinned(svc.settings) is not None,
     }
 
 
@@ -285,7 +291,7 @@ class NewApplication(BaseModel):
     allowed_origins: list[str] = Field(default_factory=list)
 
 
-@router.get("/v1/operator/applications", dependencies=[Depends(operator)])
+@router.get("/v1/operator/applications", dependencies=[APPS, Depends(operator)])
 async def applications(svc: Svc) -> dict[str, Any]:
     """Every application.
 
@@ -309,7 +315,7 @@ async def applications(svc: Svc) -> dict[str, Any]:
     }
 
 
-@router.post("/v1/operator/applications", dependencies=[Depends(operator)], status_code=201)
+@router.post("/v1/operator/applications", dependencies=[APPS, Depends(operator)], status_code=201)
 async def create_application(body: NewApplication, svc: Svc, request: Request) -> dict[str, str]:
     """Create an application with a server key and an admin key (shown only now).
 
@@ -360,7 +366,7 @@ class McpProbe(BaseModel):
     """A bearer token to call it with (a service secret or a user's token); never stored."""
 
 
-@router.post("/v1/operator/mcp-test", dependencies=[Depends(operator)])
+@router.post("/v1/operator/mcp-test", dependencies=[APPS, Depends(operator)])
 async def probe_mcp(body: McpProbe, svc: Svc) -> dict[str, Any]:
     """Connect to an MCP server that is not registered yet and list its tools (setup wizard).
 
@@ -413,7 +419,7 @@ class SkillText(BaseModel):
     text: str = Field(min_length=1, max_length=40_000)
 
 
-@router.post("/v1/console/skills/parse")
+@router.post("/v1/console/skills/parse", dependencies=[APPS])
 async def parse_skill(body: SkillText, _login: ConsoleUser) -> dict[str, Any]:
     """Read a SKILL.md as the service would (front matter name and description, then the body).
 
@@ -446,7 +452,7 @@ async def parse_skill(body: SkillText, _login: ConsoleUser) -> dict[str, Any]:
 # Console views over one application
 
 
-@router.get("/v1/admin/agents/{name}/versions")
+@router.get("/v1/admin/agents/{name}/versions", dependencies=[APPS])
 async def agent_versions(name: str, svc: Svc, a: Admin) -> dict[str, Any]:
     """Every version of an agent, newest first (for history and diffs).
 
@@ -481,7 +487,7 @@ class McpTest(BaseModel):
     """For ``forward_user`` servers: a user's token to test with (not stored)."""
 
 
-@router.post("/v1/admin/mcp-servers/{name}/test")
+@router.post("/v1/admin/mcp-servers/{name}/test", dependencies=[APPS])
 async def test_mcp(name: str, body: McpTest, svc: Svc, a: Admin) -> dict[str, Any]:
     """Connect to an MCP server and list its tools.
 
@@ -528,7 +534,7 @@ async def test_mcp(name: str, body: McpTest, svc: Svc, a: Admin) -> dict[str, An
     }
 
 
-@router.get("/v1/admin/conversations")
+@router.get("/v1/admin/conversations", dependencies=[APPS])
 async def conversations(
     svc: Svc,
     a: Admin,
@@ -586,7 +592,7 @@ async def conversations(
     }
 
 
-@router.get("/v1/admin/conversations/{conversation_id}")
+@router.get("/v1/admin/conversations/{conversation_id}", dependencies=[APPS])
 async def conversation(conversation_id: str, svc: Svc, a: Admin) -> dict[str, Any]:
     """One conversation with its messages, turns, their traces and the reviewers' notes.
 
@@ -981,7 +987,7 @@ async def console_health(svc: Svc, login: ConsoleUser, check: bool = False) -> d
 # Console views over one application
 
 
-@router.get("/v1/admin/activity")
+@router.get("/v1/admin/activity", dependencies=[APPS])
 async def activity(svc: Svc, a: Admin, limit: int = 20) -> dict[str, Any]:
     """What changed lately: agent versions, keys, grants.
 
@@ -1028,7 +1034,7 @@ async def activity(svc: Svc, a: Admin, limit: int = 20) -> dict[str, Any]:
     return {"items": items[: max(1, min(limit, 100))]}
 
 
-@router.get("/v1/admin/usage/summary")
+@router.get("/v1/admin/usage/summary", dependencies=[APPS])
 async def usage_summary(
     svc: Svc,
     a: Admin,
@@ -1072,7 +1078,7 @@ def _block_text(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
 _BlockDumper.add_representer(str, _block_text)
 
 
-@router.get("/v1/admin/export")
+@router.get("/v1/admin/export", dependencies=[APPS])
 async def export(svc: Svc, a: Admin) -> dict[str, str]:
     """The application as a config file (secrets left out: ``secret_env`` names a variable).
 

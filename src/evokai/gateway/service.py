@@ -138,8 +138,8 @@ class GatewayService:
         """
         hit = self._apps.get(gateway_id)
         if hit is None:
-            hit = await self.svc.store.applications.get(gateway_id)
-            if hit is None or hit.kind != GATEWAY:
+            hit = await self.svc.store.applications.one(gateway_id, GATEWAY)
+            if hit is None or hit.id != gateway_id:
                 return None
             self._apps.set(gateway_id, hit)
         return hit

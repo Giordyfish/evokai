@@ -101,9 +101,7 @@ async def gateway_access(gateway_id: str, request: Request, login: Login) -> Acc
         NotFound: No such gateway, or one the caller may not see.
     """
     svc = services(request)
-    gw = await svc.store.applications.get(gateway_id)
-    if gw is None or gw.kind != GATEWAY:
-        gw = await svc.store.applications.by_slug(gateway_id, kind=GATEWAY)
+    gw = await svc.store.applications.one(gateway_id, GATEWAY)
     role = login.role_for(gw) if gw is not None else None
     if gw is None or role is None:
         raise NotFound("Unknown gateway.", code="unknown_gateway")

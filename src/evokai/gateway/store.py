@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from evokai.core.util import new_id, utcnow
 from evokai.db import models as m
 from evokai.db.engine import Database
+from evokai.db.kinds import gateways_only
 
 
 def _rowcount(result: object) -> int:
@@ -127,8 +128,10 @@ class GatewayRepository:
         async with self.db.session() as s:
             gateways = (
                 await s.execute(
-                    sa.select(m.Application.id, m.Application.security_event_ttl_days).where(
-                        m.Application.kind == "gateway"
+                    # Retention runs while the gateway module is off too.
+                    gateways_only(
+                        sa.select(m.Application.id, m.Application.security_event_ttl_days),
+                        even_off=True,
                     )
                 )
             ).all()

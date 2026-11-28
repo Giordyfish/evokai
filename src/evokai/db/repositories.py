@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from evokai.core.util import new_id, utcnow
 from evokai.db import models as m
 from evokai.db.engine import Database
+from evokai.db.kinds import APPLICATION, GATEWAY, applications_only, gateways_only
 
 DEFAULT_TITLE = "Conversation"
 """Title of a conversation until its first message names it."""
@@ -62,10 +63,6 @@ def _tags(key: str | None) -> list[str]:
 class _Repo:
     db: Database
 
-
-APPLICATION = "agents"
-"""The kind of an application row that is an application (``gateway``: a gateway)."""
-GATEWAY = "gateway"
 
 POLICY_FIELDS = frozenset({"security", "data_protection"})
 """The application fields that make up its policy (each save of them is a new version)."""
@@ -118,16 +115,21 @@ class ApplicationRepository(_Repo):
     async def all(self, kind: str | None = APPLICATION) -> list[m.Application]:
         """Every application (operator view), never a gateway unless asked.
 
+        Rows of a module that is off are left out (``evokai.db.kinds``).
+
         Args:
-            kind: ``agents`` (the default: applications only), ``gateway``, or None for both.
+            kind: ``agents`` (the default: applications only), ``gateway``, or None for both
+                (only the core places that must see both: ``tests/test_modules_separation.py``).
 
         Returns:
             Applications by name.
         """
         async with self.db.session() as s:
             q = sa.select(m.Application).order_by(m.Application.name)
-            if kind is not None:
-                q = q.where(m.Application.kind == kind)
+            if kind == GATEWAY:
+                q = gateways_only(q)
+            elif kind is not None:
+                q = applications_only(q)
             return list((await s.execute(q)).scalars().all())
 
     async def by_slug(self, slug: str, kind: str | None = APPLICATION) -> m.Application | None:
@@ -135,16 +137,36 @@ class ApplicationRepository(_Repo):
 
         Args:
             slug: The slug.
-            kind: ``agents`` (the default), ``gateway``, or None for either.
+            kind: ``agents`` (the default), ``gateway``, or None for either (core places only).
 
         Returns:
             The application or None.
         """
         async with self.db.session() as s:
             q = sa.select(m.Application).where(m.Application.slug == slug)
-            if kind is not None:
-                q = q.where(m.Application.kind == kind)
+            if kind == GATEWAY:
+                q = gateways_only(q)
+            elif kind is not None:
+                q = applications_only(q)
             return (await s.execute(q)).scalar_one_or_none()
+
+    async def one(self, ref: str, kind: str) -> m.Application | None:
+        """A row of one kind by id or slug.
+
+        Args:
+            ref: The id or the slug.
+            kind: ``agents`` or ``gateway``.
+
+        Returns:
+            The row, or None (unknown, of the other kind, or of a module that is off).
+        """
+        async with self.db.session() as s:
+            q = sa.select(m.Application).where(
+                sa.or_(m.Application.id == ref, m.Application.slug == ref)
+            )
+            q = gateways_only(q) if kind == GATEWAY else applications_only(q)
+            rows = list((await s.execute(q)).scalars().all())
+            return next((r for r in rows if r.id == ref), rows[0] if rows else None)
 
     async def get(self, application_id: str) -> m.Application | None:
         """Find an application by id.

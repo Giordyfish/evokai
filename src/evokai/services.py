@@ -74,6 +74,9 @@ class Services:
     """E-mail, Teams and Slack (``evokai.channels.service.ChannelService``)."""
     gateway: Any = None
     """The gateways' doors for coding tools (``evokai.gateway.service.GatewayService``)."""
+    modules_on: frozenset[str] | None = None
+    """The modules whose background jobs run in this process (``evokai.module_jobs``); None
+    until the first start."""
     housekeeping: dict[str, Any] = field(default_factory=dict)
     """The purge job's last run: lastRunAt, deleted, nextRunAt, error (epoch seconds)."""
 
@@ -124,6 +127,9 @@ def build_services(
     Returns:
         The services.
     """
+    from evokai.core import modules
+
+    modules.configure(settings)
     http = http or httpx.AsyncClient(
         timeout=httpx.Timeout(30, connect=5), limits=httpx.Limits(max_connections=100)
     )

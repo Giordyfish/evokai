@@ -172,6 +172,12 @@ class Settings(BaseSettings):
     """STUN/TURN URLs for WebRTC. Empty = host candidates only (same network, or a public IP)."""
     filler_after_ms: int = 700
 
+    # Modules (evokai.core.modules): the product areas this deployment runs
+    modules: str | None = None
+    """``EVOKAI_MODULES``: the modules that are on, a comma list of ``applications`` and
+    ``gateway``. Set, it pins them (the console shows them read-only); unset, the deployment owner
+    switches them in the console (both on until then). At least one must be on."""
+
     # Admin console (the SPA in admin/, served at {base}/admin)
     admin_ui_enabled: bool = True
     admin_dist_dir: str | None = None
@@ -456,6 +462,15 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     """OpenTelemetry traces, metrics and logs. Off by default; exporters read OTEL_* variables."""
     service_name: str = "evokai"
+
+    @field_validator("modules")
+    @classmethod
+    def _modules(cls, v: str | None) -> str | None:
+        from evokai.core.modules import parse
+
+        if v is not None:
+            parse(v)
+        return v
 
     @field_validator("ask_rules")
     @classmethod
