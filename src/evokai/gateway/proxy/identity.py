@@ -55,6 +55,7 @@ import sqlalchemy as sa
 
 from evokai.core.util import TtlCache, utcnow
 from evokai.db import models as m
+from evokai.gateway.proxy.status import Addresses
 
 log = logging.getLogger("evokai.gateway.proxy")
 
@@ -426,6 +427,8 @@ class IdentityBook:
         self._recent: TtlCache[str, list[tuple[float, Binding]]] = TtlCache(
             max_items=20_000, ttl_seconds=RECENT_SECONDS
         )
+        self.addresses = Addresses()
+        """The PCs seen with a recognised person over the last day (the console's status page)."""
 
     async def bind(
         self, key: Key, email: str | None, account_id: str | None, org_id: str | None
@@ -509,6 +512,7 @@ class IdentityBook:
         """Note an identity seen from a PC's address."""
         if not address:
             return
+        self.addresses.note(address, now)
         items = [(t, x) for t, x in self._recent.get(address) or [] if x.key_hash != b.key_hash]
         items = [(t, x) for t, x in items if now - t < RECENT_SECONDS][-7:]
         self._recent.set(address, [*items, (now, b)])

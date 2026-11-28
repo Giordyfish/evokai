@@ -4160,6 +4160,40 @@
         "title": "PageContext",
         "type": "object"
       },
+      "PersonChange": {
+        "additionalProperties": false,
+        "description": "A change of a person (unset fields stay as they are).",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "pattern": "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "PersonChange",
+        "type": "object"
+      },
       "PiiSettings": {
         "additionalProperties": false,
         "description": "Personal data.",
@@ -4526,6 +4560,46 @@
           "name"
         ],
         "title": "PromptRef",
+        "type": "object"
+      },
+      "ProxySettings": {
+        "additionalProperties": false,
+        "description": "The ``proxy`` console setting (it overrides ``EVOKAI_PROXY_*`` of the same names).",
+        "properties": {
+          "allowed_orgs": {
+            "additionalProperties": {
+              "items": {
+                "pattern": "^[A-Za-z0-9._:-]{1,80}$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Allowed Orgs",
+            "type": "object"
+          },
+          "default_gateway": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Gateway"
+          },
+          "unidentified": {
+            "default": "block",
+            "enum": [
+              "block",
+              "record"
+            ],
+            "title": "Unidentified",
+            "type": "string"
+          }
+        },
+        "title": "ProxySettings",
         "type": "object"
       },
       "PublishBody": {
@@ -10420,7 +10494,7 @@
     },
     "/agent/v1/admin/gateways": {
       "get": {
-        "description": "The gateways the caller can see.\n\nReturns:\n    items (with the caller's role and the count of active people), and whether the caller\n    may create gateways (a deployment owner).",
+        "description": "The gateways the caller can see.\n\nReturns:\n    items (with the caller's role and the count of active people), whether the caller may\n    create gateways (a deployment owner), and the providers a gateway may enable in this\n    build.",
         "operationId": "list_gateways_agent_v1_admin_gateways_get",
         "responses": {
           "200": {
@@ -10731,6 +10805,68 @@
           }
         },
         "summary": "Revoke Person",
+        "tags": [
+          "gateways"
+        ]
+      },
+      "patch": {
+        "description": "Change a person's name or work e-mail (operators); their key stays the same.\n\nReturns:\n    id, label, email.\n\nRaises:\n    NotFound: Unknown or revoked key.\n    Conflict: The e-mail already has another live key, on this gateway or another.",
+        "operationId": "change_person_agent_v1_admin_gateways__gateway_id__people__key_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Person Agent V1 Admin Gateways  Gateway Id  People  Key Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Person",
         "tags": [
           "gateways"
         ]
@@ -12472,6 +12608,120 @@
         "summary": "Provider Catalog",
         "tags": [
           "providers"
+        ]
+      }
+    },
+    "/agent/v1/admin/proxy": {
+      "get": {
+        "description": "The proxy's status page.\n\nReturns:\n    switch (``EVOKAI_PROXY`` as this API process reads it), configured, running, instances\n    (heartbeats), providers, pacFallback, lastDay (requests, people, accounts, pcs,\n    unidentified, surfaces, formatAlerts, refusedOrgs), settings, gateways, catalogue, canEdit.\n\nRaises:\n    Forbidden: Not an operator or owner of the deployment.",
+        "operationId": "proxy_status_agent_v1_admin_proxy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Proxy Status Agent V1 Admin Proxy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Proxy Status",
+        "tags": [
+          "gateway proxy"
+        ]
+      }
+    },
+    "/agent/v1/admin/proxy/settings": {
+      "delete": {
+        "description": "Forget the console setting (deployment owners): the environment applies again.\n\nReturns:\n    The settings that apply now.",
+        "operationId": "delete_proxy_settings_agent_v1_admin_proxy_settings_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Proxy Settings Agent V1 Admin Proxy Settings Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Proxy Settings",
+        "tags": [
+          "gateway proxy"
+        ]
+      },
+      "put": {
+        "description": "Set the ``proxy`` console setting (deployment owners), with an audit row.\n\nReturns:\n    The settings, as the status page shows them.\n\nRaises:\n    BadRequest: An unknown provider, too many organisations, or an unknown default gateway.",
+        "operationId": "put_proxy_settings_agent_v1_admin_proxy_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxySettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Proxy Settings Agent V1 Admin Proxy Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Proxy Settings",
+        "tags": [
+          "gateway proxy"
+        ]
+      }
+    },
+    "/agent/v1/admin/proxy/setup": {
+      "get": {
+        "description": "What a PC needs to go through the proxy (the Connect page's Company network tab).\n\nReturns:\n    configured, publicAddress, pacUrl, caUrl, caDerUrl, pacFallback, providers (served),\n    egressIps, checkUrl.",
+        "operationId": "proxy_setup_agent_v1_admin_proxy_setup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Proxy Setup Agent V1 Admin Proxy Setup Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Proxy Setup",
+        "tags": [
+          "gateway proxy"
         ]
       }
     },

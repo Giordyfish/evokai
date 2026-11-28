@@ -82,7 +82,9 @@ export const TOURS: Tour[] = [
       { id: 'usage', route: '/gateways/{gateway}/usage', target: 'gw-usage' },
       { id: 'events', route: '/gateways/{gateway}/events', target: 'sec-events' },
       { id: 'connect', route: '/gateways/{gateway}/connect', target: 'gw-connect' },
+      { id: 'network', route: '/gateways/{gateway}/connect', target: 'gw-connect-views' },
       { id: 'notice', route: '/gateways/{gateway}/notice', target: 'gw-notice' },
+      { id: 'proxy', route: '/proxy', target: 'px-status', needs: ['owner'] },
     ],
   },
 ]

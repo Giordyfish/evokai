@@ -41,6 +41,7 @@ from evokai.api import (
     preferences_routes,
     privacy_routes,
     provider_routes,
+    proxy_admin_routes,
     proxy_routes,
     redteam_routes,
     run_routes,
@@ -353,6 +354,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         gateway_admin_routes.one,
         gateway_routes.router,
         proxy_routes.router,
+        proxy_admin_routes.router,
     ):
         root.include_router(r, dependencies=gateway)
     # Core: console sign-in and shell (its applications' routes check the module themselves),

@@ -113,6 +113,7 @@ nav:
       - Security of agents: security.md
       - Gateways for coding tools: gateway.md
       - The gateway proxy: gateway-proxy.md
+      - "Gateway proxy: setting up the PCs": gateway-proxy-setup.md
       - Red team: redteam.md
       - Data protection: data-protection.md
       - Privacy: privacy.md

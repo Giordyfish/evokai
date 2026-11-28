@@ -38,7 +38,9 @@ const src = (path: string): string => {
 }
 
 /** The page component each console view and application tab shows (checked against the shell's switch below). */
-const VIEW_PAGE: Record<string, string> = { apps: 'Apps', setup: 'Setup', playground: 'Playground', usage: 'AllUsage', policy: 'SystemPolicy' }
+const VIEW_PAGE: Record<string, string> = { apps: 'Apps', setup: 'Setup', playground: 'Playground', usage: 'AllUsage', policy: 'SystemPolicy', proxy: 'Proxy' }
+/** Views the shell shows only to some logins (the page, or NotFound). */
+const GATED: Record<string, RegExp> = { proxy: /case 'proxy':\s*return proxyReader\(me\) \? <Proxy\b/ }
 const TAB_PAGE: Record<string, (id: string | undefined) => string> = {
   agents: (id) => (id ? 'AgentEditor' : 'Agents'),
   security: () => 'Security',
@@ -89,7 +91,7 @@ describe('the tours', () => {
 
   it('know the pages the shell shows for those routes', () => {
     const shell = src('shell.tsx')
-    for (const [view, page] of Object.entries(VIEW_PAGE)) expect(shell).toMatch(new RegExp(`case '${view}':\\s*return <${page}\\b`))
+    for (const [view, page] of Object.entries(VIEW_PAGE)) expect(shell).toMatch(GATED[view] ?? new RegExp(`case '${view}':\\s*return <${page}\\b`))
     expect(shell).toMatch(/case 'agents':\s*return id \? <AgentEditor[^:]*: <Agents\b/)
     expect(shell).toMatch(/case 'security':\s*return <Security\b/)
     expect(shell).toMatch(/case 'usage':\s*return <AppUsage\b/)

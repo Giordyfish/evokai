@@ -31,6 +31,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/deployment.md`: Running and deploying Evokai
 - `references/evals.md`: Evals
 - `references/features.md`: Features
+- `references/gateway-proxy-setup.md`: Gateway proxy: setting up the PCs
 - `references/gateway-proxy.md`: The gateway proxy
 - `references/gateway.md`: Gateways for coding tools
 - `references/index.md`: Evokai

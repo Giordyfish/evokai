@@ -648,6 +648,178 @@ async def test_the_pac_and_the_root_are_served_by_the_api(gate: Gate, tmp_path: 
     )
 
 
+# The console: setup values, status page, settings, people's e-mail
+
+PROXY = "/agent/v1/admin/proxy"
+
+
+async def test_the_setup_values_come_from_the_configuration(gate: Gate, tmp_path: Path) -> None:
+    env = gate.env
+    r = await env.client.get(f"{PROXY}/setup", headers=OP)
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["configured"] is False and v["pacUrl"] is None and v["caUrl"] is None
+    assert v["checkUrl"] == "https://evokai.check" and v["pacFallback"] == "block"
+    test = proxy_ca(tmp_path)
+    env.svc.settings.proxy_public_address = "proxy.example.com:3128"
+    env.svc.settings.proxy_ca_cert = test.cert
+    env.svc.settings.proxy_egress_ips = "203.0.113.7, 203.0.113.8"
+    env.svc.settings.public_url = "https://evokai.example.com/agent"
+    v = (await env.client.get(f"{PROXY}/setup", headers=OP)).json()
+    assert v["configured"] is True and v["publicAddress"] == "proxy.example.com:3128"
+    assert v["pacUrl"] == "https://evokai.example.com/agent/proxy.pac"
+    assert v["caUrl"] == "https://evokai.example.com/agent/proxy/ca.crt"
+    assert v["caDerUrl"].endswith("/proxy/ca.crt?format=der")
+    assert v["egressIps"] == ["203.0.113.7", "203.0.113.8"]
+    assert "anthropic" in v["providers"]
+    assert (await env.client.get(f"{PROXY}/setup")).status_code == 401
+
+
+async def test_the_status_page_counts_the_last_day_and_reads_heartbeats(gate: Gate) -> None:
+    from evokai.gateway.proxy import status
+
+    env = gate.env
+    v = (await env.client.get(PROXY, headers=OP)).json()
+    assert v["running"] is False and v["instances"] == [] and v["canEdit"] is True
+    assert v["lastDay"]["requests"] == 0 and v["lastDay"]["pcs"] == 0
+    # A recognised person from a PC, a refusal recorded, an alert.
+    await gate.learn_cli()
+    await gate.policy({"modes": {"input.secrets": "enforce"}})
+    assert (await gate.send(cli_message(f"key {fx.SECRET}"))).verdict is not None
+    broken = req(
+        "POST",
+        "claude.ai",
+        chat_path(),
+        b"not json",
+        cookie=cookie(),
+        x_organization_uuid=fx.ORG,
+        user_agent=fx.ELECTRON_UA,
+    )
+    await gate.learn_desktop()
+    await gate.send(broken)
+    await gate.events()
+    await status.beat(env.svc, gate.proxy, 3128, "proxy-1")
+    v = (await env.client.get(PROXY, headers=OP)).json()
+    assert v["running"] is True and v["instances"][0]["instance"] == "proxy-1"
+    day = v["lastDay"]
+    assert day["requests"] == 1 and day["people"] == 1 and day["accounts"] == 1
+    assert day["pcs"] == 1 and day["surfaces"] == {"claude_code": 1}
+    assert [(a["adapter"], a["gateway"]) for a in day["formatAlerts"]] == [("claude.chat", "Dev")]
+    assert v["settings"]["value"]["unidentified"] == "block" and v["settings"]["stored"] is False
+    assert [g["slug"] for g in v["gateways"]] == ["dev"] and "anthropic" in v["catalogue"]
+
+
+async def test_refused_organisations_and_unidentified_requests_are_counted(env: Env) -> None:
+    gate = await _gate(env, proxy_allowed_orgs={"anthropic": [fx.ORG]}, proxy_default_gateway="dev")
+    await gate.learn_cli(org=fx.OTHER_ORG)
+    assert (await gate.send(cli_message("hello"))).verdict is not None
+    await gate.learn_cli(email="stranger@example.com")
+    assert (await gate.send(cli_message("hello"))).verdict is not None
+    await gate.events()
+    day = (await env.client.get(PROXY, headers=OP)).json()["lastDay"]
+    assert [(o["provider"], o["org"], o["events"], o["people"]) for o in day["refusedOrgs"]] == [
+        ("anthropic", fx.OTHER_ORG, 1, 1)
+    ]
+    assert day["unidentifiedRefused"] == 1
+
+
+async def test_the_settings_are_written_by_owners_with_an_audit_row(gate: Gate) -> None:
+    env = gate.env
+    body = {
+        "allowed_orgs": {"anthropic": [fx.ORG, fx.ORG]},
+        "unidentified": "record",
+        "default_gateway": gate.id,
+    }
+    r = await env.client.put(f"{PROXY}/settings", json=body, headers=OP)
+    assert r.status_code == 200, r.text
+    assert r.json()["value"] == {
+        "allowed_orgs": {"anthropic": [fx.ORG]},
+        "unidentified": "record",
+        "default_gateway": "dev",
+    }
+    assert r.json()["stored"] is True
+    await gate.proxy.refresh()
+    assert gate.proxy.settings.unidentified == "record"
+    assert gate.proxy.settings.allowed_orgs == {"anthropic": [fx.ORG]}
+    assert gate.proxy.settings.default_gateway == gate.id
+    entries = await env.svc.store.audit.query(None, everything=True, action="proxy.settings")
+    assert entries and (entries[0].after or {}).get("unidentified") == "record"
+    for bad in (
+        {"allowed_orgs": {"nobody": ["x"]}},
+        {"default_gateway": "missing"},
+        {"unidentified": "maybe"},
+        {"allowed_orgs": {"anthropic": ["no spaces allowed"]}},
+    ):
+        r = await env.client.put(f"{PROXY}/settings", json=bad, headers=OP)
+        assert r.status_code in (400, 422), bad
+    # No default gateway chosen in the console: the environment's no longer applies.
+    env.svc.settings.proxy_default_gateway = "dev"
+    r = await env.client.put(f"{PROXY}/settings", json={"unidentified": "record"}, headers=OP)
+    assert r.json()["value"]["default_gateway"] is None
+    await gate.proxy.refresh()
+    assert gate.proxy.settings.default_gateway is None
+    r = await env.client.delete(f"{PROXY}/settings", headers=OP)
+    assert r.json() == {
+        "value": {"allowed_orgs": {}, "unidentified": "block", "default_gateway": "dev"},
+        "environment": {"allowed_orgs": {}, "unidentified": "block", "default_gateway": "dev"},
+        "stored": False,
+    }
+
+
+def test_the_proxy_settings_need_the_owner_role() -> None:
+    from evokai.api.proxy_admin_routes import deployment_role
+    from evokai.identity.console import ConsoleLogin
+    from evokai.identity.roles import required
+
+    assert required("PUT", "/v1/admin/proxy/settings") == "owner"
+    assert required("DELETE", "/v1/admin/proxy/settings") == "owner"
+    assert deployment_role(ConsoleLogin("op", None, 0)) == "owner"
+    assert deployment_role(ConsoleLogin("adm", "app", 0)) is None
+    assert deployment_role(ConsoleLogin("sso", None, 0, roles={"*": "operator"})) == "operator"
+    assert deployment_role(ConsoleLogin("sso", None, 0, roles={"dev": "owner"})) is None
+
+
+def test_addresses_are_counted_over_one_day() -> None:
+    from evokai.gateway.proxy.status import Addresses
+
+    a = Addresses()
+    a.note("10.0.0.5", 1000.0)
+    a.note("10.0.0.6", 1000.0 + 23 * 3600)
+    a.note("")
+    assert a.count(1000.0 + 23 * 3600) == 2
+    assert a.count(1000.0 + 25 * 3600) == 1
+
+
+async def test_a_persons_email_and_name_can_change(gate: Gate) -> None:
+    env = gate.env
+    people = (await env.client.get(f"{GW}/{gate.id}/people", headers=OP)).json()["items"]
+    kid = people[0]["id"]
+    r = await env.client.post(
+        f"{GW}/{gate.id}/people", json={"label": "Bob", "email": "bob@example.com"}, headers=OP
+    )
+    bob = r.json()["id"]
+    r = await env.client.patch(f"{GW}/{gate.id}/people/{bob}", json={"email": fx.EMAIL}, headers=OP)
+    assert r.status_code == 409 and r.json()["error"] == "email_taken"
+    r = await env.client.patch(
+        f"{GW}/{gate.id}/people/{kid}",
+        json={"label": "Ada L.", "email": "ADA.L@example.com"},
+        headers=OP,
+    )
+    assert r.status_code == 200 and r.json()["email"] == "ada.l@example.com"
+    r = await env.client.patch(f"{GW}/{gate.id}/people/{bob}", json={"email": ""}, headers=OP)
+    assert r.json() == {"id": bob, "label": "Bob", "email": None}
+    items = (await env.client.get(f"{GW}/{gate.id}/people", headers=OP)).json()["items"]
+    listed = {p["id"]: p for p in items}
+    assert listed[kid]["label"] == "Ada L." and listed[kid]["email"] == "ada.l@example.com"
+    entries = await env.svc.store.audit.query(gate.id, action="gateway.key_update")
+    assert len(entries) == 2
+    await env.client.delete(f"{GW}/{gate.id}/people/{bob}", headers=OP)
+    r = await env.client.patch(f"{GW}/{gate.id}/people/{bob}", json={"label": "x"}, headers=OP)
+    assert r.status_code == 404
+    listing = (await env.client.get(GW, headers=OP)).json()
+    assert {"anthropic", "openai"} <= set(listing["providers"])
+
+
 # End to end: the engine, a fake upstream on TLS, PCs that trust the proxy's root
 
 

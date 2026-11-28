@@ -4,17 +4,46 @@
  * page's controls that act on a gateway, with versions, tests and copy), its usage in tokens (never an amount), its
  * security events, the snippets to connect a tool, and a template of the notice to the employees.
  */
-import { useMemo, useState } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 
-import type { Gateway, GatewayProvider, GatewayUsage } from '@client/core/types'
+import type { Gateway, GatewayPerson, GatewayProvider, GatewayUsage, ProxySetup } from '@client/core/types'
 import { describe, forApp } from '../api'
 import { ago, copy, day } from '../format'
-import { claudeManaged, claudeShell, claudeUser, codexConfig, codexShell, gateways, GW_TABS, gwHref, type GwTab, PROVIDERS, TOOL } from '../gateway'
+import {
+  claudeCodeNetwork,
+  claudeManaged,
+  claudeShell,
+  claudeUser,
+  codexConfig,
+  codexNetwork,
+  codexShell,
+  desktopLinux,
+  desktopMac,
+  desktopWindows,
+  firefoxPolicy,
+  gateways,
+  GW_TABS,
+  gwHref,
+  type GwTab,
+  isEmail,
+  linuxShell,
+  macProfile,
+  netValues,
+  PROVIDERS,
+  proxy,
+  PROXY_APPS,
+  ROOT_FILE,
+  rootDer,
+  toolOf,
+  vscodeNetwork,
+  windowsShell,
+} from '../gateway'
 import { Empty, sparkle, toast } from '../magic'
 import { appPolicy } from '../policy'
 import { go, setTitle, useConsole, useLoad } from '../state'
 import { Btn, Field, Hero, Panel, Seg, Switch, Tabs, Tag } from '../ui'
-import { num, t, type TextKey } from '../i18n'
+import { has, num, rich, t, type TextKey } from '../i18n'
 import { Loads } from './common'
 import { CopyPolicy, PolicyHistory, PolicyTests } from './PolicyTools'
 import { Events, Policy, type PolicyOwner } from './Security'
@@ -38,7 +67,7 @@ function GatewayList() {
     <>
       <Hero title={t('page.gateways')} sub={t('gw.sub')} />
       <Loads load={load} what={t('what.gateways')}>
-        {({ items, canCreate }) => (
+        {({ items, canCreate, providers }) => (
           <>
             {items.length ? (
               <Panel cls="flat" tour="gw-list">
@@ -65,7 +94,7 @@ function GatewayList() {
                           </td>
                           <td>
                             {g.providers.map((p) => (
-                              <Tag key={p}>{TOOL[p]}</Tag>
+                              <Tag key={p}>{toolOf(p)}</Tag>
                             ))}
                           </td>
                           <td>{num(g.people ?? 0)}</td>
@@ -87,7 +116,7 @@ function GatewayList() {
                 </Empty>
               </Panel>
             )}
-            {canCreate ? <CreateGateway /> : null}
+            {canCreate ? <CreateGateway options={providers ?? PROVIDERS} /> : null}
           </>
         )}
       </Loads>
@@ -107,7 +136,7 @@ function StatusOf({ g }: { g: Gateway }) {
   )
 }
 
-function CreateGateway() {
+function CreateGateway({ options }: { options: readonly GatewayProvider[] }) {
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [providers, setProviders] = useState<GatewayProvider[]>(['anthropic'])
@@ -144,7 +173,7 @@ function CreateGateway() {
         </Field>
       </div>
       <Field label={t('gw.providers')}>
-        <ProviderSwitches value={providers} onChange={setProviders} />
+        <ProviderSwitches options={options} value={providers} onChange={setProviders} />
       </Field>
       {error ? (
         <p class="hint" style="color:var(--s-bad)">
@@ -158,15 +187,26 @@ function CreateGateway() {
   )
 }
 
-function ProviderSwitches({ value, onChange, disabled }: { value: GatewayProvider[]; onChange: (v: GatewayProvider[]) => void; disabled?: boolean }) {
+/** A switch per provider the service offers (`github` only in builds whose gateway list returns it). */
+function ProviderSwitches({
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  options: readonly GatewayProvider[]
+  value: GatewayProvider[]
+  onChange: (v: GatewayProvider[]) => void
+  disabled?: boolean
+}) {
   return (
     <div style="display:flex;gap:16px;flex-wrap:wrap">
-      {PROVIDERS.map((p) => (
+      {options.map((p) => (
         <Switch
           key={p}
           disabled={disabled}
           on={value.includes(p)}
-          label={t(`gw.provider.${p}` as TextKey)}
+          label={has(`gw.provider.${p}`) ? t(`gw.provider.${p}` as TextKey) : toolOf(p)}
           onChange={(on) => onChange(on ? [...value, p] : value.filter((x) => x !== p))}
         />
       ))}
@@ -199,7 +239,7 @@ function GatewayView({ g, tab, reload }: { g: Gateway; tab: GwTab; reload: () =>
           <>
             <StatusOf g={g} />{' '}
             {g.providers.map((p) => (
-              <Tag key={p}>{TOOL[p]}</Tag>
+              <Tag key={p}>{toolOf(p)}</Tag>
             ))}{' '}
             <code>{g.slug}</code>
           </>
@@ -231,15 +271,18 @@ function GatewayView({ g, tab, reload }: { g: Gateway; tab: GwTab; reload: () =>
 function People({ g }: { g: Gateway }) {
   const load = useLoad(() => gateways.people(g.id), [g.id])
   const [label, setLabel] = useState('')
+  const [email, setEmail] = useState('')
   const [shown, setShown] = useState<{ key: string; label: string } | null>(null)
   const [arming, setArming] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
   const canEdit = g.role === 'owner' || g.role === 'operator'
   const add = async (e: Event) => {
     const btn = e.currentTarget as Element
     try {
-      const r = await gateways.addPerson(g.id, label.trim())
+      const r = await gateways.addPerson(g.id, label.trim(), email.trim() || undefined)
       setShown({ key: r.key, label: r.label })
       setLabel('')
+      setEmail('')
       sparkle(btn)
       toast(t('gw.keyMade'), t('keys.copyNow'), null)
       await load.reload()
@@ -277,10 +320,24 @@ function People({ g }: { g: Gateway }) {
               aria-label={t('gw.personLabel')}
               onInput={(e) => setLabel(e.currentTarget.value)}
             />
-            <Btn kind="pri" fx="key" disabled={!label.trim()} onClick={(e) => void add(e)}>
+            <input
+              class="in"
+              type="email"
+              style="max-width:320px"
+              maxLength={254}
+              value={email}
+              placeholder={t('gw.personEmail')}
+              aria-label={t('gw.personEmail')}
+              aria-invalid={email.trim() && !isEmail(email) ? 'true' : undefined}
+              onInput={(e) => setEmail(e.currentTarget.value)}
+            />
+            <Btn kind="pri" fx="key" disabled={!label.trim() || (!!email.trim() && !isEmail(email))} onClick={(e) => void add(e)}>
               {t('gw.makeKey')}
             </Btn>
           </div>
+          <p class="hint" style="margin:8px 0 0">
+            {t('gw.personEmailHint')}
+          </p>
         </Panel>
       ) : null}
       {shown ? (
@@ -327,6 +384,7 @@ function People({ g }: { g: Gateway }) {
                   <thead>
                     <tr>
                       <th>{t('gw.person')}</th>
+                      <th>{t('gw.email')}</th>
                       <th>{t('keys.key')}</th>
                       <th>{t('keys.created')}</th>
                       <th>{t('keys.lastUsed')}</th>
@@ -335,11 +393,15 @@ function People({ g }: { g: Gateway }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((k) => (
+                    {items.map((k) =>
+                      editing === k.id ? (
+                        <PersonEdit key={k.id} g={g} k={k} onDone={() => setEditing(null)} onSaved={load.reload} />
+                      ) : (
                       <tr key={k.id}>
                         <td>
                           <b>{k.label}</b>
                         </td>
+                        <td class="s">{k.email ? <code>{k.email}</code> : <span class="s">{t('gw.noEmail')}</span>}</td>
                         <td>
                           <code>{k.prefix}_••••</code>
                         </td>
@@ -358,13 +420,19 @@ function People({ g }: { g: Gateway }) {
                         </td>
                         <td class="r">
                           {!k.revoked && canEdit ? (
-                            <Btn sm kind="ghost danger" onClick={() => void revoke(k.id, k.label)}>
-                              {arming === k.id ? t('keys.confirmRevoke') : t('keys.revoke')}
-                            </Btn>
+                            <span style="display:inline-flex;gap:6px">
+                              <Btn sm kind="ghost" onClick={() => setEditing(k.id)}>
+                                {t('gw.editPerson')}
+                              </Btn>
+                              <Btn sm kind="ghost danger" onClick={() => void revoke(k.id, k.label)}>
+                                {arming === k.id ? t('keys.confirmRevoke') : t('keys.revoke')}
+                              </Btn>
+                            </span>
                           ) : null}
                         </td>
                       </tr>
-                    ))}
+                      ),
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -384,6 +452,59 @@ function People({ g }: { g: Gateway }) {
   )
 }
 
+/** A person's row while their name and e-mail are edited (their key stays the same). */
+function PersonEdit({ g, k, onDone, onSaved }: { g: Gateway; k: GatewayPerson; onDone: () => void; onSaved: () => Promise<void> }) {
+  const [label, setLabel] = useState(k.label)
+  const [email, setEmail] = useState(k.email ?? '')
+  const [busy, setBusy] = useState(false)
+  const bad = !!email.trim() && !isEmail(email)
+  const save = async (e: Event) => {
+    const btn = e.currentTarget as Element
+    setBusy(true)
+    try {
+      await gateways.changePerson(g.id, k.id, { label: label.trim(), email: email.trim() })
+      sparkle(btn)
+      toast(t('gw.personSaved'), label.trim(), null)
+      onDone()
+      await onSaved()
+    } catch (err) {
+      toast(t('gw.personNotSaved'), describe(err), null)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <tr>
+      <td>
+        <input class="in" maxLength={120} value={label} aria-label={t('gw.personLabel')} onInput={(e) => setLabel(e.currentTarget.value)} />
+      </td>
+      <td colSpan={4}>
+        <input
+          class="in"
+          type="email"
+          maxLength={254}
+          value={email}
+          placeholder={t('gw.personEmail')}
+          aria-label={t('gw.personEmail')}
+          aria-invalid={bad ? 'true' : undefined}
+          onInput={(e) => setEmail(e.currentTarget.value)}
+        />
+      </td>
+      <td />
+      <td class="r">
+        <span style="display:inline-flex;gap:6px">
+          <Btn sm kind="ghost" onClick={onDone}>
+            {t('common.cancel')}
+          </Btn>
+          <Btn sm kind="pri" check busy={busy ? t('common.saving') : false} disabled={!label.trim() || bad} onClick={(e) => void save(e)}>
+            {t('common.save')}
+          </Btn>
+        </span>
+      </td>
+    </tr>
+  )
+}
+
 // Policy
 
 function GatewayPolicy({ g, owner, reload }: { g: Gateway; owner: PolicyOwner; reload: () => Promise<void> }) {
@@ -400,7 +521,7 @@ function GatewayPolicy({ g, owner, reload }: { g: Gateway; owner: PolicyOwner; r
   ]
   return (
     <>
-      <GatewaySettings g={g} reload={reload} />
+      <GatewaySettings g={g} reload={reload} options={others.data?.providers ?? PROVIDERS} />
       <Loads load={load} what={t('what.securityPolicy')}>
         {(view) => <Policy key={JSON.stringify(view.policy)} gateway app={owner} view={view} onSaved={(v) => load.set(v)} onReload={load.reload} />}
       </Loads>
@@ -419,7 +540,7 @@ const list = (s: string): string[] =>
     .map((x) => x.trim())
     .filter(Boolean)
 
-function GatewaySettings({ g, reload }: { g: Gateway; reload: () => Promise<void> }) {
+function GatewaySettings({ g, reload, options }: { g: Gateway; reload: () => Promise<void>; options: readonly GatewayProvider[] }) {
   const isOwner = g.role === 'owner'
   const [providers, setProviders] = useState<GatewayProvider[]>(g.providers)
   const [models, setModels] = useState(g.allowedModels.join(', '))
@@ -479,7 +600,7 @@ function GatewaySettings({ g, reload }: { g: Gateway; reload: () => Promise<void
       {!isOwner ? <p class="hint">{t('gw.ownerOnly')}</p> : null}
       <div class="grid g2">
         <Field label={t('gw.providers')}>
-          <ProviderSwitches value={providers} onChange={setProviders} disabled={!isOwner} />
+          <ProviderSwitches options={[...new Set([...options, ...g.providers])]} value={providers} onChange={setProviders} disabled={!isOwner} />
         </Field>
         <Field label={t('gw.status')}>
           <Switch on={active} onChange={setActive} disabled={!isOwner} label={active ? t('keys.active') : t('gw.disabled')} />
@@ -632,7 +753,7 @@ function UsageTables({ u }: { u: GatewayUsage }) {
               {u.models.map((r) => (
                 <tr key={`${r.provider}:${r.model}`}>
                   <td>
-                    <code>{r.model || '-'}</code> <Tag>{TOOL[r.provider]}</Tag>
+                    <code>{r.model || '-'}</code> <Tag>{toolOf(r.provider)}</Tag>
                   </td>
                   <TokenCells r={r} />
                 </tr>
@@ -683,14 +804,44 @@ function UsageTables({ u }: { u: GatewayUsage }) {
 
 // Connect
 
-function Snippet({ title, hint, text, prose }: { title: string; hint: string; text: string; prose?: boolean }) {
+/** Save a text as a file on the PC (a configuration profile, a policy file). */
+function saveFile(name: string, text: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function Snippet({
+  title,
+  hint,
+  text,
+  prose,
+  file,
+}: {
+  title: string
+  hint: ComponentChildren
+  text: string
+  prose?: boolean
+  /** Also offer the text as a file: its name and media type. */
+  file?: [string, string]
+}) {
   return (
     <Panel
       title={title}
       actions={
-        <Btn sm check onClick={async () => toast((await copy(text)) ? t('gw.copied') : t('common.copyByHand'), title, null)}>
-          {t('common.copy')}
-        </Btn>
+        <span style="display:inline-flex;gap:6px">
+          {file ? (
+            <Btn sm onClick={() => saveFile(file[0], text, file[1])}>
+              {t('gw.net.download')}
+            </Btn>
+          ) : null}
+          <Btn sm check onClick={async () => toast((await copy(text)) ? t('gw.copied') : t('common.copyByHand'), title, null)}>
+            {t('common.copy')}
+          </Btn>
+        </span>
       }
     >
       <p class="hint">{hint}</p>
@@ -705,9 +856,24 @@ function Snippet({ title, hint, text, prose }: { title: string; hint: string; te
   )
 }
 
+const CONNECT_VIEWS = ['direct', 'network'] as const
+type ConnectView = (typeof CONNECT_VIEWS)[number]
+
 function Connect({ g }: { g: Gateway }) {
+  const [view, setView] = useState<ConnectView>(() => (location.hash.includes('view=network') ? 'network' : 'direct'))
   return (
     <div data-tour="gw-connect">
+      <div style="margin-bottom:12px" data-tour="gw-connect-views">
+        <Seg options={CONNECT_VIEWS} value={view} onChange={setView} labels={{ direct: t('gw.connect.direct'), network: t('gw.connect.network') }} />
+      </div>
+      {view === 'direct' ? <DirectAddress g={g} /> : <CompanyNetwork g={g} />}
+    </div>
+  )
+}
+
+function DirectAddress({ g }: { g: Gateway }) {
+  return (
+    <>
       <p class="hint">{t('gw.connectSub')}</p>
       <div class="grid g2">
         <Snippet title={t('gw.snip.managed')} hint={t('gw.snip.managedHint')} text={claudeManaged()} />
@@ -720,6 +886,231 @@ function Connect({ g }: { g: Gateway }) {
           <Snippet title={t('gw.snip.codexKey')} hint={t('gw.snip.codexKeyHint')} text={codexShell()} />
         </div>
       ) : null}
+    </>
+  )
+}
+
+// Connect: the company network (the gateway proxy)
+
+function CompanyNetwork({ g }: { g: Gateway }) {
+  const load = useLoad(() => proxy.setup(), [])
+  return (
+    <Loads load={load} what={t('what.proxySetup')}>
+      {(s) => <Network g={g} s={s} />}
+    </Loads>
+  )
+}
+
+const uuid = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().toUpperCase()
+    : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16)).toUpperCase()
+
+/** A value with its copy button (the PAC's address, the proxy's, an egress address). */
+function Value({ label, value, hint }: { label: string; value: string | null; hint?: ComponentChildren }) {
+  return (
+    <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:6px 0">
+      <span style="min-width:200px">
+        <b>{label}</b>
+      </span>
+      {value ? (
+        <>
+          <code style="word-break:break-all">{value}</code>
+          <Btn sm kind="ghost" check onClick={async () => toast((await copy(value)) ? t('gw.copied') : t('common.copyByHand'), label, null)}>
+            {t('common.copy')}
+          </Btn>
+        </>
+      ) : (
+        <Tag tone="warn">{t('gw.net.notSet')}</Tag>
+      )}
+      {hint ? (
+        <div class="hint" style="flex-basis:100%;margin:0">
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** Numbered steps, each a message of the dictionaries (with code parts where it names a value). */
+function Steps({ items }: { items: ComponentChildren[] }) {
+  return (
+    <ol style="margin:0 0 8px;padding-left:20px;line-height:1.6">
+      {items.map((x, i) => (
+        <li key={i}>{x}</li>
+      ))}
+    </ol>
+  )
+}
+
+const code = (s: string): ComponentChildren => <code>{s}</code>
+
+function Network({ g, s }: { g: Gateway; s: ProxySetup }) {
+  const v = netValues(s)
+  const [der, setDer] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    void rootDer(s.caDerUrl).then((x) => live && setDer(x))
+    return () => {
+      live = false
+    }
+  }, [s.caDerUrl])
+  const ids = useMemo(() => [uuid(), uuid(), uuid()] as const, [])
+  const uses = (p: string): boolean => g.providers.includes(p as GatewayProvider) || s.providers.includes(p)
+  const notServed = (p: string): ComponentChildren =>
+    s.providers.includes(p) ? null : (
+      <Tag tone="warn" title={t('gw.net.notServedHint')}>
+        {t('gw.net.notServed')}
+      </Tag>
+    )
+  return (
+    <div data-tour="gw-network" style="display:flex;flex-direction:column;gap:16px">
+      <p class="hint" style="margin:0">{t('gw.net.sub')}</p>
+      {!s.configured ? (
+        <Panel cls="flat">
+          <Tag tone="warn" dot>
+            {t('gw.net.notConfigured')}
+          </Tag>{' '}
+          <span class="s">{rich('gw.net.notConfiguredText', { address: code('EVOKAI_PROXY_PUBLIC_ADDRESS'), cert: code('EVOKAI_PROXY_CA_CERT') })}</span>
+        </Panel>
+      ) : null}
+      <Panel title={t('gw.net.basics')}>
+        <Value label={t('gw.net.pac')} value={s.pacUrl} hint={t('gw.net.pacHint')} />
+        <Value label={t('gw.net.address')} value={s.publicAddress} hint={t('gw.net.addressHint')} />
+        <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:6px 0">
+          <span style="min-width:200px">
+            <b>{t('gw.net.root')}</b>
+          </span>
+          {s.caUrl ? (
+            <>
+              <Btn sm href={s.caUrl}>
+                {t('gw.net.rootPem')}
+              </Btn>
+              <Btn sm href={s.caDerUrl ?? s.caUrl}>
+                {t('gw.net.rootDer')}
+              </Btn>
+            </>
+          ) : (
+            <Tag tone="warn">{t('gw.net.notSet')}</Tag>
+          )}
+          <div class="hint" style="flex-basis:100%;margin:0">
+            {t('gw.net.rootHint')}
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:6px 0">
+          <span style="min-width:200px">
+            <b>{t('gw.net.served')}</b>
+          </span>
+          {s.providers.length ? s.providers.map((p) => <Tag key={p}>{PROXY_APPS[p] ?? p}</Tag>) : <Tag tone="warn">{t('gw.net.servedNone')}</Tag>}
+        </div>
+      </Panel>
+
+      <Panel title={t('gw.net.order')}>
+        <Steps items={[t('gw.net.order1'), t('gw.net.order2'), t('gw.net.order3'), t('gw.net.order4'), t('gw.net.order5')]} />
+      </Panel>
+
+      <h3 style="font:600 17px var(--disp);margin:12px 0 0">{t('gw.net.pcs')}</h3>
+      <Panel title={t('gw.net.win')}>
+        <Steps
+          items={[
+            rich('gw.net.win1', { store: code('Computer certificate store - Root') }),
+            rich('gw.net.win2', { setting: code('Setup Script Url'), pac: code(v.pac) }),
+            t('gw.net.win3'),
+          ]}
+        />
+      </Panel>
+      <Snippet title={t('gw.net.winShell')} hint={t('gw.net.winShellHint')} text={windowsShell(v)} />
+      <Panel title={t('gw.net.mac')}>
+        <Steps items={[t('gw.net.mac1'), rich('gw.net.mac2', { payload: code('com.apple.proxy.http.global') }), t('gw.net.mac3')]} />
+      </Panel>
+      <Snippet
+        title={t('gw.net.macProfile')}
+        hint={der ? t('gw.net.macProfileHint') : t('gw.net.macProfileNoRoot')}
+        text={macProfile(v, der, ids)}
+        file={['evokai-proxy.mobileconfig', 'application/x-apple-aspen-config']}
+      />
+      <Snippet title={t('gw.net.linux')} hint={t('gw.net.linuxHint')} text={linuxShell(v)} />
+
+      <h3 style="font:600 17px var(--disp);margin:12px 0 0">{t('gw.net.tools')}</h3>
+      {uses('anthropic') ? (
+        <>
+          <Panel title={t('gw.net.desktop')}>
+            <p class="hint">{rich('gw.net.desktopHint', { key: code('egressProxyPacUrl'), fixed: code('egressProxyUrl') })}</p>
+          </Panel>
+          <div class="grid g2">
+            <Snippet title={t('gw.net.desktopMac')} hint={rich('gw.net.desktopMacHint', { domain: code('com.anthropic.claudefordesktop') })} text={desktopMac(v)} />
+            <Snippet title={t('gw.net.desktopWin')} hint={rich('gw.net.desktopWinHint', { key: code('HKLM\\SOFTWARE\\Policies\\Claude') })} text={desktopWindows(v)} />
+          </div>
+          <Snippet title={t('gw.net.desktopLinux')} hint={rich('gw.net.desktopLinuxHint', { file: code('/etc/claude-desktop/managed-settings.json') })} text={desktopLinux(v)} />
+          <Snippet
+            title={t('gw.net.claudeCode')}
+            hint={
+              <>
+                {rich('gw.net.claudeCodeHint', { mac: code(ROOT_FILE.mac), win: code(ROOT_FILE.windows), linux: code(ROOT_FILE.linux) })}
+                <br />
+                <br />
+                {rich('gw.net.claudeCodeLimit', { no: code('NO_PROXY'), direct: <b>{t('gw.connect.direct')}</b> })}
+              </>
+            }
+            text={claudeCodeNetwork(v)}
+          />
+        </>
+      ) : null}
+      {uses('openai') ? (
+        <Snippet
+          title={t('gw.net.codex')}
+          hint={
+            <>
+              {notServed('openai')}{' '}
+              {rich('gw.net.codexHint', { proxy: code('HTTPS_PROXY'), ca: code('CODEX_CA_CERTIFICATE'), fallback: code('SSL_CERT_FILE'), linux: code(ROOT_FILE.linux) })}
+            </>
+          }
+          text={codexNetwork(v)}
+        />
+      ) : null}
+      {uses('github') ? (
+        <Snippet
+          title={t('gw.net.vscode')}
+          hint={
+            <>
+              {notServed('github')} {t('gw.net.vscodeHint')}
+            </>
+          }
+          text={vscodeNetwork()}
+        />
+      ) : null}
+      <Snippet
+        title={t('gw.net.firefox')}
+        hint={rich('gw.net.firefoxHint', { policy: code('Certificates > ImportEnterpriseRoots') })}
+        text={firefoxPolicy()}
+        file={['policies.json', 'application/json']}
+      />
+
+      <h3 style="font:600 17px var(--disp);margin:12px 0 0">{t('gw.net.enforce')}</h3>
+      <Panel title={t('gw.net.allow')}>
+        <p class="hint">{t('gw.net.allowSub')}</p>
+        {s.egressIps.length ? (
+          s.egressIps.map((ip) => <Value key={ip} label={t('gw.net.egress')} value={ip} />)
+        ) : (
+          <Value label={t('gw.net.egress')} value={null} hint={rich('gw.net.egressHint', { name: code('EVOKAI_PROXY_EGRESS_IPS') })} />
+        )}
+        <Steps items={[t('gw.net.allowClaude'), t('gw.net.allowChatgpt'), t('gw.net.allowGithub')]} />
+        <p class="hint">{t('gw.net.allowNote')}</p>
+      </Panel>
+      <Panel title={t('gw.net.fallback')}>
+        <p>
+          {t('gw.net.fallbackNow')}{' '}
+          <Tag tone={v.direct ? 'warn' : 'ok'}>{s.pacFallback}</Tag>
+        </p>
+        <Steps items={[rich('gw.net.fallbackBlock', { v: code('block') }), rich('gw.net.fallbackDirect', { v: code('direct') })]} />
+        <p class="hint">{rich('gw.net.fallbackHow', { name: code('EVOKAI_PROXY_PAC_FALLBACK') })}</p>
+      </Panel>
+      <Panel title={t('gw.net.check')} tour="gw-check">
+        <p class="hint">{t('gw.net.checkHint')}</p>
+        <a class="btn sm" href={s.checkUrl} target="_blank" rel="noopener noreferrer">
+          <span class="lb">{s.checkUrl}</span>
+        </a>
+      </Panel>
     </div>
   )
 }
@@ -727,14 +1118,15 @@ function Connect({ g }: { g: Gateway }) {
 // Notice
 
 /** The template's paragraphs, in the console's language, filled with this gateway. */
-function noticeText(g: Gateway, days: number | null): string {
-  const tools = g.providers.map((p) => TOOL[p]).join(', ')
+function noticeText(g: Gateway, days: number | null, viaProxy: boolean): string {
+  const tools = g.providers.map((p) => toolOf(p)).join(', ')
   const keep = days ? t('gw.n.keepDays', { n: days }) : t('gw.n.keepForever')
   return [
     t('gw.n.title', { gateway: g.name }),
     t('gw.n.what', { tools }),
     t('gw.n.recorded'),
     t('gw.n.notRecorded'),
+    ...(viaProxy ? [t('gw.n.proxy')] : []),
     t('gw.n.checks'),
     keep,
     t('gw.n.purpose'),
@@ -747,10 +1139,11 @@ function noticeText(g: Gateway, days: number | null): string {
 
 function Notice({ g }: { g: Gateway }) {
   const load = useLoad(() => forApp(g.id).admin.security.get(), [g.id])
+  const net = useLoad(() => proxy.setup(), [])
   return (
     <Loads load={load} what={t('what.securityPolicy')}>
       {(view) => {
-        const text = noticeText(g, view.eventTtlDays ?? view.defaultEventTtlDays ?? null)
+        const text = noticeText(g, view.eventTtlDays ?? view.defaultEventTtlDays ?? null, !!net.data?.configured)
         return (
           <div data-tour="gw-notice">
             <p class="hint">{t('gw.noticeSub')}</p>

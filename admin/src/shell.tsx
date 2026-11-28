@@ -13,6 +13,7 @@ import { BrandMark, Empty } from './magic'
 import { Access } from './pages/Access'
 import { SystemPolicy } from './pages/SystemPolicy'
 import { Gateways } from './pages/Gateways'
+import { Proxy } from './pages/Proxy'
 import { Agents } from './pages/Agents'
 import { AgentEditor } from './pages/AgentEditor'
 import { Apps } from './pages/Apps'
@@ -45,7 +46,7 @@ import { Workflows } from './pages/Workflows'
 import { Approvals } from './pages/Approvals'
 import { States } from './pages/States'
 import { AppUsage, AllUsage } from './pages/Usage'
-import { moduleOf, moduleOn } from './moduleSwitch'
+import { moduleOf, moduleOn, proxyReader } from './moduleSwitch'
 import { appHref, go, type Route, type Tab, useConsole } from './state'
 import { tabCounts, tabLabel, tabs, voiceLabel } from './nav'
 import { locale, t, tn } from './i18n'
@@ -126,6 +127,8 @@ function page(route: Route, app: ConsoleApplication | null, me: ConsoleMe): Comp
       return <SystemPolicy />
     case 'modules':
       return me.deploymentOwner ? <Modules /> : <NotFound />
+    case 'proxy':
+      return proxyReader(me) ? <Proxy /> : <NotFound />
     case 'assistant':
       return <Assistant />
     case 'preferences':
@@ -208,6 +211,8 @@ export function Shell({ route }: { route: Route }) {
               : route.id,
         ])
     }
+  } else if (route.view === 'proxy') {
+    crumbs.push([t('page.gateways'), '#/gateways'], [t('page.proxy')])
   } else if (route.view === 'gateways') {
     crumbs.push([t('page.gateways'), '#/gateways'])
     if (route.gateway) crumbs.push([route.gateway])
@@ -291,6 +296,7 @@ export function Shell({ route }: { route: Route }) {
           <h6>{t('shell.console')}</h6>
           {appsOn ? nav('#/apps', t('page.applications'), 'apps', route.view === 'apps') : null}
           {gatewayOn ? nav('#/gateways', t('page.gateways'), 'connections', route.view === 'gateways') : null}
+          {gatewayOn && proxyReader(c.me) ? nav('#/proxy', t('page.proxy'), 'security', route.view === 'proxy') : null}
           {appsOn ? nav('#/playground', t('page.playground'), 'play', route.view === 'playground') : null}
           {appsOn ? nav('#/usage', t('page.usage'), 'usage', route.view === 'usage') : null}
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
@@ -447,6 +453,7 @@ function Palette({ apps, me, onClose }: { apps: ConsoleApplication[]; me: Consol
           ]
         : []),
       ...(moduleOn(me, 'gateway') ? [[t('page.gateways'), '#/gateways', t('shell.kindPage')]] : []),
+      ...(moduleOn(me, 'gateway') && proxyReader(me) ? [[t('page.proxy'), '#/proxy', t('shell.kindPage')]] : []),
       [t('page.health'), '#/health', t('shell.kindPage')],
       ...(me.deploymentOwner ? [[t('page.modules'), '#/modules', t('shell.kindPage')]] : []),
       [t('page.preferences'), '#/preferences', t('shell.kindPage')],
