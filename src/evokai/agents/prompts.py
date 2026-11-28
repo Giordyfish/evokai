@@ -23,6 +23,7 @@ from evokai.agents.definitions import AgentDef
 from evokai.agents.modules import RenderedModule, render_template, render_text
 from evokai.agents.skills import Skill, files_listing
 from evokai.core.errors import BadRequest
+from evokai.i18n import language_name
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +109,7 @@ def system_prompt(
     memory_text: str | None = None,
     scripts_runnable: bool = False,
     modules: list[RenderedModule] | None = None,
+    locale: str = "en",
 ) -> SystemPrompt:
     """Build the system prompt.
 
@@ -128,12 +130,19 @@ def system_prompt(
             when given, ``memories`` is ignored.
         scripts_runnable: Whether ``skill_run`` is offered (for the files of preloaded skills).
         modules: The prompt modules switched on for the session, in the agent's order; each is
-            rendered with ``date``, ``app``, ``data`` and its parameters, after the instructions.
+            rendered with ``date``, ``app``, ``session``, ``data`` and its parameters, after the
+            instructions.
+        locale: The session's language tag, for ``{{session.locale}}`` and
+            ``{{session.language}}`` (any language, with or without a pack).
 
     Returns:
         The prompt, in its stable and volatile parts.
     """
-    values = {"date": long_date(now, timezone), "app": app_name}
+    values = {
+        "date": long_date(now, timezone),
+        "app": app_name,
+        "session": {"locale": locale, "language": language_name(locale)},
+    }
     text, syntax = (
         (instructions.text, instructions.syntax)
         if instructions

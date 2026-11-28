@@ -26,6 +26,7 @@ import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Literal, cast
 
 from jsonschema import Draft202012Validator
@@ -63,7 +64,7 @@ from evokai.engine.tools import EvokaiToolset, GuardedToolset, ToolSpec
 from evokai.grants import NotGranted, grants_of
 from evokai.guard import TurnGuard
 from evokai.guard.output import SentenceGate
-from evokai.i18n import locale_of, message
+from evokai.i18n import locale_of, message, session_locale
 from evokai.knowledge.tool import (
     CITE_NOTE,
     format_results,
@@ -343,6 +344,7 @@ class AgentRunner:
                 extra_capabilities=extra_capabilities,
                 usage_key=usage_key,
                 modules=modules,
+                locale=session_locale(app, SimpleNamespace(prompt_options=prompt_options)),
                 client_tools=client_tools,
                 on_text=on_text,
                 confirm=confirm,
@@ -425,6 +427,7 @@ class AgentRunner:
         extra_capabilities: Sequence[Any] = (),
         usage_key: str | None = None,
         modules: list[Any] | None = None,
+        locale: str = "en",
         client_tools: Sequence[ClientToolDef] = (),
         on_text: Callable[[str], None] | None = None,
         confirm: bool = False,
@@ -550,6 +553,7 @@ class AgentRunner:
             preloaded=preloaded,
             scripts_runnable=bool(script_skills),
             modules=modules,
+            locale=locale,
         )
         notes = guard.system_notes()
         if kbs:
@@ -618,6 +622,7 @@ class AgentRunner:
             credential=credential,
             groups=groups,
             on_cost=add,
+            locale=locale,
         )
         runner = build_agent(
             rs,

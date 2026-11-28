@@ -19,6 +19,8 @@ instructions: |
 ```
 
 - `{{date}}` is today in the application's time zone (`defaults.timezone`), `{{app}}` the application's name.
+- `{{session.locale}}` is the session's language tag (its token's `locale`, else the application's), any language,
+  and `{{session.language}}` its English name (`Italian`; a language without a name prints its tag).
 - Single braces are ordinary text, so JSON examples stay as written.
 - A backslash before double braces writes them as they are: `\{{name}}` prints `{{name}}`.
 - `{{#if}}`, `{{#unless}}` and the other block helpers work as in Handlebars.

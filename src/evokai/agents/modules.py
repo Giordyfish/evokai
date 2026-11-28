@@ -27,6 +27,7 @@ from pydantic_handlebars import (
     check_template_compatibility,
 )
 
+from evokai.agents.templates import SESSION_SCHEMA
 from evokai.core.errors import BadRequest
 
 if TYPE_CHECKING:
@@ -46,7 +47,7 @@ MAX_ITEMS = 200
 """The largest ``maxItems`` of a multi-choice parameter."""
 MAX_DATA_BYTES = 256 * 1024
 """The data table of a module version, serialised."""
-RESERVED = ("date", "app", "data")
+RESERVED = ("date", "app", "data", "session")
 """Names every module template gets; a parameter cannot take them."""
 
 log = logging.getLogger(__name__)
@@ -386,9 +387,10 @@ def template_schema(schema: dict[str, Any], data: dict[str, Any] | None = None) 
             **schema.get("properties", {}),
             "date": {"type": "string"},
             "app": {"type": "string"},
+            "session": SESSION_SCHEMA,
             "data": {"type": "object", "properties": table, "additionalProperties": False},
         },
-        "required": [*schema.get("required", []), "date", "app", "data"],
+        "required": [*schema.get("required", []), "date", "app", "session", "data"],
         "additionalProperties": False,
     }
 

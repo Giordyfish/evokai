@@ -17,7 +17,7 @@ from evokai.agents.modules import (
 from evokai.api.deps import server_app, services
 from evokai.core.errors import BadRequest, NotFound
 from evokai.grants import NotGranted, grants_of
-from evokai.i18n import pack_language
+from evokai.i18n import is_language_tag
 from evokai.identity.models import AppPrincipal
 from evokai.services import Services
 from evokai.sessions.runs import AgentRunner, Attachment
@@ -63,8 +63,8 @@ class RunRequest(BaseModel):
     """Prompt modules of the agent to switch on or off and fill for this run, as in a session
     token (``POST /v1/session-tokens``), with the same checks."""
     locale: str | None = Field(default=None, max_length=35)
-    """The run's language, a BCP 47 tag with a shipped pack (400 ``unknown_locale`` without);
-    omitted or ``""``: the application's locale."""
+    """The run's language, a BCP 47 tag (any language; 400 ``unknown_locale`` for a malformed
+    one), as in a session token; omitted or ``""``: the application's locale."""
     clientTools: list[ClientToolDef] = Field(default_factory=list, max_length=MAX_CLIENT_TOOLS + 1)
     """Custom client tools for this run (``docs/client-tools.md``), granted by ``client:session``.
     Nobody can answer mid-run, so none may wait (400 ``client_tool_wait``): their calls come back
@@ -120,10 +120,8 @@ async def run_agent(name: str, body: RunRequest, svc: Svc, app: App) -> RunRespo
     await _check_client_tools(svc, application, agent, body.clientTools)
     options = None
     if body.modules is not None or body.locale is not None:
-        if body.locale and pack_language(body.locale) is None:
-            raise BadRequest(
-                f"No language pack for the locale {body.locale}.", code="unknown_locale"
-            )
+        if body.locale and not is_language_tag(body.locale):
+            raise BadRequest(f"Not a language tag: {body.locale}.", code="unknown_locale")
         grants = await grants_of(svc.store, application)
         modules = choose_modules(agent, body.modules or {}, grants)
         texts = await check_session_modules(svc.store, application.id, agent, modules)

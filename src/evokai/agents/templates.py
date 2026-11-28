@@ -23,10 +23,21 @@ if TYPE_CHECKING:
 
 _OLD_TEXT = re.compile(r"(?<!\{)\{(date|app)\}(?!\})")
 _OLD_LABEL = re.compile(r"(?<!\{)\{([A-Za-z0-9_.]+)(?:\|(count|map:([A-Za-z0-9_]+)))?\}(?!\})")
+SESSION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"locale": {"type": "string"}, "language": {"type": "string"}},
+    "required": ["locale", "language"],
+    "additionalProperties": False,
+}
+"""``{{session.locale}}`` (the session's language tag) and ``{{session.language}}`` (its name)."""
 TEXT_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "properties": {"date": {"type": "string"}, "app": {"type": "string"}},
-    "required": ["date", "app"],
+    "properties": {
+        "date": {"type": "string"},
+        "app": {"type": "string"},
+        "session": SESSION_SCHEMA,
+    },
+    "required": ["date", "app", "session"],
     "additionalProperties": False,
 }
 """What instructions and plain prompts may read."""

@@ -75,6 +75,56 @@ def pack_language(tag: str | None) -> str | None:
     return language if language in known_locales() else None
 
 
+def is_language_tag(tag: str | None) -> bool:
+    """Whether a text is a well-formed BCP 47 language tag (``it``, ``pt-BR``, ``zh-Hant``).
+
+    Returns:
+        True for a tag, whether or not Evokai ships a pack for its language.
+    """
+    return bool(_TAG.match(tag or ""))
+
+
+def session_locale(app: Any, session: Any = None) -> str:
+    """The language of a session as its token named it, any language, with or without a pack.
+
+    Messages and speech rules follow :func:`locale_of` (a shipped pack); prompts read this one
+    (``{{session.locale}}``), so an answer can be in a language Evokai has no pack for.
+
+    Returns:
+        The session's tag, else the application's ``defaults.locale``, else English.
+    """
+    options = getattr(session, "prompt_options", None) or {}
+    own = options.get("locale")
+    if isinstance(own, str) and is_language_tag(own):
+        return own
+    return str(((app.defaults if app is not None else None) or {}).get("locale") or DEFAULT_LOCALE)
+
+
+def language_name(tag: str) -> str:
+    """The English name of a tag's language (``it-IT`` is Italian), for prompts.
+
+    Returns:
+        The name, or the tag itself for a language without one.
+    """
+    from evokai.language_names import LANGUAGE_NAMES
+
+    m = _TAG.match(tag or "")
+    return LANGUAGE_NAMES.get(m[1].lower(), tag) if m else tag
+
+
+def speech_language(app: Any, session: Any = None) -> str:
+    """The language speech engines hear and speak in a session.
+
+    Returns:
+        The session's pack (:func:`locale_of`), or the primary language of its tag when Evokai
+        ships no pack for it (``zh-CN`` is ``zh``).
+    """
+    tag = session_locale(app, session)
+    if pack_language(tag) is None and (m := _TAG.match(tag)):
+        return m[1].lower()
+    return locale_of(app, session)
+
+
 def locale_of(app: Any, session: Any = None) -> str:
     """The locale of an application, or of one of its sessions.
 

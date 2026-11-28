@@ -4437,7 +4437,7 @@ export interface paths {
          *         Forbidden: The agent runs on the server only.
          *         NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,
          *             or browser sessions, are not granted to the application (403 ``*_not_granted``).
-         *         BadRequest: An unknown locale, or a prompt module choice that is refused
+         *         BadRequest: A malformed locale, or a prompt module choice that is refused
          *             (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).
          */
         post: operations["mint_agent_v1_session_tokens_post"];

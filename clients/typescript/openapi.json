@@ -16778,7 +16778,7 @@
     },
     "/agent/v1/session-tokens": {
       "post": {
-        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,\n        or browser sessions, are not granted to the application (403 ``*_not_granted``).\n    BadRequest: An unknown locale, or a prompt module choice that is refused\n        (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).",
+        "description": "Mint a short-lived session token for the browser.\n\nReturns:\n    token, expiresAt, conversationId.\n\nRaises:\n    NotFound: Unknown agent, conversation or application.\n    Conflict: The conversation is closed, or kept in another storage mode.\n    Forbidden: The agent runs on the server only.\n    NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,\n        or browser sessions, are not granted to the application (403 ``*_not_granted``).\n    BadRequest: A malformed locale, or a prompt module choice that is refused\n        (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).",
         "operationId": "mint_agent_v1_session_tokens_post",
         "requestBody": {
           "content": {

@@ -56,8 +56,8 @@ The schema is an object with at most 20 properties, an optional `required` list,
 | Multiple choice | `{type: array, items: {type: string, enum: [...]}, maxItems: n}` (n at most 200) | switches |
 
 Each property may have a `default` (it must fit the property) and a `description`. Anything else (nested objects,
-`$ref`, free strings without `maxLength`) is refused with 400 `module_schema`. The names `date`, `app` and `data` are
-reserved.
+`$ref`, free strings without `maxLength`) is refused with 400 `module_schema`. The names `date`, `app`, `session` and
+`data` are reserved.
 
 ## The template
 
@@ -66,7 +66,11 @@ A module's text is a [Handlebars](https://handlebarsjs.com/guide/) template, ren
 
 - `{{name}}` a parameter, `{{#if flag}}...{{else}}...{{/if}}`, `{{#each list}}{{this}}{{/each}}`;
 - `{{lookup data style}}` the entry of the data table picked by a choice parameter;
-- `{{date}}` today in the application's time zone, `{{app}}` the application's name.
+- `{{date}}` today in the application's time zone, `{{app}}` the application's name;
+- `{{session.locale}}` the session's language tag (`it-IT`) and `{{session.language}}` its English name (`Italian`).
+
+The session's values let a plain module carry a rule that follows each session without any parameter, for example a
+module `reply_language` with the text `Always answer in {{session.language}}.` that the agents list.
 
 A template holds at most two `{{#each}}` blocks and renders to at most 64,000 characters; a module that cannot be
 rendered is left out of the prompt (with a warning in the log). A free-text `pattern` has at most 100 characters and no
@@ -141,10 +145,12 @@ The mint refuses:
 | 403 | `module_not_granted` | the application lacks the grant `module:<name>` (granted by default) |
 | 400 | `module_params` | a value does not fit, or a required one is missing (the message names the parameter, never its value) |
 | 400 | `module_param_rejected` | the guard refused a free-text value |
-| 400 | `unknown_locale` | the locale's language has no shipped pack |
+| 400 | `unknown_locale` | the locale is not a BCP 47 language tag |
 
-`locale` is a BCP 47 tag; speech rules (numbers read aloud, spoken yes and no) and the messages the person reads use the
-shipped pack of its language: `en`, `it`, `es`, `fr`, `de`, `ro` or `sv`. Without it the session follows the application's `locale`.
+`locale` is a BCP 47 tag of any language. Prompts read it (`{{session.locale}}`, `{{session.language}}`) and speech
+engines hear and speak it. Speech rules (numbers read aloud, spoken yes and no) and the messages the person reads use the
+shipped pack of its language (`en`, `it`, `es`, `fr`, `de`, `ro` or `sv`), else the application's. Without it the
+session follows the application's `locale`.
 
 ## Who may set what
 
