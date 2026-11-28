@@ -49,7 +49,7 @@ from evokai.core.errors import AppError, BadRequest, NotFound
 from evokai.core.util import utcnow
 from evokai.grants import grants_of
 from evokai.guard import identifiers
-from evokai.i18n import locale_of, pack_language, speech_rules
+from evokai.i18n import locale_of, pack_language, speech_redaction, speech_rules
 from evokai.identity.models import SessionPrincipal
 from evokai.observability import telemetry
 from evokai.services import Services
@@ -233,7 +233,9 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
                 f"A text to speak has at most {st.speech_max_chars} characters.",
                 code="text_too_long",
             )
-        rules = speech_rules(locale_of(app, sess), identifiers.of_app(app))
+        rules = speech_rules(
+            locale_of(app, sess), identifiers.of_app(app), redact=speech_redaction(app)
+        )
         markup = markup_of(
             (app.defaults or {}).get("markup"), agent.markup if agent else None, sess
         )

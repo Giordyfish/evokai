@@ -984,6 +984,17 @@
             ],
             "title": "Security Event Ttl Days"
           },
+          "speech_redaction": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speech Redaction"
+          },
           "storage_mode": {
             "anyOf": [
               {

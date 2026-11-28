@@ -68,7 +68,10 @@ Each spoken segment (`say`, voice mode) is cleaned and carries the markup apart:
 - `tagged`: `spoken` with its speech tags, always written `[words]` whatever the delimiters, present when there are
   tags; a server speech engine that performs tags speaks this form;
 - `marks`: the cues, `name`, `arg` when given, `at` the character offset in `text`, `spokenAt` the offset in `spoken`
-  when that differs.
+  when that differs;
+- `raw`: the segment as the model wrote it (Markdown, markup and identifiers kept), present when it differs from
+  `text`, for a client that shows the answer as written one segment at a time. A segment of cues alone gives its
+  `raw` to the next one.
 
 A segment made only of cues hands them to the next segment (offset 0). Cues after the last sentence come in a final
 `say` with an empty `text`: clients skip speaking it and only fire its marks. [Server speech](voice.md) turns

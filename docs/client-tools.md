@@ -67,6 +67,10 @@ When the model calls a tool, the session's stream carries a `client_tool` event:
 {"type": "client_tool", "callId": "toolu_01", "name": "open_cart", "args": {}, "wait": true}
 ```
 
+A tool that waits also carries `batch`, the `callId`s of every call the turn now waits for together (the model may
+call several tools in one step): their events come one after the other, and a client can run them all before it
+answers.
+
 For a tool that waits, answer it with `POST /v1/session/tool-results` and the session token:
 
 ```json

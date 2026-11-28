@@ -64,11 +64,14 @@ def redact(text: str, rules: SpeechRules | None = None) -> str:
 
     Returns:
         The text without tax codes, IBANs, VAT numbers, e-mails and phones, and with the
-        application's own identifiers said as they ask.
+        application's own identifiers said as they ask; as written when the application turned
+        redaction off (``speech_redaction: false``).
     """
     r = rules or speech_rules()
     if r.identifiers:
         text = _say_declared(text, r)
+    if not r.redact:
+        return text
     words = r.redactions
     for pattern, key in REDACTIONS:
         text = pattern.sub(words[key], text)

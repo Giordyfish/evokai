@@ -121,6 +121,10 @@ async def bootstrap(
         if not isinstance(spec["stt_filter"], bool):
             raise ConfigError("bootstrap: stt_filter must be true or false")
         in_defaults["stt_filter"] = spec["stt_filter"]
+    if spec.get("speech_redaction") is not None:
+        if not isinstance(spec["speech_redaction"], bool):
+            raise ConfigError("bootstrap: speech_redaction must be true or false")
+        in_defaults["speech_redaction"] = spec["speech_redaction"]
     if spec.get("max_output_tokens") is not None:
         low, high = MAX_OUTPUT_TOKENS_RANGE
         cap = spec["max_output_tokens"]

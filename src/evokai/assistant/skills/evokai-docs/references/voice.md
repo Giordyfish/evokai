@@ -51,7 +51,9 @@ suit a few sessions; for more, run the model as a server of its own (Piper's HTT
 - Every engine must pass the application's data protection profile (403 `data_protection`).
 - Characters synthesised and seconds transcribed are recorded as usage (kinds `tts` and `stt`) at the catalog's price,
   and the caps apply before each request (429 `limit`). Browsers only ever see shares of the caps.
-- The text is made speakable and its personal identifiers redacted exactly as a `say` segment is.
+- The text is made speakable and its personal identifiers redacted exactly as a `say` segment is. The application
+  setting `speech_redaction: false` speaks e-mails, phone numbers, IBANs and tax codes as written instead (the
+  application's own identifiers are still said as they ask).
 
 ## Catalogue voices
 

@@ -136,6 +136,8 @@ export interface SayEvent extends EventMeta {
   spoken?: string
   tagged?: string
   marks?: SayMark[]
+  /** The segment as the model wrote it (Markdown, markup, identifiers), when it differs from `text`. */
+  raw?: string
   filler?: boolean
 }
 /** The delimiters of the answers' inline markup (`docs/markup.md`), to hide it in what a chat shows. */
@@ -200,6 +202,8 @@ export interface ClientToolEvent extends EventMeta {
   name: string
   args: Record<string, unknown>
   wait: boolean
+  /** A call that waits: the `callId`s of every call the turn waits for together. */
+  batch?: string[]
   /** Stored messages only: how a call that waited ended (the page answered, or failed or never answered). */
   status?: 'done' | 'error'
 }
@@ -626,6 +630,8 @@ export interface Application {
   max_output_tokens?: number | null
   /** The deployment's default (`EVOKAI_MAX_OUTPUT_TOKENS`). */
   maxOutputTokensDefault?: number
+  /** Speak e-mails, phones, IBANs and tax codes as neutral words (true, the default) or as written. */
+  speech_redaction?: boolean
   /** Security events are deleted this many days after they happened; null = the deployment's default. */
   security_event_ttl_days?: number | null
   /** Data residency (null: no declaration). */

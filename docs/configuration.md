@@ -571,6 +571,7 @@ application:
   storage_mode: evokai
   voice_engine: browser
   stt_filter: true              # drop the phrases recognisers make up from silence (docs/voice.md)
+  speech_redaction: true        # speak e-mails, phones, IBANs, tax codes as neutral words; false: as written
   max_output_tokens: 4000       # the longest answer of one model call (64-128000); default EVOKAI_MAX_OUTPUT_TOKENS
   locale: en
   timezone: Europe/Dublin

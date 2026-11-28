@@ -108,6 +108,7 @@ class PartLog:
                     p["status"] = event.get("status")
                     return
         part = dict(event)
+        part.pop("batch", None)  # which calls waited together matters only while they wait
         parts.append(part)
         if kind == "client_tool" and isinstance(event.get("callId"), str):
             self._calls[event["callId"]] = part

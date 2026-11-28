@@ -63,6 +63,31 @@ async def test_cues_become_marks_and_the_text_keeps_them(menv: Env) -> None:
     assert "{smile}" in stored[-1]
 
 
+async def test_a_segment_carries_its_text_as_written(menv: Env) -> None:
+    menv.script.add(
+        "function:primary",
+        ["{wave} Scrivi a **info@example.com** o vai su [il sito](https://example.com). ", "Fine."],
+    )
+    tok = (await menv.token())["token"]
+    says = _says(await menv.chat(tok, text="hello", mode="voice"))
+    assert says[0]["raw"] == (
+        "{wave} Scrivi a **info@example.com** o vai su [il sito](https://example.com)."
+    )
+    assert "info@example.com" not in says[0]["text"]
+    # A plain segment is shown as written: no raw form.
+    assert "raw" not in says[1] and says[1]["text"] == "Fine."
+
+
+async def test_a_segment_of_cues_alone_hands_its_text_to_the_next(menv: Env) -> None:
+    splitter = SentenceSplitter(0, markup=markup_of({"cue": {}}, None, None))
+    assert splitter.push("{wave}\n\nCiao a tutti. ") == ["{wave}", "Ciao a tutti."]
+    menv.script.add("function:primary", ["{wave}\n\nCiao a **tutti**. "])
+    tok = (await menv.token())["token"]
+    says = _says(await menv.chat(tok, text="hello", mode="voice"))
+    assert says[0]["marks"] == [{"name": "wave", "at": 0}]
+    assert says[0]["raw"] == "{wave} Ciao a **tutti**."
+
+
 async def test_unknown_cues_are_dropped_from_the_marks(menv: Env) -> None:
     menv.script.add("function:primary", ["{dance}Fine {nod}then."])
     tok = (await menv.token())["token"]
