@@ -44,7 +44,7 @@ and assistant delegation made with the old one).
 
 ```bash
 cd admin && npm ci && npm run build      # admin/dist, served by `evokai serve` at {base}/admin/
-open http://localhost:8787/agent/admin/  # sign in with an admin key (EVOKAI_BOOTSTRAP_ADMIN_KEY) or the operator key
+open http://localhost:8787/agent/admin/  # or just http://localhost:8787/; sign in with an admin key (EVOKAI_BOOTSTRAP_ADMIN_KEY) or the operator key
 cd admin && EVOKAI_URL=http://localhost:8787 npm run dev   # live reload on :5173, API proxied (base /agent)
 ```
 

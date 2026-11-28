@@ -54,6 +54,10 @@ def mount_console(app: FastAPI, settings: Settings) -> None:
         return RedirectResponse(f"{base}/admin/", status_code=307)
 
     app.add_api_route(f"{base}/admin", slash, methods=["GET"], include_in_schema=False)
+    # The deployment's address alone (and the API's base) opens the console: a person who types
+    # the host name lands on the sign-in page instead of a 404.
+    for entry in {"/", f"{base}", f"{base}/"} - {""}:
+        app.add_api_route(entry, slash, methods=["GET"], include_in_schema=False)
     app.add_api_route(
         f"{base}/admin/{{path:path}}", serve, methods=["GET", "HEAD"], include_in_schema=False
     )

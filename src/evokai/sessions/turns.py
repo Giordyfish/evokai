@@ -109,7 +109,7 @@ from evokai.knowledge.tool import TOOL_NAME as KNOWLEDGE_TOOL
 from evokai.knowledge.tool import tool_def as knowledge_tool
 from evokai.llm.catalog import ModelCatalog, bare, normalize
 from evokai.llm.health import ModelHealth
-from evokai.llm.policy import agent_settings, request_settings
+from evokai.llm.policy import agent_settings, output_cap, request_settings
 from evokai.llm.prices import call_cost_micro_usd, estimate_call_usd
 from evokai.mcp.client import ToolResult
 from evokai.mcp.registry import McpRegistry, Toolbox
@@ -1162,7 +1162,7 @@ class TurnEngine:
             label=lambda name, args: confirm_label(agent, name, args, run.app),
             health=self.model_health,
             operation="stream",
-            max_tokens=settings.max_output_tokens,
+            max_tokens=output_cap(run.app, settings.max_output_tokens, agent),
             op_tags={"turnId": run.turn_id},
             prompt_cache=agent.prompt_cache,
             locale=locale_of(run.app, run.session),
@@ -1327,7 +1327,9 @@ class TurnEngine:
             splitter,
             t0,
             max_calls=guard.max_calls(agent.max_tool_calls_per_turn),
-            model_settings=request_settings(agent_settings(agent), settings.max_output_tokens),
+            model_settings=request_settings(
+                agent_settings(agent), output_cap(run.app, settings.max_output_tokens, agent)
+            ),
         )
 
     async def _replace(self, run: TurnRun, emit: Any) -> None:
@@ -1659,7 +1661,7 @@ class TurnEngine:
                 before_call=parent.before_call,
                 health=self.model_health,
                 operation=parent.operation,
-                max_tokens=self.settings.max_output_tokens,
+                max_tokens=output_cap(scope.app, self.settings.max_output_tokens, target),
                 op_tags={**parent.op_tags, "subagent": target.name},
             )
             result = RunResult(run_id=parent.run_id, output=None, text="", model=candidates[0])

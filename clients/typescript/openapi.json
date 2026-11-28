@@ -214,6 +214,19 @@
               }
             ]
           },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "maximum": 128000.0,
+                "minimum": 64.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
           "max_tool_calls_per_turn": {
             "default": 6,
             "title": "Max Tool Calls Per Turn",
@@ -828,6 +841,19 @@
                 "type": "null"
               }
             ]
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "maximum": 128000.0,
+                "minimum": 64.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
           },
           "memory_mode": {
             "anyOf": [
@@ -7060,7 +7086,7 @@
   "info": {
     "summary": "Agents runtime: any model provider, MCP tools, skills and voice sessions.",
     "title": "Evokai",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {

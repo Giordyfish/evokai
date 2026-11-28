@@ -1,6 +1,6 @@
 [project]
 name = "evokai"
-version = "0.3.0"
+version = "0.4.0"
 description = "Evokai: summon AI agents into any app. This package installs the Python client, evokai-client."
 readme = "README.md"
 authors = [
@@ -15,7 +15,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ["evokai-client==0.3.0"]
+dependencies = ["evokai-client==0.4.0"]
 
 [project.urls]
 Homepage = "https://github.com/Giordyfish/evokai"

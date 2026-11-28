@@ -6,7 +6,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 
-import type { AgentDef, AgentVersion, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, ModuleRef, PromptVersion, SkillInfo } from '@client/core/types'
+import type { AgentDef, AgentVersion, Application, ConsoleApplication, GrantView, KnowledgeBase, McpServerInfo, ModuleRef, PromptVersion, SkillInfo } from '@client/core/types'
 import { adminJson, describe, forApp } from '../api'
 import { type Fit, fitBadge, fitReasons } from '../fit'
 import { ago, day, modelName } from '../format'
@@ -30,7 +30,7 @@ type Sec = 'ins' | 'mod' | 'model' | 'tools' | 'skills' | 'kb' | 'voice' | 'out'
 const SECTION_FIELDS: Record<Sec, Array<keyof AgentDef>> = {
   ins: ['name', 'title', 'instructions', 'channels', 'a2a'],
   mod: ['modules'],
-  model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'model_settings', 'temperature', 'prompt_cache', 'show_reasoning'],
+  model: ['model', 'fallbacks', 'models', 'max_tool_calls_per_turn', 'max_output_tokens', 'model_settings', 'temperature', 'prompt_cache', 'show_reasoning'],
   tools: ['mcp_servers', 'client_tools', 'ask_rules', 'attachments', 'show_tool_args'],
   skills: ['skills', 'preload_skills'],
   kb: ['knowledge', 'code', 'capabilities', 'subagents'],
@@ -79,6 +79,8 @@ interface Data {
   bases: KnowledgeBase[]
   keys: Map<string, string>
   prompts: PromptVersion[]
+  /** The application, for what an agent inherits (its output cap). */
+  application: Application
 }
 
 export function AgentEditor({ app, name }: { app: ConsoleApplication; name: string }) {
@@ -86,7 +88,7 @@ export function AgentEditor({ app, name }: { app: ConsoleApplication; name: stri
   setTitle(isNew ? t('ag.new') : name, t('tab.agents'), app.name)
   const api = forApp(app.id)
   const load = useLoad<Data>(async () => {
-    const [versions, grants, servers, skills, keys, bases, prompts] = await Promise.all([
+    const [versions, grants, servers, skills, keys, bases, prompts, application] = await Promise.all([
       isNew ? Promise.resolve([] as AgentVersion[]) : api.admin.agents.versions(name),
       api.admin.grants.get(),
       api.admin.mcpServers.list(),
@@ -94,8 +96,9 @@ export function AgentEditor({ app, name }: { app: ConsoleApplication; name: stri
       api.admin.keys.list(),
       api.admin.knowledge.list().then((l) => l.items),
       api.admin.prompts.list(),
+      api.admin.application.get(),
     ])
-    return { versions, grants, servers, skills, bases, prompts, keys: new Map(keys.map((k) => [k.id, k.prefix])) }
+    return { versions, grants, servers, skills, bases, prompts, application, keys: new Map(keys.map((k) => [k.id, k.prefix])) }
   }, [app.id, name])
   return (
     <Loads load={load} what={isNew ? t('what.newAgent') : name}>
@@ -184,6 +187,8 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
     </a>
   )
 
+  /** What the agent gets without a cap of its own: the application's, else the deployment's. */
+  const inheritedCap = data.application.max_output_tokens ?? data.application.maxOutputTokensDefault ?? ''
   const chain = [draft.model, ...(draft.fallbacks ?? [])].filter(Boolean)
   const granted = grantedModels(g)
   const toolsGranted = (draft.mcp_servers ?? []).reduce((n, s) => {
@@ -535,6 +540,22 @@ function Editor({ app, data, isNew, reload }: { app: ConsoleApplication; data: D
               min={0}
               value={draft.max_tool_calls_per_turn ?? 6}
               onInput={(e) => set({ max_tool_calls_per_turn: Number(e.currentTarget.value) })}
+            />
+          </Field>
+          <Field
+            label={t('ag.outputCap')}
+            id="ag-out"
+            hint={t('ag.outputCapHint', { n: String(inheritedCap) })}
+          >
+            <input
+              id="ag-out"
+              class="in num"
+              type="number"
+              min={64}
+              max={128000}
+              value={draft.max_output_tokens ?? ''}
+              placeholder={String(inheritedCap)}
+              onInput={(e) => set({ max_output_tokens: e.currentTarget.value === '' ? null : Number(e.currentTarget.value) })}
             />
           </Field>
           {server ? (

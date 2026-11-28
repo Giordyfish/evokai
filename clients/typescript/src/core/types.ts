@@ -622,6 +622,10 @@ export interface Application {
   timezone: string
   /** Conversations disappear this many days after their last message; null = kept. */
   conversation_ttl_days: number | null
+  /** The longest answer of one model call in tokens, for every agent; null: the deployment's default. */
+  max_output_tokens?: number | null
+  /** The deployment's default (`EVOKAI_MAX_OUTPUT_TOKENS`). */
+  maxOutputTokensDefault?: number
   /** Security events are deleted this many days after they happened; null = the deployment's default. */
   security_event_ttl_days?: number | null
   /** Data residency (null: no declaration). */

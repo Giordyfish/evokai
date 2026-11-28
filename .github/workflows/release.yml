@@ -206,6 +206,9 @@ jobs:
   pypi-alias:
     name: PyPI (evokai)
     needs: [versions, pypi]
+    # Without its own condition the job runs only when every job upstream succeeded, and "Gates" is skipped on purpose
+    # when the CI run of the commit is reused: that skipped the alias in 0.3.0.
+    if: ${{ !cancelled() && needs.pypi.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
