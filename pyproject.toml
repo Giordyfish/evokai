@@ -44,7 +44,7 @@ otel = [
   "opentelemetry-instrumentation-httpx>=0.60b1",
 ]
 voice = [
-    "pipecat-ai[silero,webrtc]>=1.16.0",
+    "pipecat-ai[silero,webrtc]>=1.17.0",
 ]
 # Azure without keys and Claude in Microsoft Foundry: a Microsoft Entra ID token from the managed
 # identity (evokai.core.azure), the anthropic SDK's Foundry client and the Azure Monitor
