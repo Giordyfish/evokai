@@ -54,6 +54,8 @@ class Scope:
     evaluation: bool = False
     on_cost: Callable[[int], None] | None = None
     """Adds a call's cost to the turn or run (server-side totals)."""
+    locale: str = "en"
+    """The session's or run's language tag, for ``{{session.locale}}`` in subagents' prompts."""
     storage: str | None = None
     """Where the conversation is kept (``evokai`` or ``external``); None for a server run, which
     keeps nothing of a conversation for capabilities."""

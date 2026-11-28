@@ -23,6 +23,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   subtitle: a client can show the answer as written one segment at a time ([markup](docs/markup.md)).
 - A `client_tool` event that waits carries `batch`, the calls the turn waits for together
   ([client tools](docs/client-tools.md)).
+- Prompts and modules read the session's language: `{{session.locale}}` (its tag) and `{{session.language}}` (its
+  English name), so a plain module can carry a rule that follows each session, such as the language of the answers
+  ([prompt modules](docs/prompt-modules.md)). `session` is now a reserved name for module parameters.
 - Application setting `speech_redaction` (default true): `false` speaks e-mails, phone numbers, IBANs and tax codes as
   written instead of neutral words ([voice](docs/voice.md)).
 - `/v1/console/me` tells which modules are on (`modules`) and whether the configuration pins them (`modulesPinned`);
@@ -57,6 +60,9 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ### Changed
 
+- A session token or server run takes a locale of any language: prompts read it and speech engines hear and speak it,
+  while messages and speech rules use its shipped pack, else the application's. `unknown_locale` (400) now means a
+  malformed tag only.
 - Applications and gateways are queried by kind only through `applications_only` and `gateways_only`
   (`evokai.db.kinds`); a test fails on a query over application rows that bypasses them.
 - A gateway's `pii.model` never counts the person's own e-mail or name (their key's `email` and label) in their own

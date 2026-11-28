@@ -102,7 +102,14 @@ from evokai.engine.workspace import NoLocalWorkspace
 from evokai.grants import Grants, NotGranted, grants_of
 from evokai.guard import Guard, TurnGuard, identifiers
 from evokai.guard.ask import REASON_WRITES
-from evokai.i18n import SpeechRules, locale_of, message, speech_redaction, speech_rules
+from evokai.i18n import (
+    SpeechRules,
+    locale_of,
+    message,
+    session_locale,
+    speech_redaction,
+    speech_rules,
+)
 from evokai.identity.models import SessionPrincipal
 from evokai.knowledge.tool import CITE_NOTE, format_results, record_found, retrieval_span
 from evokai.knowledge.tool import TOOL_NAME as KNOWLEDGE_TOOL
@@ -1238,6 +1245,7 @@ class TurnEngine:
             preloaded=preloaded,
             scripts_runnable=SKILL_RUN in names,
             modules=modules,
+            locale=session_locale(run.app, run.session),
         )
         if notes:
             prompt = replace(prompt, stable=f"{prompt.stable}\n\n{notes}")
@@ -1384,6 +1392,7 @@ class TurnEngine:
             groups=list(claims.groups),
             evaluation=inp.evaluation,
             on_cost=add,
+            locale=session_locale(run.app, run.session),
             storage=run.storage,
         )
 
@@ -1726,6 +1735,7 @@ class TurnEngine:
                 preloaded=preloaded,
                 scripts_runnable=False,
                 modules=modules,
+                locale=scope.locale,
             )
             notes = guard.system_notes()
             if kbs:

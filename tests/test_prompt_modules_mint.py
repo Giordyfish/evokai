@@ -247,14 +247,15 @@ async def test_continue_with_modules_replaces_choice(env: Env) -> None:
     assert options["modules"]["persona"] == {"on": False, "params": {}}
 
 
-async def test_unknown_locale_is_400(env: Env) -> None:
-    for tag in ("xx", "ja-JP", "not a tag"):
+async def test_a_malformed_locale_is_400_any_language_is_taken(env: Env) -> None:
+    for tag in ("not a tag", "x", "it_IT"):
         r = await _mint(env, locale=tag)
         assert r.status_code in (400, 422), r.text
         if r.status_code == 400:
             assert r.json()["error"] == "unknown_locale"
-    r = await _mint(env, locale="ja")
-    assert r.status_code == 400 and r.json()["error"] == "unknown_locale", r.text
+    # A language without a pack: prompts and speech follow it, messages the application's pack.
+    for tag in ("ja", "ja-JP", "zh-Hant", "xx"):
+        assert (await _mint(env, locale=tag)).status_code == 200, tag
     assert (await _mint(env, locale="it-IT")).status_code == 200
     assert (await _mint(env, locale="en")).status_code == 200
     for tag in ("es", "fr-FR", "de", "ro-RO", "sv-SE"):

@@ -49,7 +49,7 @@ from evokai.core.errors import AppError, BadRequest, NotFound
 from evokai.core.util import utcnow
 from evokai.grants import grants_of
 from evokai.guard import identifiers
-from evokai.i18n import locale_of, pack_language, speech_redaction, speech_rules
+from evokai.i18n import locale_of, pack_language, speech_language, speech_redaction, speech_rules
 from evokai.identity.models import SessionPrincipal
 from evokai.observability import telemetry
 from evokai.services import Services
@@ -261,7 +261,7 @@ async def speech(body: SpeechRequest, svc: Svc, s: Sess) -> StreamingResponse:
     caps = tts_caps(engine, voice_model(engine, settings))
     said = tagged if caps.speech_tags and tagged else spoken
     await _cap(svc, app, s, sess, speech_usd(f"tts:{engine}", characters=len(said)))
-    language = body.language or pack_tag(locale_of(app, sess))
+    language = body.language or pack_tag(speech_language(app, sess))
     # The engine's references of the speech just before, newest last, while they are remembered
     # and were made by the same engine, voice and model (a reference serves no other).
     made_by = f"{engine}/{voice or ''}/{voice_model(engine, settings) or ''}"
@@ -468,7 +468,7 @@ async def transcribe(
         raise BadRequest("The audio is empty.", code="audio_invalid")
     usd = speech_usd(f"stt:{engine}", audio_ms=ms)
     await _cap(svc, app, s, sess, usd)
-    lang = language or pack_tag(locale_of(app, sess))
+    lang = language or pack_tag(speech_language(app, sess))
     extra = {"hint": hint.strip()} if hint and hint.strip() else {}
     service = make_stt(engine, language=lang, sample_rate=16_000, **extra)
     heard = await run(service, pcm, sample_rate=16_000, segmented=stt_caps(engine).segmented)
@@ -642,7 +642,7 @@ async def _stream(
             stop_secs=vad.get("stopSecs", 0.8),
             min_volume=vad.get("minVolume", 0.6),
         )
-        language = str(start.get("language") or "")[:35] or pack_tag(locale_of(app, sess))
+        language = str(start.get("language") or "")[:35] or pack_tag(speech_language(app, sess))
         hint = start.get("hint")
         if hint is not None and (not isinstance(hint, str) or len(hint) > HINT_MAX_CHARS):
             raise ValueError("hint")

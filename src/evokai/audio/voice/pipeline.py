@@ -56,7 +56,7 @@ from evokai.audio.voice.providers import (
     voice_model,
 )
 from evokai.core.errors import AppError, Forbidden, NotFound
-from evokai.i18n import locale_of
+from evokai.i18n import speech_language
 from evokai.identity.models import SessionPrincipal
 from evokai.sessions.threads import HistoryMessage
 
@@ -233,7 +233,7 @@ class VoiceServer:
         c = principal.claims
         stt_name = c.speech_stt or settings.voice_stt
         tts_name = c.speech_tts or settings.voice_tts
-        language = locale_of(app, sess)
+        language = speech_language(app, sess)
         stt = make_stt(stt_caps(stt_name).realtime or stt_name, language=language)
         voice = await self._voice(principal, sess)
         record = await self.svc.store.voices.get(tts_name, voice) if voice else None

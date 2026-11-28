@@ -26,7 +26,7 @@ from evokai.core.security import hash_code
 from evokai.core.util import utcnow
 from evokai.db.repositories import DEFAULT_TITLE, Who
 from evokai.grants import Grants, NotGranted, grants_of
-from evokai.i18n import pack_language
+from evokai.i18n import is_language_tag
 from evokai.identity.models import AppPrincipal
 from evokai.memory.store import memory_view as view
 from evokai.privacy import residency_allows
@@ -137,9 +137,11 @@ class TokenRequest(BaseModel):
     values pass the guard's input checks (400 ``module_param_rejected``). On a continued
     conversation it replaces the earlier choice; omitted keeps it."""
     locale: str | None = Field(default=None, max_length=35)
-    """The session's language, a BCP 47 tag (``it-IT``): speech rules and messages use the shipped
-    pack of its language (400 ``unknown_locale`` without one). Omitted = the application's locale,
-    or the conversation's earlier choice; ``""`` = back to the application's locale."""
+    """The session's language, a BCP 47 tag (``it-IT``, any language; 400 ``unknown_locale`` for a
+    malformed one). Prompts read it (``{{session.locale}}``, ``{{session.language}}``) and speech
+    engines use it; speech rules and messages use the shipped pack of its language, else the
+    application's. Omitted = the application's locale, or the conversation's earlier choice;
+    ``""`` = back to the application's locale."""
     clientTools: list[ClientToolDef] | None = Field(default=None, max_length=MAX_CLIENT_TOOLS + 1)
     """Custom client tools of this session (``docs/client-tools.md``), beside the agent's own:
     each ``{name, description, parameters, wait}``. They need the grant ``client:session`` (403
@@ -160,7 +162,7 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
         Forbidden: The agent runs on the server only.
         NotGranted: A requested model, voice engine, voice, storage mode or prompt module choice,
             or browser sessions, are not granted to the application (403 ``*_not_granted``).
-        BadRequest: An unknown locale, or a prompt module choice that is refused
+        BadRequest: A malformed locale, or a prompt module choice that is refused
             (``unknown_module``, ``module_locked``, ``module_params``, ``module_param_rejected``).
     """
     agent = await svc.agents.active(app.application_id, body.agent)
@@ -201,8 +203,8 @@ async def mint(body: TokenRequest, svc: Svc, app: App) -> dict[str, Any]:
             voice=body.voice if body.speech.tts else None,
         )
     mode = _storage_mode(body.storageMode, application.storage_mode, grants)
-    if body.locale and pack_language(body.locale) is None:
-        raise BadRequest(f"No language pack for the locale {body.locale}.", code="unknown_locale")
+    if body.locale and not is_language_tag(body.locale):
+        raise BadRequest(f"Not a language tag: {body.locale}.", code="unknown_locale")
     existing = None
     if body.conversationId:
         existing = await svc.store.sessions.get(who, body.conversationId)

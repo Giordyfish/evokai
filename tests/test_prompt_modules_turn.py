@@ -76,6 +76,41 @@ async def test_turn_prompt_contains_session_module(env: Env) -> None:
     assert "Answer in a brief way." in system and "Your name is" not in system
 
 
+async def test_a_module_reads_the_language_of_the_session(env: Env) -> None:
+    await _prompt(
+        env,
+        "reply_language",
+        "Always answer in {{session.language}} ({{session.locale}}).",
+        {"type": "object", "properties": {}},
+    )
+    await _agent(env, modules=[{"name": "reply_language"}])
+    tok = await env.token(locale="ja-JP")
+    await env.chat(tok["token"], text="Hello")
+    assert "Always answer in Japanese (ja-JP)." in _last_system(env)
+    tok = await env.token()
+    await env.chat(tok["token"], text="Hello")
+    assert "Always answer in English (en)." in _last_system(env)
+
+
+async def test_session_is_a_reserved_name(env: Env) -> None:
+    r = await env.client.put(
+        f"{PROMPTS}/bad",
+        json={
+            "text": "{{session}}",
+            "parameters": {
+                "type": "object",
+                "properties": {"session": {"type": "string", "maxLength": 10}},
+            },
+        },
+        headers=_adm(env),
+    )
+    assert r.status_code == 400, r.text
+    r = await env.client.put(
+        f"{PROMPTS}/typo", json={"text": "{{session.lang}}", "parameters": None}, headers=_adm(env)
+    )
+    assert r.status_code == 400, r.text
+
+
 async def test_module_version_pinned_for_the_conversation(env: Env) -> None:
     await _setup(env)
     tok = await env.token()
@@ -149,7 +184,7 @@ async def test_server_run_accepts_modules(env: Env) -> None:
     r = await env.client.post("/agent/v1/agents/clerk/run", json=bad, headers=srv)
     assert r.status_code == 400 and r.json()["error"] == "module_params", r.text
     r = await env.client.post(
-        "/agent/v1/agents/clerk/run", json={"input": "x", "locale": "ja"}, headers=srv
+        "/agent/v1/agents/clerk/run", json={"input": "x", "locale": "not a tag"}, headers=srv
     )
     assert r.status_code == 400 and r.json()["error"] == "unknown_locale", r.text
 
