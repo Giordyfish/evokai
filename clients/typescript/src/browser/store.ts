@@ -399,6 +399,32 @@ function withRegenerable(messages: ChatMessage[], regenerable: boolean | undefin
 
 const unfinished = (p: Part): boolean => p.kind === 'tool' && !p.client && p.status === 'args'
 
+/**
+ * The stored copy after errors this client showed: a turn that failed before the model wrote anything has no assistant
+ * message in the service's storage, so a reload would drop the error the person just read. Each turn's errors missing
+ * from the stored copy stay, on its assistant message (or a new one after the turn's question).
+ */
+function keepShownErrors(shown: ChatMessage[], stored: ChatMessage[]): ChatMessage[] {
+  let out = stored
+  for (const m of shown) {
+    if (m.role !== 'assistant' || !m.turnId) continue
+    const errors = m.parts.filter((p) => p.kind === 'error')
+    if (!errors.length) continue
+    const turn = out.filter((x) => x.turnId === m.turnId)
+    if (turn.some((x) => x.parts.some((p) => p.kind === 'error'))) continue
+    const answer = out.findIndex((x) => x.role === 'assistant' && x.turnId === m.turnId)
+    if (answer >= 0) {
+      out = out.map((x, i) => (i === answer ? { ...x, parts: [...x.parts, ...errors] } : x))
+      continue
+    }
+    const last = out.map((x) => x.turnId).lastIndexOf(m.turnId)
+    if (last < 0) continue // the stored copy does not have this turn at all: a stale or other conversation
+    const kept: ChatMessage = { id: m.id, role: 'assistant', parts: errors, turnId: m.turnId }
+    out = [...out.slice(0, last + 1), kept, ...out.slice(last + 1)]
+  }
+  return out
+}
+
 function applyDone(state: SessionState, e: DoneEvent): SessionState {
   const turnId = e.turnId ?? null
   let messages = state.messages
@@ -580,7 +606,7 @@ function reduceRaw(state: SessionState, action: Action): SessionState {
       const c = action.conversation
       // A snapshot older than what this client already shows (a turn started or streamed meanwhile) is dropped.
       if (state.lastSeq > (c.lastSeq || 0) || state.messages.some((m) => m.local !== undefined)) return state
-      const messages = fromStored(c.messages, c.pending)
+      const messages = keepShownErrors(state.messages, fromStored(c.messages, c.pending))
       return {
         ...state,
         conversationId: action.conversationId ?? state.conversationId,

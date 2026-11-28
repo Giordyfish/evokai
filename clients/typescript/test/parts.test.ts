@@ -175,3 +175,44 @@ describe('reasoning and tool arguments (0.3)', () => {
     expect(streamed(cut).messages[1]!.parts).toEqual([{ kind: 'text', text: 'Wait.' }])
   })
 })
+
+describe('a failed turn after the reload that follows it', () => {
+  const failed: EvokaiEvent[] = [
+    { type: 'conversation', id: 'c', turnStarted: true },
+    { type: 'error', code: 'internal', message: 'Something went wrong.' },
+    { type: 'done', conversationId: 'c', reason: 'internal' },
+  ] as unknown as EvokaiEvent[]
+  const reload = (s: SessionState, messages: StoredMessage[]) =>
+    reduce(s, { type: 'loaded', conversation: { messages, pending: null, lastSeq: 10, runningTurnId: null } })
+
+  test('the error stays when the stored copy has only the question', () => {
+    const s = reload(streamed(failed), [{ id: 'u1', turnId: 't', role: 'user', text: 'Go', events: [], feedback: null }])
+    expect(s.messages.map((m) => [m.role, m.parts.map((p) => p.kind)])).toEqual([
+      ['user', ['text']],
+      ['assistant', ['error']],
+    ])
+    expect(s.messages[0]!.id).toBe('u1')
+  })
+
+  test('an error after some text joins the stored answer, once', () => {
+    const partial: EvokaiEvent[] = [failed[0]!, { type: 'text', delta: 'Let me ' } as EvokaiEvent, ...failed.slice(1)]
+    const stored: StoredMessage[] = [
+      { id: 'u1', turnId: 't', role: 'user', text: 'Go', events: [], feedback: null },
+      { id: 'a1', turnId: 't', role: 'assistant', text: 'Let me ', events: [{ type: 'text', delta: 'Let me ' }], feedback: null },
+    ]
+    const s = reload(streamed(partial), stored)
+    expect(s.messages.map((m) => m.parts.map((p) => p.kind))).toEqual([['text'], ['text', 'error']])
+    const twice = reload(s, stored)
+    expect(twice.messages.map((m) => m.parts.map((p) => p.kind))).toEqual([['text'], ['text', 'error']])
+  })
+
+  test('a stored error is not doubled, and another conversation keeps none', () => {
+    const withError: StoredMessage[] = [
+      { id: 'u1', turnId: 't', role: 'user', text: 'Go', events: [], feedback: null },
+      { id: 'a1', turnId: 't', role: 'assistant', text: '', events: [{ type: 'error', code: 'model', message: 'Unavailable' }], feedback: null },
+    ]
+    expect(reload(streamed(failed), withError).messages[1]!.parts.map((p) => p.kind)).toEqual(['error'])
+    const other: StoredMessage[] = [{ id: 'x', turnId: 'other', role: 'user', text: 'Hi', events: [], feedback: null }]
+    expect(reload(streamed(failed), other).messages.map((m) => m.role)).toEqual(['user'])
+  })
+})
