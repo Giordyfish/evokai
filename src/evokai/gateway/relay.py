@@ -105,7 +105,8 @@ class Usage:
         """Start reading.
 
         Args:
-            provider: ``anthropic`` or ``openai`` (which events carry the usage).
+            provider: ``anthropic``, ``openai`` or ``github`` (which events carry the usage;
+                OpenAI's and Copilot's are the Responses or the chat completions usage).
             content_type: The answer's content type (none: told from its first bytes, as
                 ChatGPT's Codex backend streams without one).
             encoding: Its ``content-encoding``: a copy of a ``gzip`` or ``deflate`` answer is
@@ -171,7 +172,7 @@ class Usage:
             if cut is None:
                 break
             event, self._buf = self._buf[: cut[0]], self._buf[cut[1] :]
-            if b'"usage"' in event or b"message_stop" in event:
+            if b'"usage"' in event or b"message_stop" in event or b"[DONE]" in event:
                 self._event(event)
         if len(self._buf) > MAX_JSON_USAGE:
             # An event this long carries text, not usage: what is left of it is skipped.
@@ -198,6 +199,9 @@ class Usage:
         data = b"\n".join(
             line[5:].lstrip() for line in event.splitlines() if line.startswith(b"data:")
         )
+        if data.strip() == b"[DONE]":  # the end of a chat completions stream
+            self.complete = True
+            return
         try:
             payload = json.loads(data)
         except ValueError:
@@ -205,6 +209,9 @@ class Usage:
         if not isinstance(payload, dict):
             return
         kind = payload.get("type")
+        if kind is None and str(payload.get("object", "")).startswith("chat.completion"):
+            self._usage(payload.get("usage"))
+            return
         if kind == "message_start" and isinstance(payload.get("message"), dict):
             self._usage(payload["message"].get("usage"))
         elif kind == "message_delta":
@@ -223,13 +230,19 @@ class Usage:
         def num(v: Any) -> int | None:
             return int(v) if isinstance(v, int | float) and not isinstance(v, bool) else None
 
-        if self.provider == "openai":
-            details = u.get("input_tokens_details")
+        anthropic_shape = "cache_read_input_tokens" in u or "cache_creation_input_tokens" in u
+        if self.provider in ("openai", "github") and not anthropic_shape:
+            # Responses (input_tokens) or chat completions (prompt_tokens) usage.
+            details = u.get("input_tokens_details") or u.get("prompt_tokens_details")
             cached = num(details.get("cached_tokens")) if isinstance(details, dict) else None
-            if (v := num(u.get("input_tokens"))) is not None:
-                self.input_tokens = v
-            if (v := num(u.get("output_tokens"))) is not None:
-                self.output_tokens = v
+            tokens_in = num(u.get("input_tokens"))
+            tokens_in = tokens_in if tokens_in is not None else num(u.get("prompt_tokens"))
+            tokens_out = num(u.get("output_tokens"))
+            tokens_out = tokens_out if tokens_out is not None else num(u.get("completion_tokens"))
+            if tokens_in is not None:
+                self.input_tokens = tokens_in
+            if tokens_out is not None:
+                self.output_tokens = tokens_out
             if cached is not None:
                 self.cache_read = cached
             return

@@ -3157,6 +3157,7 @@ export const en = {
   "gw.providers": "Tools",
   "gw.provider.anthropic": "Claude Code (Anthropic)",
   "gw.provider.openai": "Codex (OpenAI)",
+  "gw.provider.github": "GitHub Copilot (company network proxy only)",
   "gw.people": "People",
   "gw.empty": "No gateway yet",
   "gw.emptyText": "A gateway lets the people of a group use their coding tools under this deployment's controls. A deployment owner creates it.",

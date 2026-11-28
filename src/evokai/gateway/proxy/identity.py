@@ -24,10 +24,25 @@ person (``email`` of their key, else a label that is that e-mail).
 
 The organisation of a claude.ai request is its ``x-organization-uuid`` header; of an Anthropic API
 request, the one its account's profile named.
+
+OpenAI (Codex, ChatGPT): every request carries the ChatGPT login's JWT, whose claims name the user,
+their e-mail and the ChatGPT account (workspace) they act in. The claims are read, never verified
+and never trusted for anything but attribution (a forged token is refused upstream anyway): the
+key is the user, the organisation the ``chatgpt_account_id``, and the binding is written from the
+claims the first time a key is seen (or when they change).
+
+GitHub Copilot (best effort, not measured): chat and completion requests carry a short-lived
+Copilot token (``tid=...;exp=...;...``) minted by ``GET api.github.com/copilot_internal/v2/token``
+from the person's GitHub token. The GitHub token is bound to the account by ``GET
+api.github.com/user`` or ``/copilot_internal/user`` (login, e-mail when public, organisations), and
+the Copilot token's ``tid`` inherits that binding. A GitHub account without a public e-mail is
+found by a gateway person whose label is the GitHub login.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -78,6 +93,15 @@ class Key:
         """
         raw = f"evokai-proxy\x00{self.provider}\x00{self.kind}\x00{self.value}"
         return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class Claims:
+    """What a request states about its own account (a ChatGPT JWT): read, never verified."""
+
+    email: str | None
+    account: str | None
+    org: str | None
 
 
 @dataclass(frozen=True)
@@ -149,6 +173,112 @@ def account_from_user_id(body: Any) -> str | None:
     return None
 
 
+OPENAI_AUTH_CLAIM = "https://api.openai.com/auth"
+OPENAI_PROFILE_CLAIM = "https://api.openai.com/profile"
+
+
+def bearer_token(authorization: str) -> str:
+    """The token of an ``Authorization`` header (``Bearer x`` or GitHub's ``token x``).
+
+    Returns:
+        The token, or an empty string.
+    """
+    scheme, _, token = authorization.strip().partition(" ")
+    return token.strip() if scheme.lower() in ("bearer", "token") else ""
+
+
+def jwt_claims(token: str) -> dict[str, Any] | None:
+    """A JWT's claims, read without verifying the signature (attribution only).
+
+    Returns:
+        The claims, or None when the token is not a JWT.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except (ValueError, binascii.Error):
+        return None
+    return claims if isinstance(claims, dict) else None
+
+
+def openai_identity(authorization: str) -> tuple[Key, Claims | None] | None:
+    """The key and the stated account of a Codex or ChatGPT request.
+
+    A ChatGPT login's JWT names the user (``chatgpt_account_user_id``, else ``chatgpt_user_id``,
+    ``user_id``, ``sub``), their e-mail and the ChatGPT account (``chatgpt_account_id``, the
+    organisation). An API key names nobody: its key is the key itself (never stored, only its
+    digest), unidentified unless bound otherwise.
+
+    Returns:
+        (key, claims or None), or None when the request carries no token.
+    """
+    token = bearer_token(authorization)
+    if not token:
+        return None
+    claims = jwt_claims(token)
+    if claims is None:
+        return Key("openai", "api_key", token), None
+    auth = claims.get(OPENAI_AUTH_CLAIM)
+    auth = auth if isinstance(auth, dict) else {}
+    profile = claims.get(OPENAI_PROFILE_CLAIM)
+    profile = profile if isinstance(profile, dict) else {}
+    user = (
+        _str(auth.get("chatgpt_account_user_id"))
+        or _str(auth.get("chatgpt_user_id"))
+        or _str(auth.get("user_id"))
+        or _str(claims.get("sub"))
+    )
+    if not user:
+        return None
+    email = _str(profile.get("email")) or _str(claims.get("email"))
+    org = _str(auth.get("chatgpt_account_id"))
+    return (
+        Key("openai", "user", user, org),
+        Claims(email.lower() if email else None, user[:80], org[:80] if org else None),
+    )
+
+
+def copilot_key(authorization: str) -> Key | None:
+    """The key of a Copilot chat or completion request: its Copilot token's ``tid``.
+
+    The token is ``tid=<tracking id>;exp=...;sku=...;...:<mac>``; one without a ``tid`` is keyed
+    on itself (only its digest is stored).
+
+    Returns:
+        The key, or None when the request carries no token.
+    """
+    token = bearer_token(authorization)
+    if not token:
+        return None
+    tid = copilot_tid(token)
+    return Key("github", "tid", tid) if tid else Key("github", "token", token)
+
+
+def copilot_tid(token: str) -> str | None:
+    """The ``tid`` field of a Copilot token.
+
+    Returns:
+        The tracking id, or None.
+    """
+    for field in token.split(":", 1)[0].split(";"):
+        name, sep, value = field.partition("=")
+        if sep and name.strip() == "tid" and value.strip():
+            return value.strip()
+    return None
+
+
+def github_key(authorization: str) -> Key | None:
+    """The key of a request to ``api.github.com``: the person's GitHub token.
+
+    Returns:
+        The key, or None.
+    """
+    token = bearer_token(authorization)
+    return Key("github", "token", token) if token else None
+
+
 # Reading accounts from answers
 
 
@@ -215,6 +345,58 @@ def from_token_response(data: Any) -> tuple[str | None, str | None, str | None]:
         (uuid.lower() if uuid else None),
         _str(org.get("uuid")),
     )
+
+
+def from_github_user(data: Any) -> tuple[str | None, str | None]:
+    """The e-mail (when public) and login of ``GET api.github.com/user``.
+
+    Returns:
+        (email, login).
+    """
+    if not isinstance(data, dict):
+        return None, None
+    email = _str(data.get("email"))
+    login = _str(data.get("login"))
+    return (email.lower() if email else None), (login.lower() if login else None)
+
+
+def from_copilot_user(data: Any) -> tuple[str | None, str | None, str | None, str | None]:
+    """What ``GET api.github.com/copilot_internal/user`` names (best effort, not measured).
+
+    Returns:
+        (email, login, organisations joined by commas, the analytics tracking id).
+    """
+    if not isinstance(data, dict):
+        return None, None, None, None
+    email, login = from_github_user(data)
+    names = [x for x in data.get("organization_login_list") or [] if isinstance(x, str)]
+    if not names:
+        names = [
+            str(o.get("login"))
+            for o in data.get("organization_list") or []
+            if isinstance(o, dict) and o.get("login")
+        ]
+    orgs = ""
+    for name in names:
+        more = f"{orgs},{name}" if orgs else name
+        if len(more) > 80:
+            break
+        orgs = more
+    return email, login, orgs or None, _str(data.get("analytics_tracking_id"))
+
+
+def from_copilot_token(data: Any) -> str | None:
+    """The ``tid`` of the Copilot token ``GET api.github.com/copilot_internal/v2/token`` answers.
+
+    Only the token's ``tid`` field is read; the token is never logged or kept.
+
+    Returns:
+        The tracking id, or None.
+    """
+    if not isinstance(data, dict):
+        return None
+    token = data.get("token")
+    return copilot_tid(token) if isinstance(token, str) else None
 
 
 def mask_email(email: str | None) -> str:

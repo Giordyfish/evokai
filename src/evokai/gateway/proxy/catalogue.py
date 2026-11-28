@@ -67,10 +67,12 @@ INTERCEPTED: dict[str, tuple[Host, ...]] = {
 }
 """Per provider, the hosts whose traffic is read (best effort for GitHub Copilot: not measured)."""
 
-IDENTITY_ONLY = frozenset({"platform.claude.com"})
+IDENTITY_ONLY = frozenset({"platform.claude.com", "api.github.com"})
 """Hosts opened only to read who signed in: Claude Code's OAuth token answer
-(``POST platform.claude.com/v1/oauth/token`` names the account and its organisation). No adapter
-reads or masks anything else there, and no token is ever logged or kept."""
+(``POST platform.claude.com/v1/oauth/token`` names the account and its organisation), and GitHub's
+user and Copilot token answers (``GET api.github.com/user``, ``/copilot_internal/user``,
+``/copilot_internal/v2/token``). No adapter reads or masks anything else there, and no token is
+ever logged or kept."""
 
 TUNNELLED: tuple[Host, ...] = (
     Host("downloads.claude.ai"),
@@ -94,9 +96,8 @@ NAME_CONSTRAINTS: tuple[str, ...] = (
 """The DNS subtrees the intermediate CA may sign for (each covers its subdomains too)."""
 
 GATEWAY_PROVIDER = {ANTHROPIC: ANTHROPIC, OPENAI: OPENAI, GITHUB: GITHUB}
-"""The gateway provider whose switch turns a catalogue provider on. GitHub Copilot gets its own
-switch (``github``) on gateways with its adapters (plan PR 3); until then no gateway can enable it,
-so its hosts are refused."""
+"""The gateway provider whose switch turns a catalogue provider on (GitHub Copilot: ``github``,
+served by the proxy only, it has no base URL door)."""
 
 
 def intercepted(providers: Iterable[str]) -> tuple[Host, ...]:

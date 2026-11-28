@@ -31,8 +31,11 @@ log = logging.getLogger("evokai.gateway")
 
 ANTHROPIC = "anthropic"
 OPENAI = "openai"
-PROVIDERS = (ANTHROPIC, OPENAI)
-PROVIDER_NAMES = {ANTHROPIC: "Anthropic", OPENAI: "OpenAI"}
+GITHUB = "github"
+PROVIDERS = (ANTHROPIC, OPENAI, GITHUB)
+"""A gateway's provider switches. ``github`` (GitHub Copilot) has no base URL door: only the gateway
+proxy serves it."""
+PROVIDER_NAMES = {ANTHROPIC: "Anthropic", OPENAI: "OpenAI", GITHUB: "GitHub Copilot"}
 GATEWAY_CONTROLS = ("input.size", "input.secrets", "pii.model", "scope", "abuse.rate")
 """The guard's controls that apply on a gateway (the policy's other controls do nothing there)."""
 PII_LIMIT = 20
@@ -149,20 +152,21 @@ def _openai_parts(content: Any) -> list[str]:
     return out
 
 
-def openai_new_text(body: dict[str, Any]) -> str:
-    """The new text of an OpenAI Responses request.
+def openai_new_items(body: dict[str, Any]) -> list[tuple[int, str, str]]:
+    """The items of an OpenAI Responses request that are new: the person's and the tools'.
 
     The person's messages and the tool outputs after the model's last item (an assistant message,
     a tool call, reasoning). ``instructions`` and ``developer`` messages are the tool's own.
 
     Returns:
-        The text (parts joined by new lines).
+        (index in ``input``, ``user`` or ``output``, text) of each, in order; a string ``input``
+        is one ``user`` item at index -1.
     """
     items = body.get("input")
     if isinstance(items, str):
-        return items
+        return [(-1, "user", items)]
     if not isinstance(items, list):
-        return ""
+        return []
 
     def from_model(item: Any) -> bool:
         if not isinstance(item, dict):
@@ -170,14 +174,46 @@ def openai_new_text(body: dict[str, Any]) -> str:
         return item.get("type") in _MODEL_ITEMS or item.get("role") == "assistant"
 
     last = max((i for i, it in enumerate(items) if from_model(it)), default=-1)
-    parts: list[str] = []
-    for it in items[last + 1 :]:
+    out: list[tuple[int, str, str]] = []
+    for i, it in enumerate(items[last + 1 :], start=last + 1):
         if not isinstance(it, dict):
             continue
         if it.get("type") in _OUTPUTS:
-            parts += _openai_parts(it.get("output"))
+            out.append((i, "output", "\n".join(_openai_parts(it.get("output")))))
         elif it.get("role") == "user":
-            parts += _openai_parts(it.get("content"))
+            out.append((i, "user", "\n".join(_openai_parts(it.get("content")))))
+    return out
+
+
+def openai_new_text(body: dict[str, Any]) -> str:
+    """The new text of an OpenAI Responses request (``openai_new_items``).
+
+    Returns:
+        The text (parts joined by new lines).
+    """
+    return "\n".join(text for _, _, text in openai_new_items(body) if text)
+
+
+def chat_new_text(body: dict[str, Any]) -> str:
+    """The new text of an OpenAI chat completions request.
+
+    The ``user`` and ``tool`` messages after the last ``assistant`` message. ``system`` and
+    ``developer`` messages are the tool's own.
+
+    Returns:
+        The text (parts joined by new lines).
+    """
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return ""
+    last = max(
+        (i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "assistant"),
+        default=-1,
+    )
+    parts: list[str] = []
+    for m in messages[last + 1 :]:
+        if isinstance(m, dict) and m.get("role") in ("user", "tool"):
+            parts += _openai_parts(m.get("content"))
     return "\n".join(parts)
 
 

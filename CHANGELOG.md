@@ -35,6 +35,18 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   model says the refusal), the Cowork bridge and every other write (masked). Unknown shapes are refused
   (`proxy.format_unknown`). One usage row per model request with its surface, security events as the base URL door,
   no content. The API serves `/proxy.pac` and `/proxy/ca.crt`. See `docs/gateway-proxy.md`.
+- The gateway proxy serves Codex, ChatGPT and GitHub Copilot. Codex with a ChatGPT login: each `response.create` on
+  its Responses WebSocket is checked (the newest input and tool outputs) and, on a refusal, rewritten so the real
+  model repeats it (an offending tool output becomes a notice); refusals before the checks answer Codex with a
+  synthetic Responses event sequence; Responses over HTTP (`chatgpt.com/backend-api/codex/responses`,
+  `api.openai.com/v1/responses`) get a synthetic answer. Verified with the Codex CLI 0.167.2. ChatGPT's
+  `backend-api/conversation` (newest message rewritten) and GitHub Copilot's chat (synthetic chat completion
+  chunks, or the Responses and Messages formats) and inline suggestions (an empty completion) are best effort, not
+  measured. Codex and ChatGPT are identified from their login's JWT claims (e-mail, ChatGPT account as the
+  organisation); Copilot from `api.github.com/user` and `/copilot_internal/*` (everything else on `api.github.com`
+  passes unread). Records carry the surfaces `codex`, `chatgpt` and `copilot`, with tokens from
+  `response.completed` and the chat completions usage.
+- Gateways have a `github` provider switch (GitHub Copilot, served by the gateway proxy only).
 - Gateway people have an optional `email` (one live key per e-mail across every gateway).
 
 ### Changed

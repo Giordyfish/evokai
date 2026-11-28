@@ -2816,7 +2816,8 @@
                 "items": {
                   "enum": [
                     "anthropic",
-                    "openai"
+                    "openai",
+                    "github"
                   ],
                   "type": "string"
                 },
@@ -3885,7 +3886,8 @@
             "items": {
               "enum": [
                 "anthropic",
-                "openai"
+                "openai",
+                "github"
               ],
               "type": "string"
             },

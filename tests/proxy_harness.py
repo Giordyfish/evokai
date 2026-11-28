@@ -39,6 +39,12 @@ UPSTREAM_HOSTS = (
     "bridge.claudeusercontent.com",
     "claude.com",
     "platform.claude.com",
+    "chatgpt.com",
+    "api.openai.com",
+    "api.githubcopilot.com",
+    "api.business.githubcopilot.com",
+    "copilot-proxy.githubusercontent.com",
+    "api.github.com",
 )
 
 
@@ -226,8 +232,53 @@ class FakeUpstream:
                     self.frames.append(text)
                     await ws.send_text(text)
 
+        async def codex_socket(ws: WebSocket) -> None:
+            # Codex's Responses WebSocket: a warm-up gets an empty answer, a request the events.
+            await ws.accept()
+            with contextlib.suppress(Exception):
+                while True:
+                    text = await ws.receive_text()
+                    self.frames.append(text)
+                    if json.loads(text).get("generate") is False:
+                        done = {"type": "response.completed", "response": {"id": "resp_warm"}}
+                        await ws.send_text(json.dumps(done))
+                        continue
+                    for event in fx.responses_events():
+                        await ws.send_text(json.dumps(event))
+
+        async def responses(request: Request) -> Response:
+            await record(request)
+            return Response(fx.responses_sse())  # no content type, as ChatGPT's backend
+
+        async def chat_completions(request: Request) -> Response:
+            await record(request)
+            return Response(b"".join(fx.COPILOT_CHAT_SSE), media_type="text/event-stream")
+
+        async def completions(request: Request) -> Response:
+            await record(request)
+            chunk = {"object": "text_completion", "choices": [{"text": "x = 1", "index": 0}]}
+            body = f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()
+            return Response(body, media_type="text/event-stream")
+
+        async def github_answer(request: Request) -> Response:
+            await record(request)
+            path = request.url.path
+            if path == "/user":
+                return JSONResponse(fx.github_user())
+            if path == "/copilot_internal/user":
+                return JSONResponse(fx.copilot_user())
+            return JSONResponse(fx.copilot_token_answer())
+
         return Starlette(
             routes=[
+                WebSocketRoute("/backend-api/codex/responses", codex_socket),
+                Route("/backend-api/codex/responses", responses, methods=["POST"]),
+                Route("/v1/responses", responses, methods=["POST"]),
+                Route("/chat/completions", chat_completions, methods=["POST"]),
+                Route("/v1/engines/{engine}/completions", completions, methods=["POST"]),
+                Route("/user", github_answer, methods=["GET"]),
+                Route("/copilot_internal/user", github_answer, methods=["GET"]),
+                Route("/copilot_internal/v2/token", github_answer, methods=["GET"]),
                 Route("/v1/messages", messages, methods=["POST"]),
                 Route("/v1/messages/count_tokens", count, methods=["POST"]),
                 Route("/api/oauth/profile", profile, methods=["GET"]),

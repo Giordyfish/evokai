@@ -39,7 +39,7 @@ router = APIRouter(prefix="/v1/admin/gateways", tags=["gateways"])
 one = APIRouter(prefix="/v1/admin/gateways/{gateway_id}", tags=["gateways"])
 """The routes of one gateway (its id or slug in the path)."""
 Svc = Annotated[Services, Depends(services)]
-Provider = Literal["anthropic", "openai"]
+Provider = Literal["anthropic", "openai", "github"]
 
 
 async def gateway_login(request: Request) -> console.ConsoleLogin:
@@ -167,7 +167,8 @@ class NewGateway(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,40}$")
     name: str = Field(min_length=1, max_length=120)
     providers: list[Provider] = Field(min_length=1)
-    """The providers its people may reach: ``anthropic`` (Claude Code), ``openai`` (Codex)."""
+    """The providers its people may reach: ``anthropic`` (Claude Code), ``openai`` (Codex),
+    ``github`` (GitHub Copilot, through the gateway proxy only)."""
     allowed_models: list[str] = Field(default_factory=list, max_length=50)
     """Model names or globs (``claude-*``); none: every model of the enabled providers."""
 

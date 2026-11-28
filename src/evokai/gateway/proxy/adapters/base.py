@@ -9,8 +9,8 @@ gateway's: an adapter never decides.
 A request on a known sensitive path whose body does not parse, or lacks the expected field, is a
 ``FormatUnknown``: it is refused, never forwarded unread (fail closed).
 
-Adapters see neutral values (``Request``), never the network engine's objects, so the OpenAI and
-Copilot adapters, and another engine, plug in unchanged.
+Adapters see neutral values (``Request``), never the network engine's objects, so another engine
+plugs in unchanged.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from evokai.gateway.proxy.identity import Key
+from evokai.gateway.proxy.identity import Claims, Key
 from evokai.gateway.proxy.texts import Texts
 
 
@@ -106,6 +106,9 @@ class Inspection:
     """The text of each unit a refusal may rewrite alone (Cowork's user events)."""
     offending: set[int] | None = None
     """Set by the service: the parts that break the policy (None: all)."""
+    fingerprint: str = ""
+    """What repeats of the same finding share (events are written once per fingerprint every few
+    minutes); empty: a digest of ``text``."""
 
 
 @dataclass
@@ -125,6 +128,18 @@ class Rewrite:
 
 
 Verdict = Answer | Rewrite
+
+
+@dataclass
+class Frame:
+    """What to do with a WebSocket message from the app: pass it, replace it, or drop it."""
+
+    replace: bytes | None = None
+    drop: bool = False
+    reply: list[bytes] = field(default_factory=list)
+    """Messages sent back to the app (a refusal in the server's own event format)."""
+    pending: Any = None
+    """A model request to record when the server says its answer ended (``ProxyService``)."""
 
 
 def json_answer(status: int, data: Any, **headers: str) -> Answer:
@@ -176,6 +191,14 @@ class Adapter:
         """
         raise NotImplementedError
 
+    def claims(self, req: Request) -> Claims | None:  # ruff: ignore[unused-method-argument] (most surfaces state none)
+        """The account a request states itself (a ChatGPT JWT), bound to its key when seen.
+
+        Returns:
+            The claims, or None.
+        """
+        return None
+
     def inspect(self, req: Request) -> Inspection | None:
         """Read the request.
 
@@ -211,11 +234,15 @@ class Adapter:
 
 
 class FrameAdapter:
-    """A surface's WebSocket messages (from the app to the server)."""
+    """A surface's WebSocket messages (from the app to the server, and the server's ends)."""
 
     name: ClassVar[str] = ""
     provider: ClassVar[str] = ""
     gateway_provider: ClassVar[str] = ""
+    by_address: ClassVar[bool] = False
+    """The WebSocket carries no session of its own: the identity seen last from the same PC."""
+    event_surface: ClassVar[str] = ""
+    """The surface named in the security events (empty: the inspection's)."""
 
     def matches(self, host: str, path: str) -> bool:
         """Whether this adapter reads a WebSocket.
@@ -224,6 +251,22 @@ class FrameAdapter:
             True when it does.
         """
         raise NotImplementedError
+
+    def key(self, upgrade: Request) -> Key | None:
+        """The key of the request that opened the WebSocket.
+
+        Returns:
+            The key, or None.
+        """
+        raise NotImplementedError
+
+    def claims(self, upgrade: Request) -> Claims | None:  # ruff: ignore[unused-method-argument] (most surfaces state none)
+        """The account the opening request states itself.
+
+        Returns:
+            The claims, or None.
+        """
+        return None
 
     def inspect(self, content: bytes) -> Inspection | None:
         """Read a message from the app.
@@ -236,13 +279,43 @@ class FrameAdapter:
         """
         raise NotImplementedError
 
-    def refuse(self, content: bytes, found: Inspection, notice: str) -> bytes:
-        """The message with what it carried replaced by a notice the agent relays.
+    def notice(self, texts: Texts, control: str, model: str) -> str:
+        """What the person (or the agent) reads when a check refuses a message.
+
+        Returns:
+            The text.
+        """
+        return texts.refusal(control, model)
+
+    def refuse(self, content: bytes, found: Inspection, texts: Texts, notice: str) -> bytes:
+        """The message with what it carried replaced (the notice, or the instruction to say it).
 
         Returns:
             The new message.
         """
         raise NotImplementedError
+
+    def failed(self, content: bytes, found: Inspection | None, texts: Texts, message: str) -> Frame:  # ruff: ignore[unused-method-argument] (the default drops the message)
+        """A refusal before the checks (format, account, organisation).
+
+        Args:
+            content: The message.
+            found: What ``inspect`` read (None: the format is not known).
+            texts: The gateway's texts.
+            message: What the person reads.
+
+        Returns:
+            What to do with the message (by default: dropped).
+        """
+        return Frame(drop=True)
+
+    def ends(self, content: bytes) -> str | None:  # ruff: ignore[unused-method-argument] (most surfaces record nothing)
+        """Whether a message from the server ends a model answer (it is then recorded).
+
+        Returns:
+            The record's outcome (``forwarded``, ``upstream_error``), or None.
+        """
+        return None
 
 
 def registry() -> tuple[list[Adapter], list[FrameAdapter]]:
@@ -251,7 +324,7 @@ def registry() -> tuple[list[Adapter], list[FrameAdapter]]:
     Returns:
         (HTTP adapters, WebSocket adapters).
     """
-    from evokai.gateway.proxy.adapters import anthropic, claude
+    from evokai.gateway.proxy.adapters import anthropic, claude, copilot, openai
 
     return (
         [
@@ -259,9 +332,13 @@ def registry() -> tuple[list[Adapter], list[FrameAdapter]]:
             anthropic.CountTokens(),
             claude.Chat(),
             claude.Cowork(),
+            openai.Responses(),
+            openai.ChatGPT(),
+            copilot.Chat(),
+            copilot.Completions(),
             claude.Mask(),
         ],
-        [claude.Bridge()],
+        [claude.Bridge(), openai.CodexSocket()],
     )
 
 
