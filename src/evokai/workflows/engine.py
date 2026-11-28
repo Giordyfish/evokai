@@ -205,6 +205,7 @@ class WorkflowService:
         """Start the workers and the scheduler (when workflows run in this process)."""
         if not self.settings.workflows_enabled or self.tasks:
             return
+        self._closing = False
         for i in range(self.settings.workflow_workers):
             self.tasks.append(asyncio.create_task(self._worker(i)))
         self.tasks.append(asyncio.create_task(self._scheduler()))

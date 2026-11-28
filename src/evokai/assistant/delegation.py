@@ -197,9 +197,9 @@ async def _named(svc: Services, name: str | None) -> Any:
             "Name the application: pass its slug as application (list_applications lists them).",
             code="application_required",
         )
-    app = await svc.store.applications.get(name) or await svc.store.applications.by_slug(name)
     # A gateway is never an application the assistant acts on (evokai.gateway).
-    if app is None or app.status != "active" or app.kind != APPLICATION:
+    app = await svc.store.applications.one(name, APPLICATION)
+    if app is None or app.status != "active":
         raise Unauthorized(f"No active application {name[:60]}.", code="application")
     return app
 

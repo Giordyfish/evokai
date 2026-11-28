@@ -63,8 +63,12 @@ const STATUS_CODE: Record<number, string> = {
 /** Build the typed error for a status and a parsed body. */
 export function errorFrom(status: number, body: unknown): EvokaiError {
   const b = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-  const code = typeof b.error === 'string' ? b.error : (STATUS_CODE[status] ?? 'error')
-  const message = typeof b.message === 'string' ? b.message : `HTTP ${status}`
+  // `{"error": "code", "message"}`, or `{"error": {"code", "message"}}` (a module that is off, OpenAI-shaped routes).
+  const nested = b.error && typeof b.error === 'object' ? (b.error as Record<string, unknown>) : {}
+  const code =
+    typeof b.error === 'string' ? b.error : typeof nested.code === 'string' ? nested.code : (STATUS_CODE[status] ?? 'error')
+  const message =
+    typeof b.message === 'string' ? b.message : typeof nested.message === 'string' ? nested.message : `HTTP ${status}`
   const fields = Array.isArray(b.fields) ? b.fields.map(String) : undefined
   const extra = { fields, body }
   if (status === 401 || status === 403) return new EvokaiAuthError(status, code, message, extra)

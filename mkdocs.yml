@@ -119,6 +119,7 @@ nav:
       - Security assessment: security-assessment.md
   - Reference:
       - Configuration: configuration.md
+      - Modules: modules.md
       - Deployment: deployment.md
       - Running on Azure: azure.md
       - Releasing: releasing.md

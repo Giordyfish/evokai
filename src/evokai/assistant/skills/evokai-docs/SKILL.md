@@ -37,6 +37,7 @@ skill: read it with the file tool (`references/<page>.md`). Pages:
 - `references/markup.md`: Inline markup
 - `references/memory.md`: Long-term memory
 - `references/models.md`: Model suitability
+- `references/modules.md`: Modules
 - `references/openai-compatible.md`: OpenAI-compatible API
 - `references/privacy.md`: Privacy and data protection
 - `references/prompt-modules.md`: Prompt modules

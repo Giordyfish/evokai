@@ -14,7 +14,7 @@ export type Tab =
 export type Route =
   | { view: 'app'; app: string; tab: Tab; id: string | null; q: URLSearchParams }
   | { view: 'gateways'; gateway: string | null; tab: GwTab; q: URLSearchParams }
-  | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'policy' | 'assistant' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
+  | { view: 'apps' | 'setup' | 'playground' | 'usage' | 'health' | 'access' | 'policy' | 'modules' | 'assistant' | 'preferences' | 'login' | 'states' | 'missing'; q: URLSearchParams }
 
 const TABS: Tab[] = ['overview', 'agents', 'evals', 'perms', 'mcp', 'connections', 'channels', 'skills', 'prompts', 'knowledge', 'workflows', 'approvals', 'keys', 'limits', 'usage', 'traces', 'conversations', 'security', 'privacy', 'providers', 'compliance', 'audit']
 
@@ -34,7 +34,7 @@ export function parseRoute(hash = location.hash): Route {
   }
   const view = p[0] as Route['view']
   if (p[0] === 'me') return { view: 'preferences', q }
-  if (['apps', 'setup', 'playground', 'usage', 'health', 'access', 'policy', 'assistant', 'preferences', 'login'].includes(view)) return { view, q } as Route
+  if (['apps', 'setup', 'playground', 'usage', 'health', 'access', 'policy', 'modules', 'assistant', 'preferences', 'login'].includes(view)) return { view, q } as Route
   if (view === 'states' && import.meta.env.DEV) return { view, q }
   return { view: 'missing', q }
 }
@@ -55,6 +55,8 @@ export interface Console {
   allApps: ConsoleApplication[]
   canCreate: boolean
   reloadApps: () => Promise<void>
+  /** Read who is logged in again (the modules changed). */
+  reloadMe: () => Promise<void>
   /** The login ended: back to sign in. */
   signedOut: (why?: string) => void
 }

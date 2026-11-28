@@ -2,7 +2,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
-import type { ConsoleApplication, CostAlert } from '@client/core/types'
+import type { ConsoleApplication, ConsoleMe, CostAlert } from '@client/core/types'
 import { forApp, root } from './api'
 import { useAssistantState } from './assistant/active'
 import { assistantActive } from './assistant/choice'
@@ -22,6 +22,7 @@ import { Health } from './pages/Health'
 import { Keys } from './pages/Keys'
 import { Limits } from './pages/Limits'
 import { Mcp } from './pages/Mcp'
+import { ModuleOff, Modules } from './pages/Modules'
 import { Connections } from './pages/Connections'
 import { Channels } from './pages/Channels'
 import { NotFound } from './pages/NotFound'
@@ -44,6 +45,7 @@ import { Workflows } from './pages/Workflows'
 import { Approvals } from './pages/Approvals'
 import { States } from './pages/States'
 import { AppUsage, AllUsage } from './pages/Usage'
+import { moduleOf, moduleOn } from './moduleSwitch'
 import { appHref, go, type Route, type Tab, useConsole } from './state'
 import { tabCounts, tabLabel, tabs, voiceLabel } from './nav'
 import { locale, t, tn } from './i18n'
@@ -52,7 +54,10 @@ import { AppAvatar, Btn, Icon, type IconName } from './ui'
 import { GuidesMenu, TourInvite, TourOverlay } from './tours/Tour'
 import { setTourEnv } from './tours/run'
 
-function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
+function page(route: Route, app: ConsoleApplication | null, me: ConsoleMe): ComponentChildren {
+  // A page of a module that is off: its routes answer module_disabled, the page says why.
+  const module = moduleOf(route)
+  if (module && !moduleOn(me, module)) return <ModuleOff module={module} />
   if (route.view === 'app') {
     if (!app) return <NotFound />
     const id = route.id
@@ -119,6 +124,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
       return <Access />
     case 'policy':
       return <SystemPolicy />
+    case 'modules':
+      return me.deploymentOwner ? <Modules /> : <NotFound />
     case 'assistant':
       return <Assistant />
     case 'preferences':
@@ -132,6 +139,8 @@ function page(route: Route, app: ConsoleApplication | null): ComponentChildren {
 
 export function Shell({ route }: { route: Route }) {
   const c = useConsole()
+  const appsOn = moduleOn(c.me, 'applications')
+  const gatewayOn = moduleOn(c.me, 'gateway')
   const app = route.view === 'app' ? (c.apps.find((a) => a.slug === route.app) ?? null) : null
   const [open, setOpen] = useState(false)
   const [pop, setPop] = useState(false)
@@ -150,6 +159,10 @@ export function Shell({ route }: { route: Route }) {
     setPop(false)
     scrollTo(0, 0)
   }, [route.view, route.view === 'app' ? `${route.app}/${route.tab}/${route.id}` : ''])
+  // With the applications module off, the home page is the gateways.
+  useEffect(() => {
+    if (route.view === 'apps' && !appsOn && gatewayOn) go('#/gateways')
+  }, [route.view, appsOn, gatewayOn])
   useEffect(() => {
     if (app) setTimeout(() => setLastApp(app.slug), 1300)
     else setLastApp(null)
@@ -202,7 +215,7 @@ export function Shell({ route }: { route: Route }) {
   else if (route.view === 'setup') crumbs.push([t('page.applications'), '#/apps'], [t('page.setup')])
   else
     crumbs.push([
-      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), policy: t('page.systemPolicy'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
+      ({ playground: t('page.playground'), usage: t('page.usage'), health: t('page.health'), access: t('page.access'), policy: t('page.systemPolicy'), modules: t('page.modules'), assistant: t('page.assistant'), preferences: t('page.preferences') } as Record<string, string>)[route.view] ??
         t('page.notFound'),
     ])
 
@@ -228,7 +241,7 @@ export function Shell({ route }: { route: Route }) {
           <BrandMark assistantActive={assistantOn} />
           <b>Evokai</b>
         </a>
-        <div style="position:relative">
+        <div style="position:relative" hidden={!appsOn}>
           <button class="switch" aria-haspopup="true" aria-expanded={pop} onClick={() => setPop(!pop)}>
             {app ? <AppAvatar slug={app.slug} name={app.name} /> : <span class="av all">E</span>}
             <span>
@@ -276,14 +289,15 @@ export function Shell({ route }: { route: Route }) {
         ) : null}
         <div class="nl">
           <h6>{t('shell.console')}</h6>
-          {nav('#/apps', t('page.applications'), 'apps', route.view === 'apps')}
-          {nav('#/gateways', t('page.gateways'), 'connections', route.view === 'gateways')}
-          {nav('#/playground', t('page.playground'), 'play', route.view === 'playground')}
-          {nav('#/usage', t('page.usage'), 'usage', route.view === 'usage')}
+          {appsOn ? nav('#/apps', t('page.applications'), 'apps', route.view === 'apps') : null}
+          {gatewayOn ? nav('#/gateways', t('page.gateways'), 'connections', route.view === 'gateways') : null}
+          {appsOn ? nav('#/playground', t('page.playground'), 'play', route.view === 'playground') : null}
+          {appsOn ? nav('#/usage', t('page.usage'), 'usage', route.view === 'usage') : null}
           {nav('#/health', t('page.health'), 'health', route.view === 'health')}
-          {nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant')}
+          {appsOn ? nav('#/assistant', t('page.assistant'), 'agents', route.view === 'assistant') : null}
           {c.me.deploymentOwner ? nav('#/access', t('page.access'), 'access', route.view === 'access') : null}
           {c.me.deploymentOwner ? nav('#/policy', t('page.systemPolicy'), 'security', route.view === 'policy') : null}
+          {c.me.deploymentOwner ? nav('#/modules', t('page.modules'), 'perms', route.view === 'modules') : null}
         </div>
         <div class="foot">
           <a
@@ -339,11 +353,11 @@ export function Shell({ route }: { route: Route }) {
             </p>
           ) : null}
           {app && alerts.length ? <CostBanner app={app} alerts={alerts} /> : null}
-          <div class={fresh ? 'freshwrap' : ''}>{page(route, app)}</div>
+          <div class={fresh ? 'freshwrap' : ''}>{page(route, app, c.me)}</div>
         </main>
       </div>
-      {pal ? <Palette apps={c.apps} onClose={() => setPal(false)} /> : null}
-      <AssistantLauncher state={assistant} dark={dark} />
+      {pal ? <Palette apps={c.apps} me={c.me} onClose={() => setPal(false)} /> : null}
+      {appsOn ? <AssistantLauncher state={assistant} dark={dark} /> : null}
       <TourOverlay />
     </div>
   )
@@ -418,17 +432,23 @@ function CostBanner({ app, alerts }: { app: ConsoleApplication; alerts: CostAler
   )
 }
 
-function Palette({ apps, onClose }: { apps: ConsoleApplication[]; onClose: () => void }) {
+function Palette({ apps, me, onClose }: { apps: ConsoleApplication[]; me: ConsoleMe; onClose: () => void }) {
   const [q, setQ] = useState('')
   const [hl, setHl] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => input.current?.focus(), [])
   const all = useMemo(
     () => [
-      [t('page.applications'), '#/apps', t('shell.kindPage')],
-      [t('page.playground'), '#/playground', t('shell.kindPage')],
-      [t('page.usage'), '#/usage', t('shell.kindPage')],
+      ...(moduleOn(me, 'applications')
+        ? [
+            [t('page.applications'), '#/apps', t('shell.kindPage')],
+            [t('page.playground'), '#/playground', t('shell.kindPage')],
+            [t('page.usage'), '#/usage', t('shell.kindPage')],
+          ]
+        : []),
+      ...(moduleOn(me, 'gateway') ? [[t('page.gateways'), '#/gateways', t('shell.kindPage')]] : []),
       [t('page.health'), '#/health', t('shell.kindPage')],
+      ...(me.deploymentOwner ? [[t('page.modules'), '#/modules', t('shell.kindPage')]] : []),
       [t('page.preferences'), '#/preferences', t('shell.kindPage')],
       ...PREF_SECTIONS().map(([k, l]) => [`${t('page.preferences')}: ${l}`, `#/preferences?s=${k}`, t('shell.kindPage')]),
       ...apps.flatMap((a) => [
@@ -438,7 +458,7 @@ function Palette({ apps, onClose }: { apps: ConsoleApplication[]; onClose: () =>
           .map(([k, l]) => [`${a.name}: ${l}`, appHref(a.slug, k), t('shell.kindApplication')]),
       ]),
     ],
-    [apps, locale()],
+    [apps, me, locale()],
   )
   const items = all.filter((x) => x[0]!.toLowerCase().includes(q.toLowerCase()))
   const pick = (href: string) => {

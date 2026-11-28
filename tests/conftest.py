@@ -511,6 +511,14 @@ async def _cancel_until_quiet(
 
 
 @pytest.fixture(autouse=True)
+def _modules_start_fresh() -> None:
+    """Every test starts with both modules on (the process state of ``evokai.core.modules``)."""
+    from evokai.core import modules
+
+    modules.reset()
+
+
+@pytest.fixture(autouse=True)
 async def _no_task_outlives_its_test(request: pytest.FixtureRequest) -> AsyncIterator[None]:
     """After a test and its fixtures, the tasks it left running are cancelled, hard, within seconds.
 

@@ -124,6 +124,70 @@ def _connectors(args: argparse.Namespace) -> int:
     return 0
 
 
+def _module(args: argparse.Namespace, settings: Settings) -> int:
+    """``evokai module purge <applications|gateway>``: a module's data, for good (module off).
+
+    Dry run first (counts), then an optional export, then the confirmation: typing the module's
+    name, or ``--yes`` for scripts.
+
+    Returns:
+        Exit code.
+    """
+    import getpass
+
+    from evokai import module_purge
+    from evokai.services import build_services
+
+    out = sys.stdout.write
+
+    async def run() -> int:
+        svc = build_services(settings)
+        try:
+            try:
+                plan = await module_purge.plan(svc.store, args.module)
+            except module_purge.PurgeRefused as e:
+                sys.stderr.write(f"{e}\n")
+                return 2
+            out(f"Module {plan.module}: {len(plan.ids)} rows of its kind")
+            out(f" ({', '.join(plan.slugs[:20])}{', ...' if len(plan.slugs) > 20 else ''})\n")
+            for table, n in sorted(plan.counts.items()):
+                out(f"  {table:<36} {n}\n")
+            out(f"  live keys to revoke: {plan.keys}\n")
+            out("Outside Evokai, these stay and are yours to remove:\n")
+            for item in module_purge.OUTSIDE[plan.module]:
+                out(f"  - {item}\n")
+            if not plan.ids:
+                out("Nothing to purge.\n")
+                return 0
+            interactive = sys.stdin.isatty() and not args.yes
+            export = args.export
+            if export is None and interactive:
+                export = input("Export the rows first? A file path, or empty to skip: ").strip()
+            if export:
+                n = await module_purge.export(svc.store, plan, Path(export))
+                out(f"Exported {n} rows to {export}\n")
+            if args.dry_run:
+                out("Dry run: nothing deleted.\n")
+                return 0
+            if not args.yes:
+                if not interactive:
+                    sys.stderr.write("Not a terminal: pass --yes to delete.\n")
+                    return 2
+                typed = input(f"Type {plan.module} to delete all of this for good: ").strip()
+                if typed != plan.module:
+                    out("Not confirmed: nothing deleted.\n")
+                    return 1
+            by = f"cli:{getpass.getuser()}"
+            deleted = await module_purge.purge(svc.store, plan, by)
+            out(f"Purged module {plan.module}: {sum(deleted.values())} rows deleted, ")
+            out(f"{plan.keys} keys revoked.\n")
+            return 0
+        finally:
+            await svc.close()
+
+    return asyncio.run(run())
+
+
 def _types(args: argparse.Namespace) -> int:
     """``evokai types``: the ``.d.ts`` of an agent's tools (``GET /v1/admin/agents/{name}/types``).
 
@@ -218,6 +282,15 @@ def main(argv: list[str] | None = None) -> int:
         default="EVOKAI_ADMIN_KEY",
         help="the variable that holds the application's admin key (default EVOKAI_ADMIN_KEY)",
     )
+    mod = sub.add_parser("module", help="modules (applications, gateway): purge one that is off")
+    mod_sub = mod.add_subparsers(dest="action", required=True)
+    purge_mod = mod_sub.add_parser(
+        "purge", help="delete a module's data for good (only while it is off; dry run first)"
+    )
+    purge_mod.add_argument("module", choices=["applications", "gateway"])
+    purge_mod.add_argument("--yes", action="store_true", help="delete without asking (scripts)")
+    purge_mod.add_argument("--dry-run", action="store_true", help="count only, delete nothing")
+    purge_mod.add_argument("--export", help="write the rows to this JSON file before deleting")
     spec = sub.add_parser("openapi", help="print the OpenAPI schema (voice routes included)")
     spec.add_argument("--out", help="write to this file instead of stdout")
     args = parser.parse_args(argv)
@@ -305,6 +378,8 @@ def main(argv: list[str] | None = None) -> int:
         return _connectors(args)
     if args.cmd == "types":
         return _types(args)
+    if args.cmd == "module":
+        return _module(args, settings)
     if args.cmd == "openapi":
         import json
 

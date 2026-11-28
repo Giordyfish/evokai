@@ -10,13 +10,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Route
 
-from evokai import policies
+from evokai import module_jobs, policies
 from evokai.agents.bootstrap import bootstrap, bootstrap_apps
 from evokai.api import (
     a2a_routes,
@@ -35,6 +35,7 @@ from evokai.api import (
     gateway_routes,
     grants_routes,
     knowledge_routes,
+    module_routes,
     openai_routes,
     policy_routes,
     preferences_routes,
@@ -52,7 +53,7 @@ from evokai.api import (
 )
 from evokai.api.console_static import mount_console
 from evokai.api.hardening import Hardening, origin_cache
-from evokai.assistant.bootstrap import ensure_assistant
+from evokai.core import modules
 from evokai.core.config import Settings, get_settings
 from evokai.core.errors import AppError
 from evokai.core.util import utcnow
@@ -91,9 +92,11 @@ async def _housekeeping(svc: Services) -> None:
             # A revocation matters only while a token minted before it could still be alive.
             horizon = svc.settings.session_token_max_ttl + 300
             await purge_revocations(svc.store, utcnow() - timedelta(seconds=horizon))
-        # Episodes of finished conversations, for agents that keep them (evokai.memory).
+        # Episodes of finished conversations, for agents that keep them (evokai.memory): a job of
+        # the applications module.
         with contextlib.suppress(Exception):
-            if n := await svc.memory.summarize_finished():
+            on = modules.visible(modules.APPLICATIONS)
+            if on and (n := await svc.memory.summarize_finished()):
                 logger.info("memory_episodes_written", extra={"count": n})
         if time.monotonic() - last_purge >= PURGE_EVERY:
             last_purge = time.monotonic()
@@ -124,8 +127,10 @@ async def _housekeeping(svc: Services) -> None:
                 if n := await svc.store.capabilities.purge():
                     state["capabilityRecordsDeleted"] = n
                     logger.info("capability_records_purged", extra={"count": n})
-                # Month-end forecasts against the caps: alerts fire once per threshold.
-                if svc.costs is not None and (n := await svc.costs.check_alerts()):
+                # Month-end forecasts against the caps: alerts fire once per threshold (a job of
+                # the applications module; the purges above are core and run whatever is on).
+                on = modules.visible(modules.APPLICATIONS)
+                if on and svc.costs is not None and (n := await svc.costs.check_alerts()):
                     state["costAlerts"] = n
                     logger.info("cost_alerts_fired", extra={"count": n})
                 if n := await svc.store.workflows.purge():
@@ -140,13 +145,17 @@ async def _housekeeping(svc: Services) -> None:
 
 
 async def _refresh_system_policy(svc: Services) -> None:
-    """Reload the system policy now and then (a save on another instance)."""
+    """Reload the system policy and the modules now and then (a save on another instance)."""
     while True:
         await asyncio.sleep(policies.REFRESH_SECONDS)
         try:
             await policies.load_system(svc.store)
         except Exception as e:
             logger.warning("system_policy_not_loaded", extra={"error_type": type(e).__name__})
+        try:
+            await module_jobs.apply(svc, await modules.enabled(svc))
+        except Exception as e:
+            logger.warning("modules_not_loaded", extra={"error_type": type(e).__name__})
 
 
 def create_app(settings: Settings | None = None, services: Services | None = None) -> FastAPI:
@@ -160,12 +169,23 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         The FastAPI app.
     """
     settings = settings or get_settings()
+    # EVOKAI_MODULES naming no module (or an unknown one) stops the start here, with the reason.
+    modules.configure(settings)
     svc = services or build_services(settings)
+    modules.configure(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         app.state.services = svc
-        if settings.bootstrap_file:
+        on = await modules.enabled(svc)
+        if not on:
+            raise RuntimeError(modules.NONE_ON)
+        pinned = modules.pinned(settings) is not None
+        logger.info("modules", extra={"modules": ",".join(sorted(on)), "pinned": pinned})
+        applications = modules.APPLICATIONS in on
+        if (settings.bootstrap_file or settings.bootstrap_apps) and not applications:
+            logger.warning("bootstrap_skipped", extra={"reason": "applications module off"})
+        if settings.bootstrap_file and applications:
             app_id = await bootstrap(
                 svc.store,
                 svc.keyring,
@@ -173,33 +193,16 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 {"srv": settings.bootstrap_server_key, "adm": settings.bootstrap_admin_key},
             )
             logger.info("bootstrapped", extra={"application_id": app_id})
-        if settings.bootstrap_apps:
+        if settings.bootstrap_apps and applications:
             ids = await bootstrap_apps(svc.store, settings.bootstrap_apps)
             logger.info("bootstrapped_from_env", extra={"applications": len(ids)})
-        # The built-in console assistant: a locked system application, inactive until activated.
-        try:
-            await ensure_assistant(svc.store, svc.keyring, settings)
-        except Exception as e:
-            logger.warning("assistant_not_ensured", extra={"error_type": type(e).__name__})
         # Every application's own identifiers are masked in logs and traces from the start.
         with contextlib.suppress(Exception):
             for application in await svc.store.applications.all():
                 identifiers.of_app(application)
-        # Runs left going by a process that stopped will never end: they are marked interrupted.
-        with contextlib.suppress(Exception):
-            await svc.store.evals.interrupt_stale(utcnow())
-        # Documents a stopped process left queued or half-ingested are picked up again.
-        with contextlib.suppress(Exception):
-            await svc.knowledge.start()
-        # Workflow steps a stopped process left running are resumed once their lease expires.
-        with contextlib.suppress(Exception):
-            await svc.workflows.start()
-        # Durable agent steps (pgtask) are taken by this instance's worker too.
-        with contextlib.suppress(Exception):
-            await svc.durable.start()
-        # Mailboxes read over IMAP are polled from now on.
-        with contextlib.suppress(Exception):
-            await svc.channels.start()
+        # The jobs of the modules that are on: the console assistant, evals, knowledge,
+        # workflows, durable steps and mailboxes for the applications module.
+        await module_jobs.apply(svc, on)
         # The system policy applies from the first turn, and another instance's save reaches
         # this one within policies.REFRESH_SECONDS.
         with contextlib.suppress(Exception):
@@ -252,6 +255,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
 
     @app.exception_handler(AppError)
     def app_error(request: Request, e: AppError) -> JSONResponse:
+        if isinstance(e, modules.ModuleDisabled):
+            return JSONResponse(e.body(), status_code=e.status)
         if (r := openai_error(request, e.status, e.code, e.message)) is not None:
             return r
         extra = getattr(e, "extra", None) or {}
@@ -310,47 +315,60 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         """
         return {"ok": True}
 
-    root.include_router(session_routes.router)
-    root.include_router(agui_routes.router)
-    root.include_router(openai_routes.router)
-    root.include_router(a2a_routes.router)
-    root.include_router(server_routes.router)
-    root.include_router(admin_routes.router)
-    root.include_router(assistant_routes.router)
-    root.include_router(assistant_routes.console)
-    root.include_router(grants_routes.router)
-    root.include_router(ask_routes.router)
-    root.include_router(capability_routes.router)
-    root.include_router(worker_routes.router)
-    root.include_router(console_routes.router)
-    root.include_router(run_routes.router)
-    root.include_router(eval_routes.router)
-    root.include_router(redteam_routes.router)
-    root.include_router(cost_routes.router)
-    root.include_router(provider_routes.router)
-    root.include_router(compliance_routes.router)
-    root.include_router(security_routes.router)
-    root.include_router(policy_routes.router)
-    root.include_router(privacy_routes.router)
-    root.include_router(sso_routes.router)
-    root.include_router(preferences_routes.router)
-    root.include_router(trace_routes.router)
-    root.include_router(knowledge_routes.router)
-    root.include_router(knowledge_routes.files)
-    root.include_router(workflow_routes.admin)
-    root.include_router(workflow_routes.server)
-    root.include_router(workflow_routes.hooks)
-    root.include_router(connection_routes.router)
-    root.include_router(channel_routes.public)
-    root.include_router(channel_routes.admin)
-    root.include_router(gateway_admin_routes.router)
-    root.include_router(gateway_admin_routes.one)
-    root.include_router(gateway_routes.router)
+    # Route ownership (evokai.core.modules): a module that is off answers its routes 404
+    # module_disabled; the core routes always answer.
+    apps = [Depends(modules.require_module(modules.APPLICATIONS))]
+    gateway = [Depends(modules.require_module(modules.GATEWAY))]
+    for r in (
+        session_routes.router,
+        agui_routes.router,
+        openai_routes.router,
+        a2a_routes.router,
+        server_routes.router,
+        admin_routes.router,
+        assistant_routes.router,
+        assistant_routes.console,
+        grants_routes.router,
+        ask_routes.router,
+        capability_routes.router,
+        worker_routes.router,
+        run_routes.router,
+        eval_routes.router,
+        redteam_routes.router,
+        cost_routes.router,
+        trace_routes.router,
+        knowledge_routes.router,
+        knowledge_routes.files,
+        workflow_routes.admin,
+        workflow_routes.server,
+        workflow_routes.hooks,
+        connection_routes.router,
+        channel_routes.public,
+        channel_routes.admin,
+    ):
+        root.include_router(r, dependencies=apps)
+    for r in (gateway_admin_routes.router, gateway_admin_routes.one, gateway_routes.router):
+        root.include_router(r, dependencies=gateway)
+    # Core: console sign-in and shell (its applications' routes check the module themselves),
+    # modules, users and roles, the system policy, policies, security, privacy, compliance,
+    # providers and the audit log.
+    for r in (
+        console_routes.router,
+        module_routes.router,
+        provider_routes.router,
+        compliance_routes.router,
+        security_routes.router,
+        policy_routes.router,
+        privacy_routes.router,
+        sso_routes.router,
+        preferences_routes.router,
+    ):
+        root.include_router(r)
     if settings.voice_enabled:
         from evokai.api import speech_routes, voice_routes
 
-        root.include_router(voice_routes.router)
-        root.include_router(speech_routes.router)
+        root.include_router(voice_routes.router, dependencies=apps)
+        root.include_router(speech_routes.router, dependencies=apps)
 
     app.include_router(root)
     # The admin API as an MCP server, for AI agents acting with their caller's rights.

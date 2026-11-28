@@ -11,6 +11,7 @@ database and come from the config YAML, `EVOKAI_BOOTSTRAP_APPS` or the admin API
 | `EVOKAI_PRODUCTION` | `false` (`true` in the image) | Refuse to start without signing and encryption keys |
 | `EVOKAI_PORT` | `8787` | Listen port |
 | `EVOKAI_BASE_PATH` | `/agent` | Where the API is mounted |
+| `EVOKAI_MODULES` | unset (both on) | Comma list of the [modules](modules.md) that are on: `applications`, `gateway`. Set, it pins them (the console shows them read-only); unset, a deployment owner switches them in the console. At least one; none or an unknown name stops the start |
 | `EVOKAI_SIGNING_KEY` | random in dev | HMAC key of session tokens (`evokai keygen signing`) |
 | `EVOKAI_ENCRYPTION_KEY` | random in dev | Fernet key for MCP secrets and forwarded credentials |
 | `EVOKAI_SESSION_TOKEN_DEFAULT_TTL` / `_MAX_TTL` | `300` / `900` | Session token lifetime, seconds |
