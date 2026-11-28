@@ -451,6 +451,16 @@ async def test_personal_data_scope_and_size_block_when_enforced(gate: Gate) -> N
     assert (await gate.send(message("fine"))).status_code == 200
 
 
+async def test_the_persons_own_email_is_not_personal_data(gate: Gate) -> None:
+    # The person's key is labelled with their e-mail (ada@example.com): Claude Code puts it in its
+    # own context, and it must not refuse every request.
+    await gate.policy({"modes": {"pii.model": "enforce"}})
+    r = await gate.send(message("I am ADA@example.com, fix the build"))
+    assert r.status_code == 200
+    r = await gate.send(message("I am ada@example.com, write to bob@example.org"))
+    assert r.status_code == 451 and "pii.model" in r.json()["error"]["message"]
+
+
 async def test_provider_and_model_must_be_allowed(env: Env) -> None:
     gate = await _gateway(env, Upstream(), allowed_models=["claude-sonnet-*"])
     r = await gate.send(message("hi", model="claude-opus-4-8"))

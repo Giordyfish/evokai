@@ -146,7 +146,9 @@ A gateway has a policy like an application's: `security` (modes and settings) an
 - `input.secrets`: API keys, tokens, private keys, passwords in URLs and the deployment's own keys (the detectors of
   `output.secrets`);
 - `pii.model`: the guard's personal data types (`pii.types`: codice fiscale, partita IVA, IBAN, e-mail, phone,
-  card), with their checksums (the first 20 of each detector: the gateway needs which kinds a text holds);
+  card), with their checksums (the first 20 of each detector: the gateway needs which kinds a text holds). The
+  person's own e-mail and name (their key's `email` and label) never count in their own requests: Claude Code puts
+  the person's e-mail in its own context;
 - `scope`: a topic of `scope.deny` (its `refusal`, when set, is the message);
 - `abuse.rate`: requests per person per minute.
 

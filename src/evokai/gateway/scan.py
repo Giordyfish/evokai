@@ -305,7 +305,11 @@ def _ends_ok(d: _Detector, data: bytes, start: int, end: int, e: int) -> bool:
 
 
 def find_pii(
-    text: str, types: frozenset[str] | set[str] | None = None, *, limit: int | None = None
+    text: str,
+    types: frozenset[str] | set[str] | None = None,
+    *,
+    limit: int | None = None,
+    allow: tuple[str, ...] = (),
 ) -> dict[str, int]:
     """How many personal identifiers of each type a text holds (the guard's built-in types).
 
@@ -317,24 +321,29 @@ def find_pii(
         types: Only these types (default all).
         limit: Stop each detector after this many matches (the gateway needs which types a text
             holds, not every one of them: a file full of e-mail addresses costs no more).
+        allow: Values that never count (the requester's own e-mail and name), case-insensitive.
 
     Returns:
         Type to count (types with none left out; with a limit, the counts are at least that).
     """
     counts: dict[str, int] = {}
-    for _, _, kind in _pii_spans(text.encode("utf-8", "surrogatepass"), types, limit):
+    for _, _, kind in _pii_spans(text.encode("utf-8", "surrogatepass"), types, limit, allow):
         counts[kind] = counts.get(kind, 0) + 1
     return counts
 
 
 def _pii_spans(
-    data: bytes, types: frozenset[str] | set[str] | None, limit: int | None
+    data: bytes,
+    types: frozenset[str] | set[str] | None,
+    limit: int | None,
+    allow: tuple[str, ...] = (),
 ) -> list[tuple[int, int, str]]:
     """The personal identifiers of a text's bytes, without overlaps, in text order.
 
     Returns:
-        (start, end, type) byte spans.
+        (start, end, type) byte spans (an allowed value is left out before the limit counts).
     """
+    allowed = {a.strip().lower().encode("utf-8", "surrogatepass") for a in allow if a.strip()}
     want = set(types) if types is not None else set(pii.PII_TYPES)
     ranked: list[tuple[int, int, int, str]] = []
     for d in DETECTORS:
@@ -346,7 +355,11 @@ def _pii_spans(
                 continue
         elif d.type not in want:
             continue
-        for n, (start, end) in enumerate(_matches(d, data), 1):
+        n = 0
+        for start, end in _matches(d, data):
+            if allowed and data[start:end].lower() in allowed:
+                continue
+            n += 1
             kind = {"digits": _digits_type(data[start:end]), "landline": "phone"}.get(
                 d.type, d.type
             )
@@ -385,6 +398,7 @@ def mask(
     known: tuple[str, ...] = (),
     pii_types: frozenset[str] | set[str] | None = None,
     replacement: str = "[bloccato]",
+    allow: tuple[str, ...] = (),
 ) -> tuple[str, list[str]]:
     """A text with its secrets and personal identifiers replaced (the gateway proxy's ``mask``).
 
@@ -394,6 +408,7 @@ def mask(
         known: The deployment's own secrets.
         pii_types: Mask these personal data types (None or empty: none).
         replacement: What a value becomes.
+        allow: Personal data values never masked (the requester's own e-mail and name).
 
     Returns:
         The text, and the rule or type of each value masked.
@@ -412,7 +427,7 @@ def mask(
                 spans.append((at, at + len(raw), "deployment_secret"))
                 at = data.find(raw, at + 1)
     if pii_types:
-        spans += _pii_spans(data, pii_types, None)
+        spans += _pii_spans(data, pii_types, None, allow)
     if not spans:
         return text, []
     spans.sort(key=lambda r: (r[0], -(r[1] - r[0])))

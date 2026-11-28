@@ -67,6 +67,19 @@ def oauth_profile(email: str = EMAIL, account: str = ACCOUNT, org: str = ORG) ->
     }
 
 
+def token_answer(email: str = EMAIL, account: str = ACCOUNT, org: str = ORG) -> dict:
+    """Claude Code's OAuth token answer (``POST platform.claude.com/v1/oauth/token``)."""
+    return {
+        "token_type": "Bearer",
+        "access_token": "fake-access",
+        "refresh_token": "fake-refresh",
+        "expires_in": 28800,
+        "scope": "user:inference user:profile",
+        "account": {"uuid": account, "email_address": email},
+        "organization": {"uuid": org, "name": "Example Org"},
+    }
+
+
 def claude_account(email: str = EMAIL, account: str = ACCOUNT, org: str = ORG) -> dict:
     """``GET claude.ai/api/account`` (key names as the probe read them)."""
     return {

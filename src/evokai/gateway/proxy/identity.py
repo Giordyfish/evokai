@@ -6,7 +6,17 @@ and binds it to the account a provider's own answer named:
 - claude.ai (Chat, Cowork, titles): the ``sessionKey`` cookie (read from every ``cookie``
   header: HTTP/2 splits them), learned from ``GET claude.ai/api/account``;
 - Claude Code (Desktop's Code tab, the CLI): the account uuid in ``metadata.user_id`` of every
-  ``/v1/messages`` body, learned from ``GET api.anthropic.com/api/oauth/profile``.
+  ``/v1/messages`` body.
+
+The person is bound to the **Anthropic account uuid**, learned from any answer that names it with
+its e-mail: ``GET claude.ai/api/account`` (Desktop calls it at start), ``GET
+api.anthropic.com/api/oauth/profile`` and Claude Code's OAuth token answer (``POST
+platform.claude.com/v1/oauth/token``, read for its ``account`` and ``organization`` only). It is
+one value space: claude.ai's account ``uuid``, the profile's ``account.uuid`` and the token
+answer's ``account.uuid`` are what Claude Code stores as ``oauthAccount.accountUuid`` and sends
+as ``account_uuid`` in ``metadata.user_id`` (read in the Claude Code 2.1.332 bundle; the probe saw
+the same uuid in both). A person seen once through Desktop is so recognised on the CLI too, and a
+signed-in CLI (which does not call the profile again) is recognised at its next token refresh.
 
 Only a digest of the key is stored (``evokai_gateway_proxy_identities``), with the e-mail, the
 account and the organisation, and an expiry that moves with use. The e-mail maps to a gateway
@@ -163,6 +173,7 @@ def from_claude_account(data: Any) -> tuple[str | None, str | None, str | None]:
         if isinstance(mm, dict) and isinstance(mm.get("organization"), dict)
     ]
     orgs = [o for o in orgs if o]
+    uuid = uuid.lower() if uuid else None
     return (email.lower() if email else None), uuid, (orgs[0] if len(orgs) == 1 else None)
 
 
@@ -177,6 +188,27 @@ def from_oauth_profile(data: Any) -> tuple[str | None, str | None, str | None]:
     acct = data.get("account") if isinstance(data.get("account"), dict) else {}
     org = data.get("organization") if isinstance(data.get("organization"), dict) else {}
     email = _str(acct.get("email")) or _str(acct.get("email_address"))
+    uuid = _str(acct.get("uuid"))
+    return (
+        (email.lower() if email else None),
+        (uuid.lower() if uuid else None),
+        _str(org.get("uuid")),
+    )
+
+
+def from_token_response(data: Any) -> tuple[str | None, str | None, str | None]:
+    """The e-mail, account uuid and organisation of Claude Code's OAuth token answer.
+
+    Only ``account`` and ``organization`` are read; the tokens beside them are never touched.
+
+    Returns:
+        (email, account, org).
+    """
+    if not isinstance(data, dict):
+        return None, None, None
+    acct = data.get("account") if isinstance(data.get("account"), dict) else {}
+    org = data.get("organization") if isinstance(data.get("organization"), dict) else {}
+    email = _str(acct.get("email_address")) or _str(acct.get("email"))
     uuid = _str(acct.get("uuid"))
     return (
         (email.lower() if email else None),

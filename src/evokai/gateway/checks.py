@@ -246,6 +246,7 @@ def text_checks(
     provider: str,
     known: tuple[str, ...] = (),
     record: Any = None,
+    own: tuple[str, ...] = (),
 ) -> Block | None:
     """The guard's input checks on a request's new text: block (enforce) or record (monitor).
 
@@ -255,6 +256,8 @@ def text_checks(
         provider: The provider the request goes to (for the messages).
         known: The deployment's own secrets.
         record: ``record(control, rule, action, details)`` for each control that acts.
+        own: The requester's own identifiers (their e-mail, their name): never a ``pii.model``
+            finding in their own request (Claude Code puts the person's e-mail in its context).
 
     Returns:
         The block of the first enforced control that acts, or None.
@@ -292,7 +295,7 @@ def text_checks(
     if policy.on("pii.model"):
         types = (s.pii.types if s.pii else None) or None
         builtin = {t for t in (types or PII_TYPES) if t in PII_TYPES}
-        if builtin and (counts := scan.find_pii(text, builtin, limit=PII_LIMIT)):
+        if builtin and (counts := scan.find_pii(text, builtin, limit=PII_LIMIT, allow=own)):
             kinds = sorted(counts)
             if act("pii.model", kinds[0], {"types": counts}):
                 return Block(

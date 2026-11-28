@@ -33,7 +33,13 @@ from starlette.websockets import WebSocket
 from evokai.gateway.proxy import ca
 from tests import proxy_fixtures as fx
 
-UPSTREAM_HOSTS = ("api.anthropic.com", "claude.ai", "bridge.claudeusercontent.com", "claude.com")
+UPSTREAM_HOSTS = (
+    "api.anthropic.com",
+    "claude.ai",
+    "bridge.claudeusercontent.com",
+    "claude.com",
+    "platform.claude.com",
+)
 
 
 def free_port() -> int:
@@ -177,6 +183,10 @@ class FakeUpstream:
             await record(request)
             return JSONResponse(self.account)
 
+        async def token(request: Request) -> Response:
+            await record(request)
+            return JSONResponse(fx.token_answer())
+
         async def completion(request: Request) -> Response:
             await record(request)
             body = gzip.compress(b"".join(fx.CHAT_SSE))
@@ -222,6 +232,7 @@ class FakeUpstream:
                 Route("/v1/messages/count_tokens", count, methods=["POST"]),
                 Route("/api/oauth/profile", profile, methods=["GET"]),
                 Route("/api/account", account, methods=["GET"]),
+                Route("/v1/oauth/token", token, methods=["POST"]),
                 Route(
                     "/api/organizations/{org}/chat_conversations/{conv}/completion",
                     completion,

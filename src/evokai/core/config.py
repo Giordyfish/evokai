@@ -330,8 +330,11 @@ class Settings(BaseSettings):
     proxy_unidentified: Literal["block", "record"] = "block"
     """``EVOKAI_PROXY_UNIDENTIFIED``: a request whose account is not known yet, or whose e-mail is
     in no gateway: ``block`` (with a message to restart the app or contact IT) or ``record``
-    (allowed under the system policy, recorded as unidentified). The ``proxy`` console setting
-    overrides it."""
+    (allowed on ``EVOKAI_PROXY_DEFAULT_GATEWAY``, under its rules, recorded as unidentified; without
+    a default gateway ``record`` blocks). The ``proxy`` console setting overrides it."""
+    proxy_default_gateway: str | None = None
+    """``EVOKAI_PROXY_DEFAULT_GATEWAY``: the gateway (slug or id) whose rules, records and retention
+    apply to unidentified requests in ``record``. The ``proxy`` console setting overrides it."""
     proxy_allowed_orgs: dict[str, list[str]] = Field(default_factory=dict)
     """``EVOKAI_PROXY_ALLOWED_ORGS``: per provider, the organisations whose accounts may pass
     (JSON, ``{"anthropic": ["<org uuid>"]}``); a provider not listed is not checked. The ``proxy``

@@ -33,7 +33,7 @@ from evokai.gateway.proxy.adapters import anthropic as a_anthropic
 from evokai.gateway.proxy.adapters import claude as a_claude
 from evokai.gateway.proxy.engine import Engine
 from evokai.gateway.proxy.run import Refused, preflight
-from evokai.gateway.proxy.service import PROXY_APP, ProxyService
+from evokai.gateway.proxy.service import ProxyService
 from evokai.gateway.proxy.texts import Texts
 from tests import proxy_fixtures as fx
 from tests.conftest import Env, make_env
@@ -442,8 +442,49 @@ async def test_an_unknown_account_is_blocked_with_a_restart_message(gate: Gate) 
     d = await gate.send(cli_message("hello"))
     assert d.verdict is not None and d.pending is None
     assert b"does not recognise this account yet" in d.verdict.body
-    events = await gate.events(PROXY_APP)
-    assert [(e.control, e.rule) for e in events] == [("proxy.unidentified", "no_binding")]
+    # No default gateway: the event has no gateway to belong to (it is logged only).
+    assert await gate.events() == []
+
+
+async def test_unidentified_events_go_to_the_default_gateway(env: Env) -> None:
+    gate = await _gate(env, proxy_default_gateway="dev")
+    await gate.learn_cli(email="stranger@example.com")
+    d = await gate.send(cli_message("hello"))
+    assert d.verdict is not None  # block is the default mode
+    events = await gate.events()
+    assert [(e.control, e.rule, e.subject) for e in events] == [
+        ("proxy.unidentified", "no_person", "stranger@example.com")
+    ]
+
+
+async def test_an_account_learned_on_desktop_is_recognised_on_the_cli(gate: Gate) -> None:
+    # claude.ai's account uuid is the one Claude Code sends in metadata.user_id.
+    await gate.learn_desktop()
+    d = await gate.send(cli_message("hello"))
+    assert d.verdict is None and d.pending is not None and d.pending.person.label == "Ada"
+
+
+async def test_the_oauth_token_answer_identifies_a_signed_in_cli(gate: Gate) -> None:
+    host, path = "platform.claude.com", "/v1/oauth/token"
+    assert gate.proxy.connect(host, 443) == "intercept"
+    assert gate.proxy.adapter("POST", host, path) is None  # identity only: never read or masked
+    assert gate.proxy.adapter("POST", host, "/api/anything") is None
+    kind = gate.proxy.learns("POST", host, path)
+    assert kind == "oauth_signin"
+    await gate.proxy.learn(
+        kind, req("POST", host, path), 200, json.dumps(fx.token_answer()).encode()
+    )
+    d = await gate.send(cli_message("hello"))
+    assert d.verdict is None and d.pending is not None and d.pending.person.label == "Ada"
+
+
+async def test_the_requesters_own_email_is_not_personal_data(gate: Gate) -> None:
+    await gate.learn_cli()
+    await gate.policy({"modes": {"pii.model": "enforce"}, "pii": {"types": ["email"]}})
+    own = await gate.send(cli_message(f"my e-mail is {fx.EMAIL.upper()}, fix the config"))
+    assert own.verdict is None
+    other = await gate.send(cli_message("write to bob@example.org about it"))
+    assert other.verdict is not None and b"personal data" in other.verdict.body
 
 
 async def test_a_learned_account_passes_and_its_secret_is_refused(gate: Gate) -> None:
@@ -521,25 +562,44 @@ async def test_an_account_outside_the_organisation_is_refused(env: Env) -> None:
     assert (await gate.send(cli_message("hello"))).verdict is not None
 
 
-async def test_unidentified_in_record_mode_passes_under_the_system_policy(env: Env) -> None:
+async def test_record_mode_without_a_default_gateway_blocks(env: Env) -> None:
     gate = await _gate(env, proxy_unidentified="record")
-    await gate.proxy.refresh()
+    await gate.learn_cli(email="stranger@example.com")
+    d = await gate.send(cli_message("hello"))
+    assert d.verdict is not None and b"does not recognise this account yet" in d.verdict.body
+
+
+async def test_record_mode_puts_unidentified_requests_on_the_default_gateway(env: Env) -> None:
+    gate = await _gate(env, proxy_unidentified="record", proxy_default_gateway="dev")
     await gate.learn_cli(email="stranger@example.com")
     d = await gate.send(cli_message("hello"))
     assert d.verdict is None and d.pending is not None
-    assert (
-        d.pending.gw.id == PROXY_APP
-        and d.pending.person.label == "unidentified stranger@example.com"
-    )
+    assert d.pending.gw.id == gate.id
+    assert d.pending.person.label == "unidentified stranger@example.com"
+    # The default gateway's rules apply to them.
+    await gate.policy({"modes": {"input.secrets": "enforce"}})
+    refused = await gate.send(cli_message(f"k {fx.SECRET}"))
+    assert refused.verdict is not None
+    rows = await gate.records()
+    assert [(r.outcome, r.person) for r in rows] == [
+        ("blocked", "unidentified stranger@example.com")
+    ]
 
 
 async def test_the_console_setting_overrides_the_environment(gate: Gate) -> None:
     await gate.env.svc.store.console_settings.put(
-        "proxy", {"unidentified": "record", "allowed_orgs": {"anthropic": [fx.ORG]}}, "test"
+        "proxy",
+        {
+            "unidentified": "record",
+            "allowed_orgs": {"anthropic": [fx.ORG]},
+            "default_gateway": gate.id,
+        },
+        "test",
     )
     await gate.proxy.refresh()
     assert gate.proxy.settings.unidentified == "record"
     assert gate.proxy.settings.allowed_orgs == {"anthropic": [fx.ORG]}
+    assert gate.proxy.settings.default_gateway == gate.id
 
 
 async def test_a_title_write_is_masked_when_secrets_are_enforced(gate: Gate) -> None:
@@ -564,7 +624,7 @@ async def test_a_changed_shape_is_refused_and_raises_an_alert(gate: Gate) -> Non
         req("POST", "claude.ai", chat_path(), {"message": "renamed"}, cookie=cookie())
     )
     assert d.verdict is not None and b"Format not recognised" in d.verdict.body
-    events = await gate.events(PROXY_APP)
+    events = await gate.events()
     assert [(e.control, e.rule) for e in events] == [("proxy.format_unknown", "claude.chat")]
 
 
@@ -657,6 +717,23 @@ async def test_end_to_end_claude_code_identity_usage_and_refusal(tmp_path: Path)
             ("blocked", 0, 0),
             ("forwarded", 142, 7),
         ]
+
+
+async def test_end_to_end_a_token_refresh_identifies_the_cli(tmp_path: Path) -> None:
+    async with stack(tmp_path) as s, s.client() as pc:
+        r = await pc.post(
+            "https://platform.claude.com/v1/oauth/token",
+            json={"grant_type": "refresh_token", "refresh_token": "fake-refresh"},
+        )
+        assert r.status_code == 200 and r.json() == fx.token_answer()  # passed on unchanged
+        sent = next(x for x in s.up.seen if x.path == "/v1/oauth/token")
+        assert json.loads(sent.body)["refresh_token"] == "fake-refresh"  # never masked
+        r = await pc.post(
+            "https://api.anthropic.com/v1/messages",
+            json=fx.messages_body("hello"),
+            headers={"user-agent": fx.CLI_UA},
+        )
+        assert r.content == b"".join(fx.ANTHROPIC_SSE)
 
 
 async def test_end_to_end_other_hosts_are_refused_and_the_check_host_answers(

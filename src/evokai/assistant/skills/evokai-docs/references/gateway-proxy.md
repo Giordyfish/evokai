@@ -28,7 +28,9 @@ PC (Claude Desktop, Claude Code)                     evokai proxy               
   is [mitmproxy](https://mitmproxy.org) (MIT) used as a library behind one module (`evokai.gateway.proxy.engine`),
   pinned in the `evokai[proxy]` extra that the published images include.
 - **Only the catalogue.** A `CONNECT` to any host outside the catalogue gets 403: the proxy is never an open proxy.
-  Today's catalogue for Anthropic: `api.anthropic.com`, `claude.ai`, `*.claudeusercontent.com`, `claude.com`. A
+  Today's catalogue for Anthropic: `api.anthropic.com`, `claude.ai`, `*.claudeusercontent.com`, `claude.com`, and
+  `platform.claude.com` for identity only (Claude Code's OAuth token answer is read for its account; nothing else
+  there is read or masked, and no token is logged or kept). A
   provider is intercepted when it is enabled on an active gateway and this build has adapters for it (OpenAI and
   GitHub Copilot hosts are in the catalogue and in the CA, their adapters are not in this release: their hosts are
   refused, never tunnelled unread). Static assets and updates (`downloads.claude.ai`, `s-cdn.anthropic.com`,
@@ -65,31 +67,43 @@ Leaf certificates are minted per host and kept in memory; a leaf names only the 
 The proxy never calls a provider with a person's credentials. It reads a key from each request and binds it to the
 account that a provider's own answer named, when that answer passes through:
 
-| Surface | Key in each request | Learned from |
-|---|---|---|
-| claude.ai (Chat, Cowork, titles) | the `sessionKey` cookie, read from every `cookie` header (HTTP/2 splits them) | `GET claude.ai/api/account` (Desktop calls it at start) |
-| Claude Code (Desktop's Code tab, the CLI) | the account uuid in `metadata.user_id` of every `/v1/messages` body | `GET api.anthropic.com/api/oauth/profile` |
-| Cowork's bridge (files read on the PC) | none of its own | the identity seen last from the same PC address (best effort behind a shared NAT) |
+| Surface | Key in each request |
+|---|---|
+| claude.ai (Chat, Cowork, titles) | the `sessionKey` cookie, read from every `cookie` header (HTTP/2 splits them) |
+| Claude Code (Desktop's Code tab, the CLI) | the Anthropic account uuid in `metadata.user_id` of every `/v1/messages` body |
+| Cowork's bridge (files read on the PC) | none of its own: the identity seen last from the same PC address (best effort behind a shared NAT) |
 
-Only a digest of the key is stored (`evokai_gateway_proxy_identities`) with the e-mail, account and organisation, and
-an expiry 30 days after its last use. The e-mail maps to a gateway person: give each person their work e-mail
+The person is bound to the **Anthropic account uuid**, learned from any of these answers, each naming the account
+with its e-mail:
+
+- `GET claude.ai/api/account` (Desktop calls it at start; it also binds the session cookie);
+- `GET api.anthropic.com/api/oauth/profile` (Claude Code after signing in);
+- `POST platform.claude.com/v1/oauth/token` (Claude Code's token refresh; only its `account` and `organization`
+  are read).
+
+They share one value space: claude.ai's account uuid, the profile's and the token answer's are what Claude Code
+sends as `account_uuid` in `metadata.user_id` (read in the Claude Code 2.1.332 bundle). So a person seen once
+through Desktop or claude.ai is recognised on the CLI too, and a signed-in CLI, which does not call the profile
+again, is recognised at its next token refresh (or after signing out and in).
+
+Only a digest of each key is stored (`evokai_gateway_proxy_identities`) with the e-mail, account and organisation,
+and an expiry 30 days after its last use. The e-mail maps to a gateway person: give each person their work e-mail
 (`POST /v1/admin/gateways/{id}/people` with `{label, email}`; one live key per e-mail across every gateway). A person
-whose label is their e-mail is found too.
-
-!!! note "Claude Code CLI with a saved login"
-    Measured with Claude Code 2.1.332: a CLI that is already signed in does not call `/api/oauth/profile` again, so the
-    proxy cannot learn its account until it does (after signing out and in, `claude auth logout` then `claude auth
-    login`). Until then its requests are unidentified.
+whose label is their e-mail is found too. A person just added is recognised within 30 seconds.
 
 - **Organisation.** A claude.ai request states its organisation (`x-organization-uuid`); an Anthropic API request is
   of the organisation its account's profile named. When `allowed_orgs` lists organisations for the provider, a request
   of any other one is refused ("account outside the company") whatever the rest, with a `proxy.org_refused` event.
 - **Unidentified.** No binding yet, or an e-mail in no gateway: `unidentified = block` (the default) refuses with a
-  message to restart the app or contact IT (`proxy.unidentified` event); `record` lets the request through under the
-  system policy, recorded as unidentified (application id `proxy`).
+  message to restart the app or contact IT (`proxy.unidentified` event); `record` lets the request through on the
+  **default gateway** (`EVOKAI_PROXY_DEFAULT_GATEWAY`, a slug or an id), recorded as `unidentified <e-mail>`: that
+  gateway's rules, records and retention apply. **Without a default gateway, `record` blocks.**
+- **Events need a gateway.** A proxy event (`proxy.format_unknown`, `proxy.org_refused`, `proxy.unidentified`) goes to
+  the person's gateway, else the default gateway; without either it is only logged.
 
-Both settings come from the environment (`EVOKAI_PROXY_ALLOWED_ORGS`, `EVOKAI_PROXY_UNIDENTIFIED`), and the console
-setting `proxy` (`{"allowed_orgs": {...}, "unidentified": "block"}` in the console settings table) overrides them.
+These settings come from the environment (`EVOKAI_PROXY_ALLOWED_ORGS`, `EVOKAI_PROXY_UNIDENTIFIED`,
+`EVOKAI_PROXY_DEFAULT_GATEWAY`), and the console setting `proxy` (`{"allowed_orgs": {...}, "unidentified": "block",
+"default_gateway": "<slug or id>"}` in the console settings table) overrides them.
 
 ### Adapters and refusals
 
@@ -97,6 +111,8 @@ Each surface has an adapter. It finds the text that is new in a request (the new
 since the previous assistant message, as the base URL door does), the model, and how to refuse where the person will
 read it. The checks are the gateway's own: provider enabled, model allowed, data protection, rate and token caps,
 `input.size`, `input.secrets`, `pii.model`, `scope` (RE2 only). In `enforce` a check refuses; in `monitor` it records.
+The person's own e-mail and name are never a `pii.model` finding in their own requests (Claude Code puts the
+person's e-mail in its context); anyone else's still are.
 
 | Adapter | Matches | Refusal | Status |
 |---|---|---|---|
@@ -165,7 +181,8 @@ Nothing on the PC changes: no system trust store, no system proxy. For Claude De
 | `EVOKAI_PROXY_MAX_BODY_MB` | `32` | the largest body read on an inspected path |
 | `EVOKAI_PROXY_PUBLIC_ADDRESS` | | `host:port` in the PAC |
 | `EVOKAI_PROXY_PAC_FALLBACK` | `block` | `block` or `direct` |
-| `EVOKAI_PROXY_UNIDENTIFIED` | `block` | `block` or `record` |
+| `EVOKAI_PROXY_UNIDENTIFIED` | `block` | `block` or `record` (`record` needs a default gateway, else it blocks) |
+| `EVOKAI_PROXY_DEFAULT_GATEWAY` | | the gateway (slug or id) of unidentified requests in `record` |
 | `EVOKAI_PROXY_ALLOWED_ORGS` | `{}` | JSON, per provider: `{"anthropic": ["<org uuid>"]}` |
 | `EVOKAI_PROXY_CONTACT` | IT | who people should ask, in refusals |
 | `EVOKAI_PROXY_LOCALE` | `en` | the language of refusals tied to no gateway |
@@ -192,9 +209,9 @@ miss: an engine in Go or Rust behind the same adapter interface.
 
 - Verified end to end with the Claude Code CLI 2.1.332 through a local `evokai proxy` and the real Anthropic API: a
   normal request forwarded with its usage recorded (tokens from the stream), a request with a test key refused with the
-  synthetic answer, the person found from the account uuid in `metadata.user_id`. The binding itself was seeded as
-  `/api/oauth/profile` would have made it: the signed-in CLI did not call it (see above); learning from that answer
-  is tested with fixtures.
+  synthetic answer, the person found from the account uuid in `metadata.user_id`. The binding itself was seeded as an
+  identity answer would have made it (the signed-in CLI called none during the check); learning from `/api/account`,
+  `/api/oauth/profile` and the token answer is tested with fixtures, the token answer also end to end.
 - Tested with sanitised fixtures and mitmproxy end to end against a local fake upstream: every adapter above,
   HTTP/2 with split cookies, gzip bodies re-encoded as they came, WebSocket replacement, a never-ending stream passed
   without buffering, the body limit, the catalogue refusal, the PAC, the check host and the CA constraints.

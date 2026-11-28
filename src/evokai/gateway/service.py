@@ -412,7 +412,12 @@ class GatewayService:
             )
         out.fingerprint = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:24]
         out.block = checks.text_checks(
-            policy, text, provider=provider, known=self.svc.guard.known_secrets, record=record
+            policy,
+            text,
+            provider=provider,
+            known=self.svc.guard.known_secrets,
+            record=record,
+            own=person.own(),
         )
         out.events += events
         return out
