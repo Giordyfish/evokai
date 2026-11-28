@@ -15,7 +15,11 @@ What it sets:
   small answers that name an account, which are read whole;
 - request bodies are read whole only on the paths an adapter inspects, up to
   ``EVOKAI_PROXY_MAX_BODY_MB`` (over it: refused); every other body streams through;
-- the upstream's certificate is verified against the public roots (certifi).
+- the upstream's certificate is verified against the public roots (certifi);
+- on a WebSocket an adapter reads, the app's messages are checked one by one, a refusal may answer
+  the app with messages of the server's own format (injected), and a model request is recorded when
+  the server's message that ends it passes; only the newest message of a WebSocket is kept in
+  memory (a Codex session sends 100 KB requests for hours).
 """
 
 from __future__ import annotations
@@ -24,6 +28,8 @@ import asyncio
 import logging
 import tempfile
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +40,7 @@ from mitmproxy.master import Master
 
 from evokai.gateway.proxy.adapters import Answer, Request, Rewrite
 from evokai.gateway.proxy.ca import Authority
-from evokai.gateway.proxy.service import Pending, ProxyService
+from evokai.gateway.proxy.service import WS_STATUS, Pending, ProxyService
 from evokai.gateway.relay import elapsed_ms
 
 log = logging.getLogger("evokai.gateway.proxy")
@@ -43,6 +49,18 @@ BODY_SLACK = 4
 """mitmproxy's own body limit is this many times ours: a memory guard for bodies of unknown length
 (ours refuses with a readable message first; a response over it is cut)."""
 _CERT_OPTIONS = {"certs", "confdir", "key_size", "cert_passphrase", "emudhra", "emudhra_old"}
+WS_OPEN = "evokai_ws_open"
+"""A WebSocket's model requests whose answer has not ended yet (in order)."""
+
+
+@dataclass
+class _Open:
+    """A model request on a WebSocket, waiting for the server's end of its answer."""
+
+    pending: Pending
+    t0: float
+    first_byte: int | None = None
+    bytes: int = 0
 
 
 class _Certificates(tlsconfig.TlsConfig):
@@ -124,6 +142,8 @@ class EvokaiAddon:
         """
         self.proxy = proxy
         self.overrides = overrides or {}
+        self.inject: Callable[[http.HTTPFlow, bytes], None] | None = None
+        """Sends a message to the app on a WebSocket (set by the engine)."""
 
     # Connections
 
@@ -288,14 +308,22 @@ class EvokaiAddon:
     # WebSocket
 
     async def websocket_message(self, flow: http.HTTPFlow) -> None:
-        """A message from the app on a WebSocket an adapter reads."""
+        """A message on a WebSocket an adapter reads.
+
+        The app's are checked; the server's end model requests.
+        """
         if flow.websocket is None:
             return
         msg = flow.websocket.messages[-1]
-        if not msg.from_client:
+        # Only the newest message is kept: the engine relays it, nothing reads the older ones.
+        del flow.websocket.messages[:-1]
+        if msg.injected:
             return
         adapter = self.proxy.frame_adapter(flow.request.host, flow.request.path.partition("?")[0])
         if adapter is None:
+            return
+        if not msg.from_client:
+            self._server_message(flow, adapter, msg.content)
             return
         try:
             verdict = await self.proxy.frame(_request(flow), adapter, msg.content)
@@ -307,6 +335,38 @@ class EvokaiAddon:
             msg.drop()
         elif verdict.replace is not None:
             msg.content = verdict.replace
+        if verdict.reply and self.inject is not None:
+            for reply in verdict.reply:
+                self.inject(flow, reply)
+        if verdict.pending is not None:
+            flow.metadata.setdefault(WS_OPEN, []).append(
+                _Open(verdict.pending, time.perf_counter())
+            )
+
+    def _server_message(self, flow: http.HTTPFlow, adapter: Any, content: bytes) -> None:
+        """A server message: the first byte of the open request, or the end of its answer."""
+        waiting: list[_Open] = flow.metadata.get(WS_OPEN) or []
+        if not waiting:
+            return
+        head = waiting[0]
+        if head.first_byte is None:
+            head.first_byte = elapsed_ms(head.t0)
+        head.bytes += len(content)
+        outcome = adapter.ends(content)
+        if outcome is None:
+            return
+        waiting.pop(0)
+        usage = self.proxy.usage(head.pending, "application/json", "")
+        if usage is not None:
+            usage.feed(content)
+            usage.finish()
+            usage.bytes = head.bytes
+        self.proxy.done(head.pending, WS_STATUS, usage, outcome, head.first_byte)
+
+    async def websocket_end(self, flow: http.HTTPFlow) -> None:
+        """A WebSocket closed: the requests still waiting for their answer were cancelled."""
+        for left in flow.metadata.pop(WS_OPEN, None) or []:
+            self.proxy.done(left.pending, WS_STATUS, None, "cancelled", left.first_byte)
 
 
 class Engine:
@@ -354,14 +414,21 @@ class Engine:
             confdir=str(workdir),
         )
         master = Master(opts, with_termlog=False)
+        server = proxyserver.Proxyserver()
+        addon = EvokaiAddon(self.proxy, self.overrides)
+
+        def inject(flow: http.HTTPFlow, message: bytes) -> None:
+            server.inject_websocket(flow, True, message)
+
+        addon.inject = inject
         master.addons.add(
             core.Core(),
-            proxyserver.Proxyserver(),
+            server,
             dns_addon.DnsResolver(),
             next_layer.NextLayer(),
             _Certificates(certstore(self.authority, workdir)),
             disable_h2c.DisableH2C(),
-            EvokaiAddon(self.proxy, self.overrides),
+            addon,
             errorcheck.ErrorCheck(),
         )
         update: dict[str, Any] = {

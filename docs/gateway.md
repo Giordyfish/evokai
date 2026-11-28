@@ -21,7 +21,8 @@ one gateway.
 
 1. A deployment owner (the operator key, or a console owner of every application) creates the gateway: the console's
    **Gateways** page, or `POST /v1/admin/gateways` with `{slug, name, providers}` (`providers`: `anthropic` for
-   Claude Code, `openai` for Codex). Slugs are shared with applications.
+   Claude Code, `openai` for Codex, `github` for GitHub Copilot, which only the [gateway proxy](gateway-proxy.md)
+   serves). Slugs are shared with applications.
 2. An operator gives each person their **personal gateway key** on the gateway's **People** page (or
    `POST /v1/admin/gateways/{id}/people` with `{label}`, the person's name or e-mail). The key (`evk_gw_...`) is shown
    once; only its hash is stored. Revoking it (`DELETE .../people/{key_id}`) refuses the person's requests at once.

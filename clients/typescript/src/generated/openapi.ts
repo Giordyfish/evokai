@@ -6353,7 +6353,7 @@ export interface components {
             /** Note */
             note?: string | null;
             /** Providers */
-            providers?: ("anthropic" | "openai")[] | null;
+            providers?: ("anthropic" | "openai" | "github")[] | null;
             security?: components["schemas"]["SecurityPolicy"] | null;
             /** Status */
             status?: ("active" | "disabled") | null;
@@ -6808,7 +6808,7 @@ export interface components {
             /** Name */
             name: string;
             /** Providers */
-            providers: ("anthropic" | "openai")[];
+            providers: ("anthropic" | "openai" | "github")[];
             /** Slug */
             slug: string;
         };

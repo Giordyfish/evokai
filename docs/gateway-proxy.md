@@ -1,15 +1,16 @@
 # The gateway proxy
 
 The [gateway's](gateway.md) base URL door works for tools that can be pointed at another address (Claude Code, Codex).
-Claude Desktop (Chat, Cowork, its Code tab) cannot. The **gateway proxy** applies the same gateway rules to those apps:
+Claude Desktop (Chat, Cowork, its Code tab), ChatGPT and GitHub Copilot cannot, and Codex signed in with ChatGPT is
+simpler to leave as it is. The **gateway proxy** applies the same gateway rules to those apps:
 it is a TLS-inspecting forward proxy that PCs reach through a PAC file, limited to the AI providers' hosts and to the
 organisation's accounts.
 
 !!! warning "Preview, not yet for every employee"
     The proxy reads every request an app sends to the AI providers it serves (it stores none of it). Before turning it
     on for employees the organisation needs its own agreements and notices (in Italy: art. 4 of the Statuto dei
-    lavoratori, art. 13 GDPR notice, a DPIA). The console pages, the format watch and the OpenAI and Copilot adapters
-    come in later releases.
+    lavoratori, art. 13 GDPR notice, a DPIA). The console pages and the format watch come in later releases; the
+    ChatGPT and GitHub Copilot adapters are best effort, not measured.
 
 ## How it works
 
@@ -30,10 +31,13 @@ PC (Claude Desktop, Claude Code)                     evokai proxy               
 - **Only the catalogue.** A `CONNECT` to any host outside the catalogue gets 403: the proxy is never an open proxy.
   Today's catalogue for Anthropic: `api.anthropic.com`, `claude.ai`, `*.claudeusercontent.com`, `claude.com`, and
   `platform.claude.com` for identity only (Claude Code's OAuth token answer is read for its account; nothing else
-  there is read or masked, and no token is logged or kept). A
-  provider is intercepted when it is enabled on an active gateway and this build has adapters for it (OpenAI and
-  GitHub Copilot hosts are in the catalogue and in the CA, their adapters are not in this release: their hosts are
-  refused, never tunnelled unread). Static assets and updates (`downloads.claude.ai`, `s-cdn.anthropic.com`,
+  there is read or masked, and no token is logged or kept). OpenAI: `chatgpt.com`, `api.openai.com`. GitHub
+  Copilot: `api.githubcopilot.com`, `api.individual.githubcopilot.com`, `api.business.githubcopilot.com`,
+  `api.enterprise.githubcopilot.com`, `copilot-proxy.githubusercontent.com`, and `api.github.com` for identity only
+  (`GET /user`, `/copilot_internal/user` and `/copilot_internal/v2/token` are read for the account; everything else
+  there passes unread and unmasked). A provider is intercepted when it is enabled on an active gateway (`anthropic`,
+  `openai`, `github`) and this build has adapters for it; any other host is refused, never tunnelled unread. Static
+  assets and updates (`downloads.claude.ai`, `s-cdn.anthropic.com`,
   `assets-proxy.anthropic.com`) pass without opening TLS when a PC sends them.
 - **Streaming.** Answers are passed on as they arrive, never buffered (Cowork's event stream never ends). Request bodies
   are read whole only on the paths an adapter inspects, up to `EVOKAI_PROXY_MAX_BODY_MB` (default 32); above that the
@@ -72,6 +76,8 @@ account that a provider's own answer named, when that answer passes through:
 | claude.ai (Chat, Cowork, titles) | the `sessionKey` cookie, read from every `cookie` header (HTTP/2 splits them) |
 | Claude Code (Desktop's Code tab, the CLI) | the Anthropic account uuid in `metadata.user_id` of every `/v1/messages` body |
 | Cowork's bridge (files read on the PC) | none of its own: the identity seen last from the same PC address (best effort behind a shared NAT) |
+| Codex, ChatGPT (`chatgpt.com`, `api.openai.com`) | the ChatGPT login's JWT in `Authorization`: its claims name the user, their e-mail and the ChatGPT account (`chatgpt_account_id`) |
+| GitHub Copilot (best effort) | the Copilot token's `tid` in `Authorization` |
 
 The person is bound to the **Anthropic account uuid**, learned from any of these answers, each naming the account
 with its e-mail:
@@ -86,14 +92,25 @@ sends as `account_uuid` in `metadata.user_id` (read in the Claude Code 2.1.332 b
 through Desktop or claude.ai is recognised on the CLI too, and a signed-in CLI, which does not call the profile
 again, is recognised at its next token refresh (or after signing out and in).
 
+**Codex and ChatGPT** need no answer: every request carries the ChatGPT login's JWT, whose claims are read (never
+verified, and trusted for nothing but attribution: a forged token is refused upstream anyway) and bound the first time
+the user is seen. An OpenAI API key names nobody: such requests are unidentified.
+
+**GitHub Copilot** (best effort, not measured): the person's GitHub token is bound to the account by `GET
+api.github.com/user` or `/copilot_internal/user` (login, the e-mail when it is public, the organisations), and the
+Copilot token that `GET /copilot_internal/v2/token` mints from it inherits that binding through its `tid`. A GitHub
+account without a public e-mail is found by a gateway person whose label is the GitHub login.
+
 Only a digest of each key is stored (`evokai_gateway_proxy_identities`) with the e-mail, account and organisation,
 and an expiry 30 days after its last use. The e-mail maps to a gateway person: give each person their work e-mail
 (`POST /v1/admin/gateways/{id}/people` with `{label, email}`; one live key per e-mail across every gateway). A person
 whose label is their e-mail is found too. A person just added is recognised within 30 seconds.
 
 - **Organisation.** A claude.ai request states its organisation (`x-organization-uuid`); an Anthropic API request is
-  of the organisation its account's profile named. When `allowed_orgs` lists organisations for the provider, a request
-  of any other one is refused ("account outside the company") whatever the rest, with a `proxy.org_refused` event.
+  of the organisation its account's profile named; a Codex or ChatGPT request, of the ChatGPT account its JWT names; a
+  Copilot request, of the GitHub organisations `/copilot_internal/user` listed (one allowed is enough). When
+  `allowed_orgs` lists organisations for the provider, a request of any other one is refused ("account outside the
+  company") whatever the rest, with a `proxy.org_refused` event.
 - **Unidentified.** No binding yet, or an e-mail in no gateway: `unidentified = block` (the default) refuses with a
   message to restart the app or contact IT (`proxy.unidentified` event); `record` lets the request through on the
   **default gateway** (`EVOKAI_PROXY_DEFAULT_GATEWAY`, a slug or an id), recorded as `unidentified <e-mail>`: that
@@ -121,7 +138,17 @@ person's e-mail in its context); anyone else's still are.
 | `claude.chat` | `POST claude.ai/api/organizations/{org}/chat_conversations/{id}/completion` (gzip JSON) | the prompt is rewritten to make the real model repeat the refusal; attachments and files are dropped | tested with fixtures; to verify with Desktop |
 | `claude.cowork` | `POST claude.ai/v1/code/sessions/{id}/events` | each user event that breaks the policy becomes a visible marker and the instruction | tested with fixtures; to verify with Desktop |
 | `claude.bridge` | WebSocket `bridge.claudeusercontent.com`, the app's JSON-RPC results | the result is replaced by a notice the agent relays | tested with fixtures; to verify with Desktop |
+| `openai.codex_ws` | WebSocket `chatgpt.com/backend-api/codex/responses` (and `api.openai.com/v1/responses`), each `response.create` from Codex; the warm-up (`generate: false`, no input) is not a model request | the person's input is rewritten to make the real model repeat the refusal, and an offending tool output becomes a notice carrying the same instruction; refusals before the checks (format, account, organisation) drop the message and answer Codex with a synthetic event sequence in the public Responses streaming format | verified with the Codex CLI 0.167.2 |
+| `openai.responses_http` | `POST chatgpt.com/backend-api/codex/responses`, `POST api.openai.com/v1/responses` (Codex without WebSocket) | a synthetic answer in the public Responses format (SSE when `stream`, JSON otherwise) | verified with the Codex CLI 0.167.2 |
+| `openai.chatgpt` | `POST chatgpt.com/backend-api/conversation` (ChatGPT on the web and the desktop app) | the newest user message's parts are rewritten to the instruction; its attachments are dropped | best effort, not measured |
+| `github.copilot_chat` | `POST *.githubcopilot.com/chat/completions`, and `/responses`, `/v1/messages` | a synthetic answer in the request's format: OpenAI chat completion chunks (JSON when not streaming), Responses events, Anthropic Messages events | best effort, not measured |
+| `github.copilot_completions` | `POST .../v1/engines/{engine}/completions` or `.../completions` on the Copilot hosts (inline suggestions): `prompt` and `suffix` | an empty completion (no suggestion) and a security event, one per file every few minutes; not a usage row and not rate limited | best effort, not measured |
 | `mask` | any other `POST`, `PUT`, `PATCH` on an intercepted host (titles carry the text) | matched values become `[bloccato]` (secrets, and personal data when `pii.model` is enforced); sign-in paths and fields holding credentials are left alone | tested with fixtures |
+
+**Why Codex is rewritten.** The real model answers the instruction, so Codex shows the refusal as its own reply and
+the conversation goes on server side (`previous_response_id`) without the blocked text: the server keeps the rewritten
+input, never the original. It was verified with the Codex CLI (a prompt, and a file read by a tool), as was the
+synthetic answer for refusals that must not reach the server at all.
 
 **Fail closed.** A request on a known path whose body does not parse, or lacks the field the adapter expects, is
 refused ("format not recognised by the company policy") and writes a `proxy.format_unknown` event. A failure of the
@@ -134,8 +161,10 @@ riprova. Per dubbi: l'IT." A gateway may set its own `contact` and replace any t
 ### Records
 
 One usage row per model request, as the base URL door, with its **surface** (`desktop_chat`, `desktop_cowork`,
-`desktop_code`, `claude_code`, `web_chat`): tokens when the answer carries them (Anthropic's `message_start` and
-`message_delta`; none for claude.ai Chat and Cowork, recorded without tokens), timings and outcome. Security events
+`desktop_code`, `claude_code`, `web_chat`, `codex`, `chatgpt`, `copilot`): tokens when the answer carries them
+(Anthropic's `message_start` and `message_delta`, the Responses `response.completed`, the chat completions `usage`;
+none for claude.ai Chat, Cowork and ChatGPT, recorded without tokens), timings and outcome. A Codex request on the
+WebSocket is recorded when the server's `response.completed` passes (status 101, the upgrade's). Security events
 as the door, never content. Records are written off the request's path.
 
 ## PAC, root certificate and the check page
@@ -170,6 +199,12 @@ HTTPS_PROXY=http://127.0.0.1:3128 NODE_EXTRA_CA_CERTS=/tmp/proxy-ca/root.crt cla
 Nothing on the PC changes: no system trust store, no system proxy. For Claude Desktop the organisation sets the PAC
 (`egressProxyPacUrl` or the system proxy) and the root through its device management.
 
+Codex (with a gateway that enables OpenAI) takes the root from `CODEX_CA_CERTIFICATE` (else `SSL_CERT_FILE`):
+
+```bash
+HTTPS_PROXY=http://127.0.0.1:3128 CODEX_CA_CERTIFICATE=/tmp/proxy-ca/root.crt codex exec "reply only: ok"
+```
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -183,7 +218,7 @@ Nothing on the PC changes: no system trust store, no system proxy. For Claude De
 | `EVOKAI_PROXY_PAC_FALLBACK` | `block` | `block` or `direct` |
 | `EVOKAI_PROXY_UNIDENTIFIED` | `block` | `block` or `record` (`record` needs a default gateway, else it blocks) |
 | `EVOKAI_PROXY_DEFAULT_GATEWAY` | | the gateway (slug or id) of unidentified requests in `record` |
-| `EVOKAI_PROXY_ALLOWED_ORGS` | `{}` | JSON, per provider: `{"anthropic": ["<org uuid>"]}` |
+| `EVOKAI_PROXY_ALLOWED_ORGS` | `{}` | JSON, per provider: `{"anthropic": ["<org uuid>"], "openai": ["<ChatGPT account id>"], "github": ["<organisation login>"]}` |
 | `EVOKAI_PROXY_CONTACT` | IT | who people should ask, in refusals |
 | `EVOKAI_PROXY_LOCALE` | `en` | the language of refusals tied to no gateway |
 
@@ -215,6 +250,13 @@ miss: an engine in Go or Rust behind the same adapter interface.
 - Tested with sanitised fixtures and mitmproxy end to end against a local fake upstream: every adapter above,
   HTTP/2 with split cookies, gzip bodies re-encoded as they came, WebSocket replacement, a never-ending stream passed
   without buffering, the body limit, the catalogue refusal, the PAC, the check host and the CA constraints.
+- Verified end to end with the Codex CLI 0.167.2 (ChatGPT login) through a local `evokai proxy` and the real
+  ChatGPT backend: on the WebSocket, a normal request forwarded and recorded with its tokens from `response.completed`,
+  a prompt with a test key and a tool output with a test key each rewritten (Codex showed the refusal as its reply),
+  and an unidentified account answered with the synthetic event sequence without reaching the server; over HTTP (a
+  provider with `supports_websockets = false`), a normal request recorded with its tokens and a test key refused with
+  the synthetic Responses answer. The person was found from the JWT's e-mail.
 - To verify with the owner on Claude Desktop: Chat, Cowork and the bridge, and the `GET /api/account` key names.
-- Not in this release: the OpenAI (Codex, ChatGPT) and GitHub Copilot adapters, the console pages, the format watch,
-  claude.ai uploads.
+- Best effort, not measured (built from the public formats, tested with fixtures): ChatGPT on the web and the desktop
+  app, and GitHub Copilot (chat, inline suggestions, the `api.github.com` identity answers and their key names).
+- Not in this release: the console pages, the format watch, claude.ai uploads.

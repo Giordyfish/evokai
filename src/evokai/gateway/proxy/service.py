@@ -39,6 +39,7 @@ from evokai.gateway.proxy.adapters import (
     Adapter,
     Answer,
     FormatUnknown,
+    Frame,
     FrameAdapter,
     Inspection,
     Request,
@@ -51,12 +52,17 @@ from evokai.gateway.proxy.adapters import anthropic as anthropic_adapters
 from evokai.gateway.proxy.adapters import claude as claude_adapters
 from evokai.gateway.proxy.identity import (
     Binding,
+    Claims,
     IdentityBook,
     Key,
     claude_ai_key,
     from_claude_account,
+    from_copilot_token,
+    from_copilot_user,
+    from_github_user,
     from_oauth_profile,
     from_token_response,
+    github_key,
     mask_email,
 )
 from evokai.gateway.proxy.texts import Texts
@@ -77,6 +83,19 @@ LEARN_SIGNIN = "oauth_signin"
 SIGNIN_HOST = "platform.claude.com"
 SIGNIN_PATH = "/v1/oauth/token"
 """Claude Code's OAuth token endpoint (``TOKEN_URL`` in the Claude Code 2.1.332 bundle)."""
+WS_STATUS = 101
+"""The status of a model request made on a WebSocket (the upgrade's: its answers have none)."""
+GITHUB_HOST = "api.github.com"
+LEARN_GITHUB_USER = "github_user"
+LEARN_COPILOT_USER = "copilot_user"
+LEARN_COPILOT_MINT = "copilot_mint"
+GITHUB_LEARN = {
+    "/user": LEARN_GITHUB_USER,
+    "/copilot_internal/user": LEARN_COPILOT_USER,
+    "/copilot_internal/v2/token": LEARN_COPILOT_MINT,
+}
+"""``api.github.com``'s answers that name a Copilot user (best effort, not measured); everything
+else on that host passes unread."""
 
 
 @dataclass
@@ -114,14 +133,6 @@ class Who:
     person: GatewayPerson | None
     identified: bool
     binding: Binding | None = None
-
-
-@dataclass
-class Frame:
-    """What to do with a WebSocket message: pass it, replace it, or drop it."""
-
-    replace: bytes | None = None
-    drop: bool = False
 
 
 @dataclass
@@ -187,6 +198,8 @@ class ProxyService:
             max_items=20_000, ttl_seconds=PERSON_TTL
         )
         self.clock = time.time
+        self._tids: TtlCache[str, str] = TtlCache(max_items=20_000, ttl_seconds=3600)
+        """The Copilot token ``tid`` last minted for a GitHub token (by its key's digest)."""
 
     # Settings and the catalogue
 
@@ -298,6 +311,8 @@ class ProxyService:
             return LEARN_CLAUDE
         if host == anthropic_adapters.HOST and path == anthropic_adapters.PROFILE_PATH:
             return LEARN_PROFILE
+        if host == GITHUB_HOST:
+            return GITHUB_LEARN.get(path)
         return None
 
     # Identity
@@ -314,6 +329,9 @@ class ProxyService:
         try:
             data = Request("GET", "", "", [], body).json()
         except FormatUnknown:
+            return
+        if kind in (LEARN_GITHUB_USER, LEARN_COPILOT_USER, LEARN_COPILOT_MINT):
+            await self._learn_github(kind, req, data)
             return
         keys: list[Key] = []
         if kind == LEARN_CLAUDE:
@@ -335,6 +353,44 @@ class ProxyService:
                 log.warning("proxy_identity_not_bound", extra={"error_type": type(e).__name__})
                 return
             self.book.seen(req.client, b, self.clock())
+        log.info("proxy_identity_learned", extra={"kind": kind})
+
+    async def _learn_github(self, kind: str, req: Request, data: Any) -> None:
+        """Bind a GitHub token to its account, and the Copilot token it minted to the same one.
+
+        Never logs the answer (the token answer holds the Copilot token).
+        """
+        gh = github_key(req.header("authorization"))
+        if gh is None:
+            return
+        try:
+            if kind == LEARN_COPILOT_MINT:
+                tid = from_copilot_token(data)
+                if not tid:
+                    return
+                self._tids.set(gh.digest, tid)
+                b = await self.book.lookup(gh)
+                if b is not None and (b.email or b.account_id):
+                    tb = await self.book.bind(
+                        Key("github", "tid", tid), b.email, b.account_id, b.org_id
+                    )
+                    self.book.seen(req.client, tb, self.clock())
+                return
+            tracking = None
+            if kind == LEARN_COPILOT_USER:
+                email, login, orgs, tracking = from_copilot_user(data)
+            else:
+                email, login = from_github_user(data)
+                orgs = None
+            if not email and not login:
+                return
+            b = await self.book.bind(gh, email, login, orgs)
+            self.book.seen(req.client, b, self.clock())
+            for tid in {t for t in (tracking, self._tids.get(gh.digest)) if t}:
+                await self.book.bind(Key("github", "tid", tid), b.email, b.account_id, b.org_id)
+        except Exception as e:
+            log.warning("proxy_identity_not_bound", extra={"error_type": type(e).__name__})
+            return
         log.info("proxy_identity_learned", extra={"kind": kind})
 
     async def _person(self, email: str | None) -> tuple[m.Application, GatewayPerson] | None:
@@ -410,16 +466,47 @@ class ProxyService:
         row = checks.gateway_event(who.gw.id, label, control, rule, details)
         self.gws._later(self.svc.guard.store_events([row]))
 
-    async def _identify(self, req: Request, key: Key | None) -> Who:
+    async def _binding(
+        self, req: Request, key: Key | None, claims: Claims | None
+    ) -> Binding | None:
+        """A key's binding; a request that states its account (a ChatGPT JWT) binds it when new.
+
+        Returns:
+            The binding, or None.
+        """
+        binding = await self.book.lookup(key) if key else None
+        if key is not None and claims is not None and claims.email:
+            stale = binding is None or (binding.email, binding.org_id) != (claims.email, claims.org)
+            if stale:
+                try:
+                    binding = await self.book.bind(key, claims.email, claims.account, claims.org)
+                except Exception as e:
+                    log.warning("proxy_identity_not_bound", extra={"error_type": type(e).__name__})
+        if binding is not None:
+            self.book.seen(req.client, binding, self.clock())
+        return binding
+
+    async def _identify(self, req: Request, key: Key | None, claims: Claims | None = None) -> Who:
         """Who sends a request, from its key's binding.
 
         Returns:
             Who.
         """
-        binding = await self.book.lookup(key) if key else None
-        if binding is not None:
-            self.book.seen(req.client, binding, self.clock())
-        return await self._who(binding, key)
+        return await self._who(await self._binding(req, key, claims), key)
+
+    def _org_refused(self, provider: str, key: Key | None, binding: Binding | None) -> str | None:
+        """The organisation of a request when ``allowed_orgs`` does not list it for the provider.
+
+        A GitHub account names its organisations joined by commas: one listed is enough.
+
+        Returns:
+            The organisation refused, or None.
+        """
+        org = (key.org if key else None) or (binding.org_id if binding else None)
+        allowed = self.settings.allowed_orgs.get(provider) or []
+        if not allowed or not org or set(org.split(",")) & set(allowed):
+            return None
+        return org
 
     # Requests
 
@@ -441,7 +528,7 @@ class ProxyService:
         t0 = time.perf_counter()
         decision = Decision(adapter=adapter.name)
         key = adapter.key(req)
-        who = await self._identify(req, key)
+        who = await self._identify(req, key, adapter.claims(req))
         binding = who.binding
         texts = self.texts(who.gw)
         once = key.digest if key else req.client
@@ -458,15 +545,16 @@ class ProxyService:
             return decision
         if found is None:
             return decision
-        provider = adapter.gateway_provider
-        # The organisation: stated by the request (claude.ai), else by the account's answers.
-        org = (key.org if key else None) or (binding.org_id if binding else None)
-        allowed = self.settings.allowed_orgs.get(adapter.provider or provider) or []
-        if allowed and org and org not in allowed:
+        # ``mask`` serves every provider's hosts: its checks and organisations are the host's.
+        host_provider = adapter.provider or catalogue.provider_of(req.host) or ""
+        provider = catalogue.GATEWAY_PROVIDER.get(host_provider, adapter.gateway_provider)
+        # The organisation: stated by the request (claude.ai, a ChatGPT login), else by the
+        # account's answers.
+        if org := self._org_refused(host_provider, key, binding):
             await self._event(
                 who,
                 "proxy.org_refused",
-                adapter.provider or provider,
+                host_provider,
                 once,
                 org=org[:80],
                 surface=found.surface,
@@ -505,9 +593,10 @@ class ProxyService:
             text=found.text,
             check_model=found.check_model,
         )
-        checked.fingerprint = hashlib.sha256(
-            found.text.encode("utf-8", "surrogatepass")
-        ).hexdigest()[:24]
+        checked.fingerprint = (
+            found.fingerprint
+            or hashlib.sha256(found.text.encode("utf-8", "surrogatepass")).hexdigest()[:24]
+        )
         if events := await self.gws._first_seen(who.person, checked):
             for e in events:
                 e["details"]["surface"] = found.surface
@@ -549,6 +638,10 @@ class ProxyService:
 
     async def _who(self, binding: Binding | None, key: Key | None) -> Who:
         found = await self._person(binding.email if binding else None)
+        if found is None and binding is not None and not binding.email:
+            # A GitHub account without a public e-mail: a person labelled with its login.
+            if binding.provider == "github" and binding.account_id:
+                found = await self._person(binding.account_id)
         if found is None:
             return await self._unidentified(binding, key)
         return Who(found[0], found[1], identified=True, binding=binding)
@@ -703,59 +796,112 @@ class ProxyService:
             content: The message.
 
         Returns:
-            What to do with it.
+            What to do with it (and, for a model request, what to record when it ends).
         """
-        key = claude_ai_key(upgrade.all("cookie"), None)
-        binding = await self.book.lookup(key) if key else None
-        if binding is None:
-            # The bridge carries no session of its own: the identity seen last from the same PC.
+        t0 = time.perf_counter()
+        key = adapter.key(upgrade)
+        binding = await self._binding(upgrade, key, adapter.claims(upgrade))
+        if binding is None and adapter.by_address:
+            # No session of its own (the bridge): the identity seen last from the same PC.
             recent = self.book.recent(upgrade.client, self.clock())
             binding = recent[0] if recent else None
         who = await self._who(binding, key)
         texts = self.texts(who.gw)
+        once = key.digest if key else upgrade.client
         try:
             found = adapter.inspect(content)
         except FormatUnknown as e:
-            await self._event(who, "proxy.format_unknown", adapter.name, upgrade.client, why=e.why)
+            await self._event(who, "proxy.format_unknown", adapter.name, once, why=e.why)
             log.warning("proxy_format_unknown", extra={"adapter": adapter.name, "why": e.why})
-            return Frame(drop=True)
+            return adapter.failed(
+                content, None, texts, texts.get("format_unknown", contact=texts.contact)
+            )
         if found is None:
             return Frame()
+        provider = adapter.gateway_provider
+        if org := self._org_refused(adapter.provider or provider, key, binding):
+            await self._event(
+                who,
+                "proxy.org_refused",
+                adapter.provider or provider,
+                once,
+                org=org[:80],
+                surface=found.surface,
+            )
+            return adapter.failed(
+                content, found, texts, texts.get("org_refused", contact=texts.contact)
+            )
         if not who.identified and (self.settings.unidentified == "block" or who.gw is None):
             await self._event(
                 who,
                 "proxy.unidentified",
                 "no_person" if binding and binding.email else "no_binding",
-                upgrade.client,
-                provider=adapter.gateway_provider,
+                once,
+                provider=provider,
                 surface=found.surface,
             )
-            notice = texts.get("unidentified", contact=texts.contact)
-            return Frame(replace=adapter.refuse(content, found, notice))
+            return adapter.failed(
+                content, found, texts, texts.get("unidentified", contact=texts.contact)
+            )
         if who.gw is None or who.person is None:
             return Frame()
+        if who.gw.status != "active":
+            return adapter.failed(
+                content,
+                found,
+                texts,
+                texts.get("refusal_other", reason="gateway disabled", contact=texts.contact),
+            )
         checked = await self.gws._controls(
             who.gw,
             who.person,
-            adapter.gateway_provider,
-            "",
-            {},
-            count=True,
+            provider,
+            found.model,
+            found.data if isinstance(found.data, dict) else {},
+            count=found.count,
             text=found.text,
-            check_model=False,
+            check_model=found.check_model,
         )
-        checked.fingerprint = hashlib.sha256(
-            found.text.encode("utf-8", "surrogatepass")
-        ).hexdigest()[:24]
+        checked.fingerprint = (
+            found.fingerprint
+            or hashlib.sha256(found.text.encode("utf-8", "surrogatepass")).hexdigest()[:24]
+        )
         if events := await self.gws._first_seen(who.person, checked):
             for e in events:
-                e["details"]["surface"] = "desktop_cowork_files"
+                e["details"]["surface"] = adapter.event_surface or found.surface
             self.gws._later(self.svc.guard.store_events(events))
+        size = len(content)
         if checked.block is None:
-            return Frame()
-        reason = texts.get(f"reason.{checked.block.control}", model="")
-        log.info("proxy_refused", extra={"adapter": adapter.name, "control": checked.block.control})
-        return Frame(replace=adapter.refuse(content, found, texts.get("bridge", reason=reason)))
+            if not found.record:
+                return Frame()
+            return Frame(
+                pending=Pending(
+                    who.gw, who.person, provider, found.model, found.surface, size, t0, found.usage
+                )
+            )
+        block = checked.block
+        if found.parts:
+            found.offending = (
+                self._offending(who.gw, found.parts, provider, who.person.own()) or None
+            )
+        notice = adapter.notice(texts, block.control, found.model)
+        log.info("proxy_refused", extra={"adapter": adapter.name, "control": block.control})
+        if found.record:
+            self.gws._later(
+                self.gws._record(
+                    who.gw,
+                    who.person,
+                    provider,
+                    found.model,
+                    "blocked",
+                    WS_STATUS,
+                    size,
+                    t0,
+                    control=block.control,
+                    surface=found.surface,
+                )
+            )
+        return Frame(replace=adapter.refuse(content, found, texts, notice))
 
     # The check host
 

@@ -28,6 +28,7 @@ from evokai.gateway import checks
 from evokai.gateway.proxy.adapters.base import (
     Adapter,
     FormatUnknown,
+    Frame,
     FrameAdapter,
     Inspection,
     Request,
@@ -35,7 +36,13 @@ from evokai.gateway.proxy.adapters.base import (
     Verdict,
 )
 from evokai.gateway.proxy.catalogue import provider_of
-from evokai.gateway.proxy.identity import Key, claude_ai_key
+from evokai.gateway.proxy.identity import (
+    Claims,
+    Key,
+    claude_ai_key,
+    copilot_key,
+    openai_identity,
+)
 from evokai.gateway.proxy.texts import Texts
 
 HOST = "claude.ai"
@@ -229,6 +236,16 @@ class Bridge(FrameAdapter):
     name: ClassVar[str] = "claude.bridge"
     provider: ClassVar[str] = "anthropic"
     gateway_provider: ClassVar[str] = "anthropic"
+    by_address: ClassVar[bool] = True
+    event_surface: ClassVar[str] = "desktop_cowork_files"
+
+    def key(self, upgrade: Request) -> Key | None:
+        """A claude.ai session cookie, if the app sent one (it usually does not).
+
+        Returns:
+            The key, or None.
+        """
+        return claude_ai_key(upgrade.all("cookie"), None)
 
     def matches(self, host: str, path: str) -> bool:  # ruff: ignore[unused-method-argument]
         """Whether this adapter reads a WebSocket.
@@ -269,12 +286,21 @@ class Bridge(FrameAdapter):
         return Inspection(
             text="\n".join(parts),
             check_model=False,
+            count=True,
             record=False,
             surface="desktop_cowork",
             data=data,
         )
 
-    def refuse(self, content: bytes, found: Inspection, notice: str) -> bytes:  # ruff: ignore[unused-method-argument]
+    def notice(self, texts: Texts, control: str, model: str) -> str:  # ruff: ignore[unused-method-argument]
+        """A notice the agent relays (the file was blocked, and why).
+
+        Returns:
+            The text.
+        """
+        return texts.get("bridge", reason=texts.get(f"reason.{control}", model=""))
+
+    def refuse(self, content: bytes, found: Inspection, texts: Texts, notice: str) -> bytes:  # ruff: ignore[unused-method-argument]
         """The result's content replaced by the notice.
 
         Returns:
@@ -283,6 +309,16 @@ class Bridge(FrameAdapter):
         data = dict(found.data)
         data["result"] = {"content": [{"type": "text", "text": notice}]}
         return json.dumps(data, ensure_ascii=False).encode()
+
+    def failed(self, content: bytes, found: Inspection | None, texts: Texts, message: str) -> Frame:
+        """A result in an unknown shape is dropped; any other refusal becomes the notice.
+
+        Returns:
+            What to do with the message.
+        """
+        if found is None:
+            return Frame(drop=True)
+        return Frame(replace=self.refuse(content, found, texts, message))
 
 
 _AUTH_PATH = re.compile(
@@ -312,14 +348,33 @@ class Mask(Adapter):
         return method in ("POST", "PUT", "PATCH") and not _AUTH_PATH.search(path) and bool(host)
 
     def key(self, req: Request) -> Key | None:
-        """The claude.ai session cookie, when the request is claude.ai's.
+        """The session's key on the request's provider.
+
+        A claude.ai cookie, a ChatGPT login or a Copilot token.
 
         Returns:
             The key, or None.
         """
-        if provider_of(req.host) != "anthropic":
+        provider = provider_of(req.host)
+        if provider == "anthropic":
+            return claude_ai_key(req.all("cookie"), org_of(req))
+        if provider == "openai":
+            found = openai_identity(req.header("authorization"))
+            return found[0] if found else None
+        if provider == "github":
+            return copilot_key(req.header("authorization"))
+        return None
+
+    def claims(self, req: Request) -> Claims | None:
+        """A ChatGPT login's claims, on OpenAI's hosts.
+
+        Returns:
+            The claims, or None.
+        """
+        if provider_of(req.host) != "openai":
             return None
-        return claude_ai_key(req.all("cookie"), org_of(req))
+        found = openai_identity(req.header("authorization"))
+        return found[1] if found else None
 
     def inspect(self, req: Request) -> Inspection | None:
         """The whole body, when it is text.

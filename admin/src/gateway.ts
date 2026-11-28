@@ -6,11 +6,12 @@
 import type { Gateway, GatewayPerson, GatewayProvider, GatewayUsage } from '@client/core/types'
 import { baseUrl, consoleJson } from './api'
 
-export const PROVIDERS: readonly GatewayProvider[] = ['anthropic', 'openai']
-/** The tools each provider's door serves. */
+export const PROVIDERS: readonly GatewayProvider[] = ['anthropic', 'openai', 'github']
+/** The tools each provider serves (GitHub Copilot through the gateway proxy only: it has no door). */
 export const TOOL: Record<GatewayProvider, string> = {
   anthropic: 'Claude Code',
   openai: 'Codex',
+  github: 'GitHub Copilot',
 }
 /** The guard's controls that act on a gateway; the policy's other controls do nothing there. */
 export const GATEWAY_CONTROLS = ['input.size', 'input.secrets', 'pii.model', 'scope', 'abuse.rate'] as const

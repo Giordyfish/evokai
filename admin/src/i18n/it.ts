@@ -3155,6 +3155,7 @@ export const it: Messages = {
   "gw.providers": "Strumenti",
   "gw.provider.anthropic": "Claude Code (Anthropic)",
   "gw.provider.openai": "Codex (OpenAI)",
+  "gw.provider.github": "GitHub Copilot (solo con il proxy della rete aziendale)",
   "gw.people": "Persone",
   "gw.empty": "Ancora nessun gateway",
   "gw.emptyText": "Un gateway permette alle persone di un gruppo di usare i loro strumenti di sviluppo con i controlli di questa installazione. Lo crea un proprietario dell'installazione.",

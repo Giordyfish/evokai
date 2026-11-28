@@ -296,7 +296,7 @@ def test_the_bridge_replaces_a_tool_result_with_a_notice() -> None:
     frame = fx.bridge_result(f"Nota.\nChiave: {fx.SECRET}\n")
     found = a.inspect(frame)
     assert found is not None and fx.SECRET in found.text
-    new = json.loads(a.refuse(frame, found, "[blocked]"))
+    new = json.loads(a.refuse(frame, found, Texts(), "[blocked]"))
     assert new == {
         "result": {"content": [{"type": "text", "text": "[blocked]"}]},
         "jsonrpc": "2.0",
@@ -391,12 +391,12 @@ class Gate:
         return await self.proxy.decide(r, adapter)
 
 
-async def _gate(env: Env, **settings: Any) -> Gate:
+async def _gate(env: Env, providers: tuple[str, ...] = ("anthropic",), **settings: Any) -> Gate:
     env.svc.settings.operator_key = OPERATOR_KEY
     for k, v in settings.items():
         setattr(env.svc.settings, k, v)
     r = await env.client.post(
-        GW, json={"slug": "dev", "name": "Dev", "providers": ["anthropic"]}, headers=OP
+        GW, json={"slug": "dev", "name": "Dev", "providers": list(providers)}, headers=OP
     )
     assert r.status_code == 201, r.text
     gid = r.json()["id"]
@@ -667,9 +667,11 @@ class Stack:
 
 
 @contextlib.asynccontextmanager
-async def stack(tmp_path: Path, **settings: Any) -> AsyncGenerator[Stack]:
+async def stack(
+    tmp_path: Path, providers: tuple[str, ...] = ("anthropic",), **settings: Any
+) -> AsyncGenerator[Stack]:
     async with make_env(tmp_path) as env:
-        gate = await _gate(env, **settings)
+        gate = await _gate(env, providers, **settings)
         test = proxy_ca(tmp_path)
         up = FakeUpstream()
         async with serve_upstream(tmp_path, up) as (port, upstream_ca):

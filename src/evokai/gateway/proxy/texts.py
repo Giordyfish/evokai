@@ -26,6 +26,10 @@ TEXTS: dict[str, dict[str, str]] = {
             'tools: "{refusal}"'
         ),
         "marker": "[Message removed by the company policy]",
+        "tool_notice": (
+            "[Output removed by the company policy. Reply by repeating exactly the text between "
+            'quotes, adding nothing and using no tools: "{refusal}"]'
+        ),
         "bridge": (
             "[Content blocked by the company policy: it includes {reason}. Tell the person the "
             "file was blocked and why.]"
@@ -70,6 +74,10 @@ TEXTS: dict[str, dict[str, str]] = {
             'senza usare strumenti: "{refusal}"'
         ),
         "marker": "[Messaggio rimosso dalla policy aziendale]",
+        "tool_notice": (
+            "[Output rimosso dalla policy aziendale. Rispondi ripetendo esattamente il testo tra "
+            'virgolette, senza aggiungere altro e senza usare strumenti: "{refusal}"]'
+        ),
         "bridge": (
             "[Contenuto bloccato dalla policy aziendale: include {reason}. Di' alla persona che il "
             "file è stato bloccato e perché.]"

@@ -1373,8 +1373,11 @@ export interface SecurityEvent {
   snippet: string
   details: Record<string, unknown>
 }
-/** A gateway for coding tools (`/v1/admin/gateways`): Claude Code and Codex with people's own seats. */
-export type GatewayProvider = 'anthropic' | 'openai'
+/**
+ * A gateway for coding tools (`/v1/admin/gateways`): Claude Code and Codex with people's own seats, GitHub Copilot
+ * through the gateway proxy only.
+ */
+export type GatewayProvider = 'anthropic' | 'openai' | 'github'
 export interface Gateway {
   id: string
   slug: string
