@@ -324,6 +324,9 @@ class Settings(BaseSettings):
     proxy_public_address: str | None = None
     """``EVOKAI_PROXY_PUBLIC_ADDRESS``: ``host:port`` where PCs reach the proxy (``/proxy.pac``
     is served only when it is set)."""
+    proxy_egress_ips: str = ""
+    """``EVOKAI_PROXY_EGRESS_IPS``: the public addresses the proxy's traffic leaves from (comma
+    separated), shown in the console for the providers' IP allowlists. Informational only."""
     proxy_pac_fallback: Literal["block", "direct"] = "block"
     """``EVOKAI_PROXY_PAC_FALLBACK``: ``block`` (the PAC names only the proxy: AI traffic never goes
     around it) or ``direct`` (when the proxy cannot be reached, the PC goes direct)."""

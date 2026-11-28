@@ -1399,6 +1399,8 @@ export interface Gateway {
 export interface GatewayPerson {
   id: string
   label: string
+  /** Their work e-mail: the gateway proxy recognises the person's apps by it (one live key per e-mail). */
+  email: string | null
   prefix: string
   createdAt: string
   lastUsedAt: string | null
@@ -1434,6 +1436,64 @@ export interface GatewayUsage {
     firstByteMs: number | null
     durationMs: number
   }>
+}
+/** What a PC needs to go through the gateway proxy (`GET /v1/admin/proxy/setup`); nothing secret. */
+export interface ProxySetup {
+  /** A public address and a root certificate are both set. */
+  configured: boolean
+  /** `host:port` where PCs reach the proxy (`EVOKAI_PROXY_PUBLIC_ADDRESS`). */
+  publicAddress: string | null
+  pacUrl: string | null
+  caUrl: string | null
+  caDerUrl: string | null
+  /** `block`: AI traffic never goes around the proxy; `direct`: it does when the proxy cannot be reached. */
+  pacFallback: 'block' | 'direct'
+  /** Catalogue providers served now (enabled on an active gateway, with adapters in this build). */
+  providers: string[]
+  /** The proxy's public egress addresses, for the providers' IP allowlists. */
+  egressIps: string[]
+  /** `https://evokai.check`: answered by the proxy itself. */
+  checkUrl: string
+}
+/** The `proxy` console setting (it overrides `EVOKAI_PROXY_ALLOWED_ORGS`, `_UNIDENTIFIED`, `_DEFAULT_GATEWAY`). */
+export interface ProxySettings {
+  allowed_orgs: Record<string, string[]>
+  unidentified: 'block' | 'record'
+  default_gateway: string | null
+}
+/** The gateway proxy's status page (`GET /v1/admin/proxy`, operators and owners of the deployment). */
+export interface ProxyStatus {
+  /** `EVOKAI_PROXY` as the API process reads it (the proxy runs as its own process). */
+  switch: 'on' | 'off'
+  configured: boolean
+  publicAddress: string | null
+  /** At least one instance wrote a heartbeat in the last three minutes. */
+  running: boolean
+  instances: Array<{ instance: string; at: string; providers: string[]; port: number | null; pcs24h: number; running: boolean }>
+  providers: string[]
+  pacFallback: 'block' | 'direct'
+  lastDay: {
+    requests: number
+    /** Gateway people with requests through the proxy. */
+    people: number
+    /** Accounts (e-mails) the proxy saw. */
+    accounts: number
+    /** Network addresses with a recognised person, from the running instances. */
+    pcs: number
+    unidentifiedRecorded: number
+    unidentifiedRefused: number
+    surfaces: Record<string, number>
+    /** `proxy.format_unknown` events of the last 7 days. */
+    formatAlerts: Array<{ at: string; gateway: string; adapter: string; why: string; host: string }>
+    /** `proxy.org_refused` events of the last 7 days, per provider and organisation. */
+    refusedOrgs: Array<{ provider: string; org: string; events: number; people: number; lastAt: string | null }>
+  }
+  settings: { value: ProxySettings; environment: ProxySettings; stored: boolean }
+  gateways: Array<{ id: string; slug: string; name: string }>
+  /** Catalogue providers (`anthropic`, `openai`, `github`). */
+  catalogue: string[]
+  /** A deployment owner: may change the settings. */
+  canEdit: boolean
 }
 export interface SecurityEventQuery {
   from?: Date | string

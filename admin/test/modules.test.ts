@@ -13,6 +13,7 @@ describe('modules in the console', () => {
 
   test('each view belongs to its module or to the core', () => {
     expect(moduleOf({ view: 'gateways' })).toBe('gateway')
+    expect(moduleOf({ view: 'proxy' })).toBe('gateway')
     for (const view of ['app', 'apps', 'setup', 'playground', 'usage', 'assistant'] as const) expect(moduleOf({ view })).toBe('applications')
     for (const view of ['health', 'access', 'policy', 'modules', 'preferences'] as const) expect(moduleOf({ view })).toBeNull()
   })

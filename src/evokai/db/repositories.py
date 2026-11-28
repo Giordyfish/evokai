@@ -313,6 +313,13 @@ class ApplicationRepository(_Repo):
         async with self.db.session() as s:
             return await s.get(m.ApiKey, key_id)
 
+    async def update_key(self, key_id: str, *, label: str, email: str | None) -> None:
+        """Change a key's label and e-mail (a gateway person's)."""
+        async with self.db.session() as s:
+            await s.execute(
+                sa.update(m.ApiKey).where(m.ApiKey.id == key_id).values(label=label, email=email)
+            )
+
     async def revoke_key(self, application_id: str, key_id: str) -> bool:
         """Revoke a key.
 

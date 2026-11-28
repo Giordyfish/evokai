@@ -1596,8 +1596,9 @@ export interface paths {
          * @description The gateways the caller can see.
          *
          *     Returns:
-         *         items (with the caller's role and the count of active people), and whether the caller
-         *         may create gateways (a deployment owner).
+         *         items (with the caller's role and the count of active people), whether the caller may
+         *         create gateways (a deployment owner), and the providers a gateway may enable in this
+         *         build.
          */
         get: operations["list_gateways_agent_v1_admin_gateways_get"];
         put?: never;
@@ -1707,7 +1708,18 @@ export interface paths {
         delete: operations["revoke_person_agent_v1_admin_gateways__gateway_id__people__key_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change Person
+         * @description Change a person's name or work e-mail (operators); their key stays the same.
+         *
+         *     Returns:
+         *         id, label, email.
+         *
+         *     Raises:
+         *         NotFound: Unknown or revoked key.
+         *         Conflict: The e-mail already has another live key, on this gateway or another.
+         */
+        patch: operations["change_person_agent_v1_admin_gateways__gateway_id__people__key_id__patch"];
         trace?: never;
     };
     "/agent/v1/admin/gateways/{gateway_id}/usage": {
@@ -2497,6 +2509,91 @@ export interface paths {
          *         endpoints), processors (classifiers, sandbox, speech, connections, exporters).
          */
         get: operations["provider_catalog_agent_v1_admin_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/proxy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Proxy Status
+         * @description The proxy's status page.
+         *
+         *     Returns:
+         *         switch (``EVOKAI_PROXY`` as this API process reads it), configured, running, instances
+         *         (heartbeats), providers, pacFallback, lastDay (requests, people, accounts, pcs,
+         *         unidentified, surfaces, formatAlerts, refusedOrgs), settings, gateways, catalogue, canEdit.
+         *
+         *     Raises:
+         *         Forbidden: Not an operator or owner of the deployment.
+         */
+        get: operations["proxy_status_agent_v1_admin_proxy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/proxy/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Proxy Settings
+         * @description Set the ``proxy`` console setting (deployment owners), with an audit row.
+         *
+         *     Returns:
+         *         The settings, as the status page shows them.
+         *
+         *     Raises:
+         *         BadRequest: An unknown provider, too many organisations, or an unknown default gateway.
+         */
+        put: operations["put_proxy_settings_agent_v1_admin_proxy_settings_put"];
+        post?: never;
+        /**
+         * Delete Proxy Settings
+         * @description Forget the console setting (deployment owners): the environment applies again.
+         *
+         *     Returns:
+         *         The settings that apply now.
+         */
+        delete: operations["delete_proxy_settings_agent_v1_admin_proxy_settings_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/admin/proxy/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Proxy Setup
+         * @description What a PC needs to go through the proxy (the Connect page's Company network tab).
+         *
+         *     Returns:
+         *         configured, publicAddress, pacUrl, caUrl, caDerUrl, pacFallback, providers (served),
+         *         egressIps, checkUrl.
+         */
+        get: operations["proxy_setup_agent_v1_admin_proxy_setup_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6903,6 +7000,16 @@ export interface components {
             title?: string | null;
         };
         /**
+         * PersonChange
+         * @description A change of a person (unset fields stay as they are).
+         */
+        PersonChange: {
+            /** Email */
+            email?: string | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
          * PiiSettings
          * @description Personal data.
          */
@@ -7066,6 +7173,24 @@ export interface components {
             name: string;
             /** Version */
             version?: number | null;
+        };
+        /**
+         * ProxySettings
+         * @description The ``proxy`` console setting (it overrides ``EVOKAI_PROXY_*`` of the same names).
+         */
+        ProxySettings: {
+            /** Allowed Orgs */
+            allowed_orgs?: {
+                [key: string]: string[];
+            };
+            /** Default Gateway */
+            default_gateway?: string | null;
+            /**
+             * Unidentified
+             * @default block
+             * @enum {string}
+             */
+            unidentified?: "block" | "record";
         };
         /**
          * PublishBody
@@ -10409,6 +10534,44 @@ export interface operations {
             };
         };
     };
+    change_person_agent_v1_admin_gateways__gateway_id__people__key_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+                gateway_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     gateway_usage_agent_v1_admin_gateways__gateway_id__usage_get: {
         parameters: {
             query?: {
@@ -11596,6 +11759,107 @@ export interface operations {
         };
     };
     provider_catalog_agent_v1_admin_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    proxy_status_agent_v1_admin_proxy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_proxy_settings_agent_v1_admin_proxy_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxySettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_proxy_settings_agent_v1_admin_proxy_settings_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    proxy_setup_agent_v1_admin_proxy_setup_get: {
         parameters: {
             query?: never;
             header?: never;

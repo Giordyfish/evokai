@@ -54,6 +54,22 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   `response.completed` and the chat completions usage.
 - Gateways have a `github` provider switch (GitHub Copilot, served by the gateway proxy only).
 - Gateway people have an optional `email` (one live key per e-mail across every gateway).
+- The gateway proxy in the console. Gateways → People takes each person's work e-mail when they are added and edits
+  it later (`PATCH /v1/admin/gateways/{id}/people/{key_id}`, `{label, email}`, audited as `gateway.key_update`).
+  Gateways → Connect has two tabs: Direct address (the base URL snippets) and Company network: the PAC and root
+  certificate addresses, the steps for Intune on Windows and macOS (with a ready macOS configuration profile), Linux,
+  Claude Desktop's managed key `egressProxyPacUrl`, Claude Code's managed settings, Codex, VS Code and Copilot,
+  Firefox, the providers' IP allowlists with the egress address, the PAC fallback and the check page, all from
+  `GET /v1/admin/proxy/setup`. A new Gateway proxy page (deployment owners, and operators of every gateway) shows
+  whether the proxy runs (each instance reports every minute), the last day's PCs, people, accounts and requests,
+  format alerts, refused organisations and unidentified requests (`GET /v1/admin/proxy`), and lets a deployment
+  owner set the `proxy` setting (`allowed_orgs`, `unidentified`, `default_gateway`) with an audit row
+  (`PUT`/`DELETE /v1/admin/proxy/settings`). The gateway list returns the providers a gateway may enable
+  (`providers`), and the console shows a provider's switch only when the list has it. `EVOKAI_PROXY_EGRESS_IPS`
+  names the proxy's public egress addresses for the console. The staff notice template says the proxy reads all the
+  PC's AI traffic and stores none of it. The guided gateway tour covers the company network and the proxy page. New
+  page `docs/gateway-proxy-setup.md`; `docs/gateway-proxy.md` gains the whole picture, identity and its limits, the
+  fallback choice and a legal checklist.
 
 ### Changed
 

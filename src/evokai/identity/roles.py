@@ -30,6 +30,8 @@ RANK: dict[str, int] = {r: i for i, r in enumerate(ROLES)}
 OWNER_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("PATCH", "/v1/admin/application"),
     ("PATCH", "/v1/admin/gateways/{gateway_id}"),
+    ("PUT", "/v1/admin/proxy/settings"),
+    ("DELETE", "/v1/admin/proxy/settings"),
     ("PUT", "/v1/admin/security"),
     ("POST", "/v1/admin/policy/versions/{number}/restore"),
     ("POST", "/v1/admin/policy/copy"),

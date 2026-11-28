@@ -8,9 +8,38 @@ organisation's accounts.
 
 !!! warning "Preview, not yet for every employee"
     The proxy reads every request an app sends to the AI providers it serves (it stores none of it). Before turning it
-    on for employees the organisation needs its own agreements and notices (in Italy: art. 4 of the Statuto dei
-    lavoratori, art. 13 GDPR notice, a DPIA). The console pages and the format watch come in later releases; the
-    ChatGPT and GitHub Copilot adapters are best effort, not measured.
+    on for employees the organisation needs its own agreements and notices: see the
+    [legal checklist](#legal-checklist-italy). The format watch comes in a later release; the ChatGPT and GitHub
+    Copilot adapters are best effort, not measured.
+
+This page is for the administrators who run the proxy and decide its rules. Setting up the PCs (Intune, macOS, Linux,
+each tool, the providers' IP allowlists) is on [Gateway proxy: setting up the PCs](gateway-proxy-setup.md); the
+console's **Gateways → Connect → Company network** shows the same steps with this deployment's values.
+
+## The whole picture
+
+```
+                       company network or the internet                                 the providers
+ PC (managed by Intune or another MDM)
+ ├─ root certificate of the proxy, trusted         ┌───────────── Evokai ─────────────┐
+ ├─ PAC: AI hosts -> proxy, the rest direct ──────>│ API      /proxy.pac, /proxy/ca.crt│
+ │                                                 │          console, gateways, people│
+ ├─ Claude Desktop, ChatGPT, Copilot ── CONNECT ──>│ evokai proxy  (own process,       │── fixed egress IP ──> claude.ai
+ ├─ Claude Code, Codex (HTTPS_PROXY) ── CONNECT ──>│   same image, same database)      │                       api.anthropic.com
+ └─ https://evokai.check (answered by the proxy)   │   reads, checks, records, refuses │                       chatgpt.com ...
+                                                   └───────────────────────────────────┘
+                                         the providers' IP allowlists accept the organisation's
+                                         accounts only from the egress IP: no way around the proxy
+```
+
+- **The PC** trusts the proxy's root and sends only the AI providers' hosts to the proxy (the PAC). Nothing else of
+  its traffic passes through Evokai.
+- **The proxy** opens TLS for those hosts, learns which company account sends each request, applies the policy of
+  that person's gateway, records usage and security events without content, and passes the answer on as it streams.
+- **The API** serves the PAC and the root certificate, and the console where people, gateways, the proxy's settings
+  and its status are managed.
+- **The providers** accept the organisation's accounts only from the proxy's egress address, where they offer an IP
+  allowlist. That is what makes the proxy the only way in, also for a laptop off the company network.
 
 ## How it works
 
@@ -119,8 +148,53 @@ whose label is their e-mail is found too. A person just added is recognised with
   the person's gateway, else the default gateway; without either it is only logged.
 
 These settings come from the environment (`EVOKAI_PROXY_ALLOWED_ORGS`, `EVOKAI_PROXY_UNIDENTIFIED`,
-`EVOKAI_PROXY_DEFAULT_GATEWAY`), and the console setting `proxy` (`{"allowed_orgs": {...}, "unidentified": "block",
-"default_gateway": "<slug or id>"}` in the console settings table) overrides them.
+`EVOKAI_PROXY_DEFAULT_GATEWAY`), and the console setting `proxy` overrides them. A deployment owner sets it on the
+console's **Gateway proxy** page (`PUT /v1/admin/proxy/settings` with `{"allowed_orgs": {"anthropic": ["<org
+uuid>"]}, "unidentified": "block", "default_gateway": "<slug or id>"}`; `DELETE` goes back to the environment). Each
+change writes an audit row (`proxy.settings`, `proxy.settings_reset`); the proxy reads it within 30 seconds. A
+default gateway left empty in the console means none, even when `EVOKAI_PROXY_DEFAULT_GATEWAY` is set.
+
+### Identity and its limits
+
+What the proxy knows about a request is what the provider's own answers told it about the account. That is reliable
+for attribution, and it has limits an administrator should know:
+
+- **An account, not a human.** The proxy names the company account signed in to the app. Someone using a
+  colleague's unlocked PC, or a shared account, is recorded as that account.
+- **Learned, not asked.** A binding exists only after an app made one of the identity calls through the proxy
+  (Desktop at start, Claude Code at sign in or token refresh). An app already running when the PC was put behind
+  the proxy is unidentified until it is restarted; with `unidentified = block` its people read a message that says
+  so.
+- **The e-mail must match.** A person is found by the work e-mail given on the gateway's People page (or a label
+  that is that e-mail; for GitHub Copilot, a label that is the GitHub login when the account's e-mail is not public).
+  An account whose e-mail is in no gateway is unidentified, and so is an OpenAI API key (it names nobody).
+- **Organisations, where the provider states them.** claude.ai requests carry their organisation, Claude Code's
+  comes from its account's profile, a ChatGPT login's token carries its account id (`chatgpt_account_id`), and
+  GitHub's identity answers list the account's organisations. With `allowed_orgs` empty for a provider, personal
+  accounts of that provider are not refused by the organisation check; the providers' IP allowlists do not stop them
+  either (they apply to the organisation's accounts only). Set `allowed_orgs` for every provider in use.
+- **The bridge is best effort.** Cowork's file reads carry no key of their own: they get the identity seen last from
+  the same PC address, which behind a shared address can be another person's.
+- **PCs are counted by address.** The status page's "PCs seen" counts network addresses with a recognised person;
+  PCs behind one company address count once.
+
+### In the console
+
+- **Gateways → People**: each person's work e-mail, set when the person is added and editable later (one live key
+  per e-mail across every gateway; `PATCH /v1/admin/gateways/{id}/people/{key_id}` with `{label, email}`, audited as
+  `gateway.key_update`).
+- **Gateways → Connect → Company network**: the PAC address, the root certificate (PEM and DER), the proxy's address,
+  the apps served now, the setup steps per system and per tool with this deployment's values and copy buttons, a
+  ready macOS configuration profile, the providers' IP allowlists with the egress address, the PAC fallback and the
+  check page. The values come from `GET /v1/admin/proxy/setup` (any console login that sees a gateway; nothing in it
+  is secret).
+- **Gateway proxy** (deployment owners, and single sign-on operators of every gateway, `*`): whether the proxy runs,
+  the last 24 hours (PCs, people, accounts, model requests per surface, unidentified requests), format alerts
+  (`proxy.format_unknown`) and refused organisations (`proxy.org_refused`) of the last 7 days, and the settings
+  above (`GET /v1/admin/proxy`). Each running proxy instance reports every minute in the console settings table
+  (`proxy.status:<host name>`); an instance silent for three minutes shows as not running.
+- **Gateways → Notice**: once the proxy is configured, the staff notice template says that the proxy reads all the
+  PC's traffic to the AI providers and stores none of its content.
 
 ### Adapters and refusals
 
@@ -177,6 +251,12 @@ as the door, never content. Records are written off the request's path.
 - `https://evokai.check` (through the proxy): the proxy answers it itself: whether the PC goes through the proxy, whether
   its certificate is trusted, and the identities seen lately from that PC (e-mail masked) with their gateway.
 
+**Which fallback.** With `block` an unreachable proxy stops the AI apps on every PC: nothing goes around the policy,
+and people notice at once. With `direct` the apps keep working and go straight to the providers, without checks,
+records or the organisation check, until the proxy is back. Choose `direct` only together with the providers' IP
+allowlists (which refuse those direct requests anyway, so the choice then only changes the error people see) or
+when availability matters more than the policy for a while. `block` is the default.
+
 ## Run it locally
 
 ```bash
@@ -216,6 +296,7 @@ HTTPS_PROXY=http://127.0.0.1:3128 CODEX_CA_CERTIFICATE=/tmp/proxy-ca/root.crt co
 | `EVOKAI_PROXY_MAX_BODY_MB` | `32` | the largest body read on an inspected path |
 | `EVOKAI_PROXY_PUBLIC_ADDRESS` | | `host:port` in the PAC |
 | `EVOKAI_PROXY_PAC_FALLBACK` | `block` | `block` or `direct` |
+| `EVOKAI_PROXY_EGRESS_IPS` | | the proxy's public egress addresses, comma separated: shown in the console for the providers' IP allowlists (informational) |
 | `EVOKAI_PROXY_UNIDENTIFIED` | `block` | `block` or `record` (`record` needs a default gateway, else it blocks) |
 | `EVOKAI_PROXY_DEFAULT_GATEWAY` | | the gateway (slug or id) of unidentified requests in `record` |
 | `EVOKAI_PROXY_ALLOWED_ORGS` | `{}` | JSON, per provider: `{"anthropic": ["<org uuid>"], "openai": ["<ChatGPT account id>"], "github": ["<organisation login>"]}` |
@@ -259,4 +340,37 @@ miss: an engine in Go or Rust behind the same adapter interface.
 - To verify with the owner on Claude Desktop: Chat, Cowork and the bridge, and the `GET /api/account` key names.
 - Best effort, not measured (built from the public formats, tested with fixtures): ChatGPT on the web and the desktop
   app, and GitHub Copilot (chat, inline suggestions, the `api.github.com` identity answers and their key names).
-- Not in this release: the console pages, the format watch, claude.ai uploads.
+- Best effort, built from public documentation and not checked on a managed PC: the Intune paths, the macOS
+  configuration profile (its `com.apple.proxy.http.global` payload with `ProxyType Auto`), Claude Desktop's managed
+  keys `egressProxyPacUrl` and `egressProxyUrl`, Firefox's enterprise policy and the providers' IP allowlists. Try
+  them on one test PC and one test account before a rollout.
+- Not in this release: the format watch, claude.ai uploads.
+
+## Legal checklist (Italy)
+
+The proxy reads the content of every request a company PC sends to the AI providers it serves. That is a check on
+the use of a work tool and a processing of employees' personal data. Before turning it on for employees, the
+organisation (DPO, legal, HR) needs at least the following. This list is not legal advice.
+
+- **Art. 4 of the Statuto dei lavoratori (Law 300/1970).** A tool from which remote monitoring of workers' activity
+  can also follow needs an agreement with the workers' representatives (RSU or RSA) or, failing that, the
+  authorisation of the Ispettorato del lavoro (art. 4, para. 1). Whether the AI apps count as "tools used to perform
+  the work" (para. 2, no agreement needed) is the organisation's assessment: the proxy reads more than the work
+  requires to be done, so assume para. 1 unless counsel says otherwise. Under para. 3 the information can be used for
+  employment purposes only after adequate notice of how the tools are used and how checks are made.
+- **Notice under art. 13 GDPR.** Every person whose PC goes through the proxy receives a notice before it does:
+  the console's **Gateways → Notice** is a template with this deployment's values, including the paragraph on the
+  proxy; complete the parts in square brackets (purpose, legal basis, controller, contacts).
+- **DPIA under art. 35 GDPR.** Systematic monitoring of employees with a new technology is on the Garante's list of
+  processing that needs a data protection impact assessment. Document the purpose, why less intrusive means (the
+  base URL door, the providers' own enterprise controls) are not enough, the controls on the data, and the residual
+  risk.
+- **Retention.** Usage rows and security events hold no content and follow the retention of the gateway they belong
+  to (its event retention, on the gateway's Events and Notice pages). Identity bindings (a digest of the session key,
+  the account's e-mail, account and organisation ids) expire 30 days after their last use. The audit log keeps its
+  own retention. State all of them in the notice and the record of processing (art. 30).
+- **Purpose limitation and access.** Decide who may read the gateway's usage and events (gateway roles in the
+  console), and write down that they are used for security and licence management, not to evaluate people, unless the
+  agreement and the notice say otherwise.
+- **The CA key.** Whoever holds the intermediate key can read the AI traffic of every PC that trusts the root. Keep it
+  in a key vault readable only by the proxy's identity, and the root key offline.

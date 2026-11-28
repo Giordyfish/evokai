@@ -73,6 +73,7 @@ async def serve(settings: Any) -> None:
     from evokai import policies
     from evokai.gateway.proxy.engine import Engine
     from evokai.gateway.proxy.service import ProxyService
+    from evokai.gateway.proxy.status import run_heartbeat
     from evokai.services import build_services
 
     authority = preflight(settings)
@@ -99,6 +100,7 @@ async def serve(settings: Any) -> None:
         refresh = asyncio.create_task(proxy.run_refresh())
         run = asyncio.create_task(engine.run())
         await engine.started.wait()
+        heartbeat = asyncio.create_task(run_heartbeat(svc, proxy, engine.port))
         log.info(
             "proxy_listening",
             extra={"port": engine.port, "providers": proxy.providers},
@@ -112,6 +114,7 @@ async def serve(settings: Any) -> None:
             await run
         finally:
             refresh.cancel()
+            heartbeat.cancel()
             await svc.gateway.idle(10)
     finally:
         await svc.close()

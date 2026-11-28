@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -147,8 +147,9 @@ async def list_gateways(svc: Svc, login: Login) -> dict[str, Any]:
     """The gateways the caller can see.
 
     Returns:
-        items (with the caller's role and the count of active people), and whether the caller
-        may create gateways (a deployment owner).
+        items (with the caller's role and the count of active people), whether the caller may
+        create gateways (a deployment owner), and the providers a gateway may enable in this
+        build.
     """
     items = []
     for gw in await svc.store.applications.all(kind=GATEWAY):
@@ -157,7 +158,11 @@ async def list_gateways(svc: Svc, login: Login) -> dict[str, Any]:
             continue
         people = sum(1 for k in await _people(svc, gw.id) if k.revoked_at is None)
         items.append(gateway_view(gw, role, people))
-    return {"items": items, "canCreate": login.deployment_owner}
+    return {
+        "items": items,
+        "canCreate": login.deployment_owner,
+        "providers": list(get_args(Provider)),
+    }
 
 
 class NewGateway(BaseModel):
@@ -379,6 +384,63 @@ async def add_person(body: NewPerson, svc: Svc, a: Gw, request: Request) -> dict
         after={"label": body.label.strip(), **({"email": email} if email else {})},
     )
     return {"id": key_id, "label": body.label.strip(), "email": email, "key": key.value}
+
+
+class PersonChange(BaseModel):
+    """A change of a person (unset fields stay as they are)."""
+
+    model_config = ConfigDict(extra="forbid")
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    email: str | None = Field(
+        default=None, max_length=254, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    )
+    """Their work e-mail; an empty string removes it."""
+
+
+@one.patch("/people/{key_id}")
+async def change_person(
+    key_id: str, body: PersonChange, svc: Svc, a: Gw, request: Request
+) -> dict[str, Any]:
+    """Change a person's name or work e-mail (operators); their key stays the same.
+
+    Returns:
+        id, label, email.
+
+    Raises:
+        NotFound: Unknown or revoked key.
+        Conflict: The e-mail already has another live key, on this gateway or another.
+    """
+    row = await svc.store.applications.key(key_id)
+    if (
+        row is None
+        or row.kind != GATEWAY_KIND
+        or row.application_id != a.gateway.id
+        or row.revoked_at is not None
+    ):
+        raise NotFound("Unknown key.", code="unknown_key")
+    label = body.label.strip() if body.label is not None else row.label
+    email = row.email
+    if body.email is not None:
+        email = body.email.strip().lower() or None
+    if email and email != row.email:
+        taken = await svc.store.applications.gateway_keys_by_email(email)
+        if any(k.id != row.id and k.email == email for k in taken):
+            raise Conflict(
+                "This e-mail already has a live gateway key: a person belongs to one gateway.",
+                code="email_taken",
+            )
+    await svc.store.applications.update_key(row.id, label=label, email=email)
+    await svc.auth.forget_cached_keys()
+    await audit.record(
+        request,
+        a.login,
+        "gateway.key_update",
+        application_id=a.gateway.id,
+        target=f"evk_gw_{row.prefix}",
+        before={"label": row.label, "email": row.email},
+        after={"label": label, "email": email},
+    )
+    return {"id": row.id, "label": label, "email": email}
 
 
 @one.delete("/people/{key_id}")
