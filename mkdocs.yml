@@ -112,6 +112,7 @@ nav:
   - Security & compliance:
       - Security of agents: security.md
       - Gateways for coding tools: gateway.md
+      - The gateway proxy: gateway-proxy.md
       - Red team: redteam.md
       - Data protection: data-protection.md
       - Privacy: privacy.md

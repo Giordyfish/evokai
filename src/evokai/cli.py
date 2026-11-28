@@ -291,6 +291,10 @@ def main(argv: list[str] | None = None) -> int:
     purge_mod.add_argument("--yes", action="store_true", help="delete without asking (scripts)")
     purge_mod.add_argument("--dry-run", action="store_true", help="count only, delete nothing")
     purge_mod.add_argument("--export", help="write the rows to this JSON file before deleting")
+
+    from evokai.gateway.proxy import run as proxy_run
+
+    proxy_run.add_parser(sub)
     spec = sub.add_parser("openapi", help="print the OpenAPI schema (voice routes included)")
     spec.add_argument("--out", help="write to this file instead of stdout")
     args = parser.parse_args(argv)
@@ -374,6 +378,8 @@ def main(argv: list[str] | None = None) -> int:
             f"{records} capability records\n"
         )
         return 0
+    if args.cmd == "proxy":
+        return proxy_run.main(args, settings)
     if args.cmd == "connectors":
         return _connectors(args)
     if args.cmd == "types":

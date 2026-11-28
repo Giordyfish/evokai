@@ -150,7 +150,9 @@ class Authenticator:
             app = await self.store.applications.get(row.application_id)
             if not app or app.kind != GATEWAY or app.status != "active":
                 raise Unauthorized("This gateway is not active.", code="gateway")
-            hit = GatewayPerson(application_id=app.id, key_id=row.id, label=row.label)
+            hit = GatewayPerson(
+                application_id=app.id, key_id=row.id, label=row.label, email=row.email
+            )
             self._gateway_keys.set(presented, hit)
             await self.store.applications.touch_key(row.id)
         return hit

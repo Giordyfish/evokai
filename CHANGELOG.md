@@ -21,11 +21,29 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
   keys, deletes its rows and writes one audit row.
 - `/v1/console/me` tells which modules are on (`modules`) and whether the configuration pins them (`modulesPinned`);
   the TypeScript client reads the nested error shape (`{"error": {"code", "message"}}`) as well as the flat one.
+- The gateway proxy (preview): `evokai proxy`, a TLS-inspecting forward proxy that applies a gateway's rules to apps
+  that cannot be pointed at a base URL (Claude Desktop's Chat, Cowork and Code tab, the Claude Code CLI). Same image
+  and database as the API, mitmproxy as a library in the new `proxy` extra (in the published images). Only the
+  catalogue's AI hosts are accepted (any other gets 403); `evokai proxy init-ca` makes a root and an intermediate CA
+  whose X.509 Name Constraints keep it to those hosts; answers stream as they arrive; bodies over
+  `EVOKAI_PROXY_MAX_BODY_MB` are refused. Who is asking is learned passively from the providers' own answers
+  (`/api/account`, `/api/oauth/profile`, Claude Code's OAuth token answer), keyed on the Anthropic account uuid so a
+  person seen on Desktop is recognised on the CLI, and mapped to a gateway person by e-mail; accounts outside
+  `allowed_orgs` and unidentified accounts are refused (or, with `EVOKAI_PROXY_UNIDENTIFIED=record`, recorded on
+  the default gateway `EVOKAI_PROXY_DEFAULT_GATEWAY`; without one `record` blocks). Adapters
+  for the Anthropic API (synthetic assistant answer), claude.ai Chat and Cowork (the prompt rewritten so the real
+  model says the refusal), the Cowork bridge and every other write (masked). Unknown shapes are refused
+  (`proxy.format_unknown`). One usage row per model request with its surface, security events as the base URL door,
+  no content. The API serves `/proxy.pac` and `/proxy/ca.crt`. See `docs/gateway-proxy.md`.
+- Gateway people have an optional `email` (one live key per e-mail across every gateway).
 
 ### Changed
 
 - Applications and gateways are queried by kind only through `applications_only` and `gateways_only`
   (`evokai.db.kinds`); a test fails on a query over application rows that bypasses them.
+- A gateway's `pii.model` never counts the person's own e-mail or name (their key's `email` and label) in their own
+  requests: Claude Code puts the person's e-mail in its context, so enforcing `pii.model` refused every request.
+  Anyone else's e-mail still counts.
 
 ### Fixed
 

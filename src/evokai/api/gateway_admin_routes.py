@@ -318,13 +318,14 @@ async def list_people(svc: Svc, a: Gw) -> dict[str, Any]:
     """The people of a gateway: one personal key each (never its secret).
 
     Returns:
-        items: id, label, prefix, createdAt, lastUsedAt, revoked.
+        items: id, label, email, prefix, createdAt, lastUsedAt, revoked.
     """
     return {
         "items": [
             {
                 "id": k.id,
                 "label": k.label,
+                "email": k.email,
                 "prefix": f"evk_gw_{k.prefix}",
                 "createdAt": k.created_at.isoformat(),
                 "lastUsedAt": k.last_used_at.isoformat() if k.last_used_at else None,
@@ -341,18 +342,32 @@ class NewPerson(BaseModel):
     model_config = ConfigDict(extra="forbid")
     label: str = Field(min_length=1, max_length=120)
     """Their name or e-mail, as usage and events show it."""
+    email: str | None = Field(default=None, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    """Their work e-mail: the gateway proxy recognises the person's apps by it (one live key per
+    e-mail across every gateway)."""
 
 
 @one.post("/people", status_code=201)
-async def add_person(body: NewPerson, svc: Svc, a: Gw, request: Request) -> dict[str, str]:
+async def add_person(body: NewPerson, svc: Svc, a: Gw, request: Request) -> dict[str, Any]:
     """Give a person their personal gateway key (operators). The key is shown only now.
 
     Returns:
-        id, label, key.
+        id, label, email, key.
+
+    Raises:
+        Conflict: The e-mail already has a live key, on this gateway or another.
     """
+    email = body.email.strip().lower() if body.email else None
+    if email and any(
+        k.email == email for k in await svc.store.applications.gateway_keys_by_email(email)
+    ):
+        raise Conflict(
+            "This e-mail already has a live gateway key: a person belongs to one gateway.",
+            code="email_taken",
+        )
     key = generate_gateway_key()
     key_id = await svc.store.applications.add_key(
-        a.gateway.id, key.kind, key.prefix, key.secret_hash, body.label.strip()
+        a.gateway.id, key.kind, key.prefix, key.secret_hash, body.label.strip(), email
     )
     await audit.record(
         request,
@@ -360,9 +375,9 @@ async def add_person(body: NewPerson, svc: Svc, a: Gw, request: Request) -> dict
         "gateway.key_create",
         application_id=a.gateway.id,
         target=f"evk_gw_{key.prefix}",
-        after={"label": body.label.strip()},
+        after={"label": body.label.strip(), **({"email": email} if email else {})},
     )
-    return {"id": key_id, "label": body.label.strip(), "key": key.value}
+    return {"id": key_id, "label": body.label.strip(), "email": email, "key": key.value}
 
 
 @one.delete("/people/{key_id}")

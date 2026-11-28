@@ -47,6 +47,16 @@ class GatewayPerson:
     key_id: str
     label: str
     """The person's name or e-mail, as the key was labelled."""
+    email: str | None = None
+    """Their work e-mail, when their key has one (lower case)."""
+
+    def own(self) -> tuple[str, ...]:
+        """The person's own identifiers: never a personal data finding in their own requests.
+
+        Returns:
+            The e-mail and the label (at least 3 characters each).
+        """
+        return tuple(dict.fromkeys(v for v in (self.email, self.label) if v and len(v) >= 3))
 
 
 @dataclass(frozen=True)
