@@ -3911,6 +3911,19 @@
         "additionalProperties": false,
         "description": "A person of a gateway.",
         "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
           "label": {
             "maxLength": 120,
             "minLength": 1,
@@ -10558,7 +10571,7 @@
     },
     "/agent/v1/admin/gateways/{gateway_id}/people": {
       "get": {
-        "description": "The people of a gateway: one personal key each (never its secret).\n\nReturns:\n    items: id, label, prefix, createdAt, lastUsedAt, revoked.",
+        "description": "The people of a gateway: one personal key each (never its secret).\n\nReturns:\n    items: id, label, email, prefix, createdAt, lastUsedAt, revoked.",
         "operationId": "list_people_agent_v1_admin_gateways__gateway_id__people_get",
         "parameters": [
           {
@@ -10601,7 +10614,7 @@
         ]
       },
       "post": {
-        "description": "Give a person their personal gateway key (operators). The key is shown only now.\n\nReturns:\n    id, label, key.",
+        "description": "Give a person their personal gateway key (operators). The key is shown only now.\n\nReturns:\n    id, label, email, key.\n\nRaises:\n    Conflict: The e-mail already has a live key, on this gateway or another.",
         "operationId": "add_person_agent_v1_admin_gateways__gateway_id__people_post",
         "parameters": [
           {
@@ -10629,9 +10642,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
+                  "additionalProperties": true,
                   "title": "Response Add Person Agent V1 Admin Gateways  Gateway Id  People Post",
                   "type": "object"
                 }

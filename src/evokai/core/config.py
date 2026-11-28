@@ -303,6 +303,44 @@ class Settings(BaseSettings):
     """``EVOKAI_GATEWAY_TIMEOUT_SECONDS``: the longest a gateway waits for the provider's next
     bytes (a stream can think for minutes; the provider's pings keep it alive)."""
 
+    # The gateway proxy (evokai.gateway.proxy): `evokai proxy`, its own process
+    proxy: Literal["on", "off"] = "off"
+    """``EVOKAI_PROXY``: ``on`` lets ``evokai proxy`` start (it also needs the gateway module and a
+    CA). Never switched from the console."""
+    proxy_port: int = 3128
+    """``EVOKAI_PROXY_PORT``: where ``evokai proxy`` listens as an explicit HTTP proxy."""
+    proxy_listen_host: str = "0.0.0.0"  # ruff: ignore[hardcoded-bind-all-interfaces] (a container's proxy port)
+    """``EVOKAI_PROXY_LISTEN_HOST``: the address it binds."""
+    proxy_max_body_mb: int = 32
+    """``EVOKAI_PROXY_MAX_BODY_MB``: the largest request body read on an inspected path; a larger
+    one is refused (fail closed)."""
+    proxy_ca_key: str | None = None
+    """``EVOKAI_PROXY_CA_KEY``: the intermediate CA's private key, as PEM or a file path (a Key
+    Vault secret reference arrives as the PEM). Read only by ``evokai proxy``."""
+    proxy_ca_cert: str | None = None
+    """``EVOKAI_PROXY_CA_CERT``: the intermediate CA's certificate followed by the root's (what
+    ``evokai proxy init-ca`` writes), as PEM or a file path. The API serves its root at
+    ``/proxy/ca.crt``."""
+    proxy_public_address: str | None = None
+    """``EVOKAI_PROXY_PUBLIC_ADDRESS``: ``host:port`` where PCs reach the proxy (``/proxy.pac``
+    is served only when it is set)."""
+    proxy_pac_fallback: Literal["block", "direct"] = "block"
+    """``EVOKAI_PROXY_PAC_FALLBACK``: ``block`` (the PAC names only the proxy: AI traffic never goes
+    around it) or ``direct`` (when the proxy cannot be reached, the PC goes direct)."""
+    proxy_unidentified: Literal["block", "record"] = "block"
+    """``EVOKAI_PROXY_UNIDENTIFIED``: a request whose account is not known yet, or whose e-mail is
+    in no gateway: ``block`` (with a message to restart the app or contact IT) or ``record``
+    (allowed under the system policy, recorded as unidentified). The ``proxy`` console setting
+    overrides it."""
+    proxy_allowed_orgs: dict[str, list[str]] = Field(default_factory=dict)
+    """``EVOKAI_PROXY_ALLOWED_ORGS``: per provider, the organisations whose accounts may pass
+    (JSON, ``{"anthropic": ["<org uuid>"]}``); a provider not listed is not checked. The ``proxy``
+    console setting overrides it."""
+    proxy_contact: str = ""
+    """``EVOKAI_PROXY_CONTACT``: who people should ask, in the proxy's refusals (default: IT)."""
+    proxy_locale: str = "en"
+    """``EVOKAI_PROXY_LOCALE``: the language of refusals tied to no gateway (``en`` or ``it``)."""
+
     # State shared by every instance (rate counters, concurrency, sign-in codes)
     redis_url: str | None = None
     """``EVOKAI_REDIS_URL``: Redis or Valkey (``redis://host:6379/0``, ``rediss://`` for TLS) for

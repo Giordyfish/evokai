@@ -26,6 +26,19 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 - Applications and gateways are queried by kind only through `applications_only` and `gateways_only`
   (`evokai.db.kinds`); a test fails on a query over application rows that bypasses them.
+- The gateway proxy (preview): `evokai proxy`, a TLS-inspecting forward proxy that applies a gateway's rules to apps
+  that cannot be pointed at a base URL (Claude Desktop's Chat, Cowork and Code tab, the Claude Code CLI). Same image
+  and database as the API, mitmproxy as a library in the new `proxy` extra (in the published images). Only the
+  catalogue's AI hosts are accepted (any other gets 403); `evokai proxy init-ca` makes a root and an intermediate CA
+  whose X.509 Name Constraints keep it to those hosts; answers stream as they arrive; bodies over
+  `EVOKAI_PROXY_MAX_BODY_MB` are refused. Who is asking is learned passively from the providers' own answers
+  (`/api/account`, `/api/oauth/profile`) and mapped to a gateway person by e-mail; accounts outside
+  `allowed_orgs` and unidentified accounts are refused (or recorded, `EVOKAI_PROXY_UNIDENTIFIED=record`). Adapters
+  for the Anthropic API (synthetic assistant answer), claude.ai Chat and Cowork (the prompt rewritten so the real
+  model says the refusal), the Cowork bridge and every other write (masked). Unknown shapes are refused
+  (`proxy.format_unknown`). One usage row per model request with its surface, security events as the base URL door,
+  no content. The API serves `/proxy.pac` and `/proxy/ca.crt`. See `docs/gateway-proxy.md`.
+- Gateway people have an optional `email` (one live key per e-mail across every gateway).
 
 ### Fixed
 

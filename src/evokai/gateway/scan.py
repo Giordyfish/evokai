@@ -11,8 +11,9 @@ are checked on each match instead: a match whose boundaries fail is cut back at 
 backtracking would, and the next search starts where a new match could begin, never inside the
 same run, so the scan stays linear. Checksums (codice fiscale, Luhn, IBAN mod 97) are the guard's.
 
-The gateway only needs to know whether a text holds a secret or an identifier and which kinds, never
-where to mask it: on a gateway a check blocks or records, it never changes the request.
+The base URL door only needs to know whether a text holds a secret or an identifier and which
+kinds: there a check blocks or records, it never changes the request. The gateway proxy's ``mask``
+adapter (titles and other writes of an app) replaces the values instead (``mask``).
 """
 
 from __future__ import annotations
@@ -320,8 +321,21 @@ def find_pii(
     Returns:
         Type to count (types with none left out; with a limit, the counts are at least that).
     """
+    counts: dict[str, int] = {}
+    for _, _, kind in _pii_spans(text.encode("utf-8", "surrogatepass"), types, limit):
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
+
+def _pii_spans(
+    data: bytes, types: frozenset[str] | set[str] | None, limit: int | None
+) -> list[tuple[int, int, str]]:
+    """The personal identifiers of a text's bytes, without overlaps, in text order.
+
+    Returns:
+        (start, end, type) byte spans.
+    """
     want = set(types) if types is not None else set(pii.PII_TYPES)
-    data = text.encode("utf-8", "surrogatepass")
     ranked: list[tuple[int, int, int, str]] = []
     for d in DETECTORS:
         if d.type == "digits":
@@ -354,14 +368,63 @@ def find_pii(
 
         ranked = [r for r in ranked if r[3] != "phone" or not in_uuid(r)]
     ranked.sort(key=lambda r: (r[0], -(r[1] - r[0]), r[2]))
-    counts: dict[str, int] = {}
+    out: list[tuple[int, int, str]] = []
     last_end = -1
     for start, end, _, kind in ranked:
         if start < last_end:
             continue
-        counts[kind] = counts.get(kind, 0) + 1
+        out.append((start, end, kind))
         last_end = end
-    return counts
+    return out
+
+
+def mask(
+    text: str,
+    *,
+    secrets: bool,
+    known: tuple[str, ...] = (),
+    pii_types: frozenset[str] | set[str] | None = None,
+    replacement: str = "[bloccato]",
+) -> tuple[str, list[str]]:
+    """A text with its secrets and personal identifiers replaced (the gateway proxy's ``mask``).
+
+    Args:
+        text: The text.
+        secrets: Mask the secrets (``input.secrets``).
+        known: The deployment's own secrets.
+        pii_types: Mask these personal data types (None or empty: none).
+        replacement: What a value becomes.
+
+    Returns:
+        The text, and the rule or type of each value masked.
+    """
+    data = text.encode("utf-8", "surrogatepass")
+    spans: list[tuple[int, int, str]] = []
+    if secrets:
+        for rule, pattern in SECRET_RULES:
+            spans += [(a, b, rule) for a, b in _iter(pattern, data)]
+        for secret in known:
+            if len(secret) < 12:
+                continue
+            raw = secret.encode()
+            at = data.find(raw)
+            while at >= 0:
+                spans.append((at, at + len(raw), "deployment_secret"))
+                at = data.find(raw, at + 1)
+    if pii_types:
+        spans += _pii_spans(data, pii_types, None)
+    if not spans:
+        return text, []
+    spans.sort(key=lambda r: (r[0], -(r[1] - r[0])))
+    out, rules, pos = bytearray(), [], 0
+    for start, end, rule in spans:
+        if start < pos:
+            continue
+        out += data[pos:start] + replacement.encode()
+        rules.append(rule)
+        pos = end
+    out += data[pos:]
+    return out.decode("utf-8", "surrogatepass"), rules
 
 
 # Denied topics (scope.deny)

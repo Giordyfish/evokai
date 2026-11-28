@@ -226,7 +226,13 @@ class ApplicationRepository(_Repo):
             return await _add_version(s, application_id, policy_content(*row), by, note)
 
     async def add_key(
-        self, application_id: str, kind: str, prefix: str, secret_hash: str, label: str = ""
+        self,
+        application_id: str,
+        kind: str,
+        prefix: str,
+        secret_hash: str,
+        label: str = "",
+        email: str | None = None,
     ) -> str:
         """Store a key's hash.
 
@@ -241,9 +247,31 @@ class ApplicationRepository(_Repo):
                 prefix=prefix,
                 secret_hash=secret_hash,
                 label=label,
+                email=email,
             )
             s.add(key)
             return key.id
+
+    async def gateway_keys_by_email(self, email: str) -> list[m.ApiKey]:
+        """The live gateway keys of an e-mail (their ``email`` field, else a label that is it).
+
+        Returns:
+            The rows (one, unless labels repeat an e-mail no key has in its own field).
+        """
+        email = email.strip().lower()
+        k = m.ApiKey
+        async with self.db.session() as s:
+            q = sa.select(k).where(k.kind == "gateway", k.revoked_at.is_(None), k.email == email)
+            rows = list((await s.execute(q)).scalars().all())
+            if rows:
+                return rows
+            q = sa.select(k).where(
+                k.kind == "gateway",
+                k.revoked_at.is_(None),
+                k.email.is_(None),
+                sa.func.lower(k.label) == email,
+            )
+            return list((await s.execute(q)).scalars().all())
 
     async def key_by_prefix(self, prefix: str) -> m.ApiKey | None:
         """Find a live key by its public prefix.

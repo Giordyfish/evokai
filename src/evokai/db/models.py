@@ -105,9 +105,13 @@ class ApiKey(Base):
     secret_hash: Mapped[str] = mapped_column(sa.String(128))
     scopes: Mapped[list[Any]] = mapped_column(sa.JSON, default=list)
     label: Mapped[str] = mapped_column(sa.String(120), default="")
+    email: Mapped[str | None] = mapped_column(sa.String(254))
+    """A gateway person's e-mail, lower case (``gateway`` keys only): the gateway proxy maps the
+    account it sees to the person by it. One live key per e-mail across every gateway."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     last_used_at: Mapped[datetime | None] = mapped_column(TS)
     revoked_at: Mapped[datetime | None] = mapped_column(TS)
+    __table_args__ = (sa.Index("ix_evokai_api_keys_email", "email"),)
 
 
 class AgentRecord(Base):
@@ -510,11 +514,34 @@ class GatewayRequest(Base):
     first_byte_ms: Mapped[int | None] = mapped_column(sa.Integer)
     """From the request's arrival to the first byte of the provider's answer."""
     duration_ms: Mapped[int] = mapped_column(sa.Integer, default=0)
+    surface: Mapped[str | None] = mapped_column(sa.String(24))
+    """Where the request came from through the gateway proxy (``desktop_chat``,
+    ``desktop_cowork``, ``desktop_code``, ``claude_code``...); None through the base URL door."""
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     __table_args__ = (
         sa.Index("ix_evokai_gateway_requests_time", "application_id", "created_at"),
         sa.Index("ix_evokai_gateway_requests_key", "key_id", "created_at"),
     )
+
+
+class ProxyIdentity(Base):
+    """Who an app's session belongs to, learned by the gateway proxy from answers that pass anyway.
+
+    The key is a digest of what each request carries (a claude.ai session cookie, an account
+    id), never the value itself. No content, no token.
+    """
+
+    __tablename__ = "evokai_gateway_proxy_identities"
+    key_hash: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(sa.String(16))
+    email: Mapped[str | None] = mapped_column(sa.String(254))
+    """Lower case."""
+    account_id: Mapped[str | None] = mapped_column(sa.String(80))
+    org_id: Mapped[str | None] = mapped_column(sa.String(80))
+    first_seen: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(TS)
+    __table_args__ = (sa.Index("ix_evokai_gateway_proxy_identities_expiry", "expires_at"),)
 
 
 class PromptRecord(Base):

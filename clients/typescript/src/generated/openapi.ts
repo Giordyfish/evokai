@@ -1663,7 +1663,7 @@ export interface paths {
          * @description The people of a gateway: one personal key each (never its secret).
          *
          *     Returns:
-         *         items: id, label, prefix, createdAt, lastUsedAt, revoked.
+         *         items: id, label, email, prefix, createdAt, lastUsedAt, revoked.
          */
         get: operations["list_people_agent_v1_admin_gateways__gateway_id__people_get"];
         put?: never;
@@ -1672,7 +1672,10 @@ export interface paths {
          * @description Give a person their personal gateway key (operators). The key is shown only now.
          *
          *     Returns:
-         *         id, label, key.
+         *         id, label, email, key.
+         *
+         *     Raises:
+         *         Conflict: The e-mail already has a live key, on this gateway or another.
          */
         post: operations["add_person_agent_v1_admin_gateways__gateway_id__people_post"];
         delete?: never;
@@ -6812,6 +6815,8 @@ export interface components {
          * @description A person of a gateway.
          */
         NewPerson: {
+            /** Email */
+            email?: string | null;
             /** Label */
             label: string;
         };
@@ -10353,7 +10358,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: string;
+                        [key: string]: unknown;
                     };
                 };
             };

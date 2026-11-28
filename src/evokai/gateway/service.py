@@ -313,11 +313,26 @@ class GatewayService:
         body: dict[str, Any],
         *,
         count: bool,
+        text: str | None = None,
+        check_model: bool = True,
     ) -> checks.Checked:
         """Every control of a request, in order; the first that refuses ends them.
 
         A token count (``count_tokens``) only passes the provider, model and data protection
         checks: it is not a model call, and its content is checked when it is sent for real.
+
+        Args:
+            gw: The gateway.
+            person: Who sends it.
+            provider: ``anthropic`` or ``openai``.
+            model: The model the request names.
+            body: The provider's request (its new text is read from it unless ``text`` is given).
+            count: A token count: no rate or cap counts, and no text checks unless ``text`` is
+                given (the gateway proxy checks a count's text: it can carry what is then not
+                sent for real).
+            text: The new text, when the caller read it from another shape (the gateway proxy's
+                surfaces).
+            check_model: False for a surface that names no model (Cowork's events).
 
         Returns:
             The events and the block, if any.
@@ -350,7 +365,7 @@ class GatewayService:
                     f"Evokai gateway: {name} is not enabled on this gateway.",
                 ),
             )
-        if not checks.model_allowed(model, gw.allowed_models):
+        if check_model and not checks.model_allowed(model, gw.allowed_models):
             allowed = ", ".join(str(x) for x in gw.allowed_models or [])
             return refuse(
                 "gateway.model",
@@ -378,21 +393,23 @@ class GatewayService:
                 ),
                 reasons=[r.view() for r in verdict.reasons],
             )
-        if count:
+        if count and text is None:
             return out
         policy = self.svc.guard.policy(gw)
         events, record = checks.event_rows(gw.id, person.label, provider, model)
-        if block := await self._rate(person, policy, record):
-            out.events += events
-            out.block = block
-            return out
-        if capped := await self._caps(person, settings):
-            return refuse("gateway.cap", capped[0], capped[1])
-        text = (
-            checks.anthropic_new_text(body)
-            if provider == ANTHROPIC
-            else checks.openai_new_text(body)
-        )
+        if not count:
+            if block := await self._rate(person, policy, record):
+                out.events += events
+                out.block = block
+                return out
+            if capped := await self._caps(person, settings):
+                return refuse("gateway.cap", capped[0], capped[1])
+        if text is None:
+            text = (
+                checks.anthropic_new_text(body)
+                if provider == ANTHROPIC
+                else checks.openai_new_text(body)
+            )
         out.fingerprint = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:24]
         out.block = checks.text_checks(
             policy, text, provider=provider, known=self.svc.guard.known_secrets, record=record
@@ -521,6 +538,7 @@ class GatewayService:
         control: str | None = None,
         usage: Usage | None = None,
         first_byte_ms: int | None = None,
+        surface: str | None = None,
     ) -> None:
         """One row for the request: who, what, tokens, timings, outcome (never content)."""
         try:
@@ -541,6 +559,7 @@ class GatewayService:
                 response_bytes=usage.bytes if usage else 0,
                 first_byte_ms=first_byte_ms,
                 duration_ms=elapsed_ms(t0),
+                surface=surface,
             )
         except Exception as e:
             log.warning("gateway_not_recorded", extra={"error_type": type(e).__name__})

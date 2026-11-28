@@ -1,0 +1,758 @@
+"""What the proxy decides about a request: who, the organisation, the gateway's checks, the verdict.
+
+Free of the network engine: ``evokai.gateway.proxy.engine`` hands it neutral requests
+(``adapters.Request``) and applies what it returns. The checks, the records and the security
+events are the base URL door's (``evokai.gateway.service.GatewayService``).
+
+In order, for a request an adapter handles:
+
+1. the adapter reads it; a shape it does not know is refused (``proxy.format_unknown``);
+2. the session's key and its binding (``identity``); the organisation must be one of
+   ``allowed_orgs`` for the provider when that is set (``proxy.org_refused``);
+3. the binding's e-mail is a gateway person; when it is not (or no binding is known yet), the
+   ``unidentified`` setting blocks (``proxy.unidentified``) or lets it through under the system
+   policy, recorded as unidentified;
+4. the gateway's checks (provider, model, data protection, rate, caps, the input checks on the new
+   text); a refusal is the adapter's (a synthetic answer or a rewrite);
+5. one usage row per model request, when its answer ends.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import hashlib
+import html
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+from evokai import policies
+from evokai.core.util import TtlCache
+from evokai.db import models as m
+from evokai.db.kinds import GATEWAY
+from evokai.gateway import checks, scan
+from evokai.gateway.proxy import catalogue
+from evokai.gateway.proxy.adapters import (
+    Adapter,
+    Answer,
+    FormatUnknown,
+    FrameAdapter,
+    Inspection,
+    Request,
+    Rewrite,
+    Verdict,
+    providers_with_adapters,
+    registry,
+)
+from evokai.gateway.proxy.adapters import anthropic as anthropic_adapters
+from evokai.gateway.proxy.adapters import claude as claude_adapters
+from evokai.gateway.proxy.identity import (
+    Binding,
+    IdentityBook,
+    Key,
+    claude_ai_key,
+    from_claude_account,
+    from_oauth_profile,
+    mask_email,
+)
+from evokai.gateway.proxy.texts import Texts
+from evokai.gateway.relay import Usage
+from evokai.identity.models import GatewayPerson
+
+log = logging.getLogger("evokai.gateway.proxy")
+
+PROXY_APP = "proxy"
+"""The application id of what no gateway owns: unidentified traffic's records and events."""
+SETTING = "proxy"
+"""The console setting that overrides ``allowed_orgs`` and ``unidentified``."""
+REFRESH_SECONDS = 30
+"""How often the providers enabled on gateways and the console setting are read again."""
+EVENT_ONCE_SECONDS = 300
+PERSON_TTL = 30
+LEARN_CLAUDE = "claude_account"
+LEARN_PROFILE = "oauth_profile"
+
+
+@dataclass
+class Pending:
+    """A forwarded model request, recorded when its answer ends."""
+
+    gw: m.Application
+    person: GatewayPerson
+    provider: str
+    model: str
+    surface: str
+    size: int
+    t0: float
+    usage: bool = False
+
+
+@dataclass
+class Decision:
+    """What to do with a request: forward it (maybe rewritten) or answer it."""
+
+    verdict: Verdict | None = None
+    pending: Pending | None = None
+    adapter: str = ""
+
+
+@dataclass
+class Who:
+    """A request's person and gateway (or the unidentified gateway), once resolved."""
+
+    gw: m.Application
+    person: GatewayPerson
+    identified: bool
+    binding: Binding | None = None
+
+
+@dataclass
+class Frame:
+    """What to do with a WebSocket message: pass it, replace it, or drop it."""
+
+    replace: bytes | None = None
+    drop: bool = False
+
+
+@dataclass
+class Settings:
+    """The proxy's settings that the console may override."""
+
+    allowed_orgs: dict[str, list[str]] = field(default_factory=dict)
+    unidentified: str = "block"
+
+
+class ProxyService:
+    """The proxy's decisions, on the gateway's services."""
+
+    def __init__(
+        self,
+        svc: Any,
+        *,
+        adapters: list[Adapter] | None = None,
+        frames: list[FrameAdapter] | None = None,
+    ) -> None:
+        """Wire the proxy.
+
+        Args:
+            svc: Services (the gateway's, the guard's, the store).
+            adapters: HTTP adapters (default: this build's, ``adapters.registry``).
+            frames: WebSocket adapters.
+        """
+        self.svc = svc
+        self.gws = svc.gateway
+        s = svc.settings
+        http, ws = registry()
+        self.adapters = adapters if adapters is not None else http
+        self.frames = frames if frames is not None else ws
+        self.book = IdentityBook(svc.db)
+        self.max_body = int(s.proxy_max_body_mb) * 1024 * 1024
+        self.locale = s.proxy_locale
+        self.contact = s.proxy_contact
+        self.settings = Settings(
+            allowed_orgs={k: list(v) for k, v in (s.proxy_allowed_orgs or {}).items()},
+            unidentified=s.proxy_unidentified,
+        )
+        self.providers: list[str] = []
+        """The catalogue providers served now (enabled on a gateway, with adapters)."""
+        self.hosts: tuple[catalogue.Host, ...] = ()
+        self._people: TtlCache[str, tuple[str, str, str] | None] = TtlCache(
+            max_items=20_000, ttl_seconds=PERSON_TTL
+        )
+        self.clock = time.time
+        self.unidentified_gateway = m.Application(
+            id=PROXY_APP,
+            slug=PROXY_APP,
+            name="Gateway proxy (unidentified)",
+            status="active",
+            kind=GATEWAY,
+            gateway={"providers": ["anthropic", "openai"]},
+            allowed_models=[],
+            security=checks.initial_policy(),
+            data_protection=None,
+            residency=None,
+            defaults={"locale": self.locale},
+        )
+
+    # Settings and the catalogue
+
+    async def refresh(self) -> None:
+        """Read again the providers enabled on active gateways and the console setting.
+
+        While the gateway module is off no provider is served: every host is refused.
+        """
+        from evokai.core import modules
+
+        enabled: set[str] = set()
+        if await modules.is_enabled(self.svc, modules.GATEWAY):
+            for app in await self.svc.store.applications.all(GATEWAY):
+                if app.status == "active":
+                    enabled.update((app.gateway or {}).get("providers") or [])
+        self.providers = catalogue.served(enabled, providers_with_adapters())
+        self.hosts = catalogue.intercepted(self.providers)
+        stored = await self.svc.store.console_settings.get(SETTING)
+        value = stored
+        s = self.svc.settings
+        orgs = s.proxy_allowed_orgs or {}
+        mode = s.proxy_unidentified
+        if isinstance(value, dict):
+            if isinstance(value.get("allowed_orgs"), dict):
+                orgs = value["allowed_orgs"]
+            if value.get("unidentified") in ("block", "record"):
+                mode = value["unidentified"]
+        self.settings = Settings(
+            allowed_orgs={str(k): [str(x) for x in v or []] for k, v in orgs.items()},
+            unidentified=mode,
+        )
+
+    async def run_refresh(self) -> None:
+        """Keep the settings, the system policy and the bindings current (a background task)."""
+        last_purge = 0.0
+        while True:
+            await asyncio.sleep(REFRESH_SECONDS)
+            try:
+                await self.refresh()
+                await policies.load_system(self.svc.store)
+                if time.monotonic() - last_purge > 3600:
+                    last_purge = time.monotonic()
+                    await self.book.purge()
+            except Exception as e:
+                log.warning("proxy_refresh_failed", extra={"error_type": type(e).__name__})
+
+    def connect(self, host: str, port: int) -> str | None:
+        """What a ``CONNECT`` (or a plain request) to a host gets.
+
+        Returns:
+            ``intercept``, ``tunnel``, ``check`` or None (refused).
+        """
+        host = host.lower().rstrip(".")
+        if host == catalogue.CHECK_HOST:
+            return "check"
+        if port != 443:
+            return None
+        if any(h.matches(host) for h in self.hosts):
+            return "intercept"
+        if catalogue.is_tunnelled(host):
+            return "tunnel"
+        return None
+
+    def adapter(self, method: str, host: str, path: str) -> Adapter | None:
+        """The adapter of a request on an intercepted host.
+
+        Returns:
+            The adapter, or None (the request passes unread: a read, a static asset).
+        """
+        host = host.lower()
+        return next((a for a in self.adapters if a.matches(method, host, path)), None)
+
+    def frame_adapter(self, host: str, path: str) -> FrameAdapter | None:
+        """The adapter of a WebSocket.
+
+        Returns:
+            The adapter, or None.
+        """
+        return next((a for a in self.frames if a.matches(host.lower(), path)), None)
+
+    @staticmethod
+    def learns(method: str, host: str, path: str) -> str | None:
+        """Whether a request's answer names an account (it is then read whole, it is small).
+
+        Returns:
+            Which reader, or None.
+        """
+        if method != "GET":
+            return None
+        if host == claude_adapters.HOST and path == claude_adapters.ACCOUNT_PATH:
+            return LEARN_CLAUDE
+        if host == anthropic_adapters.HOST and path == anthropic_adapters.PROFILE_PATH:
+            return LEARN_PROFILE
+        return None
+
+    # Identity
+
+    async def learn(self, kind: str, req: Request, status: int, body: bytes) -> None:
+        """Bind a session's key to the account an answer names."""
+        if status != 200 or not body:
+            return
+        try:
+            data = Request("GET", "", "", [], body).json()
+        except FormatUnknown:
+            return
+        key: Key | None
+        if kind == LEARN_CLAUDE:
+            email, account, org = from_claude_account(data)
+            key = claude_ai_key(req.all("cookie"), None)
+        else:
+            email, account, org = from_oauth_profile(data)
+            key = Key("anthropic", "account", account) if account else None
+        if key is None or not (email or account):
+            return
+        try:
+            b = await self.book.bind(key, email, account, org)
+        except Exception as e:
+            log.warning("proxy_identity_not_bound", extra={"error_type": type(e).__name__})
+            return
+        self.book.seen(req.client, b, self.clock())
+        log.info("proxy_identity_learned", extra={"provider": key.provider, "kind": kind})
+
+    async def _person(self, email: str | None) -> tuple[m.Application, GatewayPerson] | None:
+        """The gateway person of an e-mail.
+
+        Returns:
+            (gateway, person), or None when no live key (or more than one) has it.
+        """
+        if not email:
+            return None
+        hit = self._people.get(email)
+        if hit is None and email not in self._people._items:
+            rows = await self.svc.store.applications.gateway_keys_by_email(email)
+            hit = (rows[0].application_id, rows[0].id, rows[0].label) if len(rows) == 1 else None
+            self._people.set(email, hit)
+        if hit is None:
+            return None
+        gw = await self.gws.gateway(hit[0])
+        if gw is None:
+            return None
+        return gw, GatewayPerson(application_id=gw.id, key_id=hit[1], label=hit[2])
+
+    def _unidentified(self, b: Binding | None, key: Key | None) -> Who:
+        digest = (b.key_hash if b else key.digest if key else "")[:16]
+        label = f"unidentified {b.email}" if b and b.email else "unidentified"
+        person = GatewayPerson(
+            application_id=PROXY_APP,
+            key_id=f"proxy:{digest}" if digest else "proxy:anonymous",
+            label=label[:120],
+        )
+        return Who(self.unidentified_gateway, person, identified=False, binding=b)
+
+    def texts(self, gw: m.Application | None) -> Texts:
+        """The texts of a gateway (or the deployment's).
+
+        Returns:
+            The texts.
+        """
+        if gw is None or gw.id == PROXY_APP:
+            return Texts(None, locale=self.locale, contact=self.contact)
+        return Texts(gw, contact=self.contact)
+
+    async def _event(
+        self, gw_id: str, label: str, control: str, rule: str, once: str, **details: Any
+    ) -> None:
+        """A proxy event, once per subject and rule every few minutes.
+
+        ``proxy.format_unknown``, ``proxy.org_refused`` or ``proxy.unidentified``.
+        """
+        if not await self.svc.shared.set_once(
+            f"proxy:event:{control}:{rule}:{once}", "1", EVENT_ONCE_SECONDS
+        ):
+            return
+        row = checks.gateway_event(gw_id, label, control, rule, details)
+        self.gws._later(self.svc.guard.store_events([row]))
+
+    # Requests
+
+    def too_large(self, adapter: Adapter, req: Request) -> Answer:
+        """The refusal of a body over ``EVOKAI_PROXY_MAX_BODY_MB`` (fail closed).
+
+        Returns:
+            The answer.
+        """
+        log.warning("proxy_body_too_large", extra={"adapter": adapter.name})
+        return adapter.failed(req, self.texts(None).get("too_large", mb=self.max_body // 1048576))
+
+    async def decide(self, req: Request, adapter: Adapter) -> Decision:
+        """Check a request an adapter handles.
+
+        Returns:
+            The decision.
+        """
+        t0 = time.perf_counter()
+        decision = Decision(adapter=adapter.name)
+        try:
+            found = adapter.inspect(req)
+        except FormatUnknown as e:
+            key = adapter.key(req)
+            await self._event(
+                PROXY_APP,
+                "",
+                "proxy.format_unknown",
+                adapter.name,
+                key.digest if key else req.client,
+                why=e.why,
+                host=req.host,
+            )
+            log.warning("proxy_format_unknown", extra={"adapter": adapter.name, "why": e.why})
+            decision.verdict = adapter.failed(
+                req,
+                self.texts(None).get(
+                    "format_unknown", contact=self.contact or self.texts(None).contact
+                ),
+            )
+            return decision
+        if found is None:
+            return decision
+        provider = adapter.gateway_provider
+        key = adapter.key(req)
+        binding = await self.book.lookup(key) if key else None
+        if binding is not None:
+            self.book.seen(req.client, binding, self.clock())
+        who = await self._who(binding, key)
+        texts = self.texts(who.gw if who.identified else None)
+        # The organisation: stated by the request (claude.ai), else by the account's profile.
+        org = (key.org if key else None) or (binding.org_id if binding else None)
+        allowed = self.settings.allowed_orgs.get(adapter.provider or provider) or []
+        if allowed and org and org not in allowed:
+            await self._event(
+                who.gw.id,
+                who.person.label,
+                "proxy.org_refused",
+                adapter.provider or provider,
+                key.digest if key else req.client,
+                org=org[:80],
+                surface=found.surface,
+            )
+            decision.verdict = adapter.failed(req, texts.get("org_refused", contact=texts.contact))
+            return decision
+        if adapter.mask:
+            decision.verdict = await self._mask(req, found, who)
+            return decision
+        if not who.identified and self.settings.unidentified == "block":
+            await self._event(
+                PROXY_APP,
+                (binding.email or "") if binding else "",
+                "proxy.unidentified",
+                "no_person" if binding and binding.email else "no_binding",
+                key.digest if key else req.client,
+                provider=provider,
+                surface=found.surface,
+            )
+            decision.verdict = adapter.failed(req, texts.get("unidentified", contact=texts.contact))
+            return decision
+        if who.gw.status != "active":
+            decision.verdict = adapter.failed(
+                req, texts.get("refusal_other", reason="gateway disabled", contact=texts.contact)
+            )
+            return decision
+        size = len(req.body)
+        checked = await self.gws._controls(
+            who.gw,
+            who.person,
+            provider,
+            found.model,
+            found.data if isinstance(found.data, dict) else {},
+            count=found.count,
+            text=found.text,
+            check_model=found.check_model,
+        )
+        checked.fingerprint = hashlib.sha256(
+            found.text.encode("utf-8", "surrogatepass")
+        ).hexdigest()[:24]
+        if events := await self.gws._first_seen(who.person, checked):
+            for e in events:
+                e["details"]["surface"] = found.surface
+            self.gws._later(self.svc.guard.store_events(events))
+        if checked.block is not None:
+            block = checked.block
+            if found.parts:
+                found.offending = self._offending(who.gw, found.parts, provider) or None
+            verdict = adapter.refuse(req, found, texts, texts.refusal(block.control, found.model))
+            decision.verdict = verdict
+            if found.record:
+                # Off the request's path, as every record: the database never delays a person.
+                self.gws._later(
+                    self.gws._record(
+                        who.gw,
+                        who.person,
+                        provider,
+                        found.model,
+                        "blocked",
+                        verdict.status if isinstance(verdict, Answer) else 200,
+                        size,
+                        t0,
+                        control=block.control,
+                        surface=found.surface,
+                    )
+                )
+            log.info(
+                "proxy_refused",
+                extra={"adapter": adapter.name, "control": block.control, "surface": found.surface},
+            )
+            return decision
+        if found.record:
+            decision.pending = Pending(
+                who.gw, who.person, provider, found.model, found.surface, size, t0, found.usage
+            )
+        return decision
+
+    async def _who(self, binding: Binding | None, key: Key | None) -> Who:
+        found = await self._person(binding.email if binding else None)
+        if found is None:
+            return self._unidentified(binding, key)
+        return Who(found[0], found[1], identified=True, binding=binding)
+
+    def _offending(self, gw: m.Application, parts: list[str], provider: str) -> set[int]:
+        """The parts that a check refuses on their own (no events: those were recorded).
+
+        Returns:
+            Their indices.
+        """
+        policy = self.svc.guard.policy(gw)
+        known = self.svc.guard.known_secrets
+        return {
+            i
+            for i, part in enumerate(parts)
+            if checks.text_checks(policy, part, provider=provider, known=known) is not None
+        }
+
+    async def _mask(self, req: Request, found: Inspection, who: Who) -> Verdict | None:
+        """Mask what the policy enforces in a write, record what it only monitors.
+
+        Returns:
+            The rewritten request, or None (unchanged).
+        """
+        policy = self.svc.guard.policy(who.gw)
+        known = self.svc.guard.known_secrets
+        s = policy.settings
+        types = None
+        if policy.on("pii.model"):
+            from evokai.guard.pii import PII_TYPES
+
+            types = {t for t in ((s.pii.types if s.pii else None) or PII_TYPES) if t in PII_TYPES}
+        secrets_on = policy.on("input.secrets")
+        if not secrets_on and not types:
+            return None
+        enforce_secrets = secrets_on and policy.enforced("input.secrets")
+        enforce_pii = bool(types) and policy.enforced("pii.model")
+        seen: list[str] = []
+
+        def mask(text: str) -> str:
+            # Everything the policy looks at is found; only what it enforces is masked.
+            new, rules = scan.mask(
+                text,
+                secrets=enforce_secrets,
+                known=known if enforce_secrets else (),
+                pii_types=types if enforce_pii else None,
+            )
+            seen.extend(rules)
+            return new
+
+        is_json = "json" in req.header("content-type").lower()
+        new = claude_adapters.masked(found.text, is_json, mask)
+        monitor_secrets = (
+            secrets_on and not enforce_secrets and scan.find_secrets(found.text, known)
+        )
+        monitor_pii = (
+            types and not enforce_pii and scan.find_pii(found.text, types, limit=checks.PII_LIMIT)
+        )
+        secret_names = {r for r, _ in scan.SECRET_RULES} | {"deployment_secret"}
+        secret_rules = sorted({r for r in seen if r in secret_names})
+        pii_kinds = sorted({r for r in seen if r not in secret_names})
+        events, record = checks.event_rows(who.gw.id, who.person.label, "", "")
+
+        def add(control: str, rule: str, action: str, details: dict[str, Any]) -> None:
+            record(control, rule, action, {**details, "surface": "mask", "host": req.host})
+
+        if secret_rules:
+            add("input.secrets", secret_rules[0], "redacted", {"rules": secret_rules})
+        if monitor_secrets:
+            add(
+                "input.secrets",
+                sorted(set(monitor_secrets))[0],
+                "logged",
+                {"count": len(monitor_secrets)},
+            )
+        if pii_kinds:
+            add("pii.model", pii_kinds[0], "redacted", {"types": pii_kinds})
+        if monitor_pii:
+            add("pii.model", sorted(monitor_pii)[0], "logged", {"types": monitor_pii})
+        for e in events:
+            if e["action"] == "redacted":
+                e["mode"] = "enforce"
+        if events:
+            once = hashlib.sha256(found.text.encode("utf-8", "surrogatepass")).hexdigest()[:24]
+            if await self.svc.shared.set_once(
+                f"proxy:mask:{who.person.key_id}:{once}", "1", EVENT_ONCE_SECONDS
+            ):
+                self.gws._later(self.svc.guard.store_events(events))
+        if new == found.text:
+            return None
+        return Rewrite(new.encode("utf-8"))
+
+    def done(
+        self,
+        pending: Pending,
+        status: int,
+        usage: Usage | None,
+        outcome: str,
+        first_byte_ms: int | None,
+    ) -> None:
+        """Record a forwarded model request once its answer ended.
+
+        Written off the path: the engine runs a connection's hooks one after the other, so an
+        awaited write would hold the connection's next request.
+        """
+        self.gws._later(
+            self.gws._record(
+                pending.gw,
+                pending.person,
+                pending.provider,
+                pending.model,
+                outcome,
+                status,
+                pending.size,
+                pending.t0,
+                usage=usage,
+                first_byte_ms=first_byte_ms,
+                surface=pending.surface,
+            )
+        )
+
+    def usage(self, pending: Pending, content_type: str, encoding: str) -> Usage | None:
+        """A reader of the answer's token counts, when the surface's answers carry them.
+
+        Returns:
+            The reader, or None.
+        """
+        return Usage(pending.provider, content_type, encoding) if pending.usage else None
+
+    # WebSocket messages
+
+    async def frame(self, upgrade: Request, adapter: FrameAdapter, content: bytes) -> Frame:
+        """Check a message from the app on a WebSocket an adapter reads.
+
+        Args:
+            upgrade: The request that opened the WebSocket (its headers and the PC's address).
+            adapter: The adapter.
+            content: The message.
+
+        Returns:
+            What to do with it.
+        """
+        try:
+            found = adapter.inspect(content)
+        except FormatUnknown as e:
+            await self._event(
+                PROXY_APP, "", "proxy.format_unknown", adapter.name, upgrade.client, why=e.why
+            )
+            log.warning("proxy_format_unknown", extra={"adapter": adapter.name, "why": e.why})
+            return Frame(drop=True)
+        if found is None:
+            return Frame()
+        key = claude_ai_key(upgrade.all("cookie"), None)
+        binding = await self.book.lookup(key) if key else None
+        if binding is None:
+            # The bridge carries no session of its own: the identity seen last from the same PC.
+            recent = self.book.recent(upgrade.client, self.clock())
+            binding = recent[0] if recent else None
+        who = await self._who(binding, key)
+        texts = self.texts(who.gw if who.identified else None)
+        if not who.identified and self.settings.unidentified == "block":
+            await self._event(
+                PROXY_APP,
+                (binding.email or "") if binding else "",
+                "proxy.unidentified",
+                "no_person" if binding and binding.email else "no_binding",
+                upgrade.client,
+                provider=adapter.gateway_provider,
+                surface=found.surface,
+            )
+            notice = texts.get("unidentified", contact=texts.contact)
+            return Frame(replace=adapter.refuse(content, found, notice))
+        checked = await self.gws._controls(
+            who.gw,
+            who.person,
+            adapter.gateway_provider,
+            "",
+            {},
+            count=True,
+            text=found.text,
+            check_model=False,
+        )
+        checked.fingerprint = hashlib.sha256(
+            found.text.encode("utf-8", "surrogatepass")
+        ).hexdigest()[:24]
+        if events := await self.gws._first_seen(who.person, checked):
+            for e in events:
+                e["details"]["surface"] = "desktop_cowork_files"
+            self.gws._later(self.svc.guard.store_events(events))
+        if checked.block is None:
+            return Frame()
+        reason = texts.get(f"reason.{checked.block.control}", model="")
+        log.info("proxy_refused", extra={"adapter": adapter.name, "control": checked.block.control})
+        return Frame(replace=adapter.refuse(content, found, texts.get("bridge", reason=reason)))
+
+    # The check host
+
+    async def check_page(self, req: Request, *, tls: bool) -> Answer:
+        """``evokai.check``: does this PC go through the proxy, and as whom.
+
+        Returns:
+            A small HTML page (no-store).
+        """
+        it = self.locale.startswith("it")
+        recent = self.book.recent(req.client, self.clock())
+        lines = [
+            "Questo PC passa dal proxy aziendale di Evokai."
+            if it
+            else "This PC goes through the company's Evokai proxy.",
+            (
+                "Certificato del proxy: attendibile (HTTPS)."
+                if it
+                else "Proxy certificate: trusted (HTTPS)."
+            )
+            if tls
+            else (
+                "Pagina aperta in HTTP: apri https://evokai.check per provare il certificato."
+                if it
+                else "Opened over HTTP: open https://evokai.check to test the certificate."
+            ),
+        ]
+        if recent:
+            for b in recent[:3]:
+                gateway = await self.gateway_name(b)
+                lines.append(
+                    ("Identità: " if it else "Identity: ")
+                    + (mask_email(b.email) or "?")
+                    + (
+                        f" (gateway: {gateway})"
+                        if gateway
+                        else (" (in nessun gateway)" if it else " (in no gateway)")
+                    )
+                )
+        else:
+            lines.append(
+                "Identità: nessuna ancora (apri Claude o riavvialo)."
+                if it
+                else "Identity: none yet (open Claude, or restart it)."
+            )
+        lines.append(
+            ("Provider serviti: " if it else "Providers served: ")
+            + (", ".join(self.providers) or "-")
+        )
+        body = "".join(f"<p>{html.escape(x)}</p>" for x in lines)
+        page = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Evokai proxy</title></head>"
+            "<body style='font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;"
+            f"padding:0 1rem'><h1>Evokai proxy</h1>{body}</body></html>"
+        )
+        return Answer(
+            200,
+            {"content-type": "text/html; charset=utf-8", "cache-control": "no-store"},
+            page.encode(),
+        )
+
+    async def gateway_name(self, b: Binding | None) -> str | None:
+        """The gateway a binding's person belongs to (for the check page).
+
+        Returns:
+            Its name, or None.
+        """
+        with contextlib.suppress(Exception):
+            found = await self._person(b.email if b else None)
+            if found:
+                return found[0].name
+        return None
