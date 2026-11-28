@@ -66,6 +66,13 @@ function App() {
     setApps(await root.applications())
   }, [])
 
+  const reloadMe = useCallback(async () => {
+    const who = await root.me()
+    setMe(who)
+    setMeState(who)
+    await reloadApps()
+  }, [reloadApps])
+
   const start = useCallback(async () => {
     setError(null)
     try {
@@ -131,7 +138,7 @@ function App() {
         <PageLoader what={t('what.console')} />
       </main>
     )
-  const ctx: Console = { me, apps: apps.items.filter((a) => !a.hidden), allApps: apps.items, canCreate: apps.canCreate, reloadApps, signedOut }
+  const ctx: Console = { me, apps: apps.items.filter((a) => !a.hidden), allApps: apps.items, canCreate: apps.canCreate, reloadApps, reloadMe, signedOut }
   return (
     <ConsoleCtx.Provider value={ctx}>
       <Shell route={route} />

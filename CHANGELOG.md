@@ -8,6 +8,25 @@ interfaces; breaking changes are listed under **Changed** or **Removed** with wh
 
 ## [Unreleased]
 
+### Added
+
+- Modules: Evokai's applications and gateways are two modules on a shared core, installable and switchable
+  independently ([modules](docs/modules.md)). `EVOKAI_MODULES` (`applications`, `gateway`, comma separated) pins
+  them; without it a deployment owner switches them in the console (Modules page, `GET`/`PUT /v1/console/modules`)
+  with a confirmation and an audit row, and both are on until then. A module that is off answers its routes 404
+  `{"error": {"code": "module_disabled", ...}}` (no restart needed), hides its console section and stops its
+  background jobs; its data stays and retention keeps running on it. At least one module must be on.
+- `evokai module purge <applications|gateway>` deletes the data of a module that is off: it counts what would go,
+  offers a JSON export, asks for confirmation (`--yes` for scripts, `--dry-run` to count only), revokes the module's
+  keys, deletes its rows and writes one audit row.
+- `/v1/console/me` tells which modules are on (`modules`) and whether the configuration pins them (`modulesPinned`);
+  the TypeScript client reads the nested error shape (`{"error": {"code", "message"}}`) as well as the flat one.
+
+### Changed
+
+- Applications and gateways are queried by kind only through `applications_only` and `gateways_only`
+  (`evokai.db.kinds`); a test fails on a query over application rows that bypasses them.
+
 ### Fixed
 
 - The `azure` extra installs `aiohttp`: the keyless Azure credential (`azure.identity.aio`) needs it and

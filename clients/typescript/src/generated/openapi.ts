@@ -3583,7 +3583,8 @@ export interface paths {
          *     Returns:
          *         kind (``op``, ``adm`` or ``sso``), applicationId, expiresAt, keyId and keyPrefix (admin
          *         logins), email, name and roles (single sign-on), whether it owns the deployment, and the
-         *         deployment's facts the console needs (model allow-list, voice enabled).
+         *         deployment's facts the console needs (model allow-list, voice enabled, the modules that
+         *         are on and whether the configuration pins them).
          *
          *     Raises:
          *         Unauthorized: Not logged in, the login's key was revoked or its user disabled, or the
@@ -3653,6 +3654,41 @@ export interface paths {
          */
         get: operations["models_agent_v1_console_models_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/v1/console/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Modules
+         * @description The modules and which are on (deployment owners).
+         *
+         *     Returns:
+         *         modules (every module), enabled (those on), pinned (set by ``EVOKAI_MODULES``).
+         */
+        get: operations["get_modules_agent_v1_console_modules_get"];
+        /**
+         * Put Modules
+         * @description Switch the modules (deployment owners), with an audit row.
+         *
+         *     Returns:
+         *         The modules, as ``GET`` shows them.
+         *
+         *     Raises:
+         *         Conflict: ``EVOKAI_MODULES`` pins them (``modules_pinned``).
+         *         BadRequest: No confirmation (``confirm_required``), no module on (``no_module``) or an
+         *             unknown one (``unknown_module``).
+         */
+        put: operations["put_modules_agent_v1_console_modules_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6706,6 +6742,19 @@ export interface components {
             session?: boolean;
             /** Version */
             version?: number | null;
+        };
+        /**
+         * ModulesChoice
+         * @description The modules to turn on.
+         */
+        ModulesChoice: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm?: boolean;
+            /** Enabled */
+            enabled: string[];
         };
         /**
          * NavigateDef
@@ -13197,6 +13246,63 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_modules_agent_v1_console_modules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_modules_agent_v1_console_modules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModulesChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

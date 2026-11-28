@@ -900,6 +900,19 @@ export interface ConsoleMe {
   deploymentOwner?: boolean
   modelAllow: string[]
   voiceEnabled: boolean
+  /** The modules that are on (`applications`, `gateway`); a module off hides its console section. */
+  modules?: EvokaiModule[]
+  /** Whether `EVOKAI_MODULES` sets them (the console shows them read-only). */
+  modulesPinned?: boolean
+}
+/** A module of Evokai: the applications (agents and everything around them) or the gateways of coding tools. */
+export type EvokaiModule = 'applications' | 'gateway'
+/** Settings, Modules: which modules are on (`GET`/`PUT /v1/console/modules`, deployment owners). */
+export interface ModulesView {
+  modules: EvokaiModule[]
+  enabled: EvokaiModule[]
+  /** Set by `EVOKAI_MODULES`: read-only. */
+  pinned: boolean
 }
 /**
  * One person's console preferences (version 1), kept per console identity (single sign-on user, admin key or the
